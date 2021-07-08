@@ -1,6 +1,7 @@
-all : exports
+.PHONY : all exports
 
-.PHONY : exports
+all :
+	echo "try `make exports` to make a self-contained tarball"
 
 DIR=models_relation
 
