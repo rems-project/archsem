@@ -1,7 +1,12 @@
 .PHONY : all exports
 
-all :
-	echo "try `make exports` to make a self-contained tarball"
+all:
+	$(MAKE) -C hahn
+	cd arm-v8.5-a-types && ./build && cd ..
+	$(MAKE) -C arm-model
+
+#all :
+#	echo "try `make exports` to make a self-contained tarball"
 
 DIR=models_relation
 
