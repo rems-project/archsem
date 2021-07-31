@@ -1,9 +1,20 @@
-.PHONY : all exports
+.PHONY : all clean get-hahn exports
 
 all:
 	$(MAKE) -C hahn
 	cd arm-v8.5-a-types && ./build && cd ..
 	$(MAKE) -C arm-model
+
+
+clean:
+	$(MAKE) -C hahn clean
+	cd arm-v8.5-a-types && ./clean && cd ..
+	$(MAKE) -C arm-model clean
+	rm -rf *~
+
+get-hahn:
+	git submodule init
+	git submodule update
 
 #all :
 #	echo "try `make exports` to make a self-contained tarball"
