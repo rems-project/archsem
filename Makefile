@@ -3,13 +3,13 @@
 all:
 	$(MAKE) -C hahn
 	cd arm-v8.5-a-types && ./build && cd ..
-	$(MAKE) -C arm-model
+	$(MAKE) -C ax-model
 
 
 clean:
 	$(MAKE) -C hahn clean
 	cd arm-v8.5-a-types && ./clean && cd ..
-	$(MAKE) -C arm-model clean
+	$(MAKE) -C ax-model clean
 	rm -rf *~
 
 get-hahn:

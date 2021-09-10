@@ -1,6 +1,22 @@
+
+
+TODO: clean this up
+
+
+The Hahn files and base Armv8-A user-mode mixed-size axiomatic model are by Viktor Vafeiadis and subject to the MIT License below.
+
+The arm-v8.5-a-types are subject to the BSD-Clear licence from the Sail snapshot (modulo whatever licences are approprate for the libraries).
+
+The Armv8-A types used from the new Arm ASL are (c), and should in due course be BSD-Clear licenced.
+
+The remaining new material is (c) some subset of Jean Pichon-Pharabod, Peter Sewell, Ben Simner, Alasdair Armstrong, Brian Campbell, and should be BSD 2-clause licensed.
+
+
+
+
 The MIT License (MIT)
 
-Copyright (c) 2021 Viktor Vafeiadis, Jean Pichon-Pharabod
+Copyright (c) 2021 Viktor Vafeiadis
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
