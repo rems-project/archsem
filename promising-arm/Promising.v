@@ -6,14 +6,37 @@ From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
                         Events Execution.
 
 
-(* This file provides a definition of the Promising ARM model, as defined in
-   the corresponding PLDI'19 paper by Christopher Pulte, Jean Pichon-Pharabod,
-   Jeehoon Kang, Sung-Hwan Lee, Chung-Kil Hur *)
+(* This file provides a definition of the Promising ARM model, as defined in the
+   corresponding PLDI'19 paper by Christopher Pulte, Jean Pichon-Pharabod,
+   Jeehoon Kang, Sung-Hwan Lee, Chung-Kil Hur.
+
+   The main differences with the other implementation at
+   https://github.com/snu-sf/promising-arm are:
+
+   - The extra standard library used is stdpp (as this is intended to work with
+     Iris later)
+
+   - The language over which the model is defined is the Sail outcome language.
+     It is simulated as an assembly-like language with each instruction
+     modifying the PC at which the next instruction is fetched. Termination is
+     simulated by having the PC point to the instruct one-past-the-end of the
+     instruction array.
+
+   - This model is much more computational: All the inner thread execution is
+     computational, only the promising step is not.
+
+   Unfortunately all this changes made it so that very little code of the
+   previous implementation is reusable. I tried to keep the names of the
+   previous implementation when talking about the same object defined in the
+   paper.
+
+   Currently this implementation does not handle exclusive accesses,
+   acquire-release accesses, any other barrier than `dmb sy`. *)
 
 
 
-(* Decidable equality notation that use the EqDecision type class from stdpp*)
-Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity).
+(** Decidable equality notation that use the EqDecision type class from stdpp*)
+Notation "x == y" := (bool_decide (x = y)) (at level 70, no associativity).
 
 
 (** Functional pipe notation.
@@ -39,8 +62,8 @@ Defined.
 (* Utility functions that do not belong anywhere yet *)
 
 (** Update a function at a specific value *)
-Definition fupd {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
-  fun x : A => if k =? x then v else f x.
+Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
+  fun x : A => if k == x then v else f x.
 
 
 (** A list_remove version that uses the EqDecision typeclass *)
@@ -161,7 +184,7 @@ Module Loc.
     match FullAddress_paspace pa with
     | PAS_Secure => None
     | PAS_NonSecure =>
-        if Word.split2 49 3 (FullAddress_address pa) =? wzero 3 then
+        if Word.split2 49 3 (FullAddress_address pa) == wzero 3 then
           Some (Word.split1 49 3 (FullAddress_address pa))
         else None
     end.
@@ -238,7 +261,7 @@ Definition view := nat.
 
 
 (** The promising arm memory system. *)
-Module Mem.
+Module Memory.
 
   (* I'm using a simple list representation. The most recent write is the head
      of the list. *)
@@ -246,9 +269,9 @@ Module Mem.
 
   (** Definition of the memory numbering. So it can be used with the !! operator
    *)
-  Global Instance lookup_inst : Lookup nat Msg.t Mem.t :=
+  Global Instance lookup_inst : Lookup nat Msg.t Memory.t :=
     { lookup k mem :=
-      if k =? 0%nat then None
+      if k == 0%nat then None
       else
         let len := List.length mem in
         if (len <? k)%nat then
@@ -276,7 +299,7 @@ Module Mem.
     match mem with
     | [] => (0%nat, val_init)
     | msg :: mem' =>
-        if Msg.loc msg =? loc then
+        if Msg.loc msg == loc then
           (List.length mem, Msg.val msg)
         else read_last loc mem'
     end.
@@ -297,7 +320,7 @@ Module Mem.
     let first := mem |> cut_before v |> read_last loc in
     let lasts := mem |> cut_after v
                     |> with_views_from (List.length mem)
-                    |> filter (fun '(v, msg) => Msg.loc msg =? loc)
+                    |> filter (fun '(v, msg) => Msg.loc msg == loc)
                     |> map (fun '(v, msg) => (v, Msg.val msg))
     in
     lasts ++ [first].
@@ -310,16 +333,18 @@ Module Mem.
       oldest matching view is taken. This is because it can be proven that
       taking a more recent view, will make the previous promises unfulfillable
       and thus the corresponding executions would be discarded. TODO prove it.
-   *)
+      *)
   Definition fulfill (msg : Msg.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (fun t => Some msg =? mem !! t)
+    prom |> filter (fun t => Some msg == mem !! t)
          |> reverse
          |> head.
 
-End Mem.
+End Memory.
 
 
-(** The thread state *)
+(** The thread state.
+
+    This module was named `Local` in the original implementation. *)
 Module TState.
 
   Record t :=
@@ -351,11 +376,11 @@ Module TState.
 
   (** Sets the value of a register *)
   Definition set_reg (reg : register_name) (rv : regval * view) : t -> t
-    := set regs (fupd reg rv).
+    := set regs (fun_add reg rv).
 
   (** Sets the coherence view of a location *)
   Definition set_coh (loc : Loc.t) (v : view) : t -> t :=
-    set coh (fupd loc v).
+    set coh (fun_add loc v).
 
   (** Updates the coherence view of a location by taking the max of the new
       view and of the existing value *)
@@ -364,7 +389,7 @@ Module TState.
 
   (** Updates the forwarding database for a location. *)
   Definition set_fwdb (loc : Loc.t) (vs : view * view) : t -> t :=
-    set fwdb (fupd loc vs).
+    set fwdb (fun_add loc vs).
 
   (** Updates a view that from the state, by taking the max of new value and
       the current value.
@@ -385,14 +410,14 @@ End TState.
 
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
-Definition read_mem (loc : Loc.t) (vaddr : view) (ts : TState.t) (mem : Mem.t)
-  : Exec.t (TState.t * view * regval) :=
+Definition read_mem (loc : Loc.t) (vaddr : view) (ts : TState.t)
+           (mem : Memory.t) : Exec.t (TState.t * view * regval) :=
   let vpre := max vaddr (TState.rresp ts) in
   let vread := max vpre (TState.coh ts loc) in
-  let reads := Mem.read loc vread mem in
+  let reads := Memory.read loc vread mem in
   '(time, res) ← Exec.Results reads;
   let fwd := TState.fwdb ts loc in
-  let read_view := if fwd.1 =? time then fwd.2 else time in
+  let read_view := if fwd.1 == time then fwd.2 else time in
   let vpost := max vpre read_view in
   let ts := ts |> TState.update_coh loc vpost
                |> TState.update TState.rmax vpost
@@ -407,10 +432,10 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ts : TState.t) (mem : Mem.t)
     promise or discard the execution if this write can't fulfill any promises.
  *)
 Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view)
-           (vdata : view) (ts : TState.t) (mem : Mem.t) (data : regval)
+           (vdata : view) (ts : TState.t) (mem : Memory.t) (data : regval)
   : Exec.t (TState.t):=
   let msg := Msg.make tid loc data in
-  time ← Exec.discard_none $ Mem.fulfill msg (TState.prom ts) mem;
+  time ← Exec.discard_none $ Memory.fulfill msg (TState.prom ts) mem;
   let vpre := list_max [vaddr; vdata; TState.wresp ts; TState.vcap ts] in
   if (max vpre (TState.coh ts loc) <? time)%nat then
     ts |> set TState.prom (list_remove time)
@@ -479,7 +504,7 @@ End IIS.
 
     Only 8-bytes aligned accesses are supported. *)
 Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
-           (ts : TState.t) (mem : Mem.t) : Exec.t (IIS.t * TState.t * A) :=
+           (ts : TState.t) (mem : Memory.t) : Exec.t (IIS.t * TState.t * A) :=
   match o with
   | O_reg_write (Build_Reg_write reg val) =>
       let wr_view := IIS.wr_view iis in
@@ -535,7 +560,7 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
 (** Run an instruction as defined by the instruction_semantics type
     by using run_outcome on all produced outcomes *)
 Fixpoint run_inst (i : instruction_semantics) (iis : IIS.t) (tid : TID.t)
-         (ts : TState.t) (mem : Mem.t) : Exec.t (TState.t) :=
+         (ts : TState.t) (mem : Memory.t) : Exec.t (TState.t) :=
   match i with
   | ISFinished => Exec.ret ts
   | ISNext o next =>
@@ -548,14 +573,14 @@ Fixpoint run_inst (i : instruction_semantics) (iis : IIS.t) (tid : TID.t)
 
     This is a very hacky way of doing fetches but it will do for now. *)
 Definition inst_num_from_pc (pc : nat) : option nat :=
-  if (pc mod 4 =? 0)%nat then
+  if (pc mod 4 == 0)%nat then
     Some (pc / 4)%nat
   else None.
 
 
 (** Run a thread by fetching an instruction and then calling run_inst *)
 Definition run_thread (tid : TID.t) (tc :thread_code) (ts : TState.t)
-           (mem : Mem.t) : Exec.t (TState.t) :=
+           (mem : Memory.t) : Exec.t (TState.t) :=
   (
     instnum ← Exec.error_none "Unaligned PC" $ inst_num_from_pc $ TState.pc ts;
     inst ← Exec.error_none "Out of bound PC" $ tc !! instnum;
@@ -581,7 +606,7 @@ Definition thread_is_finished (tc : thread_code) (ts : TState.t) :=
 
  *)
 Definition thread_has_error (tid : TID.t) (tc : thread_code)  (ts : TState.t)
-           (mem : Mem.t) :=
+           (mem : Memory.t) :=
   ¬(thread_is_finished tc ts)
   /\ (exists err, run_thread tid tc ts mem = Exec.Error err)
   /\ TState.prom ts = nil.
@@ -590,42 +615,47 @@ Definition thread_has_error (tid : TID.t) (tc : thread_code)  (ts : TState.t)
 
 
 (** The full machine state of promising arm *)
-Definition mstate := (list TState.t * Mem.t)%type.
+Module Machine.
+
+  Definition t := (list TState.t * Memory.t)%type.
 
 
-(** Run the thread with id tid using a program in a certain machine state *)
-Definition run_thread_id (tid : TID.t) (prog : program) (m : mstate)
-  : Exec.t (mstate) :=
-  (
-    tc ← Exec.error_none "No Thread code" $ prog !! tid;
-    ts ← Exec.error_none "No Thread" $ m.1 !! tid;
-    ts ← run_thread tid tc ts m.2;
-    Exec.ret (list_set tid ts m.1, m.2)
-  ).
+  (** Run the thread with id tid using a program in a certain machine state *)
+  Definition run_id (tid : TID.t) (prog : program) (m : t)
+    : Exec.t t :=
+    (
+      tc ← Exec.error_none "No Thread code" $ prog !! tid;
+      ts ← Exec.error_none "No Thread" $ m.1 !! tid;
+      ts ← run_thread tid tc ts m.2;
+      Exec.ret (list_set tid ts m.1, m.2)
+    ).
 
 
 
-(** The steps of Promising ARM: Either make a promise or run some thread *)
-Inductive step (prog : program) (m :mstate) : mstate -> Prop :=
-| IPromise (msg : Msg.t) (ts :TState.t) :
-  m.1 !! (Msg.tid msg) = Some ts ->
-  let nts := TState.promise (List.length m.2 + 1)%nat ts in
-  step prog m (list_set (Msg.tid msg) nts  m.1 , msg :: m.2)
+  (** The steps of Promising ARM: Either make a promise or run some thread *)
+  Inductive step (prog : program) (m : t) : t -> Prop :=
+  | IPromise (msg : Msg.t) (ts :TState.t) :
+    m.1 !! (Msg.tid msg) = Some ts ->
+    let nts := TState.promise (List.length m.2 + 1)%nat ts in
+    step prog m (list_set (Msg.tid msg) nts  m.1 , msg :: m.2)
 
-| IRun (m' : mstate) (tid : TID.t) (l : list mstate)
-  : run_thread_id tid prog m = Exec.Results l
-    -> In m' l -> step prog m m'.
+  | IRun (m' : t) (tid : TID.t) (l : list t)
+    : run_id tid prog m = Exec.Results l
+      -> In m' l -> step prog m m'.
 
-(** Defines what it means for machine state to be an error state.
+  (** Defines what it means for machine state to be an error state.
     This definition will probably need to be tweaked. *)
-Definition mstate_has_error (prog : program) (m : mstate) :=
-  exists tid tc ts, prog !! tid = Some tc /\ m.1 !! tid = Some ts /\
-                      thread_has_error tid tc ts m.2.
-(** A machine state is final when all thread have properly finished *)
-Definition mstate_is_finished (prog : program) (m : mstate) : Prop :=
-  forall tid,
-    match prog !! tid with
-    | None => True
-    | Some tc => exists ts, m.1 !! tid = Some ts /\
-                              thread_is_finished tc ts
-    end.
+  Definition has_error (prog : program) (m : t) :=
+    exists tid tc ts, prog !! tid = Some tc /\ m.1 !! tid = Some ts /\
+                   thread_has_error tid tc ts m.2.
+
+  (** A machine state is final when all thread have properly finished *)
+  Definition is_finished (prog : program) (m : t) : Prop :=
+    forall tid,
+      match prog !! tid with
+      | None => True
+      | Some tc => exists ts, m.1 !! tid = Some ts /\
+                          thread_is_finished tc ts
+      end.
+
+End Machine.
