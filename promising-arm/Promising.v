@@ -47,7 +47,6 @@ Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
 
 
 
-
 (* Interface Equality decision for words (from bbv) *)
 Global Instance word_eq_dec n : EqDecision (word n).
 Proof.
@@ -56,7 +55,24 @@ Proof.
   auto using weq.
 Defined.
 
+(** Convert automatical a Decidable instance (Coq standard library) to
+    a Decision instance (stdpp)
 
+    TODO: Decide (no pun intended) if we actually want to use Decidable or
+    Decision in this development. *)
+Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P.
+Proof.
+  unfold Decision.
+  destruct dec as [p Spec].
+  destruct p.
+  - left.
+    apply Spec.
+    reflexivity.
+  - right.
+    intro.
+    apply Spec in H.
+    inversion H.
+Defined.
 
 
 (* Utility functions that do not belong anywhere yet *)
@@ -364,6 +380,7 @@ Module TState.
         wresp : view; (* The view all write must respect. vwnew in the paper *)
         wmax : view; (* The maximum view of a write. vwold in the paper *)
         vcap : view; (* control-flow + addr-po view *)
+        vrel : view; (* post view of the last write release *)
 
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
@@ -371,8 +388,8 @@ Module TState.
         fwdb : Loc.t -> view * view;
       }.
 
-  Instance eta : Settable _ := settable! make
-                               <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;fwdb>.
+  Instance eta : Settable _ :=
+    settable! make <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;vrel;fwdb>.
 
   (** Sets the value of a register *)
   Definition set_reg (reg : register_name) (rv : regval * view) : t -> t
@@ -399,6 +416,11 @@ Module TState.
              (v : view) : t -> t :=
     set acc (max v).
 
+  (** Updates two view in the same way as update. Purely for convenience *)
+  Definition update2 (acc1 acc2 : t -> view) {_: Setter acc1} {_: Setter acc2}
+             (v : view) : t -> t :=
+    (update acc1 v) ∘ (update acc2 v).
+
   (** Return a natural that correspond to the PC in that state *)
   Definition pc (s : t) : nat := wordToNat (regs s pc_reg).1.
 
@@ -407,21 +429,27 @@ Module TState.
 
 End TState.
 
-
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
-Definition read_mem (loc : Loc.t) (vaddr : view) (ts : TState.t)
-           (mem : Memory.t) : Exec.t (TState.t * view * regval) :=
+Definition read_mem (loc : Loc.t) (vaddr : view) (acs : Access_strength)
+           (ts : TState.t) (mem : Memory.t)
+  : Exec.t (TState.t * view * regval) :=
   let vpre := max vaddr (TState.rresp ts) in
+  let vpre :=
+    if acs == AS_Rel_or_Acq then max vpre (TState.vrel ts) else vpre in
   let vread := max vpre (TState.coh ts loc) in
   let reads := Memory.read loc vread mem in
   '(time, res) ← Exec.Results reads;
   let fwd := TState.fwdb ts loc in
   let read_view := if fwd.1 == time then fwd.2 else time in
   let vpost := max vpre read_view in
-  let ts := ts |> TState.update_coh loc vpost
+  let ts := ts |> TState.update_coh loc time
                |> TState.update TState.rmax vpost
                |> TState.update TState.vcap vaddr
+               |> if acs == AS_normal then id
+                  else (* Read acquire force the po-later access to be ordered
+                          after *)
+                    (TState.update2 TState.rmax TState.wmax vpost)
   in Exec.ret (ts, vpost, res).
 
 
@@ -431,18 +459,27 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ts : TState.t)
     This does not need to mutate the memory as it will only fulfill an existing
     promise or discard the execution if this write can't fulfill any promises.
  *)
-Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view)
-           (vdata : view) (ts : TState.t) (mem : Memory.t) (data : regval)
-  : Exec.t (TState.t):=
+Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
+           (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
+           (data : regval) : Exec.t (TState.t):=
   let msg := Msg.make tid loc data in
   time ← Exec.discard_none $ Memory.fulfill msg (TState.prom ts) mem;
   let vpre := list_max [vaddr; vdata; TState.wresp ts; TState.vcap ts] in
+  vpre ← (match acs with
+         | AS_normal => Exec.ret $ vpre
+         | AS_Rel_or_Acq =>
+             Exec.ret $ list_max[vpre; TState.wmax ts; TState.rmax ts]
+         | AS_AcqRCpc => Exec.Error "Weak write release"
+         end);
   if (max vpre (TState.coh ts loc) <? time)%nat then
     ts |> set TState.prom (list_remove time)
        |> TState.update_coh loc time
        |> TState.update TState.wmax time
        |> TState.update TState.vcap vaddr
        |> TState.set_fwdb loc (time, max vaddr vdata)
+       |> (if acs == AS_normal then id
+           else (* Mark the latest release to order later strong acquires*)
+             TState.update TState.vrel time)
        |> Exec.ret
   else
     Exec.discard.
@@ -516,21 +553,21 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
   | O_mem_read_request 8
       (Build_Mem_read_request
          _ _ _
-         (AK_explicit (Build_Explicit_access_kind AV_plain AS_normal))
+         (AK_explicit (Build_Explicit_access_kind AV_plain acs))
          None pa _ _) =>
       loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-      '(ts, time, val) ← read_mem loc (IIS.rread iis) ts mem;
+      '(ts, time, val) ← read_mem loc (IIS.rread iis) acs ts mem;
       Exec.ret (IIS.update IIS.mread time iis, ts, MR_value (val, None))
   | O_mem_write_request 8 wr =>
       match Mem_write_request_MW_access_kind wr with
-      | AK_explicit (Build_Explicit_access_kind AV_plain AS_normal) =>
+      | AK_explicit (Build_Explicit_access_kind AV_plain acs) =>
           let pa := Mem_write_request_MW_PA wr in
           let data := Mem_write_request_MW_value wr in
           loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-          ts ← write_mem tid loc (IIS.addr iis) (IIS.wr_view iis) ts mem data;
+          ts ← write_mem tid loc (IIS.addr iis) (IIS.wr_view iis) acs ts mem data;
           let iis := IIS.clear_rread iis in
           Exec.ret (iis, ts, MR_value None)
-      | _ => Exec.Error "Unsupported non-relaxed write"
+      | _ => Exec.Error "Unsupported non-explicit write"
       end
   | O_mem_write_announce_address 8 _ =>
       let iis :=
