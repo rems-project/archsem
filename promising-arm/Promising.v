@@ -31,7 +31,7 @@ From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
    paper.
 
    Currently this implementation does not handle exclusive accesses,
-   acquire-release accesses, any other barrier than `dmb sy`. *)
+   and acquire-release accesses *)
 
 
 
@@ -483,7 +483,6 @@ Module IIS.
 
 End IIS.
 
-
 (** Runs an outcome. This is where the main interface with outcomes is.
 
     The IIS is used in order to propagate view information through the outcomes.
@@ -519,22 +518,18 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
          _ _ _
          (AK_explicit (Build_Explicit_access_kind AV_plain AS_normal))
          None pa _ _) =>
-      (
-        loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-        '(ts, time, val) ← read_mem loc (IIS.rread iis) ts mem;
-        Exec.ret (IIS.update IIS.mread time iis, ts, MR_value (val, None))
-      )
+      loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
+      '(ts, time, val) ← read_mem loc (IIS.rread iis) ts mem;
+      Exec.ret (IIS.update IIS.mread time iis, ts, MR_value (val, None))
   | O_mem_write_request 8 wr =>
       match Mem_write_request_MW_access_kind wr with
       | AK_explicit (Build_Explicit_access_kind AV_plain AS_normal) =>
-          (
-            let pa := Mem_write_request_MW_PA wr in
-            let data := Mem_write_request_MW_value wr in
-            loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-            ts ← write_mem tid loc (IIS.addr iis) (IIS.wr_view iis) ts mem data;
-            let iis := IIS.clear_rread iis in
-            Exec.ret (iis, ts, MR_value None)
-          )
+          let pa := Mem_write_request_MW_PA wr in
+          let data := Mem_write_request_MW_value wr in
+          loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
+          ts ← write_mem tid loc (IIS.addr iis) (IIS.wr_view iis) ts mem data;
+          let iis := IIS.clear_rread iis in
+          Exec.ret (iis, ts, MR_value None)
       | _ => Exec.Error "Unsupported non-relaxed write"
       end
   | O_mem_write_announce_address 8 _ =>
@@ -546,12 +541,25 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
   | O_branch_announce_address _ =>
       let ts := TState.update TState.vcap (IIS.wr_view iis) ts in
       Exec.ret (iis, ts, ())
-  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_All)) => (* `dmb sy` only *)
+  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_All)) => (* dmb sy *)
       let v := max (TState.rmax ts) (TState.wmax ts) in
       let ts :=
         ts |> TState.update TState.rresp v
            |> TState.update TState.wresp v
       in
+      Exec.ret (iis, ts, ())
+  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Reads)) => (* dmb ld *)
+      let v := TState.rmax ts in
+      let ts :=
+        ts |> TState.update TState.rresp v
+           |> TState.update TState.wresp v
+      in
+      Exec.ret (iis, ts, ())
+  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Writes)) => (* dmb st *)
+      let ts := TState.update TState.wresp (TState.wmax ts) ts in
+      Exec.ret (iis, ts, ())
+  | O_barrier (BA_ISB ()) => (* isb *)
+      let ts := TState.update TState.rresp (TState.vcap ts) ts in
       Exec.ret (iis, ts, ())
   | _ => Exec.Error "Unsupported outcome"
   end.
@@ -581,11 +589,9 @@ Definition inst_num_from_pc (pc : nat) : option nat :=
 (** Run a thread by fetching an instruction and then calling run_inst *)
 Definition run_thread (tid : TID.t) (tc :thread_code) (ts : TState.t)
            (mem : Memory.t) : Exec.t (TState.t) :=
-  (
-    instnum ← Exec.error_none "Unaligned PC" $ inst_num_from_pc $ TState.pc ts;
-    inst ← Exec.error_none "Out of bound PC" $ tc !! instnum;
-    run_inst inst IIS.start tid ts mem
-  ).
+  instnum ← Exec.error_none "Unaligned PC" $ inst_num_from_pc $ TState.pc ts;
+  inst ← Exec.error_none "Out of bound PC" $ tc !! instnum;
+  run_inst inst IIS.start tid ts mem.
 
 (** Defines if a thread has finished execution in an ad-hoc way.
     A thread is finished if the PC is exactly one instruction beyond the end
@@ -623,12 +629,10 @@ Module Machine.
   (** Run the thread with id tid using a program in a certain machine state *)
   Definition run_id (tid : TID.t) (prog : program) (m : t)
     : Exec.t t :=
-    (
-      tc ← Exec.error_none "No Thread code" $ prog !! tid;
-      ts ← Exec.error_none "No Thread" $ m.1 !! tid;
-      ts ← run_thread tid tc ts m.2;
-      Exec.ret (list_set tid ts m.1, m.2)
-    ).
+    tc ← Exec.error_none "No Thread code" $ prog !! tid;
+    ts ← Exec.error_none "No Thread" $ m.1 !! tid;
+    ts ← run_thread tid tc ts m.2;
+    Exec.ret (list_set tid ts m.1, m.2).
 
 
 
@@ -646,8 +650,8 @@ Module Machine.
   (** Defines what it means for machine state to be an error state.
     This definition will probably need to be tweaked. *)
   Definition has_error (prog : program) (m : t) :=
-    exists tid tc ts, prog !! tid = Some tc /\ m.1 !! tid = Some ts /\
-                   thread_has_error tid tc ts m.2.
+    exists tid tc ts, prog !! tid = Some tc /\ m.1 !! tid = Some ts
+                 /\ thread_has_error tid tc ts m.2.
 
   (** A machine state is final when all thread have properly finished *)
   Definition is_finished (prog : program) (m : t) : Prop :=
