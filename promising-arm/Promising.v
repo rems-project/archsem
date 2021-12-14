@@ -3,7 +3,7 @@ From stdpp Require Import base strings.
 Require Import bbv.Word.
 Require Import Sail.Base.
 From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
-                        Events Execution.
+     Events Execution.
 
 
 (* This file provides a definition of the Promising ARM model, as defined in the
@@ -117,13 +117,22 @@ Module Exec.
   (** Monadic return *)
   Definition ret {A} (a : A) : t A := Results [a].
 
-  (** Take an option but convert None into an error *)
+  (** Takes an option but convert None into an error *)
   Definition error_none {A} (s : string) : option A -> t A :=
     from_option ret (Error s).
 
-  (** Take an option but convert None into a discard *)
+  (** Takes an option but convert None into a discard *)
   Definition discard_none {A} : option A -> t A :=
     from_option ret discard.
+
+  (** Returns an error if the condition is met *)
+  Definition fail_if (b : bool) (s : string) : t () :=
+    if b then Error s else ret ().
+
+  (** Discards the execution if the condition is not met *)
+  Definition assert (b : bool) : t () :=
+    if b then ret () else discard.
+
 
   (** Merge the results of two executions *)
   Definition merge {A} (e1 e2 : t A) :=
@@ -335,9 +344,9 @@ Module Memory.
     : list (view * regval) :=
     let first := mem |> cut_before v |> read_last loc in
     let lasts := mem |> cut_after v
-                    |> with_views_from (List.length mem)
-                    |> filter (fun '(v, msg) => Msg.loc msg == loc)
-                    |> map (fun '(v, msg) => (v, Msg.val msg))
+                     |> with_views_from (List.length mem)
+                     |> filter (fun '(v, msg) => Msg.loc msg == loc)
+                     |> map (fun '(v, msg) => (v, Msg.val msg))
     in
     lasts ++ [first].
 
@@ -354,6 +363,20 @@ Module Memory.
     prom |> filter (fun t => Some msg == mem !! t)
          |> reverse
          |> head.
+
+  (** Check that the write at the provided timestamp is indeed to that location
+      and that no write to that location have been made by any other thread *)
+  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool:=
+    match mem !! v with
+    | None => false
+    | Some msg =>
+        if Msg.loc msg == loc then
+          let tid := Msg.tid msg in
+          mem |> cut_after v
+              |> forallb (fun msg => (Msg.tid msg == tid)
+                                  || negb (Msg.loc msg == loc))
+        else false
+    end.
 
 End Memory.
 
@@ -386,10 +409,15 @@ Module TState.
            write while the second view is the max view of the dependencies
            of the write. *)
         fwdb : Loc.t -> view * view;
+
+        (* Exclusive database. If there was a recent load exclusive but the
+           corresponding store exclusive has not yet run, this will contain
+           the timestamp and post-view of the load exclusive*)
+        xclb : option (view * view);
       }.
 
   Instance eta : Settable _ :=
-    settable! make <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;vrel;fwdb>.
+    settable! make <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;vrel;fwdb;xclb>.
 
   (** Sets the value of a register *)
   Definition set_reg (reg : register_name) (rv : regval * view) : t -> t
@@ -407,6 +435,15 @@ Module TState.
   (** Updates the forwarding database for a location. *)
   Definition set_fwdb (loc : Loc.t) (vs : view * view) : t -> t :=
     set fwdb (fun_add loc vs).
+
+  (** Set the exclusive database to the timestamp and view of the latest
+      load exclusive *)
+  Definition set_xclb (vs : view * view) : t -> t :=
+    set xclb (fun _ => Some vs).
+
+  (** Clear the exclusive database, to mark a store exclusive *)
+  Definition clear_xclb : t -> t :=
+    set xclb (fun _ => None).
 
   (** Updates a view that from the state, by taking the max of new value and
       the current value.
@@ -431,9 +468,12 @@ End TState.
 
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
-Definition read_mem (loc : Loc.t) (vaddr : view) (acs : Access_strength)
+Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
            (ts : TState.t) (mem : Memory.t)
   : Exec.t (TState.t * view * regval) :=
+  let acs := Explicit_access_kind_EAK_strength ak in
+  let acv := Explicit_access_kind_EAK_variety ak in
+  Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
   let vpre := max vaddr (TState.rresp ts) in
   let vpre :=
     if acs == AS_Rel_or_Acq then max vpre (TState.vrel ts) else vpre in
@@ -443,13 +483,14 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (acs : Access_strength)
   let fwd := TState.fwdb ts loc in
   let read_view := if fwd.1 == time then fwd.2 else time in
   let vpost := max vpre read_view in
-  let ts := ts |> TState.update_coh loc time
-               |> TState.update TState.rmax vpost
-               |> TState.update TState.vcap vaddr
-               |> if acs == AS_normal then id
-                  else (* Read acquire force the po-later access to be ordered
-                          after *)
-                    (TState.update2 TState.rmax TState.wmax vpost)
+  let ts :=
+    ts |> TState.update_coh loc time
+       |> TState.update TState.rmax vpost
+       |> TState.update TState.vcap vaddr
+       |> (if acs == AS_normal then id
+           else (* Read acquire force the po-later access to be ordered after *)
+             TState.update2 TState.rmax TState.wmax vpost)
+       |> (if acv == AV_exclusive then TState.set_xclb (time, vpost) else id)
   in Exec.ret (ts, vpost, res).
 
 
@@ -461,7 +502,7 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (acs : Access_strength)
  *)
 Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
            (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
-           (data : regval) : Exec.t (TState.t):=
+           (data : regval) : Exec.t (TState.t * view):=
   let msg := Msg.make tid loc data in
   time ← Exec.discard_none $ Memory.fulfill msg (TState.prom ts) mem;
   let vpre := list_max [vaddr; vdata; TState.wresp ts; TState.vcap ts] in
@@ -471,7 +512,8 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
              Exec.ret $ list_max[vpre; TState.wmax ts; TState.rmax ts]
          | AS_AcqRCpc => Exec.Error "Weak write release"
          end);
-  if (max vpre (TState.coh ts loc) <? time)%nat then
+  Exec.assert (max vpre (TState.coh ts loc) <? time)%nat;;
+  let ts :=
     ts |> set TState.prom (list_remove time)
        |> TState.update_coh loc time
        |> TState.update TState.wmax time
@@ -480,11 +522,37 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
        |> (if acs == AS_normal then id
            else (* Mark the latest release to order later strong acquires*)
              TState.update TState.vrel time)
-       |> Exec.ret
+  in Exec.ret (ts, time).
+
+
+(** Tries to perform a memory write.
+
+    If the store is not exclusive, the write is always performed and the second
+    return value is None.
+
+    If the store is exclusive the write may succeed or fail and the second
+    return value indicate the success (true for success, false for error) *)
+Definition write_mem_or_fail (tid : TID.t) (loc : Loc.t) (vaddr : view)
+           (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
+           (mem : Memory.t) (data : regval) : Exec.t (TState.t * option bool):=
+  let acs := Explicit_access_kind_EAK_strength ak in
+  let acv := Explicit_access_kind_EAK_variety ak in
+  Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
+  let xcl := acv == AV_exclusive in
+  if xcl then
+    '(success : bool) (* Coq cannot infer bool *) ← Exec.Results [true; false];
+    if success then
+       '(ts,time) ← write_mem tid loc vaddr vdata acs ts mem data;
+       match TState.xclb ts with
+       | None => Exec.discard
+       | Some (xtime, xview) =>
+           Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
+       end;;
+       Exec.ret (TState.clear_xclb ts, Some true)
+    else Exec.ret (TState.clear_xclb ts, Some false)
   else
-    Exec.discard.
-
-
+    '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    Exec.ret (ts, None).
 
 
 (** Intra instruction state for propagating views inside an instruction *)
@@ -550,23 +618,23 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
       let (val, regt) := TState.regs ts reg in
       let iis := IIS.update IIS.rread regt iis in
       Exec.ret (iis, ts, val)
-  | O_mem_read_request 8
-      (Build_Mem_read_request
-         _ _ _
-         (AK_explicit (Build_Explicit_access_kind AV_plain acs))
-         None pa _ _) =>
+  | O_mem_read_request 8 (Build_Mem_read_request _ _ _
+                                                 (AK_explicit ak) None pa _ _) =>
       loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-      '(ts, time, val) ← read_mem loc (IIS.rread iis) acs ts mem;
+      '(ts, time, val) ← read_mem loc (IIS.rread iis) ak ts mem;
       Exec.ret (IIS.update IIS.mread time iis, ts, MR_value (val, None))
   | O_mem_write_request 8 wr =>
       match Mem_write_request_MW_access_kind wr with
-      | AK_explicit (Build_Explicit_access_kind AV_plain acs) =>
+      | AK_explicit ak =>
           let pa := Mem_write_request_MW_PA wr in
           let data := Mem_write_request_MW_value wr in
+          let vaddr := IIS.addr iis in
+          let vdata := IIS.wr_view iis in
           loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-          ts ← write_mem tid loc (IIS.addr iis) (IIS.wr_view iis) acs ts mem data;
+          '(ts, xlc_result) ←
+           write_mem_or_fail tid loc vaddr vdata ak ts mem data;
           let iis := IIS.clear_rread iis in
-          Exec.ret (iis, ts, MR_value None)
+          Exec.ret (iis, ts, MR_value xlc_result)
       | _ => Exec.Error "Unsupported non-explicit write"
       end
   | O_mem_write_announce_address 8 _ =>
@@ -693,10 +761,10 @@ Module Machine.
   (** A machine state is final when all thread have properly finished *)
   Definition is_finished (prog : program) (m : t) : Prop :=
     forall tid,
-      match prog !! tid with
-      | None => True
-      | Some tc => exists ts, m.1 !! tid = Some ts /\
-                          thread_is_finished tc ts
-      end.
+    match prog !! tid with
+    | None => True
+    | Some tc => exists ts, m.1 !! tid = Some ts /\
+                        thread_is_finished tc ts
+    end.
 
 End Machine.
