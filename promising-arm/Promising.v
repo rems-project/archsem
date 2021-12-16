@@ -407,8 +407,8 @@ Module TState.
 
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
-           of the write. *)
-        fwdb : Loc.t -> view * view;
+           of the write. The boolean marks if the store was an exclusive*)
+        fwdb : Loc.t -> view * view * bool;
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
@@ -433,7 +433,7 @@ Module TState.
     set_coh loc (max v (coh s loc)) s.
 
   (** Updates the forwarding database for a location. *)
-  Definition set_fwdb (loc : Loc.t) (vs : view * view) : t -> t :=
+  Definition set_fwdb (loc : Loc.t) (vs : view * view * bool) : t -> t :=
     set fwdb (fun_add loc vs).
 
   (** Set the exclusive database to the timestamp and view of the latest
@@ -481,7 +481,10 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
   let reads := Memory.read loc vread mem in
   '(time, res) ← Exec.Results reads;
   let fwd := TState.fwdb ts loc in
-  let read_view := if fwd.1 == time then fwd.2 else time in
+  let read_view :=
+    if (fwd.1.1 == time) && implb fwd.2 (acs == AS_normal)
+    then fwd.1.2
+    else time in
   let vpost := max vpre read_view in
   let ts :=
     ts |> TState.update_coh loc time
@@ -518,7 +521,6 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
        |> TState.update_coh loc time
        |> TState.update TState.wmax time
        |> TState.update TState.vcap vaddr
-       |> TState.set_fwdb loc (time, max vaddr vdata)
        |> (if acs == AS_normal then id
            else (* Mark the latest release to order later strong acquires*)
              TState.update TState.vrel time)
@@ -548,10 +550,12 @@ Definition write_mem_or_fail (tid : TID.t) (loc : Loc.t) (vaddr : view)
        | Some (xtime, xview) =>
            Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
        end;;
+       let ts := TState.set_fwdb loc (time, max vaddr vdata, true) ts in
        Exec.ret (TState.clear_xclb ts, Some true)
     else Exec.ret (TState.clear_xclb ts, Some false)
   else
     '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    let ts := TState.set_fwdb loc (time, max vaddr vdata, false) ts in
     Exec.ret (ts, None).
 
 
