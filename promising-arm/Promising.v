@@ -162,34 +162,6 @@ Module Exec.
       end }.
 End Exec.
 
-
-
-(** Representation of the semantics of an instruction as defined by sail.
-   I don't if that's the right interface. *)
-Inductive instruction_semantics :=
-| ISFinished : instruction_semantics
-| ISNext : forall {A : Type}, arm_outcome A -> (A -> instruction_semantics)
-                       -> instruction_semantics.
-
-(** The definition of a thread: a list of instruction *)
-Definition thread_code := list instruction_semantics.
-
-(** A program is just a list of thread. The position in the list determines the
-    ThreadId. *)
-Definition program := list thread_code.
-
-
-
-(** Definition of the pc_reg that chooses the next instruction to be fetched. I
-    fake ARM semantics here, so I fill divide it by 4 and use it as an index in
-    the thread_code list. The execution will fail is this does not work *)
-Definition pc_reg : register_name := "_PC".
-
-(** Initial value in all registers and memory locations *)
-Definition val_init : regval := wzero 64.
-
-
-
 (** This model only works for 8-bytes aligned location, as there
     in no support for mixed-sizes yet. Also all location are
     implicitly in the non-secure world.
@@ -243,6 +215,91 @@ Module Loc.
   Qed.
 
 End Loc.
+
+Module ReadRequest.
+  Record t := make {
+      addr : Loc.t;
+      addr_deps: list nat;
+      access_kind : Access_kind}.
+
+  Definition from_sail (mwr : Mem_read_request 8 vasize_ArmA pa_ArmA) : t.
+    (* I cannot do this without a extra description of dependencies *)
+    admit.
+    Admitted.
+
+End ReadRequest.
+
+Module WriteRequest.
+  Record t := make {
+      addr : Loc.t;
+      addr_deps: list nat;
+      data : regval;
+      data_deps : list nat;
+      access_kind : Access_kind}.
+
+  Definition from_sail (mwr : Mem_write_request 8 vasize_ArmA pa_ArmA) : t.
+    (* I cannot do this without a extra description of dependencies *)
+    admit.
+    Admitted.
+
+End WriteRequest.
+
+Module Outcome.
+
+  Inductive t : Type -> Type :=
+  (* Reads a value and returns it *)
+  | MemRead : ReadRequest.t -> t regval
+  (* Write a value to memory. If the requested write was exclusive and this
+   was no possible, this execution is aborted. It expected of instruction
+   to handle the possible failure themselves.
+   *)
+  | MemWrite : WriteRequest.t -> t unit
+  | Branch : regval -> list nat -> t unit
+  | Barrier : barrier_ArmA -> t unit
+  | RegRead : register_name -> t regval
+  | RegWrite : register_name -> regval -> list nat -> t unit
+  | Choose (n : nat) : t (word n)
+  | Fail : string -> t False.
+
+End Outcome.
+
+(** Representation of the semantics of an instruction as defined by sail.
+   I don't if that's the right interface. *)
+Inductive instruction_semantics :=
+| ISFinished : instruction_semantics
+| ISNext : forall {A : Type}, arm_outcome A -> (A -> instruction_semantics)
+                       -> instruction_semantics.
+
+
+Module Inst.
+  Inductive t :=
+  | Finished : t
+  | Next : forall {A : Type}, Outcome.t A -> (A -> t) -> t.
+
+  Definition from_sail  (is : instruction_semantics) : t.
+    (* I cannot do this without a extra description of dependencies *)
+  admit.
+  Admitted.
+End Inst.
+
+
+(** The definition of a thread: a list of instruction *)
+Definition thread_code := list Inst.t.
+
+(** A program is just a list of thread. The position in the list determines the
+    ThreadId. *)
+Definition program := list thread_code.
+
+
+
+(** Definition of the pc_reg that chooses the next instruction to be fetched. I
+    fake ARM semantics here, so I fill divide it by 4 and use it as an index in
+    the thread_code list. The execution will fail is this does not work *)
+Definition pc_reg : register_name := "_PC".
+
+(** Initial value in all registers and memory locations *)
+Definition val_init : regval := wzero 64.
+
 
 
 
@@ -534,140 +591,94 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
 
     If the store is exclusive the write may succeed or fail and the second
     return value indicate the success (true for success, false for error) *)
-Definition write_mem_or_fail (tid : TID.t) (loc : Loc.t) (vaddr : view)
+Definition write_mem_xcl (tid : TID.t) (loc : Loc.t) (vaddr : view)
            (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
-           (mem : Memory.t) (data : regval) : Exec.t (TState.t * option bool):=
+           (mem : Memory.t) (data : regval) : Exec.t (TState.t):=
   let acs := Explicit_access_kind_EAK_strength ak in
   let acv := Explicit_access_kind_EAK_variety ak in
   Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
   let xcl := acv == AV_exclusive in
   if xcl then
-    '(success : bool) (* Coq cannot infer bool *) ← Exec.Results [true; false];
-    if success then
-       '(ts,time) ← write_mem tid loc vaddr vdata acs ts mem data;
-       match TState.xclb ts with
-       | None => Exec.discard
-       | Some (xtime, xview) =>
-           Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
-       end;;
-       let ts := TState.set_fwdb loc (time, max vaddr vdata, true) ts in
-       Exec.ret (TState.clear_xclb ts, Some true)
-    else Exec.ret (TState.clear_xclb ts, Some false)
+    '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    match TState.xclb ts with
+    | None => Exec.discard
+    | Some (xtime, xview) =>
+        Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
+    end;;
+    let ts := TState.set_fwdb loc (time, max vaddr vdata, true) ts in
+    Exec.ret (TState.clear_xclb ts)
   else
     '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
     let ts := TState.set_fwdb loc (time, max vaddr vdata, false) ts in
-    Exec.ret (ts, None).
+    Exec.ret ts.
 
 
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
-  Record t :=
-    make {
-        rread : view; (* Max view from register reads *)
-        mread : view; (* Max view from memory reads *)
-        addr : view; (* View of the address dependency *)
-      }.
+  Definition t := list view.
 
-  Instance eta : Settable _ := settable! make
-                               <rread;mread;addr>.
 
-  (** The view to used when writing a register *)
-  Definition wr_view (iis : t) :=
-    max (rread iis) (mread iis).
+  Definition start : t := [].
 
-  (** Clear the rread view on dependency category change, i.e after a write
-      announce. *)
-  Definition clear_rread : t -> t :=
-    set rread (fun _ => 0%nat).
+  Definition from_deps (deps : list nat) : t -> view.
+    admit.
+    Admitted.
 
-  (** Initial IIS.t at the start of an instruction *)
-  Definition start := (make 0 0 0)%nat.
+  Definition add_dep (v : view) : t -> t.
+    admit.
+    Admitted.
 
-  (** Updates a view that from the intra-instruction state, by taking the max of
-      new value and the current value. *)
-  Definition update (acc : t -> view) {_: Setter acc}
-             (v : view) : t -> t :=
-    set acc (max v).
 
 End IIS.
 
-(** Runs an outcome. This is where the main interface with outcomes is.
-
-    The IIS is used in order to propagate view information through the outcomes.
-
-    A set of convention is used:
-    - There is only one address dependency per instructions.
-      This is because all outcomes use the same address at various constant
-      offsets
-    - The address dependency cannot depend on a memory read by the same
-      instruction, a memory read can only be used for data dependency for
-      RMW instructions.
-    - Any register read before a write_announce are part of the address
-      dependency. The one after are part of the data dependency.
-
-    This code is designed to work well for simple instructions but will probably
-    be wrong on lots of edge-case. Unfortunately there is no clearer way of
-    extracting dependencies from outcomes at the moment.
-
-    Only 8-bytes aligned accesses are supported. *)
-Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
+(** Runs an outcome. *)
+Definition run_outcome {A} (tid : TID.t) (o : Outcome.t A) (iis : IIS.t)
            (ts : TState.t) (mem : Memory.t) : Exec.t (IIS.t * TState.t * A) :=
   match o with
-  | O_reg_write (Build_Reg_write reg val) =>
-      let wr_view := IIS.wr_view iis in
+  | Outcome.RegWrite reg val deps =>
+      let wr_view := IIS.from_deps deps iis in
       let ts := TState.set_reg reg (val, wr_view) ts in
       Exec.ret (iis, ts, ())
-  | O_reg_read_request reg =>
-      let (val, regt) := TState.regs ts reg in
-      let iis := IIS.update IIS.rread regt iis in
+  | Outcome.RegRead reg =>
+      let (val, view) := TState.regs ts reg in
+      let iis := IIS.add_dep view iis in
       Exec.ret (iis, ts, val)
-  | O_mem_read_request 8 (Build_Mem_read_request _ _ _
-                                                 (AK_explicit ak) None pa _ _) =>
-      loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-      '(ts, time, val) ← read_mem loc (IIS.rread iis) ak ts mem;
-      Exec.ret (IIS.update IIS.mread time iis, ts, MR_value (val, None))
-  | O_mem_write_request 8 wr =>
-      match Mem_write_request_MW_access_kind wr with
+  | Outcome.MemRead (ReadRequest.make addr addr_deps (AK_explicit ak)) =>
+      '(ts, time, val) ← read_mem addr (IIS.from_deps addr_deps iis) ak ts mem;
+      Exec.ret (IIS.add_dep time iis, ts, val)
+  | Outcome.MemWrite wr =>
+      match WriteRequest.access_kind wr with
       | AK_explicit ak =>
-          let pa := Mem_write_request_MW_PA wr in
-          let data := Mem_write_request_MW_value wr in
-          let vaddr := IIS.addr iis in
-          let vdata := IIS.wr_view iis in
-          loc ← Exec.error_none "Invalid address" $ Loc.from_pa pa;
-          '(ts, xlc_result) ←
-           write_mem_or_fail tid loc vaddr vdata ak ts mem data;
-          let iis := IIS.clear_rread iis in
-          Exec.ret (iis, ts, MR_value xlc_result)
+          let addr := WriteRequest.addr wr in
+          let data := WriteRequest.data wr in
+          let vaddr := IIS.from_deps (WriteRequest.addr_deps wr) iis in
+          let vdata := IIS.from_deps (WriteRequest.data_deps wr) iis in
+          ts ← write_mem_xcl tid addr vaddr vdata ak ts mem data;
+          Exec.ret (iis, ts, ())
       | _ => Exec.Error "Unsupported non-explicit write"
       end
-  | O_mem_write_announce_address 8 _ =>
-      let iis :=
-        iis |> IIS.update IIS.addr (IIS.rread iis)
-            |> IIS.clear_rread
-      in
+  | Outcome.Branch _ deps =>
+      let ts := TState.update TState.vcap (IIS.from_deps deps iis) ts in
       Exec.ret (iis, ts, ())
-  | O_branch_announce_address _ =>
-      let ts := TState.update TState.vcap (IIS.wr_view iis) ts in
-      Exec.ret (iis, ts, ())
-  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_All)) => (* dmb sy *)
+  | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_All)) => (* dmb sy *)
       let v := max (TState.rmax ts) (TState.wmax ts) in
       let ts :=
         ts |> TState.update TState.rresp v
            |> TState.update TState.wresp v
       in
       Exec.ret (iis, ts, ())
-  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Reads)) => (* dmb ld *)
+  | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Reads)) => (* dmb ld *)
       let v := TState.rmax ts in
       let ts :=
         ts |> TState.update TState.rresp v
            |> TState.update TState.wresp v
       in
       Exec.ret (iis, ts, ())
-  | O_barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Writes)) => (* dmb st *)
+  | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Writes)) => (* dmb st *)
       let ts := TState.update TState.wresp (TState.wmax ts) ts in
       Exec.ret (iis, ts, ())
-  | O_barrier (BA_ISB ()) => (* isb *)
+  | Outcome.Barrier (BA_ISB ()) => (* isb *)
       let ts := TState.update TState.rresp (TState.vcap ts) ts in
       Exec.ret (iis, ts, ())
   | _ => Exec.Error "Unsupported outcome"
@@ -676,11 +687,11 @@ Definition run_outcome {A} (tid : TID.t) (o : arm_outcome A) (iis : IIS.t)
 
 (** Run an instruction as defined by the instruction_semantics type
     by using run_outcome on all produced outcomes *)
-Fixpoint run_inst (i : instruction_semantics) (iis : IIS.t) (tid : TID.t)
+Fixpoint run_inst (i : Inst.t) (iis : IIS.t) (tid : TID.t)
          (ts : TState.t) (mem : Memory.t) : Exec.t (TState.t) :=
   match i with
-  | ISFinished => Exec.ret ts
-  | ISNext o next =>
+  | Inst.Finished => Exec.ret ts
+  | Inst.Next o next =>
       '(iis, ts, res) ← run_outcome tid o iis ts mem;
       run_inst (next res) iis tid ts mem
   end.
