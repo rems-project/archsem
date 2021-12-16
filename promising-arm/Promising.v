@@ -216,10 +216,21 @@ Module Loc.
 
 End Loc.
 
+(** In the remaining code, dependencies are represented as a list of naturals
+    When running an instruction, each action that produces a dependency is
+    numbered. Such actions include reading a register or producing a value from
+    memory
+
+    See Outcome.produces_dependency
+ *)
+Definition dependencies := list nat.
+
+
+(** A request for a memory read *)
 Module ReadRequest.
   Record t := make {
       addr : Loc.t;
-      addr_deps: list nat;
+      addr_deps: dependencies;
       access_kind : Access_kind}.
 
   Definition from_sail (mwr : Mem_read_request 8 vasize_ArmA pa_ArmA) : t.
@@ -229,12 +240,13 @@ Module ReadRequest.
 
 End ReadRequest.
 
+(** A request for a memory write *)
 Module WriteRequest.
   Record t := make {
       addr : Loc.t;
-      addr_deps: list nat;
+      addr_deps: dependencies;
       data : regval;
-      data_deps : list nat;
+      data_deps : dependencies;
       access_kind : Access_kind}.
 
   Definition from_sail (mwr : Mem_write_request 8 vasize_ArmA pa_ArmA) : t.
@@ -244,22 +256,45 @@ Module WriteRequest.
 
 End WriteRequest.
 
+(** This model has a custom outcome type that provides explicit dependency
+    information.
+
+    This outcome type also restrict behaviors to what the model supports.
+    If you are translation from another semantics to this one and the
+    semantics isn't in this type, it isn't supported by the model.
+    In which case you should use Fail with an appropriate error message. *)
 Module Outcome.
 
   Inductive t : Type -> Type :=
-  (* Reads a value and returns it *)
+  (* Reads a value and returns it. Creates a new possible dependency on the read
+     value that other outcome can depend on. *)
   | MemRead : ReadRequest.t -> t regval
-  (* Write a value to memory. If the requested write was exclusive and this
-   was no possible, this execution is aborted. It expected of instruction
-   to handle the possible failure themselves.
-   *)
+  (* Writes a value to memory. If the requested write was exclusive and this was
+   no possible, this execution is aborted. It expected of instruction to handle
+   the possible failure themselves. *)
   | MemWrite : WriteRequest.t -> t unit
-  | Branch : regval -> list nat -> t unit
+  (* Signals a non trivial branching instruction. This means that this branch
+     create a control-flow dependency to a set of dependencies as specified in
+     the second field. The first value is the new target. *)
+  | Branch : regval -> dependencies -> t unit
+  (* An ARM barrier *)
   | Barrier : barrier_ArmA -> t unit
+  (* Reads a register. Creates a new possible dependency that other outcome can
+     depend on.*)
   | RegRead : register_name -> t regval
-  | RegWrite : register_name -> regval -> list nat -> t unit
+  (* Writes a register. Provides the set of values this write depends on *)
+  | RegWrite : register_name -> regval -> dependencies -> t unit
+  (* Chooses non deterministically a bit vector of a certain size *)
   | Choose (n : nat) : t (word n)
+  (* Fails with an error message *)
   | Fail : string -> t False.
+
+  Definition produces_dependency {A : Type} (o : t A) : bool :=
+    match o with
+    | MemRead _ => true
+    | RegRead _ => true
+    | _ => false
+    end.
 
 End Outcome.
 
@@ -271,6 +306,10 @@ Inductive instruction_semantics :=
                        -> instruction_semantics.
 
 
+(** The semantics of instruction with the new outcome type
+
+    TODO: Presenting this as a monad will ease the writing of custom
+    instructions *)
 Module Inst.
   Inductive t :=
   | Finished : t
@@ -286,7 +325,7 @@ End Inst.
 (** The definition of a thread: a list of instruction *)
 Definition thread_code := list Inst.t.
 
-(** A program is just a list of thread. The position in the list determines the
+(** A program is just a list of threads. The position in the list determines the
     ThreadId. *)
 Definition program := list thread_code.
 
@@ -621,14 +660,16 @@ Module IIS.
 
   Definition start : t := [].
 
-  Definition from_deps (deps : list nat) : t -> view.
-    admit.
-    Admitted.
+  Check List.fold_left.
 
-  Definition add_dep (v : view) : t -> t.
-    admit.
-    Admitted.
+  Definition from_deps (deps : list nat) (iis : t) : view :=
+   List.fold_left (fun v dep => match iis !! dep with
+                                  | Some v' => max v v'
+                                  | None => v end) deps 0%nat.
 
+
+  Definition add_dep (v : view) (iis :t) : t :=
+    (iis ++ [v])%list.
 
 End IIS.
 
