@@ -1,11 +1,3 @@
-From RecordUpdate Require Import RecordSet.
-From stdpp Require Import base strings.
-Require Import bbv.Word.
-Require Import Sail.Base.
-From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
-     Events Execution.
-
-
 (* This file provides a definition of the Promising ARM model, as defined in the
    corresponding PLDI'19 paper by Christopher Pulte, Jean Pichon-Pharabod,
    Jeehoon Kang, Sung-Hwan Lee, Chung-Kil Hur.
@@ -33,134 +25,20 @@ From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
    Currently this implementation does not handle exclusive accesses,
    and acquire-release accesses *)
 
-
-
-(** Decidable equality notation that use the EqDecision type class from stdpp*)
-Notation "x == y" := (bool_decide (x = y)) (at level 70, no associativity).
-
-
-(** Functional pipe notation.
-
-    TODO figure out a correct parsing level. Currently is just below relation so
-    that a = b |> f will be parsed as a = (b |> f). *)
-Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
-
-
-
-(* Interface Equality decision for words (from bbv) *)
-Global Instance word_eq_dec n : EqDecision (word n).
-Proof.
-  unfold EqDecision.
-  unfold Decision.
-  auto using weq.
-Defined.
-
-(** Convert automatical a Decidable instance (Coq standard library) to
-    a Decision instance (stdpp)
-
-    TODO: Decide (no pun intended) if we actually want to use Decidable or
-    Decision in this development. *)
-Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P.
-Proof.
-  unfold Decision.
-  destruct dec as [p Spec].
-  destruct p.
-  - left.
-    apply Spec.
-    reflexivity.
-  - right.
-    intro.
-    apply Spec in H.
-    inversion H.
-Defined.
-
-
-(* Utility functions that do not belong anywhere yet *)
-
-(** Update a function at a specific value *)
-Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
-  fun x : A => if k == x then v else f x.
-
-
-(** A list_remove version that uses the EqDecision typeclass *)
-Definition list_remove `{EqDecision A} :=
-  List.remove (decide_rel (=@{A})).
-
-
-(** I couldn't find this in the standard library but there should be something
-somewhere. I can't be the first one to need that.*)
-Fixpoint list_set {A} (n : nat) (v : A) (l : list A) :=
-  match l, n with
-  | nil, _ => nil
-  | h :: t, 0%nat => v :: t
-  | h :: t, S m => h :: (list_set m v t)
-  end.
+From Hammer Require Import Tactics.
+Require Import Common.
+Require Import PRelations.
+Require Exec.
+Import Exec.Tactics.
+Require Import Sail.Base.
+From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
+     Events Execution.
 
 
 
 
-(** Execution module: Either a named error or a lists of possible outputs.
-
-    This is used to represent non-deterministic but computational execution that
-    may fail. *)
-Module Exec.
-
-  Inductive t (A : Type) :=
-  | Error : string -> t A
-  | Results : list A -> t A.
-  Arguments Error {_} _.
-  Arguments Results {_} _.
-
-  (** Means that this execution has no output and may be safely discarded.*)
-  Definition discard {A} : t A := Results [].
-
-  (** Monadic return *)
-  Definition ret {A} (a : A) : t A := Results [a].
-
-  (** Takes an option but convert None into an error *)
-  Definition error_none {A} (s : string) : option A -> t A :=
-    from_option ret (Error s).
-
-  (** Takes an option but convert None into a discard *)
-  Definition discard_none {A} : option A -> t A :=
-    from_option ret discard.
-
-  (** Returns an error if the condition is met *)
-  Definition fail_if (b : bool) (s : string) : t () :=
-    if b then Error s else ret ().
-
-  (** Discards the execution if the condition is not met *)
-  Definition assert (b : bool) : t () :=
-    if b then ret () else discard.
 
 
-  (** Merge the results of two executions *)
-  Definition merge {A} (e1 e2 : t A) :=
-    match e1 with
-    | Error s => Error s
-    | Results l =>
-      match e2 with
-      | Error s => Error s
-      | Results l' => Results (l ++ l')
-      end
-    end.
-
-  Global Instance mret_inst : MRet t := { mret A := ret }.
-
-  Global Instance mbind_inst : MBind t :=
-    { mbind _ _ f x :=
-      match x with
-      | Error s => Error s
-      | Results l => foldl merge discard (f <$> l)
-      end }.
-
-  Global Instance fmap_inst : FMap t :=
-    { fmap _ _  f x :=
-      match x with
-      | Error s => Error s
-      | Results l => Results (f <$> l)
-      end }.
-End Exec.
 
 (** This model only works for 8-bytes aligned location, as there
     in no support for mixed-sizes yet. Also all location are
@@ -190,28 +68,15 @@ Module Loc.
     from_pa pa = Some loc -> to_pa loc = pa.
     Opaque Word.split2.
     Opaque Word.split1.
-    intro H.
-    destruct pa as [paspace addr].
-    destruct paspace; [| done].
-    unfold from_pa in H.
-    simpl in H.
-    case_bool_decide as He; [| done].
-    unfold to_pa.
-    f_equal.
-    inversion H as [Hloc].
-    rewrite <- He.
-    autorewrite with core using reflexivity.
+    unfold from_pa,to_pa.
+    sauto lb:on db:core.
   Qed.
 
   Lemma from_to_pa (loc : t) : from_pa (to_pa loc) = Some loc.
     Opaque Word.split2.
     Opaque Word.split1.
-    unfold to_pa.
-    unfold from_pa.
-    simpl.
-    case_bool_decide as H.
-    - autorewrite with core using done.
-    - autorewrite with core in *. done.
+    unfold from_pa,to_pa.
+    sauto lb:on db:core.
   Qed.
 
 End Loc.
@@ -566,7 +431,7 @@ End TState.
     states with the timestamp and value of the read *)
 Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
            (ts : TState.t) (mem : Memory.t)
-  : Exec.t (TState.t * view * regval) :=
+  : Exec.t string (TState.t * view * regval) :=
   let acs := Explicit_access_kind_EAK_strength ak in
   let acv := Explicit_access_kind_EAK_variety ak in
   Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
@@ -592,18 +457,19 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
        |> (if acv == AV_exclusive then TState.set_xclb (time, vpost) else id)
   in Exec.ret (ts, vpost, res).
 
-
 (** Performs a memory write for a thread tid at a location loc with view
     vaddr and vdata. Return the new state.
 
-    This does not need to mutate the memory as it will only fulfill an existing
-    promise or discard the execution if this write can't fulfill any promises.
- *)
+    This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
            (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
-           (data : regval) : Exec.t (TState.t * view):=
+           (data : regval) : Exec.t string (TState.t * Memory.t * view):=
   let msg := Msg.make tid loc data in
-  time ← Exec.discard_none $ Memory.fulfill msg (TState.prom ts) mem;
+  let '(time, mem) :=
+    match Memory.fulfill msg (TState.prom ts) mem with
+    | Some t => (t, mem)
+    | None => Memory.promise msg mem
+    end in
   let vpre := list_max [vaddr; vdata; TState.wresp ts; TState.vcap ts] in
   vpre ← (match acs with
          | AS_normal => Exec.ret $ vpre
@@ -620,7 +486,7 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
        |> (if acs == AS_normal then id
            else (* Mark the latest release to order later strong acquires*)
              TState.update TState.vrel time)
-  in Exec.ret (ts, time).
+  in Exec.ret (ts, mem, time).
 
 
 (** Tries to perform a memory write.
@@ -632,24 +498,25 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : TID.t) (loc : Loc.t) (vaddr : view)
            (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
-           (mem : Memory.t) (data : regval) : Exec.t (TState.t):=
+           (mem : Memory.t) (data : regval)
+  : Exec.t string (TState.t * Memory.t):=
   let acs := Explicit_access_kind_EAK_strength ak in
   let acv := Explicit_access_kind_EAK_variety ak in
   Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
   let xcl := acv == AV_exclusive in
   if xcl then
-    '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
     match TState.xclb ts with
     | None => Exec.discard
     | Some (xtime, xview) =>
         Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
     end;;
     let ts := TState.set_fwdb loc (time, max vaddr vdata, true) ts in
-    Exec.ret (TState.clear_xclb ts)
+    Exec.ret (TState.clear_xclb ts, mem)
   else
-    '(ts, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
     let ts := TState.set_fwdb loc (time, max vaddr vdata, false) ts in
-    Exec.ret ts.
+    Exec.ret (ts, mem).
 
 
 (** Intra instruction state for propagating views inside an instruction *)
@@ -675,19 +542,20 @@ End IIS.
 
 (** Runs an outcome. *)
 Definition run_outcome {A} (tid : TID.t) (o : Outcome.t A) (iis : IIS.t)
-           (ts : TState.t) (mem : Memory.t) : Exec.t (IIS.t * TState.t * A) :=
+           (ts : TState.t) (mem : Memory.t)
+  : Exec.t string (IIS.t * TState.t * Memory.t * A) :=
   match o with
   | Outcome.RegWrite reg val deps =>
       let wr_view := IIS.from_deps deps iis in
       let ts := TState.set_reg reg (val, wr_view) ts in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | Outcome.RegRead reg =>
       let (val, view) := TState.regs ts reg in
       let iis := IIS.add_dep view iis in
-      Exec.ret (iis, ts, val)
+      Exec.ret (iis, ts, mem, val)
   | Outcome.MemRead (ReadRequest.make addr addr_deps (AK_explicit ak)) =>
       '(ts, time, val) ← read_mem addr (IIS.from_deps addr_deps iis) ak ts mem;
-      Exec.ret (IIS.add_dep time iis, ts, val)
+      Exec.ret (IIS.add_dep time iis, ts, mem, val)
   | Outcome.MemWrite wr =>
       match WriteRequest.access_kind wr with
       | AK_explicit ak =>
@@ -695,48 +563,47 @@ Definition run_outcome {A} (tid : TID.t) (o : Outcome.t A) (iis : IIS.t)
           let data := WriteRequest.data wr in
           let vaddr := IIS.from_deps (WriteRequest.addr_deps wr) iis in
           let vdata := IIS.from_deps (WriteRequest.data_deps wr) iis in
-          ts ← write_mem_xcl tid addr vaddr vdata ak ts mem data;
-          Exec.ret (iis, ts, ())
+          '(ts, mem) ← write_mem_xcl tid addr vaddr vdata ak ts mem data;
+          Exec.ret (iis, ts, mem, ())
       | _ => Exec.Error "Unsupported non-explicit write"
       end
   | Outcome.Branch _ deps =>
       let ts := TState.update TState.vcap (IIS.from_deps deps iis) ts in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_All)) => (* dmb sy *)
       let v := max (TState.rmax ts) (TState.wmax ts) in
       let ts :=
         ts |> TState.update TState.rresp v
            |> TState.update TState.wresp v
       in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Reads)) => (* dmb ld *)
       let v := TState.rmax ts in
       let ts :=
         ts |> TState.update TState.rresp v
            |> TState.update TState.wresp v
       in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | Outcome.Barrier (BA_DxB (Build_DxB DMB _ MBReqTypes_Writes)) => (* dmb st *)
       let ts := TState.update TState.wresp (TState.wmax ts) ts in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | Outcome.Barrier (BA_ISB ()) => (* isb *)
       let ts := TState.update TState.rresp (TState.vcap ts) ts in
-      Exec.ret (iis, ts, ())
+      Exec.ret (iis, ts, mem, ())
   | _ => Exec.Error "Unsupported outcome"
   end.
 
-
-(** Run an instruction as defined by the instruction_semantics type
-    by using run_outcome on all produced outcomes *)
+(** Runs an instruction as defined by the instruction_semantics type by using
+    run_outcome on all produced outcomes.*)
 Fixpoint run_inst (i : Inst.t) (iis : IIS.t) (tid : TID.t)
-         (ts : TState.t) (mem : Memory.t) : Exec.t (TState.t) :=
+         (ts : TState.t) (mem : Memory.t)
+  : Exec.t string (TState.t * Memory.t) :=
   match i with
-  | Inst.Finished => Exec.ret ts
+  | Inst.Finished => Exec.ret (ts, mem)
   | Inst.Next o next =>
-      '(iis, ts, res) ← run_outcome tid o iis ts mem;
+      '(iis, ts, mem, res) ← run_outcome tid o iis ts mem;
       run_inst (next res) iis tid ts mem
   end.
-
 
 (** Get the instruction number in the thread_code list from the pc.
 
@@ -746,38 +613,115 @@ Definition inst_num_from_pc (pc : nat) : option nat :=
     Some (pc / 4)%nat
   else None.
 
+Module Thread.
+  Record t :=
+    make {
+        tid : TID.t;
+        code : thread_code;
+        state : TState.t;
+        mem : Memory.t
+      }.
+  Instance eta : Settable _ :=
+    settable! make <tid; code; state; mem>.
 
-(** Run a thread by fetching an instruction and then calling run_inst *)
-Definition run_thread (tid : TID.t) (tc :thread_code) (ts : TState.t)
-           (mem : Memory.t) : Exec.t (TState.t) :=
-  instnum ← Exec.error_none "Unaligned PC" $ inst_num_from_pc $ TState.pc ts;
-  inst ← Exec.error_none "Out of bound PC" $ tc !! instnum;
-  run_inst inst IIS.start tid ts mem.
+  (** Run a thread by fetching an instruction and then calling run_inst. *)
+  Definition run (thr : t) : Exec.t string t :=
+    instnum ← Exec.error_none "Unaligned PC" $ inst_num_from_pc $
+            TState.pc $ state thr;
+    inst ← Exec.error_none "Out of bound PC" $ (code thr) !! instnum;
+    '(ts, mem) ← run_inst inst IIS.start (tid thr) (state thr) (mem thr);
+    Exec.ret {|tid := tid thr; code := code thr; state := ts; mem := mem|}.
 
-(** Defines if a thread has finished execution in an ad-hoc way.
-    A thread is finished if the PC is exactly one instruction beyond the end
-    of the thread_code and if there is not outstanding promises. *)
-Definition thread_is_finished (tc : thread_code) (ts : TState.t) :=
-  (TState.pc ts = 4 * List.length tc)%nat /\ TState.prom ts = nil.
+  Lemma run_tid thr thr' :
+    Exec.In thr' (run thr) -> tid thr' = tid thr.
+  Proof. unfold run. hauto simp+:exec_simp. Qed.
 
-(** Defines if a thread has reached an error state (depends on memory)
-    A thread has reached an error state if is has not finished but running it
-    raise an error. It must also not have any outstanding promises.
+  Lemma run_code thr thr' :
+    Exec.In thr' (run thr) -> code thr' = code thr.
+  Proof. unfold run. hauto simp+:exec_simp. Qed.
 
-    A thread that raises an error but has outstanding promises is an
-    execution that can be discarded in the same way than normally finishing
-    execution with outstanding promises.
+  Definition promise (msg : Msg.t) (thr : t) : t :=
+    let (t, nmem) := Memory.promise msg (mem thr) in
+    thr |> set state $ TState.promise t
+        |> set mem (fun _ => nmem).
 
-    TODO: Prove that if a thread has an error, then it also has an error on
-    any extension of that memory.
+  Lemma promise_tid msg thr : tid (promise msg thr) = tid thr.
+    Proof. by unfold promise. Qed.
 
- *)
-Definition thread_has_error (tid : TID.t) (tc : thread_code)  (ts : TState.t)
-           (mem : Memory.t) :=
-  ¬(thread_is_finished tc ts)
-  /\ (exists err, run_thread tid tc ts mem = Exec.Error err)
-  /\ TState.prom ts = nil.
+  Lemma promise_code msg thr : code (promise msg thr) = code thr.
+    Proof. by unfold promise. Qed.
 
+  (** Defines if a thread has finished execution in an ad-hoc way.
+      A thread is finished if the PC is exactly one instruction beyond the end
+      of the thread_code and if there is not outstanding promises. *)
+  Definition is_finished (thr : t) :=
+    (TState.pc (state thr) = 4 * List.length (code thr))%nat
+    /\ TState.prom (state thr) = nil.
+
+  (** Defines if a thread has reached an error state (depends on memory)
+      A thread has reached an error state if is has not finished but running it
+      raise an error. It must also not have any outstanding promises.
+
+      A thread that raises an error but has outstanding promises is an
+      execution that can be discarded in the same way than normally finishing
+      execution with outstanding promises.
+
+      TODO: Prove that if a thread has an error, then it also has an error on
+      any extension of that memory by other threads *)
+  Definition has_error (thr : t) :=
+    ¬(is_finished thr)
+    /\ (exists err, run thr = Exec.Error err)
+    /\ TState.prom (state thr) = nil.
+
+  Inductive certified (thr : t) : Prop :=
+  | CertNoProm : TState.prom (state thr) = nil -> certified thr
+  | CertNext thr': Exec.In thr' (run thr) -> certified thr' ->
+                     certified thr.
+  Global Hint Constructors certified : core.
+
+  Fixpoint certifiedb (fuel : nat) (thr : t) : bool :=
+    if TState.prom (state thr) == nil then true else
+      match fuel with
+      | 0%nat => false
+      | S m =>
+          match run thr with
+          | Exec.Error _ => false
+          | Exec.Results l => existsb (certifiedb m) l
+          end
+      end.
+
+
+  Lemma certifiedb_sound (thr : t) :
+    certified thr <-> exists fuel : nat, certifiedb fuel thr.
+  Proof.
+    split.
+    - induction 1 as [ | ? ? Hrun Hc].
+      + exists 0%nat. qauto lb:on.
+      + destruct IHHc as [fuel Hcb].
+        exists (S fuel).
+        sauto inv:Exec.In lqb:on.
+    - destruct 1 as [fuel Hcb].
+      generalize dependent thr.
+      induction fuel; hauto ctrs:certified,Exec.In lqb:on.
+  Qed.
+
+  Inductive step (thr : t) : t -> Prop :=
+  | SPromise (msg : Msg.t) : step thr (Thread.promise msg thr)
+  | SRun (thr' : t) : Exec.In thr' (run thr) -> step thr thr'.
+
+  Lemma step_tid thr thr' : step thr thr' -> tid thr = tid thr'.
+  Proof. hauto use:run_tid, promise_tid inv:step. Qed.
+
+  Lemma step_code thr thr' : step thr thr' -> code thr = code thr'.
+  Proof. hauto use:run_code, promise_code inv:step. Qed.
+
+  Definition cstep : relation t := fun thr thr' =>
+    step thr thr' /\ certified thr'.
+
+  Lemma cstep_in_step : cstep ⊆ step.
+    Proof. hauto lq:on db:rels. Qed.
+
+End Thread.
 
 
 
@@ -786,41 +730,108 @@ Module Machine.
 
   Definition t := (list TState.t * Memory.t)%type.
 
+  Definition get_thread (tid :TID.t) (prog : program) (m : t)
+    : option Thread.t :=
+    code ← prog !! tid;
+    ts ← m.1 !! tid;
+    Some {|Thread.tid := tid;
+           Thread.code := code;
+           Thread.state := ts;
+           Thread.mem := m.2 |}.
+
+  Definition set_thread (thr : Thread.t) (m : t) : t :=
+    (list_set (Thread.tid thr) (Thread.state thr) m.1, Thread.mem thr).
 
   (** Run the thread with id tid using a program in a certain machine state *)
   Definition run_id (tid : TID.t) (prog : program) (m : t)
-    : Exec.t t :=
-    tc ← Exec.error_none "No Thread code" $ prog !! tid;
-    ts ← Exec.error_none "No Thread" $ m.1 !! tid;
-    ts ← run_thread tid tc ts m.2;
-    Exec.ret (list_set tid ts m.1, m.2).
+    : Exec.t string t :=
+    thr ← Exec.error_none "No Thread" $ get_thread tid prog m;
+    thr ← Thread.run thr;
+    Exec.ret $ set_thread thr m.
 
 
+  Inductive step_thread (tid : TID.t) (prog : program) (m : t) : t -> Prop :=
+  | StepThread (code : thread_code) thr thr':
+    prog !! tid = Some code ->
+    get_thread tid prog m = Some thr ->
+    Thread.step thr thr' ->
+    step_thread tid prog m (set_thread thr' m).
 
-  (** The steps of Promising ARM: Either make a promise or run some thread *)
-  Inductive step (prog : program) (m : t) : t -> Prop :=
-  | IPromise (msg : Msg.t) (ts :TState.t) :
-    m.1 !! (Msg.tid msg) = Some ts ->
-    let nts := TState.promise (List.length m.2 + 1)%nat ts in
-    step prog m (list_set (Msg.tid msg) nts  m.1 , msg :: m.2)
+  Definition step (prog : program) (m m' : t) : Prop :=
+    exists (tid : TID.t), step_thread tid prog m m'.
 
-  | IRun (m' : t) (tid : TID.t) (l : list t)
-    : run_id tid prog m = Exec.Results l
-      -> In m' l -> step prog m m'.
+  Inductive cstep_thread (tid : TID.t) (prog : program) (m : t)
+    : t -> Prop :=
+  | CStepThread (code : thread_code) thr thr':
+    prog !! tid = Some code ->
+    get_thread tid prog m = Some thr ->
+    Thread.cstep thr thr' ->
+    cstep_thread tid prog m (set_thread thr' m).
+
+  Definition cstep (prog : program) (m m' : t) : Prop :=
+    exists (tid : TID.t), step_thread tid prog m m'.
+
 
   (** Defines what it means for machine state to be an error state.
     This definition will probably need to be tweaked. *)
   Definition has_error (prog : program) (m : t) :=
-    exists tid tc ts, prog !! tid = Some tc /\ m.1 !! tid = Some ts
-                 /\ thread_has_error tid tc ts m.2.
+    exists tid thr, get_thread tid prog m = Some thr /\ Thread.has_error thr.
 
   (** A machine state is final when all thread have properly finished *)
   Definition is_finished (prog : program) (m : t) : Prop :=
     forall tid,
-    match prog !! tid with
+    match get_thread tid prog m with
     | None => True
-    | Some tc => exists ts, m.1 !! tid = Some ts /\
-                        thread_is_finished tc ts
+    | Some thr => Thread.is_finished thr
     end.
 
 End Machine.
+
+
+
+Section Certification.
+  Open Scope rels_scope.
+
+  Parameter prog : program.
+
+  (* In the original model, this was promise_step_certified in CertifyComplete.
+     This is where most of the complexity will happen *)
+  Lemma promise_step_certified msg thr :
+    Thread.certified (Thread.promise msg thr) -> Thread.certified thr.
+  Admitted.
+
+  Lemma step_finished_certified (y z : Thread.t) :
+    Thread.is_finished z -> Thread.step^* y z -> Thread.certified y.
+  Proof.
+    intros Hf Hs.
+    eapply clos_refl_trans_ind_right; [| | exact Hs]; [firstorder |].
+    clear dependent y.
+    intros x y Hs Hc Hss.
+    destruct Hs.
+    - by eapply promise_step_certified.
+    - by eapply Thread.CertNext.
+  Qed.
+
+  Ltac rtc_transfer_right H :=
+    match type of H with
+    | ?R^* ?a ?b => pattern a; apply (clos_refl_trans_ind_right _ R _ b);
+                   [| | exact H]; clear dependent a
+    end.
+
+  Lemma certified_thread_equiv :
+    forall thr thr' : Thread.t,
+    Thread.is_finished thr' ->
+    (Thread.step^* thr thr' <-> Thread.cstep^* thr thr').
+    intros ? ? H. split.
+    - intro Hs.
+      rtc_transfer_right Hs; sauto lq:on use:step_finished_certified.
+    - hauto l:on use:Rel.inclusion_rt_rt, Thread.cstep_in_step db:rels.
+  Qed.
+
+  Lemma certified_equiv (m m' : Machine.t) :
+    Machine.is_finished prog m' ->
+    ((Machine.step prog)^* m m' <-> (Machine.cstep prog)^* m m').
+  Proof.
+  Admitted.
+
+End Certification.

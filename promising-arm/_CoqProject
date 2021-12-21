@@ -2,4 +2,7 @@
 -Q ../ax-model Top
 -R ../hahn hahn
 -R . PromsingArm
+Common.v
+Exec.v
+PRelations.v
 Promising.v
