@@ -31,7 +31,7 @@ Require Import PRelations.
 Require Exec.
 Import Exec.Tactics.
 Require Import Sail.Base.
-From Top Require Import Ax_model_arm_vmsa_aux isa_interface_types
+From AxModel Require Import Ax_model_arm_vmsa_aux isa_interface_types
      Events Execution.
 
 
