@@ -73,18 +73,19 @@ End Arch.
 
 Module Interface (A : Arch).
 
-  Module Deps.
+  Module DepOn.
     Record t :=
       make
         {
           (** The list of registers the effect depends on. *)
           regs : list A.reg;
-          (** Does the effect depends on preceding memory reads.
-              This should be yes by default. *)
-          (** PS: can we have a better name for this? *)
-          mem_reads : bool
+          (** The list of memory access the effect depends on. The number
+              corresponds to the memory reads done by the instruction in the
+              order specified by the instruction semantics. The indexing starts
+              at 0. *)
+          mem_reads : list N
         }.
-  End Deps.
+  End DepOn.
 
   Module ReadReq.
     Record t (n : N) :=
@@ -97,8 +98,7 @@ Module Interface (A : Arch).
           (** The address dependency. If unspecified, it can be interpreted as
             depending on all previous registers and memory values that were read
             *)
-          (** PS: why "on memory values"?  Normally, deps are just on registers *)
-          addr_deps : option Deps.t;
+          addr_dep_on : option DepOn.t;
         }.
   End ReadReq.
 
@@ -114,11 +114,11 @@ Module Interface (A : Arch).
           (** The address dependency. If unspecified, it can be interpreted as
             depending on all previous registers and memory values that were read
             *)
-          addr_deps : option (list A.reg);
+          addr_dep_on : option DepOn.t;
           (** The data dependency. If unspecified, it can be interpreted as
             depending on all previous registers and memory values that were read
             *)
-          data_deps : option (list A.reg);
+          data_dep_on : option DepOn.t;
         }.
 
   End WriteReq.
@@ -131,18 +131,18 @@ Module Interface (A : Arch).
     (** The direct or indirect flag is to specify how much coherence is required
         for relaxed registers.
 
-        The deps would be the dependency of the register write.
+        The dep_on would be the dependency of the register write.
 
         Generally, writing the PC introduces no dependency because control
         dependencies are specified by the branch announce *)
-  | RegWrite (reg : A.reg) (direct : bool) (deps : option Deps.t)
+  | RegWrite (reg : A.reg) (direct : bool) (dep_on : option DepOn.t)
     : A.reg_type reg -> outcome unit
   | MemRead (n : N) : ReadReq.t n ->
                       outcome (bv (8 * n) * option bool + A.abort)
   | MemWrite (n : N) : WriteReq.t n -> outcome (option bool + A.abort)
   | MemWriteAnnounce (n : N) : A.pa -> outcome unit
     (** The deps here specify the control dependency *)
-  | BranchAnnounce (pa : A.pa) (deps : option Deps.t) : outcome unit
+  | BranchAnnounce (pa : A.pa) (dep_on : option DepOn.t) : outcome unit
   | Barrier : A.barrier -> outcome unit
   | CacheOp : A.cache_op -> outcome unit
   | TlbOp : A.tlb_op -> outcome unit
