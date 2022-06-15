@@ -27,11 +27,6 @@ Record Explicit_access_kind := {
     strength : Access_strength
   }.
 
-(** The different kinds of memory accesses *)
-Inductive Access_kind :=
-| AK_explicit : Explicit_access_kind -> Access_kind
-| AK_ifetch : Access_kind
-| AK_TTW : Access_kind.
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -49,6 +44,10 @@ Module Type Arch.
   (** Physical addresses type. Since models are expected to be architecture
       specific in this, there is no generic way to extract a bitvector from it*)
   Parameter pa : Type.
+
+  (** Parameter for extra architecture specific access types. Can be set to
+      False if not such types exists *)
+  Parameter special_acc_type : Type.
 
   (** Translation summary *)
   Parameter translation : Type.
@@ -72,6 +71,14 @@ Module Type Arch.
 End Arch.
 
 Module Interface (A : Arch).
+
+  (** The different kinds of memory accesses *)
+  Inductive Access_kind :=
+  | AK_explicit : Explicit_access_kind -> Access_kind
+  | AK_ifetch : Access_kind
+  | AK_TTW : Access_kind
+  | AK_special : A.special_acc_type -> Access_kind.
+
 
   Module DepOn.
     Record t :=
@@ -193,6 +200,7 @@ Module Dummy <: Arch.
   Definition reg_type (n : N) := bv 64.
   Definition va_size := 64%N.
   Definition pa := bv 64.
+  Definition special_acc_type := False.
   Definition translation := unit.
   Definition barrier := unit.
   Definition abort := unit.
