@@ -2,31 +2,11 @@
 Require Import Strings.String.
 Require Import bitvector.bitvector.
 
+(* This is needed because sail cannot export into multiple Coq files *)
+Require Import SailArmInst_types.
+
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
-
-(** For explicit memory accesses, this determines whether the access has some kind of
-    extra synchronisation semantics *)
-Inductive Access_variety :=
-| AV_plain
-| AV_exclusive
-| AV_atomic_rmw.
-
-(** For explicit memory accesses, this determines whether the access has
-    extra release-acquire semantics, and which *)
-Inductive Access_strength :=
-| AS_normal
-| AS_rel_or_acq (* Release or acquire *)
-| AS_acq_rcpc (* Release-consistency with processor consistency *).
-
-
-(** The access kind defines the type of access and thus the synchronisation
-    requirements of an explicit memory access *)
-Record Explicit_access_kind := {
-    variety : Access_variety;
-    strength : Access_strength
-  }.
-
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -47,7 +27,7 @@ Module Type Arch.
 
   (** Parameter for extra architecture specific access types. Can be set to
       False if not such types exists *)
-  Parameter special_acc_type : Type.
+  Parameter arch_ak : Type.
 
   (** Translation summary *)
   Parameter translation : Type.
@@ -72,14 +52,6 @@ End Arch.
 
 Module Interface (A : Arch).
 
-  (** The different kinds of memory accesses *)
-  Inductive Access_kind :=
-  | AK_explicit : Explicit_access_kind -> Access_kind
-  | AK_ifetch : Access_kind
-  | AK_TTW : Access_kind
-  | AK_special : A.special_acc_type -> Access_kind.
-
-
   Module DepOn.
     Record t :=
       make
@@ -98,7 +70,7 @@ Module Interface (A : Arch).
     Record t (n : N) :=
       make
         { pa : A.pa;
-          access_kind : Access_kind;
+          access_kind : Access_kind A.arch_ak;
           va : option (bv A.va_size);
           translation : A.translation;
           tag : bool;
@@ -113,7 +85,7 @@ Module Interface (A : Arch).
     Record t (n : N) :=
       make
         { pa : A.pa;
-          access_kind : Access_kind;
+          access_kind : Access_kind A.arch_ak;
           value : bv (8 * n);
           va : option (bv A.va_size);
           translation : A.translation;
@@ -171,42 +143,78 @@ Module Interface (A : Arch).
       discarded. *)
   | Discard : outcome False.
 
-  (** The semantics of an instruction *)
-  Inductive instr_sem :=
-  | InstrSem {T : Type} : outcome T -> (T -> instr_sem) -> instr_sem.
 
-  (** A single event in an instruction execution *)
+  (********** Monad instance **********)
+
+  (** This is a naive but inefficient implementation of the instruction monad.
+      It might be replaced by an more efficient version later. *)
+  Inductive iMon {a : Type} :=
+  | Ret : a -> iMon
+  | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
+  Arguments iMon _ : clear implicits.
+
+  Global Instance iMon_mret_inst : MRet iMon := { mret A := Ret }.
+
+  Fixpoint iMon_bind {a b : Type} (ma : iMon a) (f : a -> iMon b) :=
+    match ma with
+    | Ret x => f x
+    | Next oc k => Next oc (fun x => iMon_bind (k x) f) end.
+  Global Instance iMon_mbind_inst : MBind iMon :=
+    { mbind _ _ f x := iMon_bind x f}.
+
+  Fixpoint iMon_fmap {a b : Type} (ma : iMon a) (f : a -> b) :=
+    match ma with
+    | Ret x => Ret (f x)
+    | Next oc k => Next oc (fun x => iMon_fmap (k x) f)
+    end.
+  Global Instance iMon_fmap_inst : FMap iMon :=
+    { fmap _ _  f x := iMon_fmap x f}.
+
+
+  (********** Instruction semantics and traces **********)
+
+  (** The semantics of an complete instruction. This is just a monad instance
+  whose return type is false. This means that an instruction termination outcome
+  is called in each possible branch. *)
+  Definition iSem := iMon False.
+
+  (** A single event in an instruction execution. As implied by the definition
+      events cannot contain termination outcome (outcomes of type
+      `outcome False`) *)
   Inductive event :=
   | Event {T : Type} : outcome T -> T -> event.
 
   (** An execution trace for a single instruction.
       If the option is None, it means a successful execution
       If the option is Some, it means a GenericFail *)
-  Definition instr_trace : Type := list event * option string.
+  Definition iTrace : Type := list event * option string.
 
-  (** Definition of a trace matching a semantics *)
-  Inductive trace_match : instr_sem -> instr_trace -> Prop :=
-  | TMNext T (oc : outcome T) (f : T -> instr_sem) (obj : T) rest e :
-    trace_match (f obj) (rest, e) ->
-    trace_match (InstrSem oc f) ((Event oc obj) :: rest, e)
-  | TMSuccess f : trace_match (InstrSem Success f) ([], None)
-  | TMFailure f s : trace_match (InstrSem (GenericFail s) f) ([], Some s).
+  (** A trace is pure if it only contains external event. That means it much not
+      contain control-flow event. The name "pure" is WIP.*)
+  Fixpoint pure_iTrace_aux (tr : list event) : Prop :=
+    match tr with
+    | (Event (Choose _) _) :: _ => False
+    | _ :: t => pure_iTrace_aux t
+    | [] => True
+    end.
+  Definition pure_iTrace (tr : iTrace) :=
+    let '(t,r) := tr in pure_iTrace_aux t.
+
+  (** Definition of a trace semantics matching a trace. A trace is allowed to
+      omit control-flow outcomes such as Choose and still be considered
+      matching. *)
+  Inductive iTrace_match : iSem -> iTrace -> Prop :=
+  | TMNext T (oc : outcome T) (f : T -> iSem) (obj : T) rest e :
+    iTrace_match (f obj) (rest, e) ->
+    iTrace_match (Next oc f) ((Event oc obj) :: rest, e)
+  | TMChoose n f (v : bv n) tr :
+    iTrace_match (f v) tr -> iTrace_match (Next (Choose n) f) tr
+  | TMSuccess f : iTrace_match (Next Success f) ([], None)
+  | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], Some s).
+
+  (** Semantic equivalence for instructions *)
+  Definition iSem_equiv (i1 i2 : iSem) : Prop :=
+    forall trace : iTrace,
+    pure_iTrace trace -> (iTrace_match i1 trace <-> iTrace_match i2 trace).
 
 End Interface.
-
-Module Dummy <: Arch.
-  Definition reg := N.
-  Bind Scope N_scope with reg.
-  Definition reg_type (n : N) := bv 64.
-  Definition va_size := 64%N.
-  Definition pa := bv 64.
-  Definition special_acc_type := False.
-  Definition translation := unit.
-  Definition barrier := unit.
-  Definition abort := unit.
-  Definition cache_op := unit.
-  Definition tlb_op := unit.
-  Definition fault := unit.
-End Dummy.
-
-Module DummyInterface := Interface Dummy.

@@ -1,0 +1,10 @@
+(coq.theory
+ (name ISASem)
+ (modules Interface SailArmInst SailArmInst_types ArmInst)
+)
+
+(rule
+ (targets SailArmInst.v SailArmInst_types.v)
+ (deps armtypes.sail ../armv9-instantiation-types/interfacetypes.sail)
+ (action (run sail -coq armtypes.sail -o SailArmInst))
+)
