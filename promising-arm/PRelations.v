@@ -21,7 +21,7 @@ From Coq.Relations Require Export
      Operators_Properties.
 
 
-Require Hahn.
+Require hahn.Hahn.
 Module Rel := HahnRelationsBasic.
 
 From stdpp Require Import base sets.
