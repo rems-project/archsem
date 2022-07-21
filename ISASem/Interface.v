@@ -15,8 +15,9 @@ Module Type Arch.
   Parameter reg : Type.
 
   (** The type of each register, often `bv 64` but it may be smaller or be a
-      boolean *)
-  Parameter reg_type : reg -> Type.
+      boolean. For ease of implementation of a register map, this type is
+      required to be the same for all register *)
+  Parameter reg_type : Type.
 
   (** Virtual address size *)
   Parameter va_size : N.
@@ -51,13 +52,17 @@ Module Type Arch.
 End Arch.
 
 Module Interface (A : Arch).
+  Include A.
+
+  Definition va := bv va_size.
+  Definition accessKind := Access_kind arch_ak.
 
   Module DepOn.
     Record t :=
       make
         {
           (** The list of registers the effect depends on. *)
-          regs : list A.reg;
+          regs : list reg;
           (** The list of memory access the effect depends on. The number
               corresponds to the memory reads done by the instruction in the
               order specified by the instruction semantics. The indexing starts
@@ -69,10 +74,10 @@ Module Interface (A : Arch).
   Module ReadReq.
     Record t (n : N) :=
       make
-        { pa : A.pa;
-          access_kind : Access_kind A.arch_ak;
-          va : option (bv A.va_size);
-          translation : A.translation;
+        { pa : pa;
+          access_kind : accessKind;
+          va : option va;
+          translation : translation;
           tag : bool;
           (** The address dependency. If unspecified, it can be interpreted as
             depending on all previous registers and memory values that were read
@@ -85,9 +90,9 @@ Module Interface (A : Arch).
     Record t (n : N) :=
       make
         { pa : A.pa;
-          access_kind : Access_kind A.arch_ak;
+          access_kind : accessKind;
           value : bv (8 * n);
-          va : option (bv A.va_size);
+          va : option va;
           translation : A.translation;
           tag : bool;
           (** The address dependency. If unspecified, it can be interpreted as
@@ -99,13 +104,12 @@ Module Interface (A : Arch).
             *)
           data_dep_on : option DepOn.t;
         }.
-
   End WriteReq.
 
   Inductive outcome : Type -> Type :=
     (** The direct or indirect flag is to specify how much coherence is required
         for relaxed registers *)
-  | RegRead (reg : A.reg) (direct : bool) : outcome (A.reg_type reg)
+  | RegRead (reg : reg) (direct : bool) : outcome reg_type
 
     (** The direct or indirect flag is to specify how much coherence is required
         for relaxed registers.
@@ -114,18 +118,18 @@ Module Interface (A : Arch).
 
         Generally, writing the PC introduces no dependency because control
         dependencies are specified by the branch announce *)
-  | RegWrite (reg : A.reg) (direct : bool) (dep_on : option DepOn.t)
-    : A.reg_type reg -> outcome unit
+  | RegWrite (reg : reg) (direct : bool) (dep_on : option DepOn.t)
+    : reg_type -> outcome unit
   | MemRead (n : N) : ReadReq.t n ->
-                      outcome (bv (8 * n) * option bool + A.abort)
-  | MemWrite (n : N) : WriteReq.t n -> outcome (option bool + A.abort)
-  | MemWriteAnnounce (n : N) : A.pa -> outcome unit
+                      outcome (bv (8 * n) * option bool + abort)
+  | MemWrite (n : N) : WriteReq.t n -> outcome (option bool + abort)
+  | MemWriteAnnounce (n : N) : pa -> outcome unit
     (** The deps here specify the control dependency *)
-  | BranchAnnounce (pa : A.pa) (dep_on : option DepOn.t) : outcome unit
-  | Barrier : A.barrier -> outcome unit
-  | CacheOp : A.cache_op -> outcome unit
-  | TlbOp : A.tlb_op -> outcome unit
-  | FaultAnnounce : A.fault -> outcome unit
+  | BranchAnnounce (pa : pa) (dep_on : option DepOn.t) : outcome unit
+  | Barrier : barrier -> outcome unit
+  | CacheOp : cache_op -> outcome unit
+  | TlbOp : tlb_op -> outcome unit
+  | FaultAnnounce : fault -> outcome unit
   | EretAnnounce : outcome unit
 
   (** Bail out when something went wrong; this may be refined in the future *)
@@ -153,7 +157,7 @@ Module Interface (A : Arch).
   | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
   Arguments iMon _ : clear implicits.
 
-  Global Instance iMon_mret_inst : MRet iMon := { mret A := Ret }.
+  Global Instance iMon_mret_inst : MRet iMon := { mret a := Ret }.
 
   Fixpoint iMon_bind {a b : Type} (ma : iMon a) (f : a -> iMon b) :=
     match ma with
@@ -181,19 +185,19 @@ Module Interface (A : Arch).
   (** A single event in an instruction execution. As implied by the definition
       events cannot contain termination outcome (outcomes of type
       `outcome False`) *)
-  Inductive event :=
-  | Event {T : Type} : outcome T -> T -> event.
+  Inductive iEvent :=
+  | IEvent {T : Type} : outcome T -> T -> iEvent.
 
   (** An execution trace for a single instruction.
       If the option is None, it means a successful execution
       If the option is Some, it means a GenericFail *)
-  Definition iTrace : Type := list event * option string.
+  Definition iTrace : Type := list iEvent * option string.
 
   (** A trace is pure if it only contains external event. That means it much not
       contain control-flow event. The name "pure" is WIP.*)
-  Fixpoint pure_iTrace_aux (tr : list event) : Prop :=
+  Fixpoint pure_iTrace_aux (tr : list iEvent) : Prop :=
     match tr with
-    | (Event (Choose _) _) :: _ => False
+    | (IEvent (Choose _) _) :: _ => False
     | _ :: t => pure_iTrace_aux t
     | [] => True
     end.
@@ -206,7 +210,7 @@ Module Interface (A : Arch).
   Inductive iTrace_match : iSem -> iTrace -> Prop :=
   | TMNext T (oc : outcome T) (f : T -> iSem) (obj : T) rest e :
     iTrace_match (f obj) (rest, e) ->
-    iTrace_match (Next oc f) ((Event oc obj) :: rest, e)
+    iTrace_match (Next oc f) ((IEvent oc obj) :: rest, e)
   | TMChoose n f (v : bv n) tr :
     iTrace_match (f v) tr -> iTrace_match (Next (Choose n) f) tr
   | TMSuccess f : iTrace_match (Next Success f) ([], None)

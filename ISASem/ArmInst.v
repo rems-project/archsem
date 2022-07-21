@@ -6,7 +6,7 @@ Require Export SailArmInst_types.
 
 Module Arm <: Arch.
   Definition reg := string.
-  Definition reg_type (_ : reg) := register_value.
+  Definition reg_type := register_value.
   Definition va_size := 64%N.
   Definition pa := FullAddress.
   Definition arch_ak := arm_acc_type.
