@@ -1,6 +1,3 @@
--Q ../ax-model AxModel
--R . PromsingArm
-Common.v
-Exec.v
-PRelations.v
-Promising.v
+-Q ../_build/default/ax-model AxModel
+-Q ../_build/default/ISASem ISASem
+-R ../_build/default/promising-arm PromisingArm

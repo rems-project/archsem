@@ -1,0 +1,5 @@
+(coq.theory
+ (name PromisingArm)
+ (modules Common Exec PRelations Promising)
+ (theories AxModel)
+)
