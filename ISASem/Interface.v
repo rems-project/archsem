@@ -49,6 +49,11 @@ Module Type Arch.
 
   (** Fault type for a fault raised by the instruction (not by the model) *)
   Parameter fault : Type.
+
+  (** The architecture can also provide additional entirely custom outcomes
+      arch_outcomes A is the set of all Architecture calls that should return
+      A*)
+  Parameter arch_outcome : Type -> Type.
 End Arch.
 
 Module Interface (A : Arch).
@@ -131,6 +136,9 @@ Module Interface (A : Arch).
   | TlbOp : tlb_op -> outcome unit
   | FaultAnnounce : fault -> outcome unit
   | EretAnnounce : outcome unit
+
+  (** Architecture specific outcome *)
+  | ArchOutcome {A} : arch_outcome A -> outcome A
 
   (** Bail out when something went wrong; this may be refined in the future *)
   | GenericFail (msg : string) : outcome False
