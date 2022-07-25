@@ -8,6 +8,8 @@ Require Import SailArmInst_types.
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
 
+Definition empOutcome (_ : Type) := False.
+
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
 
@@ -49,11 +51,6 @@ Module Type Arch.
 
   (** Fault type for a fault raised by the instruction (not by the model) *)
   Parameter fault : Type.
-
-  (** The architecture can also provide additional entirely custom outcomes
-      arch_outcomes A is the set of all Architecture calls that should return
-      A*)
-  Parameter arch_outcome : Type -> Type.
 End Arch.
 
 Module Interface (A : Arch).
@@ -111,6 +108,9 @@ Module Interface (A : Arch).
         }.
   End WriteReq.
 
+  Section T.
+    Context {aOutcome : Type -> Type}.
+
   Inductive outcome : Type -> Type :=
     (** The direct or indirect flag is to specify how much coherence is required
         for relaxed registers *)
@@ -138,7 +138,7 @@ Module Interface (A : Arch).
   | EretAnnounce : outcome unit
 
   (** Architecture specific outcome *)
-  | ArchOutcome {A} : arch_outcome A -> outcome A
+  | ArchOutcome {A} : aOutcome A -> outcome A
 
   (** Bail out when something went wrong; this may be refined in the future *)
   | GenericFail (msg : string) : outcome False
@@ -156,6 +156,7 @@ Module Interface (A : Arch).
   | Discard : outcome False.
 
 
+
   (********** Monad instance **********)
 
   (** This is a naive but inefficient implementation of the instruction monad.
@@ -163,7 +164,7 @@ Module Interface (A : Arch).
   Inductive iMon {a : Type} :=
   | Ret : a -> iMon
   | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
-  Arguments iMon _ : clear implicits.
+  Arguments iMon : clear implicits.
 
   Global Instance iMon_mret_inst : MRet iMon := { mret a := Ret }.
 
@@ -181,6 +182,10 @@ Module Interface (A : Arch).
     end.
   Global Instance iMon_fmap_inst : FMap iMon :=
     { fmap _ _  f x := iMon_fmap x f}.
+
+
+
+
 
 
   (********** Instruction semantics and traces **********)
@@ -228,5 +233,44 @@ Module Interface (A : Arch).
   Definition iSem_equiv (i1 i2 : iSem) : Prop :=
     forall trace : iTrace,
     pure_iTrace trace -> (iTrace_match i1 trace <-> iTrace_match i2 trace).
+
+  End T.
+  Arguments outcome : clear implicits.
+  Arguments iMon : clear implicits.
+  Arguments iSem : clear implicits.
+  Arguments iTrace : clear implicits.
+  Arguments iEvent : clear implicits.
+
+  Definition iMonArchMap (out1 out2 : Type -> Type)
+    := forall {A : Type}, out1 A -> iMon out2 A.
+
+  (** Suppose we can simulate the outcome of out1 in the instruction monad with
+      architecture outcomes out2. Then  *)
+  Fixpoint map_arch_iMon {out1 out2 : Type -> Type} {B : Type} (f : iMonArchMap out1 out2)
+                         (mon : iMon out1 B) : iMon out2 B :=
+    match mon in iMon _ _ return iMon out2 _ with
+    | Ret b => Ret b
+    | Next oc k0 =>
+        let k := fun x => map_arch_iMon f (k0 x) in
+        match oc in outcome _ T return (T -> iMon out2 B) -> iMon out2 B with
+        | RegRead reg direct => Next (RegRead reg direct)
+        | RegWrite reg direct dep_on val =>
+            Next (RegWrite reg direct dep_on val)
+        | MemRead n readreq => Next (MemRead n readreq)
+        | MemWrite n writereq => Next (MemWrite n writereq)
+        | MemWriteAnnounce n pa => Next (MemWriteAnnounce n pa)
+        | BranchAnnounce pa dep_on => Next (BranchAnnounce pa dep_on)
+        | Barrier barrier => Next (Barrier barrier)
+        | CacheOp cache_op => Next (CacheOp cache_op)
+        | TlbOp tlb_op => Next (TlbOp tlb_op)
+        | FaultAnnounce fault => Next (FaultAnnounce fault)
+        | EretAnnounce => Next EretAnnounce
+        | ArchOutcome aout => iMon_bind (f _ aout)
+        | GenericFail msg => Next (GenericFail msg)
+        | Success => Next Success
+        | Choose n => Next (Choose n)
+        | Discard => Next (Discard)
+        end k
+    end.
 
 End Interface.

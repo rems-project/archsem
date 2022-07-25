@@ -16,7 +16,6 @@ Module Arm <: Arch.
   Definition cache_op := CacheRecord.
   Definition tlb_op := TLBI.
   Definition fault := Exn.
-  Definition arch_outcome (ret : Type) := False.
 End Arm.
 
 Module Inst := Interface Arm.
