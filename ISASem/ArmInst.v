@@ -20,5 +20,4 @@ End Arm.
 
 Module Inst := Interface Arm.
 
-Export Arm.
 Export Inst.

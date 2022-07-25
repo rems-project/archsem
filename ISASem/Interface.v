@@ -246,8 +246,8 @@ Module Interface (A : Arch).
 
   (** Suppose we can simulate the outcome of out1 in the instruction monad with
       architecture outcomes out2. Then  *)
-  Fixpoint map_arch_iMon {out1 out2 : Type -> Type} {B : Type} (f : iMonArchMap out1 out2)
-                         (mon : iMon out1 B) : iMon out2 B :=
+  Fixpoint map_arch_iMon {out1 out2 : Type -> Type} {B : Type}
+    (f : iMonArchMap out1 out2) (mon : iMon out1 B) : iMon out2 B :=
     match mon in iMon _ _ return iMon out2 _ with
     | Ret b => Ret b
     | Next oc k0 =>
