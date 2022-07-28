@@ -26,7 +26,7 @@
    and acquire-release accesses *)
 
 From Hammer Require Import Tactics.
-Require Import Common.
+Require Import SSCCommon.Common.
 Require Import PRelations.
 Require Exec.
 Import Exec.Tactics.
@@ -34,8 +34,7 @@ Require Import Sail.Base.
 From AxModel Require Import Ax_model_arm_vmsa_aux isa_interface_types
      Events Execution.
 
-
-
+Open Scope stdpp_scope.
 
 
 
@@ -59,7 +58,7 @@ Module Loc.
     match FullAddress_paspace pa with
     | PAS_Secure => None
     | PAS_NonSecure =>
-        if Word.split2 49 3 (FullAddress_address pa) == wzero 3 then
+        if Word.split2 49 3 (FullAddress_address pa) =? wzero 3 then
           Some (Word.split1 49 3 (FullAddress_address pa))
         else None
     end.
@@ -235,7 +234,7 @@ End TID.
 Module Msg.
   Record t := make { tid : TID.t; loc : Loc.t; val : regval }.
 
-  Global Instance dec : EqDecision t.
+  #[global] Instance dec : EqDecision t.
   solve_decision.
   Defined.
 
@@ -255,9 +254,9 @@ Module Memory.
 
   (** Definition of the memory numbering. So it can be used with the !! operator
    *)
-  Global Instance lookup_inst : Lookup nat Msg.t Memory.t :=
+  #[global] Instance lookup_inst : Lookup nat Msg.t Memory.t :=
     { lookup k mem :=
-      if k == 0%nat then None
+      if k =? 0%nat then None
       else
         let len := List.length mem in
         if (len <? k)%nat then
@@ -285,7 +284,7 @@ Module Memory.
     match mem with
     | [] => (0%nat, val_init)
     | msg :: mem' =>
-        if Msg.loc msg == loc then
+        if Msg.loc msg =? loc then
           (List.length mem, Msg.val msg)
         else read_last loc mem'
     end.
@@ -306,7 +305,7 @@ Module Memory.
     let first := mem |> cut_before v |> read_last loc in
     let lasts := mem |> cut_after v
                      |> with_views_from (List.length mem)
-                     |> filter (fun '(v, msg) => Msg.loc msg == loc)
+                     |> filter (fun '(v, msg) => Msg.loc msg =? loc)
                      |> map (fun '(v, msg) => (v, Msg.val msg))
     in
     lasts ++ [first].
@@ -321,7 +320,7 @@ Module Memory.
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
   Definition fulfill (msg : Msg.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (fun t => Some msg == mem !! t)
+    prom |> filter (fun t => Some msg =? mem !! t)
          |> reverse
          |> head.
 
@@ -331,11 +330,11 @@ Module Memory.
     match mem !! v with
     | None => false
     | Some msg =>
-        if Msg.loc msg == loc then
+        if Msg.loc msg =? loc then
           let tid := Msg.tid msg in
           mem |> cut_after v
-              |> forallb (fun msg => (Msg.tid msg == tid)
-                                  || negb (Msg.loc msg == loc))
+              |> forallb (fun msg => (Msg.tid msg =? tid)
+                                  || negb (Msg.loc msg =? loc))
         else false
     end.
 
@@ -377,7 +376,7 @@ Module TState.
         xclb : option (view * view);
       }.
 
-  Instance eta : Settable _ :=
+  #[global] Instance eta : Settable _ :=
     settable! make <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;vrel;fwdb;xclb>.
 
   (** Sets the value of a register *)
@@ -434,16 +433,16 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
   : Exec.t string (TState.t * view * regval) :=
   let acs := Explicit_access_kind_EAK_strength ak in
   let acv := Explicit_access_kind_EAK_variety ak in
-  Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
+  Exec.fail_if (acv =? AV_atomicRMW) "Atomic RMV unsupported";;
   let vpre := max vaddr (TState.rresp ts) in
   let vpre :=
-    if acs == AS_Rel_or_Acq then max vpre (TState.vrel ts) else vpre in
+    if acs =? AS_Rel_or_Acq then max vpre (TState.vrel ts) else vpre in
   let vread := max vpre (TState.coh ts loc) in
   let reads := Memory.read loc vread mem in
   '(time, res) ← Exec.Results reads;
   let fwd := TState.fwdb ts loc in
   let read_view :=
-    if (fwd.1.1 == time) && implb fwd.2 (acs == AS_normal)
+    if (fwd.1.1 =? time) && implb fwd.2 (acs =? AS_normal)
     then fwd.1.2
     else time in
   let vpost := max vpre read_view in
@@ -451,10 +450,10 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
     ts |> TState.update_coh loc time
        |> TState.update TState.rmax vpost
        |> TState.update TState.vcap vaddr
-       |> (if acs == AS_normal then id
+       |> (if acs =? AS_normal then id
            else (* Read acquire force the po-later access to be ordered after *)
              TState.update2 TState.rmax TState.wmax vpost)
-       |> (if acv == AV_exclusive then TState.set_xclb (time, vpost) else id)
+       |> (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id)
   in Exec.ret (ts, vpost, res).
 
 (** Performs a memory write for a thread tid at a location loc with view
@@ -479,11 +478,11 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
          end);
   Exec.assert (max vpre (TState.coh ts loc) <? time)%nat;;
   let ts :=
-    ts |> set TState.prom (list_remove time)
+    ts |> set TState.prom (delete time)
        |> TState.update_coh loc time
        |> TState.update TState.wmax time
        |> TState.update TState.vcap vaddr
-       |> (if acs == AS_normal then id
+       |> (if acs =? AS_normal then id
            else (* Mark the latest release to order later strong acquires*)
              TState.update TState.vrel time)
   in Exec.ret (ts, mem, time).
@@ -502,8 +501,8 @@ Definition write_mem_xcl (tid : TID.t) (loc : Loc.t) (vaddr : view)
   : Exec.t string (TState.t * Memory.t):=
   let acs := Explicit_access_kind_EAK_strength ak in
   let acv := Explicit_access_kind_EAK_variety ak in
-  Exec.fail_if (acv == AV_atomicRMW) "Atomic RMV unsupported";;
-  let xcl := acv == AV_exclusive in
+  Exec.fail_if (acv =? AV_atomicRMW) "Atomic RMV unsupported";;
+  let xcl := acv =? AV_exclusive in
   if xcl then
     '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
     match TState.xclb ts with
@@ -609,7 +608,7 @@ Fixpoint run_inst (i : Inst.t) (iis : IIS.t) (tid : TID.t)
 
     This is a very hacky way of doing fetches but it will do for now. *)
 Definition inst_num_from_pc (pc : nat) : option nat :=
-  if (pc mod 4 == 0)%nat then
+  if (pc mod 4 =? 0)%nat then
     Some (pc / 4)%nat
   else None.
 
@@ -621,7 +620,7 @@ Module Thread.
         state : TState.t;
         mem : Memory.t
       }.
-  Instance eta : Settable _ :=
+  #[global] Instance eta : Settable _ :=
     settable! make <tid; code; state; mem>.
 
   (** Run a thread by fetching an instruction and then calling run_inst. *)
@@ -677,10 +676,10 @@ Module Thread.
   | CertNoProm : TState.prom (state thr) = nil -> certified thr
   | CertNext thr': Exec.In thr' (run thr) -> certified thr' ->
                      certified thr.
-  Global Hint Constructors certified : core.
+  #[global] Hint Constructors certified : core.
 
   Fixpoint certifiedb (fuel : nat) (thr : t) : bool :=
-    if TState.prom (state thr) == nil then true else
+    if TState.prom (state thr) =? nil then true else
       match fuel with
       | 0%nat => false
       | S m =>
@@ -740,7 +739,7 @@ Module Machine.
            Thread.mem := m.2 |}.
 
   Definition set_thread (thr : Thread.t) (m : t) : t :=
-    (list_set (Thread.tid thr) (Thread.state thr) m.1, Thread.mem thr).
+    (<[Thread.tid thr := Thread.state thr]> m.1, Thread.mem thr).
 
   (** Run the thread with id tid using a program in a certain machine state *)
   Definition run_id (tid : TID.t) (prog : program) (m : t)

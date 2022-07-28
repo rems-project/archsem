@@ -242,7 +242,7 @@ Module Interface (A : Arch).
   Arguments iEvent : clear implicits.
 
   Definition iMonArchMap (out1 out2 : Type -> Type)
-    := forall {A : Type}, out1 A -> iMon out2 A.
+    := forall (A : Type), out1 A -> iMon out2 A.
 
   (** Suppose we can simulate the outcome of out1 in the instruction monad with
       architecture outcomes out2. Then  *)

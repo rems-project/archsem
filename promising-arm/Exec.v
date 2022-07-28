@@ -17,7 +17,34 @@
    invalid code that would trigger them will make the whole execution return
    an error with hopefully a descriptive message. *)
 
-Require Import Common.
+(* Require Import Common. *)
+Require Import SSCCommon.Common.
+
+Require Import Sail.Base.
+
+
+(********** Tactics **********)
+
+Create HintDb exec discriminated.
+
+(** This module is intended to be imported and provides tactics to be used
+    to deal with the exec monad *)
+Module Tactics.
+
+  Tactic Notation "exec_simp" "in" "|-*" :=
+    rewrite_strat topdown hints exec.
+
+  Tactic Notation "exec_simp" "in" hyp(H) :=
+    rewrite_strat topdown hints exec in H.
+
+  Tactic Notation "exec_simp" :=
+    progress
+      (repeat exec_simp in |-*;
+            repeat match goal with
+                   | [H : _ |- _ ] => rewrite_strat topdown  (repeat hints exec) in H
+                   end).
+End Tactics.
+Import Tactics.
 
 
 
@@ -96,39 +123,39 @@ Global Instance fmap_inst {E} : FMap (t E) :=
 
 Lemma mbind_ret E A B (x : A) (f : A -> t E B) : (ret x ≫= f) = f x.
 Proof. hauto lq:on. Qed.
-Hint Rewrite mbind_ret : exec.
+#[global] Hint Rewrite mbind_ret : exec.
 
 Lemma mbind_error (E A B : Type) e (f : A -> t E B) : Error e ≫= f = Error e.
 Proof. done. Qed.
-Hint Rewrite mbind_error : exec.
+#[global] Hint Rewrite mbind_error : exec.
 
 Lemma mbind_discard E A B (f : A -> t E B) : discard ≫= f = discard.
 Proof. done. Qed.
-Hint Rewrite mbind_discard : exec.
+#[global] Hint Rewrite mbind_discard : exec.
 
 Lemma merge_error E A s (e : t E A):
   merge (Error s) e = Error s.
 Proof. done. Qed.
-Hint Rewrite merge_error : exec.
+#[global] Hint Rewrite merge_error : exec.
 
 Lemma foldl_merge_error E A s (l : list (t E A)):
   foldl merge (Error s) l = Error s.
 Proof. by induction l. Qed.
-Hint Rewrite foldl_merge_error : exec.
+#[global] Hint Rewrite foldl_merge_error : exec.
 
 Lemma merge_discard E A (e : t E A) : merge discard e = e.
 Proof. by destruct e. Qed.
-Hint Rewrite merge_discard : exec.
+#[global] Hint Rewrite merge_discard : exec.
 
 Lemma mbind_cons E A B (x : A) (l : list A) (f : A -> t E B):
   Results (x :: l) ≫= f =
     merge (f x) (Results l ≫= f).
-  simpl.
-  destruct (f x) as [|lx]; [ by autorewrite with exec| clear x].
+  cbn.
+  destruct (f x) as [|lx]; [ by exec_simp| clear x].
   - generalize dependent lx.
     induction (map f l) as [| y lt]; hauto use: app_assoc inv:t db:exec,list.
 Qed.
-Hint Rewrite mbind_cons : exec.
+#[global] Hint Rewrite mbind_cons : exec.
 
 
 (********** Predicate on the results **********)
@@ -136,18 +163,18 @@ Hint Rewrite mbind_cons : exec.
 (** Describe an non-error execution *)
 Inductive has_results {E A} : t E A -> Prop :=
 | HResults l : has_results (Results l).
-Global Hint Constructors has_results : exec.
+#[global] Hint Constructors has_results : exec.
 
 (** Describe the fact that an execution is successful and contains the
     specified value *)
 Inductive In {E A} (x : A) : t E A -> Prop :=
-| InIn l : List.In x l -> In x (Results l).
-Global Hint Constructors In : exec.
+| InIn l : x ∈ l -> In x (Results l).
+#[global] Hint Constructors In : exec.
 
 
 Lemma in_has_results E A (e : t E A) x : In x e -> has_results e.
 Proof. sauto lq:on. Qed.
-Global Hint Resolve in_has_results : exec.
+#[global] Hint Resolve in_has_results : exec.
 
 
 
@@ -156,74 +183,78 @@ Global Hint Resolve in_has_results : exec.
 
 Lemma has_results_error E A err: has_results (Error err : t E A) <-> False.
 Proof. sauto. Qed.
-Hint Rewrite has_results_error : exec.
+#[global] Hint Rewrite has_results_error : exec.
 
 Lemma in_error E A (err : E) (x : A) : In x (Error err) <-> False.
 Proof. sauto. Qed.
-Hint Rewrite in_error : exec.
+#[global] Hint Rewrite in_error : exec.
 
 Lemma in_discard E A (x : A) : In x (discard : t E A) <-> False.
 Proof. sauto. Qed.
-Hint Rewrite in_discard: exec.
+#[global] Hint Rewrite in_discard: exec.
 
 Lemma has_results_results E A l : has_results (Results l : t E A) <-> True.
-Proof. sauto. Qed.
-Hint Rewrite has_results_results : exec.
+Proof. ssimpl. Qed.
+#[global] Hint Rewrite has_results_results : exec.
 
-Lemma in_results E A (x : A) l : In x (Results l : t E A) <-> List.In x l.
-Proof. sauto. Qed.
-Hint Rewrite in_results : exec.
+Lemma in_results E A (x : A) l : In x (Results l : t E A) <-> x ∈ l.
+Proof. hauto inv:In. Qed.
+#[global] Hint Rewrite in_results : exec.
 
 Lemma has_results_merge E A (e e' : t E A) :
   has_results (merge e e') <-> has_results e /\ has_results e'.
 Proof. destruct e; destruct e'; hauto inv:has_results db:list,exec. Qed.
-Hint Rewrite has_results_merge : exec.
+#[global] Hint Rewrite has_results_merge : exec.
 
 Lemma in_merge E A (e e' : t E A) x :
   In x (merge e e') <->
     (In x e /\ has_results e') \/ (has_results e /\ In x e').
 Proof. destruct e; destruct e'; sauto db:list. Qed.
-Hint Rewrite in_merge : exec.
+#[global] Hint Rewrite in_merge : exec.
 
 Lemma in_ret E A (x y :A) : In x (ret y : t E A) <-> x = y.
 Proof. sauto. Qed.
-Hint Rewrite in_ret : exec.
+#[global] Hint Rewrite in_ret : exec.
 
 Lemma has_results_error_none E A (err : E) opt :
   has_results (error_none err opt) <-> exists x : A, opt = Some x.
 Proof. sauto q:on rew:off. Qed.
-Hint Rewrite has_results_error_none : exec.
+#[global] Hint Rewrite has_results_error_none : exec.
 
 Lemma in_error_none E A (x : A) (err : E) opt :
   In x (error_none err opt) <-> opt = Some x.
 Proof. sauto q:on rew:off. Qed.
-Hint Rewrite in_error_none : exec.
+#[global] Hint Rewrite in_error_none : exec.
 
 Lemma has_results_map_error E E' A (e : t E A) (f : E -> E') :
   has_results (map_error f e) <-> has_results e.
 Proof. sauto q:on rew:off. Qed.
-Hint Rewrite has_results_map_error : exec.
+#[global] Hint Rewrite has_results_map_error : exec.
 
 Lemma in_map_error E E' A (x : A) (e : t E A) (f : E -> E') :
   In x (map_error f e) <-> In x e.
 Proof. sauto q:on rew:off. Qed.
-Hint Rewrite in_map_error : exec.
+#[global] Hint Rewrite in_map_error : exec.
+
+Axiom test : forall A (x a : A) (l : list A), (x ∈ a :: l) <-> (x = a \/ x ∈ l).
 
 Lemma has_results_results_mbind E A B (l : list A) (f : A -> t E B):
-  has_results (Results l ≫= f) <-> List.Forall (fun z => has_results (f z)) l.
-Proof. induction l; hauto inv:List.Forall l:on db:exec. Qed.
+  has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
+Proof.
+  unfold_cqual.
+  induction l; hauto inv:elem_of_list l:on db:exec.
+Qed.
 
 
 Lemma in_results_mbind E A B (x : B) (l : list A) (f: A -> t E B) :
-  In x (Results l ≫= f) <->
-    (exists y : A, List.In y l /\ In x (f y)) /\
-      List.Forall (fun z => has_results (f z)) l.
+  In x (Results l ≫= f) <-> (∃'y ∈ l, In x (f y)) /\ ∀'z ∈ l, has_results (f z).
 Proof.
   induction l.
-  - hauto lq:on db:exec.
-  - autorewrite with exec.
+  - hauto inv:elem_of_list lq:on db:exec.
+  - exec_simp.
     rewrite has_results_results_mbind.
-    hauto lq:on db:exec, list.
+    hauto
+      inv:elem_of_list ctrs:elem_of_list lq:on hint:db:exec simp+:unfold_cqual.
 Qed.
 
 Lemma has_results_mbind E A B (e : t E A) (f : A -> t E B):
@@ -233,9 +264,9 @@ Proof.
   destruct e.
   - hauto inv:has_results.
   - rewrite has_results_results_mbind.
-    hauto db:list,exec.
+    hauto db:list,exec,cqual.
 Qed.
-Hint Rewrite has_results_mbind : exec.
+#[global] Hint Rewrite has_results_mbind : exec.
 
 Lemma in_mbind E A B (x : B) e (f: A -> t E B) :
   In x (e ≫= f) <-> (exists y : A, In y e /\ In x (f y)) /\
@@ -244,15 +275,15 @@ Proof.
   destruct e.
   - hauto inv:In.
   - rewrite in_results_mbind.
-    hauto db:list,exec.
+    hauto db:list,exec,cqual.
 Qed.
-Hint Rewrite in_mbind : exec.
+#[global] Hint Rewrite in_mbind : exec.
 
 (* This is an optimisation of the previous rewriting rules *)
 Lemma in_error_none_mbind E A B (x : B) (f: A -> t E B) err opt :
   In x (error_none err opt ≫= f) <-> exists y, opt = Some y /\ In x (f y).
 Proof. hauto db:exec. Qed.
-Hint Rewrite in_error_none_mbind : exec.
+#[global] Hint Rewrite in_error_none_mbind : exec.
 
 
 
@@ -277,22 +308,3 @@ Proof. firstorder. Qed.
 
 
 
-(********** Tactics **********)
-
-(** This module is intended to be imported and provides tactics to be used
-    to deal with the exec monad *)
-Module Tactics.
-
-  Tactic Notation "exec_simp" "in" "|-*" :=
-    rewrite_strat topdown hints exec.
-
-  Tactic Notation "exec_simp" "in" hyp(H) :=
-    rewrite_strat topdown hints exec in H.
-
-  Tactic Notation "exec_simp" :=
-    progress
-      (repeat exec_simp in |-*;
-            repeat match goal with
-                   | [H : _ |- _ ] => rewrite_strat topdown  (repeat hints exec) in H
-                   end).
-End Tactics.

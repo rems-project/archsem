@@ -1,3 +1,4 @@
 -Q ../_build/default/ax-model AxModel
 -Q ../_build/default/ISASem ISASem
+-Q ../_build/default/Common SSCCommon
 -R ../_build/default/promising-arm PromisingArm

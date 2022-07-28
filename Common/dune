@@ -1,0 +1,4 @@
+(coq.theory
+ (name SSCCommon)
+ (modules Common CBase CList CBool)
+)
