@@ -7,6 +7,9 @@ From RecordUpdate Require Export RecordSet.
 Require Export bbv.Word.
 Require Import DecidableClass.
 From stdpp Require Export strings.
+From stdpp Require Export fin.
+From stdpp Require Export vector.
+Require Export Ensembles.
 
 Require Export CBase.
 Require Export CBool.
@@ -27,3 +30,23 @@ Defined.
 (** Update a function at a specific value *)
 Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
   fun x : A => if k =? x then v else f x.
+
+
+(********** Ensembles **********)
+
+(* TODO: Move to stdpp *)
+Global Instance ensemble_omap : OMap Ensemble := λ A B f E b,
+    ∃'a ∈ E, f a = Some b.
+
+(* TODO: Move to stdpp *)
+Global Instance ensemble_empty {A} : Empty (Ensemble A) := fun a => False.
+
+Definition ensemble_from_list {A} (l : list A) : Ensemble A := fun a => a ∈ l.
+
+
+(********** Vectors **********)
+
+(* This is purposefully not in stdpp because Coq does not apply automatically
+   Because of dependent types. This can be solved with a Hint Resolve *)
+Global Instance vector_insert {n} {V} : Insert (fin n) V (vec V n) := vinsert.
+Global Hint Resolve vector_insert : typeclasses.

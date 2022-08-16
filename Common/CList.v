@@ -1,6 +1,7 @@
 Require Import CBase CBool.
 From stdpp Require Import base.
 From stdpp Require Export list.
+From stdpp Require Export listset.
 
 (********** List automation **********)
 
@@ -67,3 +68,13 @@ Proof.
   reflexivity.
 Qed.
 #[global] Hint Rewrite forallb_brefl : brefl.
+
+
+
+(********** List as sets **********)
+
+(* TODO make a PR to stdpp with this: *)
+Global Instance list_omap : OMap listset := λ A B f '(Listset l),
+    Listset (omap f l).
+
+Global Instance list_Empty {A} : Empty (list A) := [].

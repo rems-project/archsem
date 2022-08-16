@@ -44,3 +44,18 @@ Tactic Notation "unfold_cqual" :=
 
 Global Hint Unfold forall_elem_of : cqual.
 Global Hint Unfold exists_elem_of : cqual.
+
+
+
+(********** Set equivalence **********)
+
+Definition set_equiv `{SubsetEq E} : Equiv E := fun e1 e2 => e1 ⊆ e2 /\ e2 ⊆ e1.
+Infix "≡ₛ" := set_equiv (at level 70, no associativity) : stdpp_scope.
+
+Notation "(≡ₛ)" := set_equiv (only parsing) : stdpp_scope.
+Notation "( x ≡ₛ.)" := (set_equiv x) (only parsing) : stdpp_scope.
+Notation "(.≡ₛ x )" := (λ y, y ≡ₛ x) (only parsing) : stdpp_scope.
+Notation "(≢ₛ)" := (λ x y, ¬x ≡ₛ y) (only parsing) : stdpp_scope.
+Notation "x ≢ₛ y":= (¬x ≡ₛ y) (at level 70, no associativity) : stdpp_scope.
+Notation "( x ≢ₛ.)" := (λ y, x ≢ₛ y) (only parsing) : stdpp_scope.
+Notation "(.≢ₛ x )" := (λ y, y ≢ₛ x) (only parsing) : stdpp_scope.
