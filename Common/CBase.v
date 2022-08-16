@@ -42,9 +42,9 @@ Tactic Notation "unfold_cqual" :=
   repeat unfold forall_elem_of in *;
   repeat unfold exists_elem_of in *.
 
-Global Hint Unfold forall_elem_of : cqual.
-Global Hint Unfold exists_elem_of : cqual.
-
+(* If needed it is always good to open those as soon as possible *)
+Global Hint Extern 0 => unfold forall_elem_of : cqual.
+Global Hint Extern 0 => unfold exists_elem_of : cqual.
 
 
 (********** Set equivalence **********)

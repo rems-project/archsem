@@ -632,11 +632,11 @@ Module Thread.
     Exec.ret {|tid := tid thr; code := code thr; state := ts; mem := mem|}.
 
   Lemma run_tid thr thr' :
-    Exec.In thr' (run thr) -> tid thr' = tid thr.
+    thr' ∈ (run thr) -> tid thr' = tid thr.
   Proof. unfold run. hauto simp+:exec_simp. Qed.
 
   Lemma run_code thr thr' :
-    Exec.In thr' (run thr) -> code thr' = code thr.
+    thr' ∈ (run thr) -> code thr' = code thr.
   Proof. unfold run. hauto simp+:exec_simp. Qed.
 
   Definition promise (msg : Msg.t) (thr : t) : t :=
@@ -674,7 +674,7 @@ Module Thread.
 
   Inductive certified (thr : t) : Prop :=
   | CertNoProm : TState.prom (state thr) = nil -> certified thr
-  | CertNext thr': Exec.In thr' (run thr) -> certified thr' ->
+  | CertNext thr': thr' ∈ (run thr) -> certified thr' ->
                      certified thr.
   #[global] Hint Constructors certified : core.
 
@@ -698,15 +698,15 @@ Module Thread.
       + exists 0%nat. qauto lb:on.
       + destruct IHHc as [fuel Hcb].
         exists (S fuel).
-        sauto inv:Exec.In lqb:on.
+        sauto inv:Exec.elem_of lqb:on.
     - destruct 1 as [fuel Hcb].
       generalize dependent thr.
-      induction fuel; hauto ctrs:certified,Exec.In lqb:on.
+      induction fuel; hauto ctrs:certified,Exec.elem_of lqb:on.
   Qed.
 
   Inductive step (thr : t) : t -> Prop :=
   | SPromise (msg : Msg.t) : step thr (Thread.promise msg thr)
-  | SRun (thr' : t) : Exec.In thr' (run thr) -> step thr thr'.
+  | SRun (thr' : t) : thr' ∈ (run thr) -> step thr thr'.
 
   Lemma step_tid thr thr' : step thr thr' -> tid thr = tid thr'.
   Proof. hauto use:run_tid, promise_tid inv:step. Qed.

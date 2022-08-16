@@ -167,14 +167,15 @@ Inductive has_results {E A} : t E A -> Prop :=
 
 (** Describe the fact that an execution is successful and contains the
     specified value *)
-Inductive In {E A} (x : A) : t E A -> Prop :=
-| InIn l : x ∈ l -> In x (Results l).
-#[global] Hint Constructors In : exec.
+Inductive elem_of {E A} : ElemOf A (t E A):=
+| ElemOf x l : x ∈ l -> elem_of x (Results l).
+#[global] Hint Constructors elem_of : exec.
+Global Existing Instance elem_of.
 
 
-Lemma in_has_results E A (e : t E A) x : In x e -> has_results e.
+Lemma elem_of_has_results E A (e : t E A) x : x ∈ e -> has_results e.
 Proof. sauto lq:on. Qed.
-#[global] Hint Resolve in_has_results : exec.
+#[global] Hint Resolve elem_of_has_results : exec.
 
 
 
@@ -185,58 +186,56 @@ Lemma has_results_error E A err: has_results (Error err : t E A) <-> False.
 Proof. sauto. Qed.
 #[global] Hint Rewrite has_results_error : exec.
 
-Lemma in_error E A (err : E) (x : A) : In x (Error err) <-> False.
+Lemma elem_of_error E A (err : E) (x : A) : x ∈ (Error err) <-> False.
 Proof. sauto. Qed.
-#[global] Hint Rewrite in_error : exec.
+#[global] Hint Rewrite elem_of_error : exec.
 
-Lemma in_discard E A (x : A) : In x (discard : t E A) <-> False.
+Lemma elem_of_discard E A (x : A) : x ∈ (discard : t E A) <-> False.
 Proof. sauto. Qed.
-#[global] Hint Rewrite in_discard: exec.
+#[global] Hint Rewrite elem_of_discard: exec.
 
 Lemma has_results_results E A l : has_results (Results l : t E A) <-> True.
 Proof. ssimpl. Qed.
 #[global] Hint Rewrite has_results_results : exec.
 
-Lemma in_results E A (x : A) l : In x (Results l : t E A) <-> x ∈ l.
-Proof. hauto inv:In. Qed.
-#[global] Hint Rewrite in_results : exec.
+Lemma elem_of_results E A (x : A) l : x ∈ (Results l : t E A) <-> x ∈ l.
+Proof. hauto inv:elem_of. Qed.
+#[global] Hint Rewrite elem_of_results : exec.
 
 Lemma has_results_merge E A (e e' : t E A) :
   has_results (merge e e') <-> has_results e /\ has_results e'.
 Proof. destruct e; destruct e'; hauto inv:has_results db:list,exec. Qed.
 #[global] Hint Rewrite has_results_merge : exec.
 
-Lemma in_merge E A (e e' : t E A) x :
-  In x (merge e e') <->
-    (In x e /\ has_results e') \/ (has_results e /\ In x e').
+Lemma elem_of_merge E A (e e' : t E A) x :
+  x ∈ (merge e e') <->
+    (x ∈ e /\ has_results e') \/ (has_results e /\ x ∈ e').
 Proof. destruct e; destruct e'; sauto db:list. Qed.
-#[global] Hint Rewrite in_merge : exec.
+#[global] Hint Rewrite elem_of_merge : exec.
 
-Lemma in_ret E A (x y :A) : In x (ret y : t E A) <-> x = y.
+Lemma elem_of_ret E A (x y :A) : x ∈ (ret y : t E A) <-> x = y.
 Proof. sauto. Qed.
-#[global] Hint Rewrite in_ret : exec.
+#[global] Hint Rewrite elem_of_ret : exec.
 
 Lemma has_results_error_none E A (err : E) opt :
   has_results (error_none err opt) <-> exists x : A, opt = Some x.
 Proof. sauto q:on rew:off. Qed.
 #[global] Hint Rewrite has_results_error_none : exec.
 
-Lemma in_error_none E A (x : A) (err : E) opt :
-  In x (error_none err opt) <-> opt = Some x.
+Lemma elem_of_error_none E A (x : A) (err : E) opt :
+  x ∈ (error_none err opt) <-> opt = Some x.
 Proof. sauto q:on rew:off. Qed.
-#[global] Hint Rewrite in_error_none : exec.
+#[global] Hint Rewrite elem_of_error_none : exec.
 
 Lemma has_results_map_error E E' A (e : t E A) (f : E -> E') :
   has_results (map_error f e) <-> has_results e.
 Proof. sauto q:on rew:off. Qed.
 #[global] Hint Rewrite has_results_map_error : exec.
 
-Lemma in_map_error E E' A (x : A) (e : t E A) (f : E -> E') :
-  In x (map_error f e) <-> In x e.
+Lemma elem_of_map_error E E' A (x : A) (e : t E A) (f : E -> E') :
+  x ∈ (map_error f e) <-> x ∈ e.
 Proof. sauto q:on rew:off. Qed.
-#[global] Hint Rewrite in_map_error : exec.
-
-Axiom test : forall A (x a : A) (l : list A), (x ∈ a :: l) <-> (x = a \/ x ∈ l).
+#[global] Hint Rewrite elem_of_map_error : exec.
 
 Lemma has_results_results_mbind E A B (l : list A) (f : A -> t E B):
   has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
@@ -246,8 +245,8 @@ Proof.
 Qed.
 
 
-Lemma in_results_mbind E A B (x : B) (l : list A) (f: A -> t E B) :
-  In x (Results l ≫= f) <-> (∃'y ∈ l, In x (f y)) /\ ∀'z ∈ l, has_results (f z).
+Lemma elem_of_results_mbind E A B (x : B) (l : list A) (f: A -> t E B) :
+  x ∈ (Results l ≫= f) <-> (∃'y ∈ l, x ∈ (f y)) /\ ∀'z ∈ l, has_results (f z).
 Proof.
   induction l.
   - hauto inv:elem_of_list lq:on db:exec.
@@ -259,31 +258,30 @@ Qed.
 
 Lemma has_results_mbind E A B (e : t E A) (f : A -> t E B):
   has_results (e ≫= f) <->
-    has_results e /\ forall z, In z e -> has_results (f z).
+    has_results e /\ ∀'z ∈ e, has_results (f z).
 Proof.
   destruct e.
   - hauto inv:has_results.
   - rewrite has_results_results_mbind.
-    hauto db:list,exec,cqual.
+    hauto lq:on db:list simp+:unfold_cqual simp+:exec_simp.
 Qed.
 #[global] Hint Rewrite has_results_mbind : exec.
 
-Lemma in_mbind E A B (x : B) e (f: A -> t E B) :
-  In x (e ≫= f) <-> (exists y : A, In y e /\ In x (f y)) /\
-                    (forall z, In z e -> has_results (f z)).
+Lemma elem_of_mbind E A B (x : B) e (f: A -> t E B) :
+  x ∈ (e ≫= f) <-> (∃'y ∈ e, x ∈ (f y)) /\ (∀'z ∈ e, has_results (f z)).
 Proof.
   destruct e.
-  - hauto inv:In.
-  - rewrite in_results_mbind.
-    hauto db:list,exec,cqual.
+  - hauto inv:elem_of.
+  - rewrite elem_of_results_mbind.
+    hauto db:list simp+:exec_simp simp+:unfold_cqual.
 Qed.
-#[global] Hint Rewrite in_mbind : exec.
+#[global] Hint Rewrite elem_of_mbind : exec.
 
 (* This is an optimisation of the previous rewriting rules *)
-Lemma in_error_none_mbind E A B (x : B) (f: A -> t E B) err opt :
-  In x (error_none err opt ≫= f) <-> exists y, opt = Some y /\ In x (f y).
-Proof. hauto db:exec. Qed.
-#[global] Hint Rewrite in_error_none_mbind : exec.
+Lemma elem_of_error_none_mbind E A B (x : B) (f: A -> t E B) err opt :
+  x ∈ (error_none err opt ≫= f) <-> exists y, opt = Some y /\ x ∈ (f y).
+Proof. hauto q:on db:exec simp+:unfold_cqual. Qed.
+#[global] Hint Rewrite elem_of_error_none_mbind : exec.
 
 
 
@@ -295,10 +293,10 @@ Proof. hauto db:exec. Qed.
     are also in the second *)
 Definition Incl {E E' A B} (f : A -> B) (e : t E A) (e' : t E' B) : Prop :=
   (has_results e -> has_results e') /\
-    forall x : A, In x e -> In (f x) e'.
+    ∀'x ∈ e, (f x) ∈ e'.
 
-Lemma Incl_In E A B (e : t E A) (e' : t E B) x f :
-  Incl f e e' -> In x e -> In (f x) e'.
+Lemma Incl_elem_of E A B (e : t E A) (e' : t E B) x f :
+  Incl f e e' -> x ∈ e -> (f x) ∈ e'.
 Proof. firstorder. Qed.
 
 Lemma Incl_has_results E A (e e' : t E A) f :
