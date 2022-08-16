@@ -79,6 +79,9 @@ Definition fail_if {E} (b : bool) (e : E) : t E () :=
 Definition assert {E} (b : bool) : t E () :=
   if b then ret () else discard.
 
+(** Non-deterministically choose an element in a finite set *)
+Definition choose {E} (A : Type) `{Finite A} : t E A := Results (enum A).
+
 (** Maps the error to another error type. *)
 Definition map_error {E E' A} (f : E -> E') (e : t E A) : t E' A :=
   match e with
@@ -194,9 +197,10 @@ Lemma elem_of_discard E A (x : A) : x ∈ (discard : t E A) <-> False.
 Proof. sauto. Qed.
 #[global] Hint Rewrite elem_of_discard: exec.
 
-Lemma has_results_results E A l : has_results (Results l : t E A) <-> True.
-Proof. ssimpl. Qed.
-#[global] Hint Rewrite has_results_results : exec.
+Lemma has_results_results E A l : has_results (Results l : t E A).
+Proof. sfirstorder. Qed.
+#[global] Hint Resolve has_results_results : exec.
+#[global] Hint Rewrite (fun E A l => Prop_for_rewrite $ has_results_results E A l) : exec.
 
 Lemma elem_of_results E A (x : A) l : x ∈ (Results l : t E A) <-> x ∈ l.
 Proof. hauto inv:elem_of. Qed.
@@ -237,13 +241,25 @@ Lemma elem_of_map_error E E' A (x : A) (e : t E A) (f : E -> E') :
 Proof. sauto q:on rew:off. Qed.
 #[global] Hint Rewrite elem_of_map_error : exec.
 
+Lemma has_results_choose E A `{Finite A}:
+  has_results (choose A : t E A).
+Proof. sfirstorder. Qed.
+#[global] Hint Resolve has_results_choose : exec.
+#[global] Hint Rewrite (fun E A `{Finite A} => Prop_for_rewrite (has_results_choose E A)) : exec.
+
+Lemma elem_of_choose E A `{Finite A} x:
+  x ∈ (choose A : t E A).
+Proof. sauto lq:on. Qed.
+#[global] Hint Resolve elem_of_choose : exec.
+#[global] Hint Rewrite (fun E A `{Finite A} x => Prop_for_rewrite (elem_of_choose E A x)) : exec.
+
+
 Lemma has_results_results_mbind E A B (l : list A) (f : A -> t E B):
   has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
 Proof.
   unfold_cqual.
   induction l; hauto inv:elem_of_list l:on db:exec.
 Qed.
-
 
 Lemma elem_of_results_mbind E A B (x : B) (l : list A) (f: A -> t E B) :
   x ∈ (Results l ≫= f) <-> (∃'y ∈ l, x ∈ (f y)) /\ ∀'z ∈ l, has_results (f z).

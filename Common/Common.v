@@ -9,6 +9,7 @@ Require Import DecidableClass.
 From stdpp Require Export strings.
 From stdpp Require Export fin.
 From stdpp Require Export vector.
+From stdpp Require Export finite.
 Require Export Ensembles.
 
 Require Export CBase.
@@ -35,18 +36,21 @@ Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
 (********** Ensembles **********)
 
 (* TODO: Move to stdpp *)
-Global Instance ensemble_omap : OMap Ensemble := λ A B f E b,
+Global Instance Ensemble_elem_of {A} : ElemOf A (Ensemble A) := fun x P => P x.
+
+(* TODO: Move to stdpp *)
+Global Instance Ensemble_omap : OMap Ensemble := λ A B f E b,
     ∃'a ∈ E, f a = Some b.
 
 (* TODO: Move to stdpp *)
-Global Instance ensemble_empty {A} : Empty (Ensemble A) := fun a => False.
+Global Instance Ensemble_empty {A} : Empty (Ensemble A) := fun a => False.
 
-Definition ensemble_from_list {A} (l : list A) : Ensemble A := fun a => a ∈ l.
+Definition Ensemble_from_list {A} (l : list A) : Ensemble A := fun a => a ∈ l.
 
 
 (********** Vectors **********)
 
-(* This is purposefully not in stdpp because Coq does not apply automatically
-   Because of dependent types. This can be solved with a Hint Resolve *)
+(* This is purposefully not in stdpp because Coq does not apply it automatically
+   because of dependent types. This can be solved with a Hint Resolve *)
 Global Instance vector_insert {n} {V} : Insert (fin n) V (vec V n) := vinsert.
-Global Hint Resolve vector_insert : typeclasses.
+Global Hint Resolve vector_insert : typeclass_instances.

@@ -1,7 +1,6 @@
 
 From stdpp Require Export base.
 Require Import DecidableClass.
-Require Import Ensembles.
 
 
 (********** Notations **********)
@@ -20,9 +19,14 @@ Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
 Definition iffLR {A B : Prop} (i : A <-> B) : A -> B := proj1 i.
 Definition iffRL {A B : Prop} (i : A <-> B) : B -> A := proj2 i.
 
+(** Convert a true proposition into a rewriting rule of that proposition to true
+*)
+Definition Prop_for_rewrite {P : Prop} (H : P) : P <-> True.
+  firstorder.
+Defined.
+
 (********** Constrained quantifiers **********)
 
-Global Instance Ensembles_elem_of {A} : ElemOf A (Ensemble A) := fun x P => P x.
 
 Definition forall_elem_of `{ElemOf A B} (P : A -> Prop) (b : B) :=
   forall x : A, x ∈ b -> P x.
