@@ -1,6 +1,7 @@
 
 From stdpp Require Export base.
 Require Import DecidableClass.
+Require Export Relations.
 
 
 (********** Notations **********)
@@ -63,3 +64,8 @@ Notation "(≢ₛ)" := (λ x y, ¬x ≡ₛ y) (only parsing) : stdpp_scope.
 Notation "x ≢ₛ y":= (¬x ≡ₛ y) (at level 70, no associativity) : stdpp_scope.
 Notation "( x ≢ₛ.)" := (λ y, x ≢ₛ y) (only parsing) : stdpp_scope.
 Notation "(.≢ₛ x )" := (λ y, y ≢ₛ x) (only parsing) : stdpp_scope.
+
+
+(********** Relations **********)
+
+Arguments clos_refl_trans {_}.

@@ -54,3 +54,33 @@ Definition Ensemble_from_list {A} (l : list A) : Ensemble A := fun a => a ∈ l.
    because of dependent types. This can be solved with a Hint Resolve *)
 Global Instance vector_insert {n} {V} : Insert (fin n) V (vec V n) := vinsert.
 Global Hint Resolve vector_insert : typeclass_instances.
+
+Create HintDb vec discriminated.
+
+#[global] Hint Rewrite @lookup_fun_to_vec : vec.
+#[global] Hint Rewrite @vlookup_map : vec.
+#[global] Hint Rewrite @vlookup_zip_with : vec.
+
+(* There are probably lots of other lemmas to be added here,
+   I'll do case by case.
+ *)
+
+
+(********** Finite decidable quantifiers **********)
+
+Definition fforallb {A : Type} `{Finite A} (P : A -> bool) : bool :=
+  forallb P (enum A).
+
+Lemma fforallb_brefl A `{Finite A} (P : A → bool):
+  is_true (fforallb P) ↔ forall x : A, P x.
+Proof. unfold fforallb. sauto lqb:on dep:on simp+: unfold_cqual. Qed.
+#[global] Hint Rewrite fforallb_brefl : brefl.
+
+
+Definition fexistsb {A : Type} `{Finite A} (P : A -> bool) : bool :=
+  existsb P (enum A).
+
+Lemma fexistsb_brefl A `{Finite A} (P : A → bool):
+  is_true (fexistsb P) ↔ exists x : A, P x.
+Proof. unfold fexistsb. sauto lqb:on dep:on simp+: unfold_cqual. Qed.
+#[global] Hint Rewrite fforallb_brefl : brefl.
