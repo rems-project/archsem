@@ -28,14 +28,15 @@
 From Hammer Require Import Tactics.
 Require Import SSCCommon.Common.
 Require Import PRelations.
-Require Exec.
+Require SSCCommon.Exec.
+Module Exec := SSCCommon.Exec.
+
 Import Exec.Tactics.
 Require Import Sail.Base.
 From AxModel Require Import Ax_model_arm_vmsa_aux isa_interface_types
      Events Execution.
 
 Open Scope stdpp_scope.
-
 
 
 
