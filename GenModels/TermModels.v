@@ -36,6 +36,10 @@ Module TermModels (Arch : Arch). (* to be imported *)
 
   Definition registerMap := reg → reg_type.
 
+  (** A termination condition that define when each thread should stop.
+
+      For now it only needs a register maps as I expect it will most often just
+      be `PC = ...` or `PC >= ...` *)
   Definition terminationCondition (n : nat) := fin n -> registerMap -> bool.
 
   (** This module define a concept of simple machine state without any
