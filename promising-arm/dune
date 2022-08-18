@@ -1,5 +1,5 @@
 (coq.theory
  (name PromisingArm)
  (modules PRelations Promising)
- (theories AxModel SSCCommon)
+ (theories AxModel SSCCommon GenModels)
 )
