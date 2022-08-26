@@ -3,7 +3,6 @@ Require SSCCommon.Exec.
 Module Exec := SSCCommon.Exec.
 Import Exec.Tactics.
 
-Require Import bitvector.bitvector.
 Require Import Ensembles.
 
 Require Import Strings.String.

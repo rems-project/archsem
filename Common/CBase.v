@@ -1,5 +1,6 @@
 
 From stdpp Require Export base.
+From stdpp Require Export tactics.
 Require Import DecidableClass.
 Require Export Relations.
 
@@ -69,3 +70,23 @@ Notation "(.≢ₛ x )" := (λ y, y ≢ₛ x) (only parsing) : stdpp_scope.
 (********** Relations **********)
 
 Arguments clos_refl_trans {_}.
+
+
+(********** Utility tactics **********)
+
+Ltac block t := change t with (block t) in *.
+Ltac unblock := unfold block in *.
+
+(* useful for debugging *)
+Ltac deintro :=
+  match goal with
+  | H : _ |- _ => generalize dependent H
+  end.
+Ltac deintros := repeat deintro.
+Ltac print_full_goal := try(deintros; match goal with |- ?G => idtac G end; fail).
+
+(* run tac on all hypotheses in first-to-last order *)
+Ltac forall_hyps tac :=
+  lazymatch goal with
+  | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
+  end.

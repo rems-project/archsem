@@ -15,16 +15,7 @@ Require Export Ensembles.
 Require Export CBase.
 Require Export CBool.
 Require Export CList.
-
-(********** Bitvectors **********)
-
-(* Interface Equality decision for words (from bbv) *)
-Global Instance word_eq_dec n : EqDecision (word n).
-Proof.
-  unfold EqDecision.
-  unfold Decision.
-  apply weq.
-Defined.
+Require Export CBitvector.
 
 (********** Utility functions **********)
 

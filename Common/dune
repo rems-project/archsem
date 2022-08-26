@@ -1,4 +1,4 @@
 (coq.theory
  (name SSCCommon)
- (modules Common CBase CList CBool Exec)
+ (modules Common CBase CList CBool CBitvector Exec)
 )

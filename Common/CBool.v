@@ -43,6 +43,15 @@ Lemma true_is_true (b : bool) : b <-> is_true b.
 #[global] Hint Rewrite -> true_is_true : brefl.
 #[global] Hint Rewrite <- true_is_true : breif.
 
+Lemma eq_true_is_true (b : bool) : b = true <-> is_true b.
+  Proof. sauto lq:on. Qed.
+#[global] Hint Rewrite -> eq_true_is_true : brefl.
+
+Lemma eq_false_is_not_true (b : bool) : b = false <-> ¬ is_true b.
+  Proof. sauto lq:on. Qed.
+#[global] Hint Rewrite -> eq_false_is_not_true : brefl.
+
+
 (* Unfortunately all boolean reflection lemmas will thus need be written with
    is_true instead of the default coercion Is_True for now. When this project
    start using Coq 8.15, this might change *)
