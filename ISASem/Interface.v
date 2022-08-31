@@ -8,7 +8,7 @@ Require Import SailArmInst_types.
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
 
-Definition empOutcome (_ : Type) := False.
+Inductive empOutcome (R : Type) :=.
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -274,3 +274,7 @@ Module Interface (A : Arch).
     end.
 
 End Interface.
+
+Module Type InterfaceT (A : Arch).
+  Include Interface A.
+End InterfaceT.

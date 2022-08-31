@@ -70,12 +70,11 @@ End PM.
 Arguments t : clear implicits.
 End PromMemory.
 
-Module Gen (Arch : Arch). (* to be imported *)
-  Module IA := Interface Arch.
+(* to be imported *)
+Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
   Import IA.
   Notation iSem := (IA.iSem empOutcome).
 
-  Module TM := TermModels Arch.
   Import TM.
 
   (** Promising thread *)
@@ -287,3 +286,8 @@ Module Gen (Arch : Arch). (* to be imported *)
         Promising_Modelc *)
 
 End Gen.
+
+Module Type GenT (Arch : Arch) (IA : InterfaceT Arch)
+  (TM : TermModelsT Arch IA).
+  Include Gen Arch IA TM.
+End GenT.

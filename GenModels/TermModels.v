@@ -26,8 +26,8 @@ Require Import ISASem.Interface.
     The definitions in this module are highly experimental and will change
     heavily depending on various requirements that are not yet known.
  *)
-Module TermModels (Arch : Arch). (* to be imported *)
-  Module IA := Interface Arch.
+Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
+  Import Arch.
   Import IA.
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
@@ -207,3 +207,7 @@ Module TermModels (Arch : Arch). (* to be imported *)
   End Model.
 
 End TermModels.
+
+Module Type TermModelsT (A : Arch) (IA : InterfaceT A).
+  Include TermModels A IA.
+End TermModelsT.
