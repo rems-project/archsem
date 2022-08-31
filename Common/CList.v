@@ -42,6 +42,21 @@ Proof. setoid_rewrite elem_of_list_In. apply in_map. Qed.
 #[global] Hint Resolve elem_of_map : list.
 
 
+(********** List lookup with different keys **********)
+
+Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
+  fun p l => l !! (Pos.to_nat p).
+
+Global Instance list_lookupN {A} : Lookup N A (list A) :=
+  fun n l => l !! (N.to_nat n).
+
+Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
+  fun z l =>
+    match z with
+    | Zpos p => l !! p
+    | Z0 => head l
+    | Zneg _ => None
+    end.
 
 (********** List boolean reflection **********)
 
