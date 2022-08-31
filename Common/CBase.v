@@ -3,6 +3,7 @@ From stdpp Require Export base.
 From stdpp Require Export tactics.
 Require Import DecidableClass.
 Require Export Relations.
+From RecordUpdate Require Export RecordSet.
 
 
 (********** Notations **********)
@@ -26,6 +27,10 @@ Definition iffRL {A B : Prop} (i : A <-> B) : B -> A := proj2 i.
 Definition Prop_for_rewrite {P : Prop} (H : P) : P <-> True.
   firstorder.
 Defined.
+
+Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
+  set proj (fun _ => v).
+
 
 (********** Constrained quantifiers **********)
 
