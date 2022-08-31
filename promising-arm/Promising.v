@@ -527,8 +527,6 @@ Module IIS.
 
   Definition start : t := [].
 
-  Check List.fold_left.
-
   Definition from_deps (deps : list nat) (iis : t) : view :=
    List.fold_left (fun v dep => match iis !! dep with
                                   | Some v' => max v v'
