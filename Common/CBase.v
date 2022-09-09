@@ -15,6 +15,13 @@ From RecordUpdate Require Export RecordSet.
     that a = b |> f will be parsed as a = (b |> f). *)
 Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
 
+(** Monadic bind with an explicit monad annotation *)
+Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
+  (at level 20, y at level 100, z at level 200, only parsing) : stdpp_scope.
+Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
+  (at level 20, x pattern, y at level 100, z at level 200, only parsing) : stdpp_scope.
+
+
 
 (********* Utility functions **********)
 
