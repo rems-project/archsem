@@ -74,7 +74,7 @@ Module Interface (A : Arch).
   End DepOn.
 
   Module ReadReq.
-    Record t (n : N) :=
+    Record t {n : N} :=
       make
         { pa : pa;
           access_kind : accessKind;
@@ -86,10 +86,11 @@ Module Interface (A : Arch).
             *)
           addr_dep_on : option DepOn.t;
         }.
+    Arguments t : clear implicits.
   End ReadReq.
 
   Module WriteReq.
-    Record t (n : N) :=
+    Record t {n : N} :=
       make
         { pa : A.pa;
           access_kind : accessKind;
@@ -106,6 +107,7 @@ Module Interface (A : Arch).
             *)
           data_dep_on : option DepOn.t;
         }.
+    Arguments t : clear implicits.
   End WriteReq.
 
   Section T.
@@ -143,9 +145,6 @@ Module Interface (A : Arch).
   (** Bail out when something went wrong; this may be refined in the future *)
   | GenericFail (msg : string) : outcome False
 
-  (** Terminate the instruction successfully *)
-  | Success : outcome False
-
   (** The next two outcomes are for handling non-determinism. Choose will branch
       the possible executions non-deterministically for every bitvector of
       size n. *)
@@ -161,8 +160,8 @@ Module Interface (A : Arch).
 
   (** This is a naive but inefficient implementation of the instruction monad.
       It might be replaced by an more efficient version later. *)
-  Inductive iMon {a : Type} :=
-  | Ret : a -> iMon
+  Inductive iMon {A : Type} :=
+  | Ret : A -> iMon
   | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
   Arguments iMon : clear implicits.
 
@@ -191,9 +190,10 @@ Module Interface (A : Arch).
   (********** Instruction semantics and traces **********)
 
   (** The semantics of an complete instruction. This is just a monad instance
-  whose return type is false. This means that an instruction termination outcome
-  is called in each possible branch. *)
-  Definition iSem := iMon False.
+      whose return type is unit. Only the sequence of model calls is important,
+      There is no return value. An instruction might terminate with a
+      special outcome like GenericFail instead of returning normally. *)
+  Definition iSem := iMon unit.
 
   (** A single event in an instruction execution. As implied by the definition
       events cannot contain termination outcome (outcomes of type
@@ -226,7 +226,7 @@ Module Interface (A : Arch).
     iTrace_match (Next oc f) ((IEvent oc obj) :: rest, e)
   | TMChoose n f (v : bv n) tr :
     iTrace_match (f v) tr -> iTrace_match (Next (Choose n) f) tr
-  | TMSuccess f : iTrace_match (Next Success f) ([], None)
+  | TMSuccess : iTrace_match (Ret ()) ([], None)
   | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], Some s).
 
   (** Semantic equivalence for instructions *)
@@ -267,7 +267,6 @@ Module Interface (A : Arch).
         | EretAnnounce => Next EretAnnounce
         | ArchOutcome aout => iMon_bind (f _ aout)
         | GenericFail msg => Next (GenericFail msg)
-        | Success => Next Success
         | Choose n => Next (Choose n)
         | Discard => Next (Discard)
         end k
