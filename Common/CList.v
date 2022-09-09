@@ -36,6 +36,22 @@ Lemma elem_of_map {A B} (f : A → B) (l : list A) (x : A):
 Proof. setoid_rewrite elem_of_list_In. apply in_map. Qed.
 #[global] Hint Resolve elem_of_map : list.
 
+Lemma elem_of_map_iff {A B} (f : A -> B) (l : list A) (x : B):
+  x ∈ map f l <-> ∃'y ∈ l, x = f y.
+Proof.
+  setoid_rewrite elem_of_list_In.
+  rewrite in_map_iff.
+  firstorder.
+Qed.
+(* #[global] Hint Rewrite @elem_of_map_iff : list. *)
+
+Lemma forall_elem_of_map {A B} (f : A -> B) (l : list A) (P : B -> Prop) :
+  (∀'x ∈ map f l, P x) <-> ∀'y ∈ l, P (f y).
+Proof.
+  setoid_rewrite elem_of_map_iff.
+  hauto lq:on.
+Qed.
+#[global] Hint Rewrite @forall_elem_of_map : list.
 
 (********** List lookup with different keys **********)
 
@@ -86,3 +102,36 @@ Global Instance list_omap : OMap listset := λ A B f '(Listset l),
     Listset (omap f l).
 
 Global Instance list_Empty {A} : Empty (list A) := [].
+
+
+(********** List utility functions **********)
+
+Fixpoint list_from_func_aux {A} (f : nat -> A) (len : nat) (acc : list A) :=
+  match len with
+  | 0 => acc
+  | S len => list_from_func_aux f len ((f len) :: acc)
+  end.
+
+Definition list_from_func (len : nat) {A} (f : nat -> A) :=
+  list_from_func_aux f len [].
+
+Lemma list_from_func_aux_eq {A} (f : nat -> A) n acc :
+  list_from_func_aux f n acc = list_from_func n f ++ acc.
+Proof.
+  generalize dependent acc.
+  induction n.
+  - sfirstorder.
+  - sauto db:list simp+:cbn;rewrite IHn.
+Qed.
+
+Lemma seq_end n l : seq n (S l) = seq n l ++ [n + l].
+Proof.
+  generalize dependent n.
+  induction l; sauto db:list.
+Qed.
+
+Lemma list_from_func_map {A} (f : nat -> A) n :
+  list_from_func n f = map f (seq 0 n).
+Proof.
+  induction n; sauto lq:on db:list use:seq_end,list_from_func_aux_eq.
+Qed.
