@@ -494,8 +494,8 @@ Definition write_mem (tid : TID.t) (loc : Loc.t) (vaddr : view) (vdata : view)
     If the store is not exclusive, the write is always performed and the second
     return value is None.
 
-    If the store is exclusive the write may succeed or fail and the second
-    return value indicate the success (true for success, false for error) *)
+    If the store is exclusive the write may succeed or fail. In case of failure,
+    no behavior is returned. *)
 Definition write_mem_xcl (tid : TID.t) (loc : Loc.t) (vaddr : view)
            (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
            (mem : Memory.t) (data : regval)

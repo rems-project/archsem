@@ -73,6 +73,8 @@ End PromMemory.
 (* to be imported *)
 Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
   Import IA.
+  Notation outcome := (IA.outcome empOutcome).
+  Notation iMon := (IA.iMon empOutcome).
   Notation iSem := (IA.iSem empOutcome).
 
   Import TM.
