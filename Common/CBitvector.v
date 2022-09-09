@@ -75,6 +75,7 @@ Ltac transport_symmetry :=
   end.
 
 #[global] Hint Rewrite @transport_simpl : transport.
+#[global] Hint Rewrite @transport_eq_trans : transport.
 
 Lemma transport_func {A B} {P : A -> Type} {x y : A} (e : x = y) (b : B)
   (f : B -> P x)
@@ -105,11 +106,13 @@ Lemma eq_nat_to_N {n m : nat} :
 Proof. lia. Qed.
 
 
-(* The arith rewrite database helps simplify arithmetic in bitvector sizes*)
+(* The arith rewrite database helps simplify arithmetic *)
 #[global] Hint Rewrite N_nat_Z : arith.
 #[global] Hint Rewrite nat_N_Z : arith.
 #[global] Hint Rewrite @N2Nat.id : arith.
 #[global] Hint Rewrite @Nat2N.id : arith.
+(* #[global] Hint Rewrite @Zmod_mod : arith. *)
+
 
 (* Reduce concrete arithmetic values to help lia. This is a tactic from stdpp bitvector
    that is redefined so it will also affect development done there*)
@@ -154,7 +157,7 @@ Defined.
 
 (* The word database simplifies word related expressions *)
 
-#[global] Hint Rewrite @uwordToZ_ZToWord : word.
+#[global] Hint Rewrite @uwordToZ_ZToWord using unfold bv_modulus in *;lia : word.
 #[global] Hint Rewrite @ZToWord_uwordToZ : word.
 
 Lemma transport_ZToWord {n m : nat} (e : n = m) (z : Z) :
@@ -167,11 +170,21 @@ Lemma transport_uwordToZ (n m : nat) (w : word n) (e : n = m):
 Proof. scongruence. Qed.
 #[global] Hint Rewrite transport_uwordToZ : word.
 
+Lemma transport_wordToZ (n m : nat) (w : word n) (e : n = m):
+  wordToZ (transport word e w) = wordToZ w.
+Proof. scongruence. Qed.
+#[global] Hint Rewrite transport_wordToZ : word.
+
+Lemma transport_wordToN (n m : nat) (w : word n) (e : n = m):
+  wordToN (transport word e w) = wordToN w.
+Proof. scongruence. Qed.
+#[global] Hint Rewrite transport_wordToN : word.
+
+
 (* Do a transport_symmetry only if it enables immediate progress on
    either side of the equality *)
 Ltac transport_symmetry_word :=
   transport_symmetry; rewrite_strat subterm hints word.
-
 
 (********** bv rewrite database **********)
 
@@ -398,7 +411,7 @@ Ltac remove_words :=
    it does not move the goal to Z. Equalities in bv will stay in bv *)
 Ltac bv_word_simp :=
   (* TODO maybe move to rewrite_strat if quantifier rewriting is needed *)
-  repeat (autorewrite with bv word transport in *;
+  repeat (autorewrite with bv word transport arith in *;
           try bv_to_word_to_bv;
           try word_to_bv_to_word).
 
@@ -443,3 +456,86 @@ Ltac bv_word_solve :=
 
 
 (* TODO improve performance *)
+
+(********** Convert word operation to bv operations **********)
+
+Lemma word_to_bv_ZToWord n z :
+  word_to_bv (ZToWord n z) = Z_to_bv (N.of_nat n) z.
+Proof.
+  destruct n.
+  - setoid_rewrite word0.
+    bv_solve.
+  - unfold word_to_bv.
+    rewrite uwordToZ_ZToWord_full; [|lia].
+    bv_simplify_arith'.
+    bv_word_simp.
+    reflexivity.
+Qed.
+#[global] Hint Rewrite word_to_bv_ZToWord : bv.
+
+Lemma word_to_bv_natToWord n m :
+  word_to_bv (natToWord n m) = Z_to_bv (N.of_nat n) (Z.of_nat m).
+Proof.
+  rewrite <- ZToWord_Z_of_nat.
+  bv_word_solve.
+Qed.
+#[global] Hint Rewrite word_to_bv_natToWord : bv.
+
+Lemma word_to_bv_NToWord n m :
+  word_to_bv (NToWord n m) = Z_to_bv (N.of_nat n) (Z.of_N m).
+Proof.
+  rewrite <- ZToWord_Z_of_N.
+  bv_word_solve.
+Qed.
+#[global] Hint Rewrite word_to_bv_NToWord : bv.
+
+Lemma uwordToZ_bv_to_word n (b : bv n):
+  uwordToZ (bv_to_word b) = bv_unsigned b.
+Proof.
+  unfold bv_to_word.
+  hauto lq:on db:bv,word,arith use:bv_unsigned_in_range.
+Qed.
+#[global] Hint Rewrite uwordToZ_bv_to_word : bv.
+
+(* I need this because fold won't work *)
+Lemma uwordToZ_def sz (w : word sz) : Z.of_N (wordToN w) = uwordToZ w.
+  Proof. reflexivity. Qed.
+#[global] Hint Rewrite uwordToZ_def : word.
+
+
+Lemma word_to_bv_wplus n (w w' : word n) :
+  word_to_bv (wplus w w') = (word_to_bv w + word_to_bv w')%bv.
+Proof.
+  unfold wplus,wordBin.
+  remove_words.
+  rewrite N2Z.inj_add.
+  bv_word_solve.
+Qed.
+#[global] Hint Rewrite word_to_bv_wplus : bv.
+
+
+
+
+
+(********** Extra bitvector function **********)
+(* This section might be upstreamed to stdpp. *)
+
+(* Give minimal number of block of size n to cover m
+
+   Unspecified if n = 0
+ *)
+Definition align_up (m n : N) := ((m + (n - 1)) / n)%N.
+
+(** Transform a bitvector to bytes of size n. *)
+Definition bv_to_bytes (n : N) {m : N} (b : bv m) : list (bv n) :=
+  bv_to_little_endian (Z.of_N $ align_up m n) n (bv_unsigned b).
+
+(** Transform a list of bytes of size n to a bitvector of size m.
+
+    If m is larger than n*(length l), the result is zero-extended to m
+    If m is smaller than n*(length l), the result is truncated to m *)
+Definition bv_of_bytes (n : N) (m : N) (l : list (bv n)) : bv m :=
+  little_endian_to_bv n l |> Z_to_bv m.
+
+(* TODO add bv_solve support for those two functions *)
+
