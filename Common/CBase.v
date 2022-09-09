@@ -4,6 +4,7 @@ From stdpp Require Export tactics.
 Require Import DecidableClass.
 Require Export Relations.
 From RecordUpdate Require Export RecordSet.
+From Hammer Require Export Tactics.
 
 
 (********** Notations **********)
@@ -41,29 +42,15 @@ Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
 
 (********** Constrained quantifiers **********)
 
-
-Definition forall_elem_of `{ElemOf A B} (P : A -> Prop) (b : B) :=
-  forall x : A, x ∈ b -> P x.
-
-Notation "∀' x ∈ b , P" := (forall_elem_of (fun x => P) b)
+Notation "∀' x ∈ b , P" := (forall x, x ∈ b -> P)
   (at level 200, x binder, right associativity,
   format "'[ ' '[ ' ∀' x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
-Definition exists_elem_of `{ElemOf A B} (P : A -> Prop) (b : B) :=
-  exists x : A, x ∈ b /\ P x.
-
-Notation "∃' x ∈ b , P" := (exists_elem_of (fun x => P) b)
+(* The formatting, doesn't work so this is still printed as exists x, x ∈ b /\ P
+   but that's not really a problem *)
+Notation "∃' x ∈ b , P" := (exists x, x ∈ b /\ P)
   (at level 200, x binder, right associativity,
   format "'[ ' '[ ' ∃' x  ∈  b ']' ,  '/' P ']'") : type_scope.
-
-Tactic Notation "unfold_cqual" :=
-  repeat unfold forall_elem_of in *;
-  repeat unfold exists_elem_of in *.
-
-(* If needed it is always good to open those as soon as possible *)
-Global Hint Extern 0 => unfold forall_elem_of : cqual.
-Global Hint Extern 0 => unfold exists_elem_of : cqual.
-
 
 (********** Set equivalence **********)
 

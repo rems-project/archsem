@@ -3,7 +3,7 @@ From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Export listset.
 
-(********** List automation **********)
+(********** List simplification **********)
 
 (** Automation for list simplifications *)
 Tactic Notation "list_simp" "in" "|-*" :=
@@ -18,6 +18,9 @@ Tactic Notation "list_simp" :=
          | [H : _ |- _ ] => rewrite_strat topdown hints list in H
          end).
 
+#[global] Hint Rewrite <- app_assoc : list.
+#[global] Hint Rewrite map_app : list.
+
 Lemma elem_of_app {A} (l l' : list A) (a : A) :
   a ∈ l ++ l' <-> a ∈ l \/ a ∈ l'.
 Proof. repeat rewrite elem_of_list_In. apply in_app_iff. Qed.
@@ -26,15 +29,7 @@ Proof. repeat rewrite elem_of_list_In. apply in_app_iff. Qed.
 (** Simple type class instance should be systematically simplfied *)
 Arguments list_subseteq _ _ _ /.
 
-Lemma Forall_forall_elem_of {A} (P : A -> Prop) (l : list A) :
-    Forall P l <-> ∀' x ∈ l, P x.
-Proof.
-  rewrite Forall_forall.
-  unfold forall_elem_of.
-  setoid_rewrite elem_of_list_In.
-  reflexivity.
-Qed.
-#[global] Hint Rewrite @Forall_forall_elem_of : list.
+#[global] Hint Rewrite @Forall_forall : list.
 
 Lemma elem_of_map {A B} (f : A → B) (l : list A) (x : A):
   x ∈ l → (f x) ∈ (map f l).
@@ -62,11 +57,10 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
 
 (** existsb boolean reflection *)
 Lemma existsb_brefl A (f : A → bool) (l : list A):
-  is_true (existsb f l) ↔ ∃' x ∈ l, is_true(f x).
+  is_true (existsb f l) ↔ ∃'x ∈ l, is_true(f x).
 Proof.
   unfold is_true.
   rewrite existsb_exists.
-  unfold exists_elem_of.
   setoid_rewrite elem_of_list_In.
   reflexivity.
 Qed.
@@ -74,11 +68,10 @@ Qed.
 
 (** forallb boolean reflection *)
 Lemma forallb_brefl A (f : A → bool) (l : list A):
-  is_true (forallb f l) ↔ ∀' x ∈ l, is_true(f x).
+  is_true (forallb f l) ↔ ∀'x ∈ l, is_true(f x).
 Proof.
   unfold is_true.
   rewrite forallb_forall.
-  unfold forall_elem_of.
   setoid_rewrite elem_of_list_In.
   reflexivity.
 Qed.

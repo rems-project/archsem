@@ -257,7 +257,6 @@ Proof. sauto lq:on. Qed.
 Lemma has_results_results_mbind E A B (l : list A) (f : A -> t E B):
   has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
 Proof.
-  unfold_cqual.
   induction l; hauto inv:elem_of_list l:on db:exec.
 Qed.
 
@@ -269,7 +268,7 @@ Proof.
   - exec_simp.
     rewrite has_results_results_mbind.
     hauto
-      inv:elem_of_list ctrs:elem_of_list lq:on hint:db:exec simp+:unfold_cqual.
+      inv:elem_of_list ctrs:elem_of_list lq:on hint:db:exec.
 Qed.
 
 Lemma has_results_mbind E A B (e : t E A) (f : A -> t E B):
@@ -279,7 +278,7 @@ Proof.
   destruct e.
   - hauto inv:has_results.
   - rewrite has_results_results_mbind.
-    hauto lq:on db:list simp+:unfold_cqual simp+:exec_simp.
+    hauto lq:on db:list simp+:exec_simp.
 Qed.
 #[global] Hint Rewrite has_results_mbind : exec.
 
@@ -289,14 +288,14 @@ Proof.
   destruct e.
   - hauto inv:elem_of.
   - rewrite elem_of_results_mbind.
-    hauto db:list simp+:exec_simp simp+:unfold_cqual.
+    hauto db:list simp+:exec_simp.
 Qed.
 #[global] Hint Rewrite elem_of_mbind : exec.
 
 (* This is an optimisation of the previous rewriting rules *)
 Lemma elem_of_error_none_mbind E A B (x : B) (f: A -> t E B) err opt :
   x ∈ (error_none err opt ≫= f) <-> exists y, opt = Some y /\ x ∈ (f y).
-Proof. hauto q:on db:exec simp+:unfold_cqual. Qed.
+Proof. hauto q:on db:exec. Qed.
 #[global] Hint Rewrite elem_of_error_none_mbind : exec.
 
 

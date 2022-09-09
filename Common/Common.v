@@ -3,7 +3,6 @@
  *)
 
 From Hammer Require Export Tactics.
-From RecordUpdate Require Export RecordSet.
 Require Export bbv.Word.
 Require Import DecidableClass.
 From stdpp Require Export strings.
