@@ -189,11 +189,20 @@ Module Interface (A : Arch).
 
   (********** Instruction semantics and traces **********)
 
-  (** The semantics of an complete instruction. This is just a monad instance
-      whose return type is unit. Only the sequence of model calls is important,
-      There is no return value. An instruction might terminate with a
-      special outcome like GenericFail instead of returning normally. *)
-  Definition iSem := iMon unit.
+  (** The semantics of an complete instruction. A full definition of instruction
+      semantics is allowed to have an internal state that gets passed from one
+      instruction to the next. This is useful to handle pre-computed instruction
+      semantics (e.g. Isla). For complete instruction semantics, we expect that
+      A will be unit.*)
+  Record iSem :=
+    {
+      (** The instruction model internal state *)
+      isa_state : Type;
+      (** The instruction model initial state for a thread with a specific Tid
+          *)
+      init_state : nat -> isa_state;
+      semantic : isa_state -> iMon isa_state
+    }.
 
   (** A single event in an instruction execution. As implied by the definition
       events cannot contain termination outcome (outcomes of type
@@ -202,11 +211,11 @@ Module Interface (A : Arch).
   | IEvent {T : Type} : outcome T -> T -> iEvent.
 
   (** An execution trace for a single instruction.
-      If the option is None, it means a successful execution
-      If the option is Some, it means a GenericFail *)
-  Definition iTrace : Type := list iEvent * option string.
+      If the result is an A, it means a successful execution that returned A
+      If the result is a string, it means a GenericFail *)
+  Definition iTrace (A : Type) : Type := list iEvent * (A + string).
 
-  (** A trace is pure if it only contains external event. That means it much not
+  (** A trace is pure if it only contains external events. That means it must not
       contain control-flow event. The name "pure" is WIP.*)
   Fixpoint pure_iTrace_aux (tr : list iEvent) : Prop :=
     match tr with
@@ -214,24 +223,24 @@ Module Interface (A : Arch).
     | _ :: t => pure_iTrace_aux t
     | [] => True
     end.
-  Definition pure_iTrace (tr : iTrace) :=
+  Definition pure_iTrace {A : Type} (tr : iTrace A) :=
     let '(t,r) := tr in pure_iTrace_aux t.
 
   (** Definition of a trace semantics matching a trace. A trace is allowed to
       omit control-flow outcomes such as Choose and still be considered
       matching. *)
-  Inductive iTrace_match : iSem -> iTrace -> Prop :=
-  | TMNext T (oc : outcome T) (f : T -> iSem) (obj : T) rest e :
-    iTrace_match (f obj) (rest, e) ->
-    iTrace_match (Next oc f) ((IEvent oc obj) :: rest, e)
+  Inductive iTrace_match {A : Type} : iMon A -> iTrace A -> Prop :=
+  | TMNext T (oc : outcome T) (f : T -> iMon A) (obj : T) tl res :
+    iTrace_match (f obj) (tl, res) ->
+    iTrace_match (Next oc f) ((IEvent oc obj) :: tl, res)
   | TMChoose n f (v : bv n) tr :
     iTrace_match (f v) tr -> iTrace_match (Next (Choose n) f) tr
-  | TMSuccess : iTrace_match (Ret ()) ([], None)
-  | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], Some s).
+  | TMSuccess a : iTrace_match (Ret a) ([], inl a)
+  | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], inr s).
 
   (** Semantic equivalence for instructions *)
-  Definition iSem_equiv (i1 i2 : iSem) : Prop :=
-    forall trace : iTrace,
+  Definition iMon_equiv `{Equiv A} (i1 i2 : iMon A) : Prop :=
+    forall trace : iTrace A,
     pure_iTrace trace -> (iTrace_match i1 trace <-> iTrace_match i2 trace).
 
   End T.

@@ -227,7 +227,6 @@ End Memory.
 
 (** The thread state *)
 Module TState.
-
   Record t :=
     make {
         (* The promises that this thread must fullfil
@@ -273,7 +272,7 @@ Module TState.
       vcap := 0;
       vrel := 0;
       fwdb := fun loc => (0, 0, false);
-      xclb := None
+      xclb := None;
     |})%nat.
 
   (** Extract a plain register map from the thread state without views.
@@ -534,51 +533,71 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   end.
 
 
-(** Runs an instruction as defined by the instruction_semantics type by using
-    run_outcome on all produced outcomes.*)
-Fixpoint run_iSem (i : iSem) (iis : IIS.t) (tid : nat)
+(** Runs an instruction monad object run_outcome as the effect handler *)
+Fixpoint run_iMon {A : Type} (i : iMon A) (iis : IIS.t) (tid : nat)
          (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * Memory.t) :=
+  : Exec.t string (TState.t * Memory.t * A) :=
   match i with
-  | Ret () => Exec.ret (ts, mem)
+  | Ret a => Exec.ret (ts, mem, a)
   | Next o next =>
       '(iis, ts, mem, res) ← run_outcome tid o iis ts init mem;
-      run_iSem (next res) iis tid ts init mem
+      run_iMon (next res) iis tid ts init mem
   end.
 
-Local Notation pthread_t := (PThread.t TState.t Msg.t).
+(*** Implement GenPromising ***)
 
-(** Same as run_iSem but from a pthread *)
-Definition run_pthread (i : iSem) (pthread : pthread_t) :=
-  run_iSem i IIS.init
-    pthread.(PThread.tid)
-    pthread.(PThread.tstate)
-    (pthread.(PThread.initmem) |> Memory.initial_from_memMap)
-    pthread.(PThread.events).
+Section PromStruct.
+  Context (isem : iSem).
+
+  Definition tState' : Type := TState.t * isem.(isa_state).
+
+  Definition tState_init' (tid : nat) (mem : memoryMap) (regs : registerMap)
+      : tState':=
+    (TState.init mem regs, isem.(init_state) tid).
+
+  Local Notation pThread := (PThread.t tState' Msg.t).
+
+(** Run an iSem on a pThread  *)
+  Definition run_pthread (pthread : pThread) : Exec.t string pThread :=
+    let imon := isem.(semantic) pthread.(PThread.tstate).2 in
+    let initmem := pthread.(PThread.initmem) |> Memory.initial_from_memMap in
+    '(ts, mem, isa_st) ←@{Exec.t string}
+      run_iMon
+        imon
+        IIS.init
+        pthread.(PThread.tid)
+        pthread.(PThread.tstate).1
+        initmem
+        pthread.(PThread.events);
+    pthread |> setv PThread.tstate (ts, isa_st)
+            |> setv PThread.events mem
+            |> Exec.ret.
 
 
-(* A thread is allowed to promise any promises with the correct tid.
-   This a non-certified promising model *)
-Definition allowed_promises_nocert (i : iSem) (pthread : pthread_t) :=
-  fun msg => msg.(Msg.tid) = pthread.(PThread.tid).
+  (* A thread is allowed to promise any promises with the correct tid.
+    This a non-certified promising model *)
+  Definition allowed_promises_nocert (pthread : pThread) :=
+    fun msg => msg.(Msg.tid) = pthread.(PThread.tid).
 
-Definition emit_promise' (i : iSem) (pthread : pthread_t) (msg : Msg.t) :=
-  let vmsg := length pthread.(PThread.events) in
-  pthread.(PThread.tstate) |> TState.promise vmsg.
+  Definition emit_promise' (pthread : pThread) (msg : Msg.t) :=
+    let vmsg := length pthread.(PThread.events) in
+    pthread.(PThread.tstate) |> set fst (TState.promise vmsg).
 
-Definition memory_snapshot' (memMap : memoryMap) (mem : Memory.t) : memoryMap :=
-  Memory.to_memMap (Memory.initial_from_memMap memMap) mem.
+  Definition memory_snapshot' (memMap : memoryMap) (mem : Memory.t) : memoryMap :=
+    Memory.to_memMap (Memory.initial_from_memMap memMap) mem.
 
-Definition user_mode_promising_nocert : PromisingModel :=
-  {|tState := TState.t;
-    tState_init := TState.init;
-    tState_regs := TState.regs_only;
-    mEvent := Msg.t;
-    run_instr := run_pthread;
-    allowed_promises := allowed_promises_nocert;
-    emit_promise := emit_promise';
-    memory_snapshot := memory_snapshot';
-  |}.
+  Definition user_mode_promising_nocert : PromisingModel isem :=
+    {|tState := tState';
+      tState_init := tState_init';
+      tState_regs := fun x => TState.regs_only x.1;
+      tState_isa_state := fun x => x.2;
+      mEvent := Msg.t;
+      run_instr := run_pthread;
+      allowed_promises := allowed_promises_nocert;
+      emit_promise := emit_promise';
+      memory_snapshot := memory_snapshot';
+    |}.
+End PromStruct.
 
 (* TODO defined certified version. In theory, only "allowed_promises" needs to
 change *)

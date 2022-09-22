@@ -39,6 +39,9 @@ Defined.
 Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
   set proj (fun _ => v).
 
+(** This allows to use set fst and set snd on pairs *)
+#[global] Instance eta_pair A B : Settable (A * B) :=
+  settable! (fun (a : A) (b : B) => (a, b)) <fst;snd>.
 
 (********** Constrained quantifiers **********)
 
