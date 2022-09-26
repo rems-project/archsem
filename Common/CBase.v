@@ -5,9 +5,10 @@ Require Import DecidableClass.
 Require Export Relations.
 From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
+Require Import ZArith.
 
 
-(********** Notations **********)
+(*** Notations ***)
 
 
 (** Functional pipe notation.
@@ -23,8 +24,7 @@ Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
   (at level 20, x pattern, y at level 100, z at level 200, only parsing) : stdpp_scope.
 
 
-
-(********* Utility functions **********)
+(*** Utility functions ***)
 
 (** Convenient iff destruction *)
 Definition iffLR {A B : Prop} (i : A <-> B) : A -> B := proj1 i.
@@ -43,7 +43,8 @@ Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
 #[global] Instance eta_pair A B : Settable (A * B) :=
   settable! (fun (a : A) (b : B) => (a, b)) <fst;snd>.
 
-(********** Constrained quantifiers **********)
+
+(*** Constrained quantifiers ***)
 
 Notation "∀' x ∈ b , P" := (forall x, x ∈ b -> P)
   (at level 200, x binder, right associativity,
@@ -55,7 +56,8 @@ Notation "∃' x ∈ b , P" := (exists x, x ∈ b /\ P)
   (at level 200, x binder, right associativity,
   format "'[ ' '[ ' ∃' x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
-(********** Set equivalence **********)
+
+(*** Set equivalence ***)
 
 Definition set_equiv `{SubsetEq E} : Equiv E := fun e1 e2 => e1 ⊆ e2 /\ e2 ⊆ e1.
 Infix "≡ₛ" := set_equiv (at level 70, no associativity) : stdpp_scope.
@@ -69,12 +71,12 @@ Notation "( x ≢ₛ.)" := (λ y, x ≢ₛ y) (only parsing) : stdpp_scope.
 Notation "(.≢ₛ x )" := (λ y, y ≢ₛ x) (only parsing) : stdpp_scope.
 
 
-(********** Relations **********)
+(*** Relations ***)
 
 Arguments clos_refl_trans {_}.
 
 
-(********** Utility tactics **********)
+(*** Utility tactics ***)
 
 Ltac block t := change t with (block t) in *.
 Ltac unblock := unfold block in *.
@@ -92,3 +94,14 @@ Ltac forall_hyps tac :=
   lazymatch goal with
   | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
   end.
+
+(*** Integer lattice ***)
+
+#[global] Instance join_nat : Join nat := Nat.max.
+#[global] Instance meet_nat : Meet nat := Nat.min.
+#[global] Instance join_pos : Join positive := Pos.max.
+#[global] Instance meet_pos : Meet positive := Pos.min.
+#[global] Instance join_N : Join N := N.max.
+#[global] Instance meet_N : Meet N := N.min.
+#[global] Instance join_Z : Join Z := Z.max.
+#[global] Instance meet_Z : Meet Z := Z.min.

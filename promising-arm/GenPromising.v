@@ -55,18 +55,36 @@ Section PM.
           if (len <? k)%nat then List.nth_error mem (len - k)%nat else None
     }.
 
-  (** Cuts the memory to only the memory that exists before the view, included.
+  (** Cuts the memory to only what exists before the timestamp, included.
+      The timestamp can still be computed the same way.
   *)
   Definition cut_before (v : nat) (mem : t) : t :=
     let len := List.length mem in
     (* Here I'm using the m - n = 0 when n > m behavior *)
     drop (len - v) mem.
 
-  (** Cuts the memory to only the memory that exists after the view, excluded.
-  *)
+  (** Cuts the memory to only what exists after the timestamp, excluded.
+      Beware of timestamp computation. If you need the original timestamps,
+      use cut_after_timestamps
+   *)
   Definition cut_after (v : nat) (mem : t) : t :=
     let len := List.length mem in
     take (len - v) mem.
+
+  (** Cuts the memory to only what exists after the timestamp, excluded.
+      Provide the original timestamps as a additional value.
+  *)
+
+  Fixpoint cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
+    let len := List.length mem in
+    if (Nat.leb v len)%nat then []
+    else
+      match mem with
+      | [] => []
+      | h :: q => (h, len) :: cut_after_with_timestamps v q
+      end.
+
+
 
 End PM.
 Arguments t : clear implicits.
@@ -83,18 +101,24 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 
   (** Promising thread *)
   Module PThread. (* namespace *)
-    Record t {tState mEvent : Type} :=
-      Make {
+    Section PT.
+      Context {tState mEvent : Type}.
+    Record t :=
+      make {
           tid : nat;
           initmem : memoryMap;
           tstate : tState;
           events : PromMemory.t mEvent;
         }.
-    Arguments t : clear implicits.
-    #[global] Instance eta tState mEvent : Settable (t tState mEvent) :=
-      settable! @Make tState mEvent <tid;initmem;tstate;events>.
-  End PThread.
+    #[global] Instance eta : Settable t :=
+      settable! @make <tid;initmem;tstate;events>.
 
+    Definition promise (ev : mEvent) (pt : t) := set events (ev ::.) pt.
+
+    End PT.
+
+    Arguments t : clear implicits.
+  End PThread.
 
   Structure PromisingModel {isem : iSem} := {
       tState : Type;
@@ -227,7 +251,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 
   (** Create a non-computational model from an ISA model and promising model *)
   Definition Promising_to_Modelnc (isem : iSem) (prom : PromisingModel isem)
-    : Model.nc False :=
+    : Model.n False :=
     fun n (initMs : MState.init n) (mr : ModelResult.t False n) =>
       let initPs : PState.t prom n := PState.from_MState prom initMs in
       match mr with

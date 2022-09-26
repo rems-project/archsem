@@ -4,6 +4,7 @@ Require Import SSCCommon.Common.
 Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
+From stdpp Require Import relations.
 
 Require Import ISASem.ArmInst.
 Require Import GenModels.TermModels.
@@ -139,14 +140,15 @@ Module Memory.
 
 
 
- (** Reads the last write to a location in some memory. If there was no writes,
-      return the initial value val_init *)
-  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : (view * val) :=
+ (** Reads the last write to a location in some memory. Gives the value and the
+     timestamp of the write that it read from.
+     The timestamp is 0 if reading from initial memory. *)
+  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : (val * nat) :=
     match mem with
-    | [] => (0%nat, init loc)
+    | [] => (init loc, 0%nat)
     | msg :: mem' =>
         if Msg.loc msg =? loc then
-          (List.length mem, Msg.val msg)
+          (Msg.val msg, List.length mem)
         else read_last loc init mem'
     end.
 
@@ -156,7 +158,7 @@ Module Memory.
       This is mainly for instruction fetching in this model *)
   Definition read_initial (loc : Loc.t) (init : initial) (mem : t) : option val :=
     match read_last loc init mem with
-    | (0%nat, v) => Some v
+    | (v, 0%nat) => Some v
     | _ => None
     end.
 
@@ -165,7 +167,7 @@ Module Memory.
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
     fun pa =>
       (loc ← Loc.from_pa_in pa;
-      let '(_, v) := read_last loc init mem in
+      let '(v, _) := read_last loc init mem in
       index ← Loc.pa_index pa;
       bv_to_bytes 8 v !! bv_unsigned index)
         |> default (bv_0 8).
@@ -175,23 +177,22 @@ Module Memory.
 
       TODO: it would make sense to make a function that does cut_after
       and this in a single step. *)
-  Fixpoint with_views_from (v : view) (mem : t)
-    : list (view * Msg.t) :=
-    match mem with
-    | [] => []
-    | h :: q => (v,h) :: with_views_from (v - 1) q
-    end.
+  (* Fixpoint with_views_from (v : view) (mem : t) *)
+  (*   : list (Msg.t * view) := *)
+  (*   match mem with *)
+  (*   | [] => [] *)
+  (*   | h :: q => (v, h) :: with_views_from (v - 1) q *)
+  (*   end. *)
 
   (** Returns the list of possible reads at a location restricted by a certain
       view. The list is never empty as one can always read from at least the
       initial value. *)
   Definition read (loc : Loc.t) (v : view) (init : initial) (mem : t)
-    : list (view * val) :=
+    : list (val * view) :=
     let first := mem |> cut_before v |> read_last loc init in
-    let lasts := mem |> cut_after v
-                     |> with_views_from (List.length mem)
-                     |> filter (fun '(v, msg) => Msg.loc msg =? loc)
-                     |> map (fun '(v, msg) => (v, Msg.val msg))
+    let lasts := mem |> cut_after_with_timestamps v
+                     |> filter (fun '(msg, v) => Msg.loc msg =? loc)
+                     |> map (fun '(msg, v) => (Msg.val msg, v))
     in
     lasts ++ [first].
 
@@ -225,6 +226,17 @@ Module Memory.
 
 End Memory.
 
+Module FwdItem.
+   Record t :=
+    make {
+        time : nat;
+        view : view;
+        xcl : bool
+      }.
+
+   Definition init := make 0 0 false.
+End FwdItem.
+
 (** The thread state *)
 Module TState.
   Record t :=
@@ -239,40 +251,45 @@ Module TState.
         (* The coherence views *)
         coh : Loc.t -> view;
 
-        rresp : view; (* The view all reads must respect. vrnew in the paper *)
-        rmax : view; (* The maximum output view of a read. vrold in the paper *)
-        wresp : view; (* The view all write must respect. vwnew in the paper *)
-        wmax : view; (* The maximum view of a write. vwold in the paper *)
-        vcap : view; (* control-flow + addr-po view *)
-        vrel : view; (* post view of the last write release *)
+
+        vrd : view; (* The maximum output view of a read  *)
+        vwr : view; (* The maximum output view of a write  *)
+        vdmbst : view; (* The maximum output view of a dmb st  *)
+        vdmb : view; (* The maximum output view of a dmb ld or dmb sy  *)
+        vcap : view; (* The maximum output view of control or address dependency  *)
+        visb : view; (* The maximum output view of an isb *)
+        vacq : view; (* The maximum output view of an acquire access *)
+        vrel : view; (* The maximum output view of an release access *)
 
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
            of the write. The boolean marks if the store was an exclusive*)
-        fwdb : Loc.t -> view * view * bool;
+        fwdb : Loc.t -> FwdItem.t;
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
            the timestamp and post-view of the load exclusive*)
-        xclb : option (view * view);
+        xclb : option (nat * view);
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;regs;coh;rresp;rmax;wresp;wmax;vcap;vrel;fwdb;xclb>.
+    settable! make <prom;regs;coh;vrd;vwr;vdmbst;vdmb;vcap;visb;vacq;vrel;fwdb;xclb>.
 
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
       regs := fun reg => (iregs reg, 0);
       coh := fun loc => 0;
-      rresp := 0;
-      rmax := 0;
-      wresp := 0;
-      wmax := 0;
+      vrd := 0;
+      vwr := 0;
+      vdmbst := 0;
+      vdmb := 0;
       vcap := 0;
+      visb := 0;
+      vacq := 0;
       vrel := 0;
-      fwdb := fun loc => (0, 0, false);
-      xclb := None;
+      fwdb := fun loc => FwdItem.init;
+      xclb := None
     |})%nat.
 
   (** Extract a plain register map from the thread state without views.
@@ -295,8 +312,8 @@ Module TState.
     set_coh loc (max v (coh s loc)) s.
 
   (** Updates the forwarding database for a location. *)
-  Definition set_fwdb (loc : Loc.t) (vs : view * view * bool) : t -> t :=
-    set fwdb (fun_add loc vs).
+  Definition set_fwdb (loc : Loc.t) (fi : FwdItem.t) : t -> t :=
+    set fwdb (fun_add loc fi).
 
   (** Set the exclusive database to the timestamp and view of the latest
       load exclusive *)
@@ -325,33 +342,43 @@ Module TState.
 End TState.
 
 
+(*** Instruction semantics ***)
+
+Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
+
+(** The view of a read from a forwarded write *)
+Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
+  if f.(FwdItem.xcl) && negb (ak.(Explicit_access_kind_strength) =? AS_normal)
+  then f.(FwdItem.time) else f.(FwdItem.view).
+
+(* (** Read memory from a timestamp. *) *)
+(* Definition read_from (init: Memory.initial) (mem : Memory.t) (loc : Loc.t) (tr : nat) := *)
+(*   Memory.read_last loc init (Memory.cut_before tr mem). *)
+
+
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
            (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (TState.t * view * val) :=
-  let acs := Explicit_access_kind_strength ak in
-  let acv := Explicit_access_kind_variety ak in
+  let acs := ak.(Explicit_access_kind_strength) in
+  let acv := ak.(Explicit_access_kind_variety) in
   Exec.fail_if (acv =? AV_atomic_rmw) "Atomic RMV unsupported";;
-  let vpre := max vaddr (TState.rresp ts) in
-  let vpre :=
-    if acs =? AS_rel_or_acq then max vpre (TState.vrel ts) else vpre in
-  let vread := max vpre (TState.coh ts loc) in
-  let reads := Memory.read loc vread init mem in
-  '(time, res) ← Exec.Results reads;
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
+                (* Strong Acquire loads are ordered after Release stores *)
+              ⊔ view_if (acs =? AS_rel_or_acq) ts.(TState.vrel) in
+  let vpre := vaddr ⊔ vbob in
+  let vread := vpre ⊔ (TState.coh ts loc) in
+  '(res, time) ← Exec.Results $ Memory.read loc vread init mem;
   let fwd := TState.fwdb ts loc in
   let read_view :=
-    if (fwd.1.1 =? time) && implb fwd.2 (acs =? AS_normal)
-    then fwd.1.2
-    else time in
-  let vpost := max vpre read_view in
+    if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time in
+  let vpost := vpre ⊔ read_view in
   let ts :=
     ts |> TState.update_coh loc time
-       |> TState.update TState.rmax vpost
+       |> TState.update TState.vrd vpost
+       |> TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost)
        |> TState.update TState.vcap vaddr
-       |> (if acs =? AS_normal then id
-           else (* Read acquire force the po-later access to be ordered after *)
-             TState.update2 TState.rmax TState.wmax vpost)
        |> (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id)
   in Exec.ret (ts, vpost, res).
 
@@ -363,36 +390,32 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vaddr : view) (vdata : view)
            (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
            (data : val) : Exec.t string (TState.t * Memory.t * view):=
   let msg := Msg.make tid loc data in
+  let is_release := acs =? AS_rel_or_acq in
   let '(time, mem) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem)
     | None => Memory.promise msg mem
     end in
-  let vpre := list_max [vaddr; vdata; TState.wresp ts; TState.vcap ts] in
-  vpre ← (match acs with
-         | AS_normal => Exec.ret $ vpre
-         | AS_rel_or_acq =>
-             Exec.ret $ list_max[vpre; TState.wmax ts; TState.rmax ts]
-         | AS_acq_rcpc => Exec.Error "Weak write release"
-         end);
-  Exec.assert (max vpre (TState.coh ts loc) <? time)%nat;;
+  let vbob :=
+    ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
+    ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  let vpre := vaddr ⊔ vdata ⊔ ts.(TState.vcap) ⊔ vbob in
+  Exec.assert (vpre ⊔ (TState.coh ts loc) <? time)%nat;;
   let ts :=
     ts |> set TState.prom (delete time)
        |> TState.update_coh loc time
-       |> TState.update TState.wmax time
+       |> TState.update TState.vwr time
+       |> TState.update TState.vrel (view_if is_release time)
        |> TState.update TState.vcap vaddr
-       |> (if acs =? AS_normal then id
-           else (* Mark the latest release to order later strong acquires*)
-             TState.update TState.vrel time)
   in Exec.ret (ts, mem, time).
 
 
 (** Tries to perform a memory write.
 
-    If the store is not exclusive, the write is always performed and the second
-    return value is None.
+    If the store is not exclusive, the write is always performed and the third
+    return value is true.
 
-    If the store is exclusive the write may succeed or fail and the second
+    If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
            (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
@@ -409,11 +432,11 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
     | Some (xtime, xview) =>
         Exec.assert $ Memory.exclusive loc xtime (Memory.cut_after time mem)
     end;;
-    let ts := TState.set_fwdb loc (time, max vaddr vdata, true) ts in
+    let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) true) ts in
     Exec.ret (TState.clear_xclb ts, mem)
   else
     '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
-    let ts := TState.set_fwdb loc (time, max vaddr vdata, false) ts in
+    let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) false) ts in
     Exec.ret (ts, mem).
 
 (** Intra instruction state for propagating views inside an instruction *)
@@ -504,25 +527,18 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
-          let v := max (TState.rmax ts) (TState.wmax ts) in
           let ts :=
-            ts |> TState.update TState.rresp v
-              |> TState.update TState.wresp v
-          in
+            TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
           Exec.ret (iis, ts, mem, ())
       | MBReqTypes_Reads (* dmb ld *) =>
-          let v := TState.rmax ts in
-          let ts :=
-            ts |> TState.update TState.rresp v
-              |> TState.update TState.wresp v
-          in
+          let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
           Exec.ret (iis, ts, mem, ())
       | MBReqTypes_Writes (* dmb st *) =>
-          let ts := TState.update TState.wresp (TState.wmax ts) ts in
+          let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
           Exec.ret (iis, ts, mem, ())
       end
   | Barrier (Barrier_ISB ()) => (* isb *)
-      let ts := TState.update TState.rresp (TState.vcap ts) ts in
+      let ts := TState.update TState.visb (TState.vcap ts) ts in
       Exec.ret (iis, ts, mem, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)
   | Choose n =>
@@ -586,7 +602,7 @@ Section PromStruct.
   Definition memory_snapshot' (memMap : memoryMap) (mem : Memory.t) : memoryMap :=
     Memory.to_memMap (Memory.initial_from_memMap memMap) mem.
 
-  Definition user_mode_promising_nocert : PromisingModel isem :=
+  Definition UMPromising_nocert' : PromisingModel isem :=
     {|tState := tState';
       tState_init := tState_init';
       tState_regs := fun x => TState.regs_only x.1;
@@ -597,7 +613,31 @@ Section PromStruct.
       emit_promise := emit_promise';
       memory_snapshot := memory_snapshot';
     |}.
-End PromStruct.
 
-(* TODO defined certified version. In theory, only "allowed_promises" needs to
-change *)
+  Definition UMPromising_nocert := Promising_to_Modelnc isem UMPromising_nocert'.
+
+  Definition seq_step (p1 p2 : pThread) : Prop := p2 ∈ run_pthread p1.
+
+  Definition allowed_promises_cert (pthread : pThread) : Ensemble Msg.t :=
+    fun msg =>
+      let pthread_after := PThread.promise msg pthread in
+      exists pe,
+        rtc seq_step pthread_after pe ∧
+        pe.(PThread.tstate).1.(TState.prom) = [].
+
+
+  Definition UMPromising_cert' : PromisingModel isem :=
+    {|tState := tState';
+      tState_init := tState_init';
+      tState_regs := fun x => TState.regs_only x.1;
+      tState_isa_state := fun x => x.2;
+      mEvent := Msg.t;
+      run_instr := run_pthread;
+      allowed_promises := allowed_promises_cert;
+      emit_promise := emit_promise';
+      memory_snapshot := memory_snapshot';
+    |}.
+
+  Definition UMPromising_cert := Promising_to_Modelnc isem UMPromising_cert'.
+
+End PromStruct.
