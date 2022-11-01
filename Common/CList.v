@@ -135,3 +135,13 @@ Lemma list_from_func_map {A} (f : nat -> A) n :
 Proof.
   induction n; sauto lq:on db:list use:seq_end,list_from_func_aux_eq.
 Qed.
+
+Definition is_emptyb {A} (l : list A) :=
+  match l with
+  | [] => true
+  | _ => false
+  end.
+
+Lemma is_emptyb_eq_nil {A} (l : list A) : is_true (is_emptyb l) <-> l = [].
+Proof. sauto lq:on. Qed.
+#[global] Hint Rewrite @is_emptyb_eq_nil: brefl.

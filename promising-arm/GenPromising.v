@@ -5,9 +5,7 @@
 *)
 
 
-Require SSCCommon.Exec.
-Module Exec := SSCCommon.Exec.
-Import Exec.Tactics.
+Require Import SSCCommon.Exec.
 
 Require Import Ensembles.
 
@@ -115,6 +113,8 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 
     Definition promise (ev : mEvent) (pt : t) := set events (ev ::.) pt.
 
+    Definition next_time (pt : t) : nat := length pt.(events).
+
     End PT.
 
     Arguments t : clear implicits.
@@ -125,6 +125,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
       tState_init : (*tid *) nat -> memoryMap -> registerMap -> tState;
       tState_regs : tState -> registerMap;
       tState_isa_state : tState -> isem.(isa_state);
+      tState_nopromises : tState -> bool;
       mEvent : Type;
       pthread := PThread.t tState mEvent;
       run_instr : pthread -> Exec.t string pthread ;
@@ -164,104 +165,127 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 
 
   Module PState. (* namespace *)
+
     Section PS.
+      Context {tState : Type}.
+      Context {mEvent : Type}.
+      Context {n : nat}.
+      Local Notation pthread := (PThread.t tState mEvent).
+
+    Record t :=
+      Make {
+          tstates : vec tState n;
+          initmem : memoryMap;
+          events : PromMemory.t mEvent;
+        }.
+    #[global] Instance set_t : Settable t :=
+      settable! @Make <tstates;initmem;events>.
+
+     Global Instance lookup : LookupTotal (fin n) pthread t :=
+        fun tid ps =>
+        {|PThread.tid := tid;
+          PThread.initmem := ps.(initmem);
+          PThread.tstate := ps.(tstates) !!! tid;
+          PThread.events := ps.(events) |}.
+
+      (** Update a PState for a single thread with a thread state pt *)
+      Definition update (pt : pthread) (ps : t) :=
+        match decide (pt.(PThread.tid) < n)%nat with
+        | left prf =>
+            let tid := nat_to_fin prf in
+            ps |> set tstates <[tid := pt.(PThread.tstate)]>
+              |> set events (fun _ => pt.(PThread.events))
+        | _ => ps
+        end.
+    End PS.
+    Arguments t : clear implicits.
+
+
+    Section PSProm.
       Context {isem : iSem}.
-      Context {prom : PromisingModel isem}.
+      Context (prom : PromisingModel isem).
       Context {n : nat}.
       Local Notation tState := prom.(tState).
       Local Notation mEvent := prom.(mEvent).
       Local Notation pthread := prom.(pthread).
+      Local Notation t := (t tState mEvent n).
 
-      Record t :=
-        Make {
-            tstates : vec tState n;
-            initmem : memoryMap;
-            events : PromMemory.t mEvent;
-          }.
-      Arguments t : clear implicits.
-      #[global] Instance set_t : Settable _ :=
-        settable! @Make <tstates;initmem;events>.
+      (** Check if a thread has finished according to term *)
+      Definition terminated_tid (term : terminationCondition n) (ps : t)
+        (tid : fin n) :=
+        ps.(tstates) !!! tid |> prom.(tState_regs) |> term tid.
 
-    Global Instance lookup : LookupTotal (fin n) pthread t :=
-      fun tid ps =>
-      {|PThread.tid := tid;
-        PThread.initmem := ps.(initmem);
-        PThread.tstate := ps.(tstates) !!! tid;
-        PThread.events := ps.(events) |}.
+      (** Check if all thread have finished according to term *)
+      Definition terminated (term : terminationCondition n) (ps : t) :=
+        fforallb (terminated_tid term ps).
 
-    (** Update a PState for a single thread with a thread state pt *)
-    Definition update (pt : pthread) (ps : t) :=
-      match decide (pt.(PThread.tid) < n)%nat with
-      | left prf =>
-          let tid := nat_to_fin prf in
-          ps |> set tstates <[tid := pt.(PThread.tstate)]>
-             |> set events (fun _ => pt.(PThread.events))
-      | _ => ps
-      end.
+      (** Check if a thread has no outstanding promises *)
+      Definition nopromises_tid (ps : t) (tid : fin n) :=
+        ps.(tstates) !!! tid |> prom.(tState_nopromises).
 
-    (** Check if a thread has finished according to term *)
-    Definition terminated_tid (term : terminationCondition n) (ps : t)
-       (tid : fin n) :=
-      ps.(tstates) !!! tid |> prom.(tState_regs) |> term tid.
+      (** Check if all threads have no outstanding promises *)
+      Definition nopromises (ps : t) := fforallb (nopromises_tid ps).
 
-    (** Check if all thread have finished according to term *)
-    Definition terminated (term : terminationCondition n) (ps : t) :=
-      fforallb (terminated_tid term ps).
+      (** Run on instruction in specific thread by tid *)
+      Definition run_tid (st: t) (tid : fin n) :=
+        '(pt) ← prom.(run_instr) (st !!! tid);
+        st |> update pt |> Exec.ret.
 
-    (** Run on instruction in specific thread by tid *)
-    Definition run_tid (st: t) (tid : fin n) :=
-      '(pt) ← prom.(run_instr) (st !!! tid);
-      st |> update pt |> Exec.ret.
+      (** Compute the set of allowed promises by a thread indexed by tid *)
+      Definition allowed_promises_tid (st : t) (tid : fin n) :=
+        prom.(allowed_promises) (st !!! tid).
 
-    (** Compute the set of allowed promises by a thread indexed by tid *)
-    Definition allowed_promises_tid (st : t) (tid : fin n) :=
-      prom.(allowed_promises) (st !!! tid).
+      (** Emit a promise from a thread by tid *)
+      Definition promise_tid (st : t) (tid : fin n) (event : mEvent) :=
+        st |> set tstates
+                  <[tid := prom.(emit_promise) (st !!! tid) event]>
+          |> set events (event ::.).
 
-    (** Emit a promise from a thread by tid *)
-    Definition promise_tid (st : t) (tid : fin n) (event : mEvent) :=
-      st |> set tstates
-                <[tid := prom.(emit_promise) (st !!! tid) event]>
-         |> set events (event ::.).
+      (** The inductive stepping relation of the promising model *)
+      Inductive step (ps : t) : (t) -> Prop :=
+      | SRun (tid : fin n) (ps' : t) :
+          ps' ∈ (run_tid ps tid) -> step ps ps'
+      | SPromise (tid : fin n) (event : mEvent) :
+        event ∈ allowed_promises_tid ps tid -> step ps (promise_tid ps tid event).
 
-    (** The inductive stepping relation of the promising model *)
-    Inductive step (ps : t) : (t) -> Prop :=
-    | SRun (tid : fin n) (ps' : t) :
-        ps' ∈ (run_tid ps tid) -> step ps ps'
-    | SPromise (tid : fin n) (event : mEvent) :
-      allowed_promises_tid ps tid event -> step ps (promise_tid ps tid event).
+      Lemma step_promise (ps ps' : t) (tid : fin n) (event : mEvent) :
+        event ∈ allowed_promises_tid ps tid ->
+        ps' = promise_tid ps tid event ->
+        step ps ps'.
+      Proof. sauto l:on. Qed.
 
-    (** Create an initial promising state from a generic machine state *)
-    Definition from_MState (ms: MState.t n) : t :=
-      {|tstates :=
-          fun_to_vec
-            (fun tid => prom.(tState_init) tid ms.(MState.memory)
-                                                 $ ms.(MState.regs) !!! tid);
-        initmem := ms.(MState.memory);
-        events := []|}.
+      (** Create an initial promising state from a generic machine state *)
+      Definition from_MState (ms: MState.t n) : t :=
+        {|tstates :=
+            fun_to_vec
+              (fun tid => prom.(tState_init) tid ms.(MState.memory)
+                                                  $ ms.(MState.regs) !!! tid);
+          initmem := ms.(MState.memory);
+          events := []|}.
 
-    (** Convert a promising state to a generic machine state.
-        This is a lossy conversion *)
-    Definition to_MState (ps: t) : MState.t n :=
-      {| MState.regs := vmap prom.(tState_regs) ps.(tstates);
-         MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events) |}.
-    End PS.
-    Arguments t {_} _.
-    Arguments from_MState {_} _ {_}.
-    End PState.
+      (** Convert a promising state to a generic machine state.
+          This is a lossy conversion *)
+      Definition to_MState (ps: t) : MState.t n :=
+        {| MState.regs := vmap prom.(tState_regs) ps.(tstates);
+          MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events) |}.
+    End PSProm.
+
+  End PState.
 
   (** Create a non-computational model from an ISA model and promising model *)
-  Definition Promising_to_Modelnc (isem : iSem) (prom : PromisingModel isem)
-    : Model.n False :=
+  Definition Promising_to_Modelnc {isem : iSem} (prom : PromisingModel isem)
+    : Model.nc False :=
     fun n (initMs : MState.init n) (mr : ModelResult.t False n) =>
-      let initPs : PState.t prom n := PState.from_MState prom initMs in
+      let initPs := PState.from_MState prom initMs in
       match mr with
       | ModelResult.FinalState fs =>
-          exists finPs, rtc PState.step initPs finPs /\
-                     fs.(MState.state) = PState.to_MState finPs /\
-                     fs.(MState.termCond) = initMs.(MState.termCond)
+          exists finPs, rtc (PState.step prom) initPs finPs /\
+                     fs.(MState.state) = PState.to_MState prom finPs /\
+                     fs.(MState.termCond) = initMs.(MState.termCond) /\
+                     PState.nopromises prom finPs
       | ModelResult.Error s =>
-          exists finPs tid, rtc PState.step initPs finPs /\
-                         PState.run_tid finPs tid = Exec.Error s
+          exists finPs tid, rtc (PState.step prom) initPs finPs /\
+                         PState.run_tid prom finPs tid = Exec.Error s
       | _ => False
       end.
 
@@ -271,13 +295,13 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
     Include PState.
     Section CPS.
     Context {isem : iSem}.
-    Context {prom : BasicExecutablePM isem}.
+    Context (prom : BasicExecutablePM isem).
     Context {n : nat}.
     Context (term : terminationCondition n).
     Local Notation tState := (tState prom).
     Local Notation mEvent := (mEvent prom).
     Local Notation thread := (PThread.t tState mEvent).
-    Notation t := (t prom n).
+    Local Notation t := (t tState mEvent n).
 
     (** Get a list of possible promising for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
@@ -288,7 +312,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
     Definition cpromise_tid (fuel : nat) (st : t) (tid : fin n)
       : Exec.t string t :=
       ev ← promise_select_tid fuel st tid;
-      Exec.ret $ promise_tid st tid ev.
+      Exec.ret $ promise_tid prom st tid ev.
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
@@ -296,18 +320,18 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
         promises *)
     Definition run_step (fuel : nat) (st : t) :=
       tid ← Exec.choose (fin n);
-      if terminated_tid term st tid then Exec.discard
-      else Exec.merge (run_tid st tid) (cpromise_tid fuel st tid).
+      if terminated_tid prom term st tid then Exec.discard
+      else Exec.merge (run_tid prom st tid) (cpromise_tid fuel st tid).
 
     (** The type of final promising state return by run *)
-    Definition final := { x : t | terminated term x }.
+    Definition final := { x : t | terminated prom term x }.
 
-    Definition make_final (p : t) := exist (terminated term) p.
+    Definition make_final (p : t) := exist (terminated prom term) p.
 
     (** Convert a final promising state to a generic final state *)
     Program Definition to_final_MState (f : final) : MState.final n :=
       {|MState.istate :=
-          {|MState.state := to_MState f;
+          {|MState.state := to_MState prom f;
             MState.termCond := term|};
         MState.terminated := _ |}.
     Solve All Obligations with hauto db:vec b:on unfold:terminated.
@@ -318,7 +342,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
       match fuel with
       | 0%nat => Exec.Error "not enough fuel"
       | S fuel =>
-          if dec $ terminated term st then Exec.ret (make_final st _)
+          if dec $ terminated prom term st then Exec.ret (make_final st _)
           else
             nextSt ← run_step fuel st;
             run fuel st
@@ -331,13 +355,13 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 
 
   (** Create a computational model from an ISA model and promising model *)
-    Definition Promising_to_Modelc (isem : iSem) (prom : BasicExecutablePM isem)
+    Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM isem)
       (fuel : nat) : Model.c False :=
       fun n (initMs : MState.init n) =>
-        let initPs : PState.t prom n := PState.from_MState prom initMs in
+        let initPs := PState.from_MState prom initMs in
         ModelResult.from_exec
           $ CPState.to_final_MState
-          <$> CPState.run initMs.(MState.termCond) fuel initPs.
+          <$> CPState.run prom initMs.(MState.termCond) fuel initPs.
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)

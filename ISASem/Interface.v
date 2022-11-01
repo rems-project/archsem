@@ -16,20 +16,20 @@ Module Type Arch.
   (** The type of registers, most likely string, but may be more fancy *)
   Parameter reg : Type.
 
-  (** The type of each register, often `bv 64` but it may be smaller or be a
-      boolean. For ease of implementation of a register map, this type is
-      required to be the same for all register *)
+  (** The type of registers. This needs to be a type generic enough to contain
+      the value of any register *)
   Parameter reg_type : Type.
 
   (** Virtual address size *)
   Parameter va_size : N.
 
   (** Physical addresses type. Since models are expected to be architecture
-      specific in this, there is no generic way to extract a bitvector from it*)
+      specific in this, there is no need for a generic way to extract a
+      bitvector from it*)
   Parameter pa : Type.
 
-  (** Parameter for extra architecture specific access types. Can be set to
-      False if not such types exists *)
+  (** Parameter for extra architecture specific access types. Can be an empty
+      type if not used *)
   Parameter arch_ak : Type.
 
   (** Translation summary *)

@@ -1,10 +1,10 @@
 
 Require Import Strings.String.
 Require Import SSCCommon.Common.
+Require Import SSCCommon.Exec.
 Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
-From stdpp Require Import relations.
 
 Require Import ISASem.ArmInst.
 Require Import GenModels.TermModels.
@@ -540,7 +540,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | Barrier (Barrier_ISB ()) => (* isb *)
       let ts := TState.update TState.visb (TState.vcap ts) ts in
       Exec.ret (iis, ts, mem, ())
-  | GenericFail s => Exec.Error ("Instruction failure: " ++ s)
+  | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
   | Choose n =>
       v ← Exec.choose (bv n);
       Exec.ret(iis, ts, mem, v)
@@ -571,6 +571,9 @@ Section PromStruct.
       : tState':=
     (TState.init mem regs, isem.(init_state) tid).
 
+  Definition tState_nopromises' (tstate : tState') :=
+    tstate.1.(TState.prom) |> is_emptyb.
+
   Local Notation pThread := (PThread.t tState' Msg.t).
 
 (** Run an iSem on a pThread  *)
@@ -594,6 +597,7 @@ Section PromStruct.
     This a non-certified promising model *)
   Definition allowed_promises_nocert (pthread : pThread) :=
     fun msg => msg.(Msg.tid) = pthread.(PThread.tid).
+  Arguments allowed_promises_nocert _ _ /.
 
   Definition emit_promise' (pthread : pThread) (msg : Msg.t) :=
     let vmsg := length pthread.(PThread.events) in
@@ -607,6 +611,7 @@ Section PromStruct.
       tState_init := tState_init';
       tState_regs := fun x => TState.regs_only x.1;
       tState_isa_state := fun x => x.2;
+      tState_nopromises := tState_nopromises';
       mEvent := Msg.t;
       run_instr := run_pthread;
       allowed_promises := allowed_promises_nocert;
@@ -614,7 +619,7 @@ Section PromStruct.
       memory_snapshot := memory_snapshot';
     |}.
 
-  Definition UMPromising_nocert := Promising_to_Modelnc isem UMPromising_nocert'.
+  Definition UMPromising_nocert := Promising_to_Modelnc UMPromising_nocert'.
 
   Definition seq_step (p1 p2 : pThread) : Prop := p2 ∈ run_pthread p1.
 
@@ -631,6 +636,7 @@ Section PromStruct.
       tState_init := tState_init';
       tState_regs := fun x => TState.regs_only x.1;
       tState_isa_state := fun x => x.2;
+      tState_nopromises := tState_nopromises';
       mEvent := Msg.t;
       run_instr := run_pthread;
       allowed_promises := allowed_promises_cert;
@@ -638,6 +644,7 @@ Section PromStruct.
       memory_snapshot := memory_snapshot';
     |}.
 
-  Definition UMPromising_cert := Promising_to_Modelnc isem UMPromising_cert'.
+  Definition UMPromising_cert := Promising_to_Modelnc UMPromising_cert'.
 
 End PromStruct.
+Arguments allowed_promises_nocert _ _ _ /.

@@ -1,13 +1,13 @@
 
-Require SSCCommon.Exec.
-Module Exec := SSCCommon.Exec.
-Import Exec.Tactics.
+Require Import SSCCommon.Exec.
 
 Require Import Ensembles.
 
 Require Import Strings.String.
 
 Require Import SSCCommon.Common.
+
+From stdpp Require Export listset.
 
 Require Import Relations.
 Require Import Program.
@@ -103,6 +103,9 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
       Context `{OMap E}.
       Context `{Empty (E string)}.
       Context {sse : forall x, SubsetEq (E x)}.
+      (* even if not directly required, Equiv should match subseteq for the
+         definition to make sense *)
+      Context {eqe : forall x, Equiv (E x)}.
 
       Definition finalStates (ts : E t) :=
         omap (fun x => match x with | FinalState fs => Some fs | _ => None end) ts.
@@ -119,9 +122,8 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
          guide, not as final definitions *)
 
       (** A model is weaker if it allows more behaviors. This assumes all
-          unspecified to be independent, later this may be expanded with an
-          order on the unspecified objects.
-       *)
+          unspecified behaviors to be independent of regular final states, later
+          this may be expanded with an order on the unspecified objects. *)
       Definition weaker (ts ts' : E t) :=
         no_error ts' ->
         finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts'.
@@ -132,8 +134,8 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
       Definition wider (ts ts' : E t) :=
         weaker ts ts' /\
           (no_error ts ->
-           finalStates ts ≡ₛ finalStates ts' /\
-             unspecifieds ts ≡ₛ unspecifieds ts /\
+           finalStates ts ≡ finalStates ts' /\
+             unspecifieds ts ≡ unspecifieds ts /\
              no_error ts').
 
       Lemma wider_weaker (ts ts' : E t) : wider ts ts' -> weaker ts ts'.
@@ -153,10 +155,10 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
     End MR.
     Arguments t : clear implicits.
 
-    Definition from_exec {n} (e : Exec.t string (MState.final n)) : list (t False n) :=
+    Definition from_exec {n} (e : Exec.t string (MState.final n)) : listset (t False n) :=
       match e with
-      | Exec.Error s => [Error s]
-      | Exec.Results l => FinalState <$> l
+      | Exec.Error s => Listset [Error s]
+      | Exec.Results l => FinalState <$> (Listset l)
       end.
 
   End ModelResult.
@@ -167,6 +169,7 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
       Context `{OMap E}.
       Context `{Empty (E string)}.
       Context {sse : forall x, SubsetEq (E x)}.
+      Context {eqe : forall x, Equiv (E x)}.
       Context {unspec : Type}.
 
       Definition t : Type :=
@@ -186,9 +189,9 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
 
       (** Model identities, this require that any error messages are identical.
         This is thus only useful when comparing two related versions of the same
-        model (like a certified and non-certified versions of promising)*)
+        model *)
       Global Instance equiv : Equiv t :=
-        fun m1 m2 => forall n initSt, m1 n initSt ≡ₛ m2 n initSt.
+        fun m1 m2 => forall n initSt, m1 n initSt ≡ m2 n initSt.
     End M.
     Arguments t : clear implicits.
 
@@ -199,11 +202,11 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
     (** Non computational model *)
     Notation nc := (t Ensemble).
 
-    (** Computational model (TODO: maybe listset instead of list?) *)
-    Notation c := (t list).
+    (** Computational model *)
+    Notation c := (t listset).
 
     Definition c_to_nc {unspec} : c unspec -> nc unspec :=
-      map (@Ensemble_from_list).
+      map (fun A => Ensemble_from_set).
   End Model.
 
 End TermModels.
