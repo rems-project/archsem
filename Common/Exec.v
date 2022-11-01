@@ -230,6 +230,11 @@ Global Instance unfold_elem_of_default {A E} (x : A) (e : t E A) :
   UnfoldElemOf x e (x ∈ e) | 1000.
 Proof. done. Qed.
 
+Global Instance unfold_elem_of_let_pair {A B C E} (x : A) (p : B * C) (e : B -> C -> t E A) Q :
+  (forall y z, UnfoldElemOf x (e y z) (Q y z)) ->
+  UnfoldElemOf x (let '(y, z) := p in e y z) (let '(y, z) := p in Q y z).
+Proof. by destruct p. Qed.
+
 
 Class UnfoldHasResults {A E} (e : t E A) (Q : Prop) :=
   {unfold_has_results : has_results e <-> Q}.
@@ -241,6 +246,11 @@ Proof. sfirstorder. Qed.
 Global Instance unfold_has_results_default {A E} (e : t E A) :
   UnfoldHasResults e (has_results e) | 1000.
 Proof. done. Qed.
+
+Global Instance unfold_has_result_let_pair {A B C E} (p : B * C) (e : B -> C -> t E A) Q :
+  (forall y z, UnfoldHasResults (e y z) (Q y z)) ->
+  UnfoldHasResults (let '(y, z) := p in e y z) (let '(y, z) := p in Q y z).
+Proof. by destruct p. Qed.
 
 
 Ltac tcclean_hyp :=
