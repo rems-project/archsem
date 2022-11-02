@@ -81,6 +81,17 @@ Ltac forall_hyps tac :=
   | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
   end.
 
+(** Actual dependent rewrite by calling destruct on the equality.
+    The rewrite must be of the form var = exp where var is a plain variable and not
+    a complicated expression *)
+Tactic Notation "drewrite" "<-" constr(H) :=
+  match type of H with
+  | _ = _ => destruct H
+  end.
+Tactic Notation "drewrite" "->" constr(H) := symmetry in H; drewrite <- H.
+Tactic Notation "drewrite" constr(H) := drewrite -> H.
+
+
 (*** Integer lattice ***)
 
 #[global] Instance join_nat : Join nat := Nat.max.
