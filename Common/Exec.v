@@ -448,6 +448,25 @@ Proof. by exec_unfold. Qed.
 #[global] Hint Resolve elem_of_choose : exec.
 #[global] Hint Rewrite (fun E A `{Finite A} x => Prop_for_rewrite (elem_of_choose E A x)) : exec.
 
+
+Global Instance unfold_has_result_fail_if E (b : bool) (e : E) :
+  UnfoldHasResults (fail_if b e : t E ()) (¬b).
+Proof. tcclean. sauto lq:on rew:off. Qed.
+
+Global Instance unfold_elem_of_fail_if E x (b : bool) (e : E) :
+  UnfoldElemOf x (fail_if b e : t E ()) (¬b).
+Proof. tcclean. sauto lq:on rew:off. Qed.
+
+
+Global Instance unfold_has_result_assert E (b : bool) (e : E) :
+  UnfoldHasResults (assert b : t E ()) True.
+Proof. tcclean. sauto lq:on rew:off. Qed.
+
+Global Instance unfold_elem_of_assert E x (b : bool) (e : E) :
+  UnfoldElemOf x (assert b : t E ()) b.
+Proof. tcclean. sauto lq:on rew:off. Qed.
+
+
 Lemma has_results_results_mbind E A B (l : list A) (f : A -> t E B):
   has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
 Proof.
@@ -565,6 +584,31 @@ Global Instance unfold_elem_of_error_none_mbind
   (forall z, UnfoldElemOf x (f z) (P z)) ->
   UnfoldElemOf x (error_none err opt ≫= f) (exists y, opt = Some y /\ P y).
 Proof. tcclean. apply elem_of_error_none_mbind. Qed.
+
+Ltac dest_unit :=
+  match goal with
+  | u : () |- _ => destruct u
+  end.
+
+Global Instance unfold_elem_of_fail_if_mbind
+    E B (x : B) (f: () -> t E B) b e P:
+  UnfoldElemOf x (f ()) P ->
+  UnfoldElemOf x (fail_if b e ≫= f) (¬ b /\ P).
+Proof. tcclean. sauto simp+:dest_unit simp+:exec_unfold. Qed.
+
+Global Instance unfold_elem_of_assert_mbind
+    E B (x : B) (f: () -> t E B) b P:
+  UnfoldElemOf x (f ()) P ->
+  UnfoldElemOf x (assert b ≫= f) (b /\ P).
+Proof.
+  tcclean.
+  unfold assert.
+  sauto simp+:dest_unit simp+:exec_unfold.
+Qed.
+
+
+
+
 
 (********** Inclusion of execution **********)
 
