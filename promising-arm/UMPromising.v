@@ -599,7 +599,7 @@ Section PromStruct.
     fun msg => msg.(Msg.tid) = pthread.(PThread.tid).
   Arguments allowed_promises_nocert _ _ /.
 
-  Definition emit_promise' (pthread : pThread) (msg : Msg.t) :=
+  Definition emit_promise' (pthread : pThread) (msg : Msg.t) : tState' :=
     let vmsg := length pthread.(PThread.events) in
     pthread.(PThread.tstate) |> set fst (TState.promise vmsg).
 
@@ -625,7 +625,10 @@ Section PromStruct.
 
   Definition allowed_promises_cert (pthread : pThread) : Ensemble Msg.t :=
     fun msg =>
-      let pthread_after := PThread.promise msg pthread in
+      let pthread_after :=
+        pthread
+          |> (setv PThread.tstate $ emit_promise' pthread msg)
+          |> PThread.promise msg in
       exists pe,
         rtc seq_step pthread_after pe ∧
         pe.(PThread.tstate).1.(TState.prom) = [].
