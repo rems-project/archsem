@@ -50,36 +50,60 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
       - SState for one of the above but shorter. *)
   Module MState. (* namespace *)
 
+    Section MS.
+    Context {n : nat}. (* thread number *)
+
     (** A simple machine state for comparing models and defining sequential
         semantics *)
-    Record t {n : nat} :=
+    Record t :=
       Make{
           memory : memoryMap;
           regs: vec registerMap n;
         }.
-    Arguments t : clear implicits.
 
     (** A initial state for a machine model test. This means that the
         machine must stop at the required termination condition *)
-    Record init {n : nat} :=
+    Record init :=
       MakeI {
-          state :> t n;
+          state :> t;
           termCond : terminationCondition n
         }.
-    Arguments init : clear implicits.
+
+    Definition is_terminated (s : init) :=
+      fforallb (fun tid => s.(termCond) tid (s.(regs) !!! tid)).
 
     (** A final state for a machine model test. This means that the machine has
         stopped at the required termination condition *)
-    Record final {n : nat} :=
+    Record final :=
       MakeF {
-          istate :> init n;
-          terminated : forall tid : fin n, istate.(termCond) tid $ istate.(regs) !!! tid
+          istate :> init;
+          terminated : (is_terminated istate : Prop)
         }.
+
+    Definition finalize (s : init) : option final :=
+      match decide (is_terminated s) with
+      | left yes => Some (MakeF s yes)
+      | right _ => None
+      end.
+
+    Lemma finalize_same (s : init) (f : final) : finalize s = Some f -> s = f.
+    Proof. unfold finalize. hauto lq:on. Qed.
+
+    Lemma finalize_final (s : final) : finalize s = Some s.
+    Proof.
+      unfold finalize.
+      sauto lq:off simp+:f_equal simp+:(apply proof_irrel).
+    Qed.
+    End MS.
+    Arguments t : clear implicits.
+    Arguments init : clear implicits.
     Arguments final : clear implicits.
+
   End MState.
-  (* Make the coercion available without importing the module *)
+  (* Make the coercions available without importing the module *)
   Global Coercion MState.state : MState.init >-> MState.t.
   Global Coercion MState.istate : MState.final >-> MState.init.
+
 
   Module ModelResult. (* namespace *)
     Section MR.

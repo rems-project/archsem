@@ -334,9 +334,10 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
           {|MState.state := to_MState prom f;
             MState.termCond := term|};
         MState.terminated := _ |}.
-    Solve All Obligations with hauto db:vec b:on unfold:terminated.
+    Solve All Obligations with
+      hauto unfold:terminated unfold:MState.is_terminated lb:on db:vec.
 
-    (** Computational evaluate all the possible allowed final states accroding
+    (** Computational evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
     Program Fixpoint run (fuel : nat) (st : t) : Exec.t string final :=
       match fuel with
