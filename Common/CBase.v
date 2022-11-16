@@ -7,6 +7,7 @@ From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
 Require Import ZArith.
 
+#[export] Set Keyed Unification.
 
 (*** Notations ***)
 
@@ -91,8 +92,43 @@ Tactic Notation "drewrite" "<-" constr(H) :=
 Tactic Notation "drewrite" "->" constr(H) := symmetry in H; drewrite <- H.
 Tactic Notation "drewrite" constr(H) := drewrite -> H.
 
+(** Typeclass clean to help prove typeclasss lemmas *)
+Ltac tcclean_hyp H :=
+  lazymatch type of H with
+  | forall x y, @?P x y =>
+    let tP := type of P in
+    let Q := mk_evar tP in
+    let Hb := fresh "H" in
+    rename H into Hb;
+    assert (forall x y, Q x y);
+    [intros x y; destruct (Hb x y) as [H]; exact H |];
+    simpl in H;
+    clear Hb;
+    try(repeat (setoid_rewrite <- H || rewrite <- H))
+  | forall z, @?P z =>
+    let tP := type of P in
+    let Q := mk_evar tP in
+    let Hb := fresh "H" in
+    rename H into Hb;
+    assert (forall z, Q z);
+    [intro z; destruct (Hb z) as [H]; exact H |];
+    simpl in H;
+    clear Hb;
+    try(repeat (setoid_rewrite <- H || rewrite <- H))
+  | TCEq _ _ => rewrite TCEq_eq in H; try (setoid_rewrite H)
+  | Unconvertible _ _ _ => clear H
+  | _ => destruct H as [H]; try(repeat (setoid_rewrite <- H || rewrite <- H))
+  end.
+
+Ltac tcclean :=
+  repeat (let H := fresh "H" in intro H; try (tcclean_hyp H));
+  constructor.
+
+
 
 (*** Integer lattice ***)
+
+(* n ⊔ n' means max and n ⊓ n' means min *)
 
 #[global] Instance join_nat : Join nat := Nat.max.
 #[global] Instance meet_nat : Meet nat := Nat.min.
@@ -102,3 +138,28 @@ Tactic Notation "drewrite" constr(H) := drewrite -> H.
 #[global] Instance meet_N : Meet N := N.min.
 #[global] Instance join_Z : Join Z := Z.max.
 #[global] Instance meet_Z : Meet Z := Z.min.
+
+
+(*** Typeclass magic ***)
+
+Require Import Morphisms.
+Import Morphisms.ProperNotations.
+Require Import Coq.Classes.RelationClasses.
+From stdpp Require Import sets.
+
+Opaque Unconvertible.
+
+Global Instance Unconvertible_proper A :
+  Proper ((=) ==> (=) ==> (=)) (Unconvertible A).
+Proof.
+  unfold Proper.
+  solve_proper.
+Qed.
+
+
+(*** Generic hints ***)
+
+Lemma exists_pair B C P:
+  (exists x : C * B, P x) <-> exists x y, P (x, y).
+Proof. hauto lq:on. Qed.
+#[global] Hint Resolve <- exists_pair : core.

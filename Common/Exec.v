@@ -15,10 +15,7 @@
    invalid code that would trigger them will make the whole execution return
    an error with hopefully a descriptive message. *)
 
-(* Require Import Common. *)
-Require Import SSCCommon.Common.
-
-Require Import Sail.Base.
+Require Import Common.
 
 
 (*** Tactics ***)
@@ -252,24 +249,37 @@ Global Instance unfold_has_result_let_pair {A B C E} (p : B * C) (e : B -> C -> 
   UnfoldHasResults (let '(y, z) := p in e y z) (let '(y, z) := p in Q y z).
 Proof. by destruct p. Qed.
 
+Global Instance UnfoldElemOf_proper {A E} :
+  Proper (@eq A ==> @eq (t E A) ==> iff ==> iff) UnfoldElemOf.
+Proof.
+  unfold Proper.
+  unfold respectful.
+  intros.
+  split; destruct 1; constructor; sfirstorder.
+Qed.
 
-Ltac tcclean_hyp :=
-  match goal with
-  | H : forall z, @?P z |- _ =>
-  let tP := type of P in
-  let Q := mk_evar tP in
-  let Hb := fresh "H" in
-  assert (forall z, Q z);
-  [intro z; destruct (H z) as [Hb]; exact Hb |];
-  simpl in Hb;
-  setoid_rewrite <- Hb;
-  clear Hb;
-  clear H
-  | H : _ |- _ => destruct H as [H]; setoid_rewrite <- H; clear H
-  end.
+Global Instance UnfoldHasResults_proper {A E} :
+  Proper (@eq (t E A) ==> iff ==> iff) UnfoldHasResults.
+Proof.
+  unfold Proper.
+  unfold respectful.
+  intros.
+  split; destruct 1; constructor; sfirstorder.
+Qed.
 
-Ltac tcclean := intros; constructor; repeat (tcclean_hyp).
+(** Importing this will make set_unfold also unfold exec values *)
+Module SetUnfoldExecUnfold.
 
+  #[export] Instance unfold_has_results_set_unfold {A E} (e : t E A) Q :
+  UnfoldHasResults e Q → SetUnfold (has_results e) Q.
+  Proof. sfirstorder. Qed.
+
+  #[export] Instance unfold_elem_of_set_unfold_elemOf {A E} (x : A) (e : t E A) Q :
+    UnfoldElemOf x e Q → SetUnfoldElemOf x e Q.
+  Proof. sfirstorder. Qed.
+End SetUnfoldExecUnfold.
+
+Import SetUnfoldExecUnfold.
 
 Lemma exec_unfold_impl P Q P' Q' :
   ExecUnfold P P' → ExecUnfold Q Q' → ExecUnfold (P → Q) (P' → Q').
@@ -473,18 +483,11 @@ Proof.
   induction l; hauto simp+:set_unfold l:on db:exec.
 Qed.
 
-(* Local Instance unfold_has_results_set_unfold {A E} (e : t E A) Q : *)
-(*   UnfoldHasResults e Q → SetUnfold (has_results e) Q. *)
-(* Proof. sfirstorder. Qed. *)
-
-(* Local Instance unfold_elem_of_set_unfold_elemOf {A E} (x : A) (e : t E A) Q : *)
-(*   UnfoldElemOf x e Q → SetUnfoldElemOf x e Q. *)
-(* Proof. sfirstorder. Qed. *)
 
 Lemma has_results_results_mbind' E A B (l : list A) (f : A -> t E B):
   has_results (Results l ≫= f) <-> ∀'z ∈ l, has_results (f z).
 Proof.
-  induction l; hauto lq:on db:execc simp+:set_unfold simp+:exec_unfold.
+  induction l; hauto lq:on db:execc simp+:set_unfold.
 Qed.
 
 Local Instance unfold_has_results_results_mbind E A B l (f : A -> t E B) P Q:
@@ -507,8 +510,8 @@ Lemma elem_of_results_mbind' E A B (x : B) (l : list A) (f: A -> t E B) :
   x ∈ (Results l ≫= f) <-> (∃'y ∈ l, x ∈ (f y)) /\ ∀'z ∈ l, has_results (f z).
 Proof.
   induction l.
-  - set_unfold. exec_unfold. sfirstorder.
-  - autorewrite with execc. exec_unfold.
+  - set_unfold. sfirstorder.
+  - autorewrite with execc.
     set_unfold.
     hauto lq:on hint:db:execc.
 Qed.
