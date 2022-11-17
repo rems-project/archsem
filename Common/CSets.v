@@ -1,4 +1,5 @@
 From stdpp Require Export sets.
+From stdpp Require Export gmap. (* <- contains gset *)
 From stdpp Require Export finite.
 
 Require Import CBase.
@@ -153,3 +154,33 @@ Solve All Obligations with
   intros; apply (set_fold_ind_L (fun x y => P y x)); hauto.
 
 Arguments set_fold_cind_L : clear implicits.
+
+
+(*** GSet Cartesian product ***)
+
+
+Section GSetProduct.
+  Context `{Countable A}.
+  Context `{Countable B}.
+
+  Definition gset_product (sa : gset A) (sb : gset B) : gset (A * B) :=
+    set_fold (fun e1 res => res ∪ set_map (e1,.) sb) ∅ sa.
+
+  (** × must be left associative because the * of types is left associative.
+      Thus if you have sa : gset A, sb : gset B and sc : gset C, then
+      sa × sb × sc : gset (A * B * C) *)
+  Infix "×" := gset_product (at level 44, left associativity) : stdpp_scope.
+
+  Lemma gset_product_spec (sa : gset A) (sb : gset B) a b :
+    (a, b) ∈ sa × sb <-> a ∈ sa /\ b ∈ sb.
+  Proof using.
+    unfold gset_product.
+    cinduction sa using set_fold_cind_L; set_solver.
+  Qed.
+
+  Global Instance set_unfold_gset_product (sa : gset A) (sb : gset B) x P Q :
+    SetUnfoldElemOf x.1 sa P -> SetUnfoldElemOf x.2 sb Q ->
+    SetUnfoldElemOf x (sa × sb) (P /\ Q).
+  Proof using. tcclean. destruct x. apply gset_product_spec. Qed.
+End GSetProduct.
+Infix "×" := gset_product (at level 44, left associativity) : stdpp_scope.
