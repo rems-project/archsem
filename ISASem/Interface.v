@@ -3,7 +3,7 @@ Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 
 (* This is needed because sail cannot export into multiple Coq files *)
-Require Import SailArmInst_types.
+Require Import SailArmInstTypes.
 
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.

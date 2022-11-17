@@ -2,7 +2,7 @@ Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 Require Import Interface.
 Require Import Sail.Base.
-Require Export SailArmInst_types.
+Require Export SailArmInstTypes.
 Require Import Coq.Reals.Reals.
 From RecordUpdate Require Import RecordSet.
 

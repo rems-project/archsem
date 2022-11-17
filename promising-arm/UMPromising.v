@@ -28,14 +28,14 @@ Module Loc.
   (** Convert a location into an ARM physical address *)
   Definition to_pa (loc : t) : FullAddress :=
     {|FullAddress_paspace := PAS_NonSecure;
-      FullAddress_address := bv_to_word $ bv_concat 52 loc (bv_0 3)
+      FullAddress_address := bv_concat 52 loc (bv_0 3)
     |}.
 
   (** Recover a location from an ARM physical address. *)
   Definition from_pa (pa : FullAddress) : option t :=
     match FullAddress_paspace pa with
     | PAS_NonSecure =>
-        let bvaddr := word_to_bv $ FullAddress_address pa in
+        let bvaddr := FullAddress_address pa in
         if bv_extract 0 3 bvaddr =? bv_0 3 then
           Some (bv_extract 3 49 bvaddr)
         else None
@@ -46,25 +46,25 @@ Module Loc.
     from_pa pa = Some loc -> to_pa loc = pa.
   Proof.
     unfold from_pa,to_pa.
-    hauto inv:FullAddress b!:on solve:bv_word_solve simp+:f_equal.
+    hauto inv:FullAddress b!:on solve:bv_solve' simp+:f_equal.
  Qed.
 
   Lemma from_to_pa (loc : t) : from_pa (to_pa loc) = Some loc.
     unfold from_pa, to_pa.
-    hauto b!:on solve:bv_word_solve simp+:f_equal.
+    hauto b!:on solve:bv_solve' simp+:f_equal.
   Qed.
 
   (** Convert a location to a list of covered physical addresses *)
   Definition to_pas (loc : t) : list FullAddress :=
    let pa := to_pa loc in
    list_from_func 8
-     (fun n => pa |> set FullAddress_address (wplus (natToWord 52 n))).
+     (fun n => pa |> set FullAddress_address (bv_add (Z_to_bv 52 (Z.of_nat n)))).
 
   (** Give the location containing a pa *)
   Definition from_pa_in (pa : FullAddress) : option t :=
     match FullAddress_paspace pa with
     | PAS_NonSecure =>
-        let bvaddr := word_to_bv $ FullAddress_address pa in
+        let bvaddr := FullAddress_address pa in
           Some (bv_extract 3 49 bvaddr)
     | _ => None
     end.
@@ -73,7 +73,7 @@ Module Loc.
   Definition pa_index (pa : FullAddress) : option (bv 3) :=
     match FullAddress_paspace pa with
     | PAS_NonSecure =>
-        let bvaddr := word_to_bv $ FullAddress_address pa in
+        let bvaddr := FullAddress_address pa in
           Some (bv_extract 0 3 bvaddr)
     | _ => None
     end.
@@ -92,7 +92,7 @@ Module Loc.
     rewrite elem_of_seq in H.
     cbn.
     f_equal.
-    bv_word_solve.
+    bv_solve'.
   Qed.
 
 End Loc.
