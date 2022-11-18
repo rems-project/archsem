@@ -1,5 +1,5 @@
 (coq.theory
  (name GenModels)
- (modules TermModels)
+ (modules TermModels CandidateExecutions)
  (theories ISASem SSCCommon)
 )
