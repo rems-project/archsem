@@ -4,9 +4,70 @@ From stdpp Require Export finite.
 
 Require Import CBase.
 Require Import CBool.
+Require Import CList.
 Require Import CInduction.
 
 (** This file provide utility for dealing with sets. *)
+
+(*** Utilities ***)
+
+Lemma elements_singleton_iff `{FinSet A C} (s : C) (a : A) :
+  elements s = [a] <-> s ≡ {[a]}.
+Proof.
+  rewrite <- Permutation_singleton_r.
+  assert (NoDup [a]). sauto lq:on.
+  assert (NoDup (elements s)). sfirstorder.
+  set_solver.
+Qed.
+
+
+(** The size of a finite set. *)
+Definition set_size `{Elements A C} (s : C) : nat := length (elements s).
+
+Global Instance proper_set_size `{Elements A C} :
+  Proper (eq ==> eq) (set_size : C -> nat) | 10.
+Proof. solve_proper. Qed.
+
+Global Instance proper_set_size_equiv `{FinSet A C} :
+  Proper (equiv ==> eq) (set_size : C -> nat) | 20.
+Admitted. (* TODO *)
+
+Lemma set_size_zero `{FinSet A C} (s : C) :
+  set_size s = 0 <-> s ≡ ∅.
+Proof.
+  unfold set_size.
+  rewrite length_zero_iff_nil.
+  apply elements_empty_iff.
+Qed.
+
+Lemma set_size_zero_L `{FinSet A C} {lei : LeibnizEquiv C} (s : C) :
+  set_size s = 0 <-> s = ∅.
+Proof. rewrite set_size_zero. hauto l:on. Qed.
+
+Lemma set_size_one `{FinSet A C} (s : C) :
+  set_size s = 1 <-> exists x : A, s ≡ {[x]}.
+Proof.
+  unfold set_size.
+  rewrite length_one_iff_singleton.
+  hauto lq:on use:elements_singleton_iff.
+Qed.
+
+Lemma set_size_one_L `{FinSet A C} {lei : LeibnizEquiv C} (s : C) :
+  set_size s = 1 <-> exists x : A, s = {[x]}.
+Proof. rewrite set_size_one. set_unfold. hauto l:on. Qed.
+
+Lemma set_size_le1 `{FinSet A C} (s : C) :
+  set_size s ≤ 1 ↔ (∀ y z : A, y ∈ s → z ∈ s → y = z).
+Proof.
+  unfold set_size.
+  setoid_rewrite <- elem_of_elements.
+  assert (NoDup (elements s)). sfirstorder.
+  generalize dependent (elements s). intros l ND.
+  do 2 (destruct ND;[sauto lq:on rew:off|]).
+  split.
+  - sauto q:on.
+  - set_solver.
+Qed.
 
 (*** Simplification ***)
 
@@ -48,25 +109,6 @@ End SetSimp.
 
 (** This section is mostly about improving the set_unfold tactic *)
 
-(* TODO make solve_proper work *)
-(* TODO upstream to stdpp *)
-Global Instance SetUnfold_proper :
-  Proper (iff ==> iff ==> iff) SetUnfold.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
-
-Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
-  Proper ((=@{A}) ==> (≡@{C}) ==> iff ==> iff) SetUnfoldElemOf.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
 
 
 Global Instance set_unfold_elem_of_if_bool_decide `{ElemOf A C} `{Decision P}

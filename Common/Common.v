@@ -18,6 +18,7 @@ Require Export CList.
 Require Export CBitvector.
 Require Export CSets.
 Require Export CMaps.
+Require Export CInduction.
 
 (*** Utility functions ***)
 

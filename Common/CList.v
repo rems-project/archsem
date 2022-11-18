@@ -3,7 +3,9 @@ From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Export listset.
 
-(********** List simplification **********)
+(*** List simplification ***)
+
+(* TODO all list simplification about x ∈ l should be superseded by set_unfold *)
 
 (** Automation for list simplifications *)
 Tactic Notation "list_simp" "in" "|-*" :=
@@ -53,7 +55,26 @@ Proof.
 Qed.
 #[global] Hint Rewrite @forall_elem_of_map : list.
 
-(********** List lookup with different keys **********)
+Lemma Permutation_elem_of A (l l' : list A) x: l ≡ₚ l' → x ∈ l → x ∈ l'.
+Proof. setoid_rewrite elem_of_list_In. apply Permutation_in. Qed.
+
+From Hammer Require Import Hammer.
+
+(* TODO add some standard proof search for NoDup *)
+Global Instance set_unfold_list_permutation A (l l' : list A) P Q:
+  TCFastDone (NoDup l) ->
+  TCFastDone (NoDup l') ->
+  (forall x, SetUnfoldElemOf x l (P x)) ->
+  (forall x, SetUnfoldElemOf x l' (Q x)) ->
+  SetUnfold (l ≡ₚ l') (forall x, P x <-> Q x).
+Proof.
+  tcclean.
+  split.
+  - sfirstorder use:Permutation_elem_of use:Permutation_sym.
+  - sfirstorder use:NoDup_Permutation.
+Qed.
+
+(*** List lookup with different keys ***)
 
 Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
   fun p l => l !! (Pos.to_nat p).
@@ -69,7 +90,7 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
     | Zneg _ => None
     end.
 
-(********** List boolean reflection **********)
+(*** List boolean reflection ***)
 
 (** existsb boolean reflection *)
 Lemma existsb_brefl A (f : A → bool) (l : list A):
@@ -95,7 +116,7 @@ Qed.
 
 
 
-(********** List as sets **********)
+(*** List as sets ***)
 
 (* TODO make a PR to stdpp with this: *)
 Global Instance list_omap : OMap listset := λ A B f '(Listset l),
@@ -104,7 +125,7 @@ Global Instance list_omap : OMap listset := λ A B f '(Listset l),
 Global Instance list_Empty {A} : Empty (list A) := [].
 
 
-(********** List utility functions **********)
+(*** List utility functions ***)
 
 Fixpoint list_from_func_aux {A} (f : nat -> A) (len : nat) (acc : list A) :=
   match len with
@@ -145,3 +166,12 @@ Definition is_emptyb {A} (l : list A) :=
 Lemma is_emptyb_eq_nil {A} (l : list A) : is_true (is_emptyb l) <-> l = [].
 Proof. sauto lq:on. Qed.
 #[global] Hint Rewrite @is_emptyb_eq_nil: brefl.
+
+Definition enumerate {A} (l : list A) : list (nat * A) := zip_with pair (seq 0 (length l)) l.
+
+
+(*** List lemmas ***)
+
+Lemma length_one_iff_singleton A (l : list A) :
+  length l = 1 <-> exists a, l = [a].
+Proof. sauto lq: on rew:off. Qed.

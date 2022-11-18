@@ -17,13 +17,21 @@
     relation with ⦗s⦘. *)
 
 From stdpp Require Export option.
-Require Import CBase.
-Require Import CBool.
-Require Import CInduction.
-Require Import CMaps.
+Require Import Common.
+
+(* For some reason some typeclass instance defined in CSets is missing even if
+   Common export CSets *)
 Require Import CSets.
 
 Import SetUnfoldPair.
+
+
+(* Obviously not complete but useful *)
+Lemma iff_forall_swap A P Q :
+  (forall a : A, P a <-> Q a) -> (forall a, P a) <-> (forall a, Q a).
+Proof. sfirstorder. Qed.
+#[global] Hint Resolve iff_forall_swap : core.
+
 
 (*** Maps of sets utilities ***)
 
@@ -518,8 +526,145 @@ Section GRel.
     |}.
   Solve All Obligations with intros; eapply grel_plus_ind_r; hauto.
 
+  Lemma grel_plus_plus (r : grel) : (r⁺)⁺ = r⁺.
+  Proof using.
+    set_unfold.
+    intros x y.
+    split.
+    - intro H; cinduction H; qauto db:grel.
+    - hauto db:grel.
+  Qed.
 
-  (*** Reflexive closure ***)
+
+  (*** Symmetric ***)
+
+  Definition grel_symmetric (r : grel) : bool := r =? r⁻¹.
+
+  Definition grel_symmetric_rew (r : grel) :
+    grel_symmetric r -> r⁻¹ = r.
+  Proof using. unfold grel_symmetric. sauto b:on. Qed.
+
+  Definition grel_symmetric_spec (r : grel) :
+    grel_symmetric r -> forall x y, (x, y) ∈ r -> (y, x) ∈ r.
+  Proof using.
+    unfold grel_symmetric.
+    breflect in *.
+    set_solver.
+  Qed.
+
+  (*** Irreflexive ***)
+
+  Definition grel_irreflexive (r : grel) : bool :=
+    forallb (fun x : A * A => negb (x.1 =? x.2)) (elements r).
+
+  Lemma grel_irreflexive_spec (r : grel) :
+    grel_irreflexive r <-> ∀''(x, y) ∈ r, x ≠ y.
+  Proof using.
+    unfold grel_irreflexive.
+    repeat breflect in *.
+    set_unfold.
+    hauto db:core.
+  Qed.
+
+  Lemma grel_irreflexive_spec' (r : grel) :
+    grel_irreflexive r <-> ∀ x : A, (x, x) ∉ r.
+  Proof using.
+    rewrite grel_irreflexive_spec.
+    hauto db:core.
+  Qed.
+
+  Global Instance set_unfold_grel_irreflexive (r : grel) P :
+    (forall x y, SetUnfoldElemOf (x, y) r (P x y)) ->
+    SetUnfold (grel_irreflexive r) (forall x y, P x y -> x ≠ y).
+  Proof using. tcclean. hauto use:grel_irreflexive_spec db:core. Qed.
+
+  Definition grel_acyclic (r : grel) := grel_irreflexive (r⁺).
+
+
+  (*** Transitive ***)
+
+  Definition grel_transitive (r : grel) : bool := r =? r⁺.
+
+  Lemma grel_transitive_spec (r : grel) :
+    grel_transitive r <-> forall x y z, (x, y) ∈ r -> (y, z) ∈ r -> (x, z) ∈ r.
+  Proof using.
+    unfold grel_transitive.
+    repeat breflect in *.
+    split; intro H.
+    - rewrite H. hauto lq:on db:grel.
+    - set_unfold.
+      intros x y.
+      split; intro Hr.
+      + hauto db:grel.
+      + cinduction Hr; hauto db:grel.
+  Qed.
+
+  Lemma grel_transitive_rew (r : grel) :
+    grel_transitive r -> r⁺ = r.
+  Proof using. hauto qb:on unfold:grel_transitive. Qed.
+  Hint Rewrite grel_transitive_rew using done : grel.
+
+  Lemma grel_transitive_relation_spec (r : grel) :
+    grel_transitive r <-> transitive A (grel_to_relation r).
+  Proof using.
+    unfold transitive.
+    unfold grel_to_relation.
+    apply grel_transitive_spec.
+  Qed.
+
+  Lemma grel_transitive_plus (r : grel) : grel_transitive (r⁺).
+  Proof using.
+    apply <- grel_transitive_spec.
+    hauto db:grel.
+  Qed.
+  Hint Resolve grel_transitive_plus : grel.
+
+  (*** Functional ***)
+
+  Definition grel_map_functional (rm : grel_map) : bool :=
+    map_fold (fun k s b => b && bool_decide (set_size s <= 1)) true rm.
+
+  Lemma grel_map_functional_basic_spec (rm : grel_map) :
+    grel_map_functional rm <-> forall a : A, set_size (rm !!! a) <= 1.
+  Proof using.
+    unfold grel_map_functional.
+    cinduction rm using map_fold_cind with [> | intros i s m r Hi Hr].
+    - sauto lq:on.
+    - breflect in *.
+      rewrite Hr; clear Hr.
+      setoid_rewrite lookup_total_unfold.
+      assert (set_size (m !!! i) <= 1).
+      { rewrite lookup_total_lookup. hauto. }
+      hfcrush.
+  Qed.
+
+  Lemma grel_map_functional_spec (rm : grel_map) :
+    grel_map_functional rm <->
+      forall a y z : A, y ∈ (rm !!! a) -> z ∈ (rm !!! a) -> y = z.
+  Proof using.
+    rewrite grel_map_functional_basic_spec.
+    setoid_rewrite set_size_le1.
+    reflexivity.
+  Qed.
+
+  Definition grel_functional (r : grel) :=
+    grel_map_functional (grel_to_map r).
+
+  Lemma grel_functional_spec (r : grel) :
+    grel_functional r <->
+      forall x y z : A, (x, y) ∈ r -> (x, z) ∈ r -> y = z.
+  Proof using.
+    unfold grel_functional.
+    rewrite grel_map_functional_spec.
+    set_solver.
+  Qed.
+
+  (*** Equivalence ***)
+
+  Definition grel_equiv_on (s : gset A) (r : grel) :=
+    grel_symmetric r && grel_transitive r && bool_decide (⦗s⦘ ⊆ r).
+
+  (*** Reflexivivity ***)
 
   (** We need to know that A is finite do deal with reflexivity. **)
   Context {finA : Finite A}.
@@ -529,6 +674,18 @@ Section GRel.
 
   Lemma grel_rc_spec (r : grel) x y : (x, y) ∈ r? <-> (x, y) ∈ r \/ x = y.
   Proof using. unfold grel_rc. set_solver. Qed.
+
+  Definition grel_reflexive (r : grel) := r =? r?.
+
+  Lemma grel_reflexive_spec (r : grel) :
+    grel_reflexive r <-> forall x : A, (x, x) ∈ r.
+  Proof using.
+    unfold grel_reflexive.
+    breflect in *.
+    split; intro H.
+    - rewrite H. hauto lq:on use:grel_rc_spec.
+    - set_unfold. hauto lq:on.
+  Qed.
 
 End GRel.
 

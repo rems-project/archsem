@@ -117,6 +117,7 @@ Ltac tcclean_hyp H :=
     try(repeat (setoid_rewrite <- H || rewrite <- H))
   | TCEq _ _ => rewrite TCEq_eq in H; try (setoid_rewrite H)
   | Unconvertible _ _ _ => clear H
+  | TCFastDone _ => apply (@tc_fast_done _) in H
   | _ => destruct H as [H]; try(repeat (setoid_rewrite <- H || rewrite <- H))
   end.
 
@@ -156,6 +157,27 @@ Proof.
   solve_proper.
 Qed.
 
+(* TODO make solve_proper work *)
+(* TODO upstream to stdpp *)
+Global Instance SetUnfold_proper :
+  Proper (iff ==> iff ==> iff) SetUnfold.
+Proof.
+  unfold Proper.
+  unfold respectful.
+  intros.
+  split; destruct 1; constructor; sfirstorder.
+Qed.
+
+Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
+  Proper ((=@{A}) ==> (≡@{C}) ==> iff ==> iff) SetUnfoldElemOf.
+Proof.
+  unfold Proper.
+  unfold respectful.
+  intros.
+  split; destruct 1; constructor; sfirstorder.
+Qed.
+
+
 
 (*** Generic hints ***)
 
@@ -163,3 +185,9 @@ Lemma exists_pair B C P:
   (exists x : C * B, P x) <-> exists x y, P (x, y).
 Proof. hauto lq:on. Qed.
 #[global] Hint Resolve <- exists_pair : core.
+#[global] Hint Rewrite exists_pair : core.
+
+Lemma forall_pair B C (P : B * C -> Prop):
+  (forall x : B * C, P x) <-> forall x y, P (x, y).
+Proof. hauto lq:on. Qed.
+#[global] Hint Rewrite forall_pair : core.
