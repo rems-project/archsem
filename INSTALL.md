@@ -58,6 +58,11 @@ need by the exported sail code.
 
 ### Coq libraries
 
+For coq-hammer-tactics and coq-record-update below
+```
+opam repo add coq-released https://coq.inria.fr/opam/released
+```
+
 #### stdpp
 
 This development use the unstable version of `stdpp`, it can be installed by
@@ -77,7 +82,7 @@ also propose to install `coq-stdpp-unstable` which you should accept
 
 #### Coq Hammer
 
-This repository used the `sauto` family of tactics from the Coq Hammer project.
+This repository uses the `sauto` family of tactics from the Coq Hammer project.
 To install it, do:
 ```
 opam install coq-hammer-tactics
