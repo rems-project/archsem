@@ -34,7 +34,7 @@ otherwise you can install it with `opam install coq`
 
 ### Sail 
 
-This project uses the head version of Sail that hasn't been released yet. The
+(1) This project uses the head version of Sail that hasn't been released yet. The
 simplest to get it to clone it somewhere
 ```
 git clone https://github.com/rems-project/sail
@@ -46,9 +46,13 @@ against, do:
 git checkout f421b04d
 ```
 
-Then you can install sail with `opam pin .` in the `sail` directory. You will
-also need to install the `coq-sail` library, from the `sail` directory do: ```
-opam pin lib/coq ``` This will also automatically install `coq-bbv` which is
+Then you can install sail with `opam pin .` in the `sail` directory.
+
+(2) You will also need to install the `coq-sail` library, from the `sail` directory do:
+```
+opam pin lib/coq
+```
+This will also automatically install `coq-bbv` which is
 need by the exported sail code.
 
 
