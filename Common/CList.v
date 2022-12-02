@@ -58,8 +58,6 @@ Qed.
 Lemma Permutation_elem_of A (l l' : list A) x: l ≡ₚ l' → x ∈ l → x ∈ l'.
 Proof. setoid_rewrite elem_of_list_In. apply Permutation_in. Qed.
 
-From Hammer Require Import Hammer.
-
 (* TODO add some standard proof search for NoDup *)
 Global Instance set_unfold_list_permutation A (l l' : list A) P Q:
   TCFastDone (NoDup l) ->
