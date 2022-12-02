@@ -1,5 +1,6 @@
 (coq.theory
  (name PromisingArm)
+ (package coq-system-semantics)
  (modules GenPromising UMPromising)
  (theories ISASem SSCCommon GenModels)
 )
