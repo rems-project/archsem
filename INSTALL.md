@@ -14,6 +14,11 @@ The `Makefile` just calls dune directly.
 All dependencies install instruction assume you can use `opam`. If needed,
 instructions are available here: https://opam.ocaml.org/doc/Install.html.
 
+You need to add the coq opam repository for some of the dependencies:
+```
+opam repo add coq-released https://coq.inria.fr/opam/released
+```
+
 
 ### Dune
 
@@ -32,7 +37,7 @@ opam pin coq 8.14.0
 otherwise you can install it with `opam install coq`
 
 
-### Sail 
+### Sail
 
 (1) This project uses the head version of Sail that hasn't been released yet. The
 simplest to get it to clone it somewhere
@@ -59,14 +64,11 @@ need by the exported sail code.
 ### Coq libraries
 
 For coq-hammer-tactics and coq-record-update below
-```
-opam repo add coq-released https://coq.inria.fr/opam/released
-```
 
 #### stdpp
 
 This development use the unstable version of `stdpp`, it can be installed by
-checking out the repository: 
+checking out the repository:
 ```
 git clone https://gitlab.mpi-sws.org/iris/stdpp
 ```
