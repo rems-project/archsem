@@ -169,7 +169,6 @@ Proof. sauto lq:on. Qed.
 
 Definition enumerate {A} (l : list A) : list (nat * A) := zip_with pair (seq 0 (length l)) l.
 
-
 (*** List lemmas ***)
 
 Lemma length_one_iff_singleton A (l : list A) :

@@ -292,6 +292,7 @@ Section GRel.
 
   Typeclasses Opaque grel_inv.
 
+
   (*** Set into rel ***)
 
   Definition grel_from_set (s : gset A) : grel := set_map (fun x => (x, x)) s.

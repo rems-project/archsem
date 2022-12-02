@@ -69,6 +69,19 @@ Proof.
   - set_solver.
 Qed.
 
+Definition set_forallb `{Elements A C} (P : A -> bool) (s : C) :=
+  forallb P (elements s).
+
+Definition option_to_set (C : Type) `{Empty C} `{Singleton A C} (o : option A) : C :=
+  match o with
+  | None => ∅
+  | Some a => {[a]}
+  end.
+
+Global Instance set_unfold_option_to_set `{SemiSet A C} (o : option A) x:
+  SetUnfoldElemOf x (option_to_set C o) (o = Some x).
+Proof. tcclean. unfold option_to_set. sauto lq:on. Qed.
+
 (*** Simplification ***)
 
 (** Automation for set simplifications *)

@@ -1,6 +1,7 @@
 
 Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
+Require Import stdpp.countable.
 
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.
@@ -16,6 +17,12 @@ Module Type Arch.
   (** The type of registers, most likely string, but may be more fancy *)
   Parameter reg : Type.
 
+  (** We need to implement a gmap indexed by registers *)
+  Parameter reg_eq : EqDecision reg.
+  #[export] Existing Instance reg_eq.
+  Parameter reg_countable : @Countable reg reg_eq.
+  #[export] Existing Instance reg_countable.
+
   (** The type of registers. This needs to be a type generic enough to contain
       the value of any register *)
   Parameter reg_type : Type.
@@ -27,6 +34,14 @@ Module Type Arch.
       specific in this, there is no need for a generic way to extract a
       bitvector from it*)
   Parameter pa : Type.
+
+  (** We need to implement a gmap indexed by pa *)
+  Parameter pa_eq : EqDecision pa.
+  #[export] Existing Instance pa_eq.
+  Parameter pa_countable : @Countable pa pa_eq.
+  #[export] Existing Instance pa_countable.
+
+
 
   (** Parameter for extra architecture specific access types. Can be an empty
       type if not used *)
@@ -92,7 +107,7 @@ Module Interface (A : Arch).
   Module WriteReq.
     Record t {n : N} :=
       make
-        { pa : A.pa;
+        { pa : pa;
           access_kind : accessKind;
           value : bv (8 * n);
           va : option va;
