@@ -6,6 +6,17 @@
 
 The `Makefile` just calls dune directly.
 
+## Installing with opam
+
+(1) Install the dependencies below.
+
+(2) Call `opam pin .` This should make the library available as 4 top-level modules for any other 
+projects or coq file (assuming you are using a Coq setup from opam):
+ - SSCCommon (this project extra standard library, basically a stdpp extension)
+ - ISASem (The ISA Model interface)
+ - GenModels (Generic model definitions)
+ - PromisingArm (The promising Arm model)
+
 
 ## Software Dependencies
 
