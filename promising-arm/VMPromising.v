@@ -619,6 +619,10 @@ Module TState.
   Definition cse (v : view) (ts : t) : t :=
     ts |> setv scse (length ts.(sregs))
        |> update vcse v.
+
+  (** Perform a flush of the last CSE to the MMU/TLB *)
+  Definition tlbi_cse (v : view) (ts : t) : t :=
+    set tlbscses (fun_add v (Some ts.(scse))) ts.
 End TState.
 
 
@@ -874,6 +878,12 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
     let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) false) ts in
     Exec.ret (ts, mem).
 
+Definition run_cse (iis : IIS.t) (ts : TState.t) : IIS.t * TState.t :=
+  let vpost :=
+    ts.(TState.vspec) ⊔ ts.(TState.vcse)
+    ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr)
+  in
+  (IIS.add_nreg vpost iis, TState.cse vpost ts).
 
 (** Perform a barrier, mostly view shuffling *)
 Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
@@ -912,17 +922,12 @@ Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
           let vpost := ts.(TState.vwr) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
           Exec.ret (IIS.add_nreg vpost iis, TState.update TState.vdsb vpost ts)
       end
-  | Barrier_ISB () => (* isb *)
-      let vpost :=
-        ts.(TState.vspec) ⊔ ts.(TState.vcse)
-        ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr)
-      in
-      Exec.ret (IIS.add_nreg vpost iis, TState.cse vpost ts)
+  | Barrier_ISB () => Exec.ret (run_cse iis ts)
   | _ => Exec.Error "Unsupported barrier"
   end.
 
-Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (tlbi : TLBI) :
-  Exec.t string (IIS.t * TState.t * Memory.t) :=
+Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (tlbi : TLBI)
+  (mem : Memory.t) : Exec.t string (IIS.t * TState.t * Memory.t) :=
   Exec.fail_if (tlbi.(TLBI_shareability) =? Shareability_NSH)
     "Non-shareable TLBIs are not supported";;
   Exec.fail_if (negb (tlbi.(TLBI_rec).(TLBIRecord_regime) =? Regime_EL10))
@@ -932,16 +937,26 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (tlbi : TLBI) :
   let va := bv_extract 12 36 (tlbi.(TLBI_rec).(TLBIRecord_address)) in
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.nreg iis)
               ⊔ ((* ad-hoc data dep *) IIS.regs iis) in
-  let tlbiev :=
+  '(tlbiev : TLBI.t) ←
     match tlbi.(TLBI_rec).(TLBIRecord_op) with
-    | TLBIOp_ALL => ()
-    | TLBIOp_ASID => ()
-    | TLBIOp_VAA => ()
-    | TLBIOp_VA => ()
-    | _ => ()
-    end
-  in Exec.Error "TODO".
-
+    | TLBIOp_ALL => Exec.ret $ TLBI.All tid
+    | TLBIOp_ASID => Exec.ret $ TLBI.Asid tid asid
+    | TLBIOp_VAA => Exec.ret $ TLBI.Vaa tid va last
+    | TLBIOp_VA => Exec.ret $ TLBI.Va tid asid va last
+    | _ => Exec.Error "Unsupported kind of TLBI"
+    end;
+  let '(time, mem) :=
+    match Memory.fulfill tlbiev (TState.prom ts) mem with
+    | Some t => (t, mem)
+    | None => Memory.promise tlbiev mem
+    end in
+  Exec.assert (vpre <? time)%nat;;
+  let ts :=
+    ts |> set TState.prom (delete time)
+       |> TState.update TState.vtlbi time
+       |> TState.tlbi_cse time
+  in
+  Exec.ret (IIS.add_nreg time iis, ts, mem).
 
 
 
@@ -953,7 +968,16 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   let deps_to_view :=
     fun deps => IIS.from_DepOn_opt deps ts iis in
   match o with
-  | RegWrite reg direct deps val => Exec.Error "TODO"
+  | RegWrite reg direct deps val =>
+      Exec.fail_if (negb direct) "Indirect register write unsupported";;
+      let wr_view := deps_to_view deps in
+      match Reg.from_arch reg with
+      | App app =>
+          let ts := TState.set_reg reg (val, wr_view) ts in
+          Exec.ret (iis, ts, mem, ())
+      | Sys sys => Exec.Error "TODO"
+      | None => Exec.Error "Writing to unsupported system register"
+
   | RegRead reg direct => Exec.Error "TODO"
   | MemRead 8 rr =>
       '(ts, iis, val) ← run_mem_read rr iis ts init mem;
@@ -984,7 +1008,10 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       '(iis, ts) ← run_barrier iis ts barrier;
       Exec.ret (iis, ts, mem, ())
   | TlbOp tlbi =>
-      '(iis, ts, mem) ← run_tlbi tid iis ts tlbi;
+      '(iis, ts, mem) ← run_tlbi tid iis ts tlbi mem;
+      Exec.ret (iis, ts, mem, ())
+  | EretAnnounce =>
+      let '(iis, ts) := run_cse iis ts in
       Exec.ret (iis, ts, mem, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
   | Choose n =>
