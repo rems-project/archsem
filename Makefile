@@ -6,3 +6,7 @@ all:
 
 clean:
 	dune clean
+	rm -f ssc.tar.gz
+
+archive:
+	tar -czf ssc.tar.gz dune dune-project INSTALL.md README.md Makefile coq-system-semantics.opam LICENSE Common ISASem armv9-instantiation-types GenModels promising-arm
