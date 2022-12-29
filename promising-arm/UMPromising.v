@@ -95,6 +95,10 @@ Module Loc.
     bv_solve'.
   Qed.
 
+  (** Convert a physical address back to a 64 bits "virtual" address *)
+  Definition to_va (loc : t) : bv 64 :=
+    bv_concat 64 (bv_0 8) $ bv_concat 52 loc (bv_0 3).
+
 End Loc.
 
 

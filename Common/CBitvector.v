@@ -6,12 +6,13 @@ Require Export stdpp.unstable.bitvector.
 Require Export stdpp.unstable.bitvector_tactics.
 Require Export bbv.Word.
 Require Import CBase.
+Require Import CBool.
 Require Import Coq.Logic.Eqdep. (* <- This assumes UIP *)
 
 From Hammer Require Import Tactics.
 
 
-(********** Dependent types stuff **********)
+(*** Dependent types stuff ***)
 
 Lemma symmetry_symmetry {A} (x y : A) (e : x = y) :
   symmetry (symmetry e) = e.
@@ -87,7 +88,7 @@ Qed.
 
 
 
-(********** Arithmetic helper stuff **********)
+(*** Arithmetic helper stuff ***)
 
 (* Makes lia able to handle euclidean division, which makes bv_solve,
    bv_solve' and bv_word_solve able to handle concat and extract *)
@@ -141,7 +142,7 @@ Ltac simplify_arith :=
     end.
 
 
-(********** Bitvector decision **********)
+(*** Bitvector decision ***)
 
 (* Interface Equality decision for words (from bbv) *)
 Global Instance word_eq_dec n : EqDecision (word n).
@@ -153,7 +154,7 @@ Defined.
 
 (* This is already instanciated for bv *)
 
-(********** word rewrite database **********)
+(*** word rewrite database ***)
 
 (* The word database simplifies word related expressions *)
 
@@ -186,7 +187,7 @@ Proof. scongruence. Qed.
 Ltac transport_symmetry_word :=
   transport_symmetry; rewrite_strat subterm hints word.
 
-(********** bv rewrite database **********)
+(*** bv rewrite database ***)
 
 Lemma bv_wrap_bv_unsigned' {n m} (b : bv m) :
   n = m -> bv_wrap n (bv_unsigned b) = bv_unsigned b.
@@ -245,7 +246,7 @@ Ltac transport_symmetry_bv :=
 
 
 
-(********** bv to word and back conversions **********)
+(*** bv to word and back conversions ***)
 
 Definition bv_to_word {n} (b : bv n) : word (N.to_nat n) :=
   ZToWord (N.to_nat n) (bv_unsigned b).
@@ -340,7 +341,7 @@ Ltac word_to_bv_to_word :=
       [assumption | clear G; rewrite word_to_bv_to_word in Hyp]
   end.
 
-(********** Convert a mixed bv + word goal into a pure bv goal **********)
+(*** Convert a mixed bv + word goal into a pure bv goal ***)
 
 Lemma word_to_bv_eq {n : nat} (w w' : word n) :
   word_to_bv w = word_to_bv w' <-> w = w'.
@@ -404,7 +405,7 @@ Ltac remove_words :=
   remove_word_vars; remove_word_eqs.
 
 
-(********** bv_solve improvements **********)
+(*** bv_solve improvements ***)
 
 
 (* Full bitvector simplification for both word and bv, contrary to bv_simplify,
@@ -457,7 +458,7 @@ Ltac bv_word_solve :=
 
 (* TODO improve performance *)
 
-(********** Convert word operation to bv operations **********)
+(*** Convert word operation to bv operations ***)
 
 Lemma word_to_bv_ZToWord n z :
   word_to_bv (ZToWord n z) = Z_to_bv (N.of_nat n) z.
@@ -517,8 +518,11 @@ Qed.
 
 
 
-(********** Extra bitvector function **********)
+(*** Extra bitvector function ***)
+
+
 (* This section might be upstreamed to stdpp. *)
+(* TODO add bv_solve support for this section *)
 
 (* Give minimal number of block of size n to cover m
 
@@ -537,5 +541,12 @@ Definition bv_to_bytes (n : N) {m : N} (b : bv m) : list (bv n) :=
 Definition bv_of_bytes (n : N) (m : N) (l : list (bv n)) : bv m :=
   little_endian_to_bv n l |> Z_to_bv m.
 
-(* TODO add bv_solve support for those two functions *)
 
+Definition bv_get_bit (i : N) {n : N} (b : bv n) : bool :=
+  negb (bv_extract i 1 b =? bv_0 1).
+
+Definition bv_set_bit (i : N) {n : N} (b : bv n) : bv n :=
+  bv_and b (Z_to_bv n (bv_modulus i)).
+
+Definition bv_unset_bit (i : N) {n : N} (b : bv n) : bv n :=
+  bv_or b (bv_not (Z_to_bv n (bv_modulus i))).

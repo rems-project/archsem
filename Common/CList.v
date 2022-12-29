@@ -167,6 +167,24 @@ Proof. sauto lq:on. Qed.
 
 Definition enumerate {A} (l : list A) : list (nat * A) := zip_with pair (seq 0 (length l)) l.
 
+Section FilterMap.
+  Context {A B : Type}.
+  Variable f : A -> option B.
+  Fixpoint list_filter_map (l : list A) :=
+    match l with
+    | [] => []
+    | hd :: tl =>
+        match f hd with
+        | Some b => b :: (list_filter_map tl)
+        | None => list_filter_map tl
+        end
+    end.
+
+  Lemma list_filter_map_mbind (l : list A) :
+    list_filter_map l = a ← l; f a |> option_list.
+  Proof using. induction l; hauto lq:on. Qed.
+End FilterMap.
+
 (*** List lemmas ***)
 
 Lemma length_one_iff_singleton A (l : list A) :
