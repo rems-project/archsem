@@ -2,6 +2,7 @@
 Require Import Strings.String.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
+Require Import SSCCommon.GRel.
 Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
@@ -29,7 +30,6 @@ Module Loc := UMPromising.Loc.
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
 Definition val := bv 64.
-
 
 (** We also reuse the Msg object from the User-Mode Promising Model. *)
 Module Msg := UMPromising.Msg.
@@ -152,6 +152,10 @@ Module Memory.
     | Ev.Tlbi _ :: mem' => read_last loc init mem'
     end.
 
+  (** Read memory at a given timestamp without any weak memory behaviour *)
+  Definition read_at (loc : Loc.t) (init : initial) (mem : t) (time : nat) :=
+    read_last loc init (cut_before time mem).
+
   (** Reads from initial memory and fail if the memory has been overwritten.
 
       This is mainly for instruction fetching in this model *)
@@ -266,56 +270,26 @@ Module FwdItem.
    Definition init := make 0 0 false.
 End FwdItem.
 
-(* Python:
-for i in range(11, 31):
-    print("Notation \"{}\" := (FS {}) : fin_scope.".format(i, i - 1))
-*)
-Notation "11" := (FS 10) : fin_scope.
-Notation "12" := (FS 11) : fin_scope.
-Notation "13" := (FS 12) : fin_scope.
-Notation "14" := (FS 13) : fin_scope.
-Notation "15" := (FS 14) : fin_scope.
-Notation "16" := (FS 15) : fin_scope.
-Notation "17" := (FS 16) : fin_scope.
-Notation "18" := (FS 17) : fin_scope.
-Notation "19" := (FS 18) : fin_scope.
-Notation "20" := (FS 19) : fin_scope.
-Notation "21" := (FS 20) : fin_scope.
-Notation "22" := (FS 21) : fin_scope.
-Notation "23" := (FS 22) : fin_scope.
-Notation "24" := (FS 23) : fin_scope.
-Notation "25" := (FS 24) : fin_scope.
-Notation "26" := (FS 25) : fin_scope.
-Notation "27" := (FS 26) : fin_scope.
-Notation "28" := (FS 27) : fin_scope.
-Notation "29" := (FS 28) : fin_scope.
-Notation "30" := (FS 29) : fin_scope.
 
-
-Bind Scope fin_scope with fin.
 Definition EL := (fin 4).
 Bind Scope fin_scope with EL.
 Definition ELp := (fin 3).
 Bind Scope fin_scope with ELp.
 
-
-Bind Scope string_scope with reg.
-
 Definition ELp_to_EL : ELp -> EL := FS.
 
-Global Instance pretty_fin (n : nat) : Pretty (fin n)  :=
-  (fun n => pretty (n : nat)).
-Global Hint Mode Pretty ! : typeclass_instances.
 
 
 (** Any write to a register not explicitly supported by Reg.t will fail,
     because this means that the model doesn't know which behavior it is supposed to
     have *)
 Module Reg.
-  (** application registers *)
+  (** application/non-relaxed registers *)
   Inductive app :=
   | R (num : fin 31)
-  | SP (el : EL).
+  | SP (el : EL)
+  | PC
+  | PSTATE.
 
   #[global] Instance app_dec : EqDecision app.
   solve_decision.
@@ -382,6 +356,8 @@ Module Reg.
     | "SP_EL1" => Some (App (SP 1))
     | "SP_EL2" => Some (App (SP 2))
     | "SP_EL3" => Some (App (SP 3))
+    | "PC_" => Some (App PC)
+    | "PSTATE" => Some (App PSTATE)
     | "ELR_EL1" => Some (Sys (ELR 0))
     | "ELR_EL2" => Some (Sys (ELR 1))
     | "ELR_EL3" => Some (Sys (ELR 2))
@@ -405,6 +381,8 @@ Module Reg.
     match reg with
     | App (R n) => "R" ++ (pretty n)
     | App (SP n) => "SP_EL" ++ (pretty n)
+    | App PC => "PC_"
+    | App PSTATE => "PSTATE"
     | Sys (ELR n) => "ELR_EL" ++ (pretty (S n))
     | Sys (FAR n) => "FAR_EL" ++ (pretty (S n))
     | Sys PAR => "PAR_EL1"
@@ -424,23 +402,17 @@ Module Reg.
 
   Lemma to_from_arch (reg : t) : from_arch (to_arch reg) = Some reg.
   Proof.
-    destruct reg as [app | sys].
-    - destruct app;
-        unfold EL in *;
-        repeat (fin_case; [sfirstorder |]);
-        try (fin_case).
-    - destruct sys;
-        unfold ELp in *;
-        repeat (fin_case; [sfirstorder |]);
-        try (fin_case);
-        sfirstorder.
+    destruct reg as [[]|[]];
+      unfold EL,ELp in *;
+      repeat (fin_case; [sfirstorder |]);
+      try (fin_case);
+      sfirstorder.
   Qed.
 
   Lemma from_to_arch (r : reg) (r' : t) : (from_arch r) = Some r' -> to_arch r' = r.
   Proof.
     intro H.
     unfold from_arch in H.
-    (* takes around 2s *)
     repeat (discriminate H || case_split); inversion H; vm_compute; reflexivity.
   Qed.
 
@@ -625,6 +597,495 @@ Module TState.
     set tlbscses (fun_add v (Some ts.(scse))) ts.
 End TState.
 
+(*** VA helper ***)
+
+Definition Level := fin 4.
+
+(* It is important to be consistent on "level_length" and not write it as 9 *
+   lvl + 9, otherwise some term won't type because the equality is only
+   propositional *)
+Definition level_length (lvl : Level) : N := 9 * (lvl + 1).
+
+Definition prefix (lvl : Level) := bv (level_length lvl).
+
+Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
+  bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
+
+Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
+  bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
+
+Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
+  bv_extract 0 9 (level_prefix va lvl).
+
+Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
+  bv_extract 9 (n - 9) va.
+
+Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
+  bv_concat 49 (bv_extract 9 40 loc) index.
+
+(*** TLB ***)
+
+Lemma eqdec_existT `{EqDecision A} {P : A -> Type} (p : A) (x y : P p) :
+  existT p x = existT p y <-> x = y.
+  Proof. hauto q:on use: Eqdep_dec.inj_pair2_eq_dec. Qed.
+#[global] Hint Rewrite @eqdec_existT using typeclasses eauto : core.
+
+
+
+(* Set Printing Universes. *)
+
+Class FinUnfold (n : nat) (p : fin n) (q : nat) := {fin_unfold : p =@{nat} q}.
+Global Hint Mode FinUnfold + + - : typeclass_instances.
+
+Global Instance fin_unfold_default (n : nat) (p : fin n) :
+  FinUnfold n p p | 1000.
+Proof. done. Qed.
+
+Global Instance fin_unfold_F1 (n : nat) :
+  FinUnfold (S n) 0 0.
+Proof. done. Qed.
+
+Global Instance fin_unfold_FS (n : nat) p q :
+  FinUnfold n p q -> FinUnfold (S n) (FS p) (S q).
+Proof. tcclean. done. Qed.
+
+Lemma fin_cast_eq_refl {n : nat} (p : fin n) : Fin.cast p eq_refl = p.
+Proof. induction p; sfirstorder. Qed.
+
+Lemma fin_to_nat_cast {n m : nat} (p : fin n) (H : n = m) : Fin.cast p H =@{nat} p.
+Proof.
+  rewrite <- H.
+  rewrite fin_cast_eq_refl.
+  reflexivity.
+Qed.
+
+Global Instance fin_unfold_cast (n m : nat) (H : n = m) p q :
+  FinUnfold n p q -> FinUnfold m (Fin.cast p H) q.
+Proof. tcclean. by apply fin_to_nat_cast. Qed.
+
+Lemma fin_to_nat_Fin_to_nat {n : nat} (p : fin n) : proj1_sig (Fin.to_nat p) =@{nat} p.
+Proof. induction p; hauto lq:on. Qed.
+
+Global Instance fin_unfold_L (n m : nat) p q :
+  FinUnfold n p q -> FinUnfold (n + m) (Fin.L m p) q.
+Proof.
+  tcclean.
+  setoid_rewrite <- fin_to_nat_Fin_to_nat.
+  apply Fin.L_sanity.
+Qed.
+
+Global Instance fin_unfold_R (n m : nat) p q :
+  FinUnfold n p q -> FinUnfold (m + n) (Fin.R m p) (m + q).
+Proof.
+  tcclean.
+  setoid_rewrite <- fin_to_nat_Fin_to_nat.
+  apply Fin.R_sanity.
+Qed.
+
+Global Instance fin_unfold_nat_to_fin (n p : nat) (H : (p < n)%nat) :
+  FinUnfold n (nat_to_fin H) p.
+Proof. tcclean. by rewrite fin_to_nat_to_fin. Qed.
+
+Program Definition fin_L1 {n : nat} (p : fin n) : fin (S n) :=
+  Fin.cast (Fin.L 1 p) _.
+Solve All Obligations with lia.
+
+Global Instance fin_unfold_L1 (n : nat) p q :
+  FinUnfold n p q -> FinUnfold (S n) (fin_L1 p) q.
+Proof.
+  tcclean.
+  by rewrite fin_unfold.
+Qed.
+
+Opaque fin_L1.
+
+
+
+
+Program Definition FS_fin_L1 {n : nat} (p : fin n) : FS (fin_L1 p) = fin_L1 (FS p).
+Proof.
+  apply (inj fin_to_nat).
+  setoid_rewrite fin_unfold.
+  reflexivity.
+Qed.
+
+Program Definition fin_last (n : nat) : fin (S n) :=
+  nat_to_fin (_ : n < S n)%nat.
+Next Obligation.
+  lia.
+Defined.
+
+Global Instance fin_unfold_last (n : nat) :
+  FinUnfold (S n) (fin_last n) n.
+Proof.
+  tcclean.
+  by rewrite fin_unfold.
+Qed.
+
+Opaque fin_last.
+
+Lemma FS_fin_last (n : nat) : FS (fin_last n) = fin_last (S n).
+Proof.
+  apply (inj fin_to_nat).
+  setoid_rewrite fin_unfold.
+  reflexivity.
+Qed.
+
+Definition fin_last_inv {n} (P : fin (S n) → Type)
+  (Hend : P (fin_last n)) (HS : ∀ (i : fin n), P (fin_L1 i)) (i : fin (S n)) : P i.
+Proof.
+  induction n.
+  - inv_fin i.
+    + apply Hend.
+    + intro i2. inv_fin i2.
+  - inv_fin i.
+    + pose (H := HS 0%fin).
+      apply H.
+    + apply IHn.
+      * rewrite FS_fin_last.
+        apply Hend.
+      * intro i.
+        rewrite FS_fin_L1.
+        apply HS.
+Defined.
+
+Program Definition fin_upcast {n m : nat} (H : (n <= m)%nat) (p : fin n) : fin m :=
+  nat_to_fin (_ : (p < m) %nat).
+Next Obligation.
+  intros.
+  use (fin_to_nat_lt p).
+  lia.
+Qed.
+
+Global Instance fin_unfold_fin_upcast (n p : nat) (H : (p <= n)%nat) (i : fin p) q :
+  FinUnfold p i q ->
+  FinUnfold n (fin_upcast H i) q.
+Proof.
+  tcclean.
+  unfold fin_upcast.
+  rewrite fin_unfold.
+  reflexivity.
+Qed.
+Opaque fin_upcast.
+
+
+
+Fixpoint hvec (n : nat) : (fin n -> Type) -> Type :=
+  match n with
+  | 0%nat => fun _ => unit
+  | S m => fun T => ((T 0%fin) * hvec m (T ∘ FS))%type
+  end.
+Arguments hvec {n} T.
+
+Fixpoint hget {n : nat} (i : fin n) : forall T : fin n -> Type, hvec T -> T i :=
+  match i with
+  | 0%fin => fun _ v => v.1
+  | FS p => fun _ v => hget p _ v.2
+  end.
+Arguments hget {n} i {T} v.
+
+Fixpoint hvec_func {n : nat} : forall T : fin n -> Type, (forall i, T i) -> hvec T :=
+  match n with
+  | 0%nat => fun _ f => ()
+  | S m => fun _ f => (f 0%fin, hvec_func _ (fun x => f (FS x)))
+  end.
+Arguments hvec_func {n T} f.
+
+Fixpoint hset {n : nat} (i : fin n) : forall T : fin n -> Type, T i -> hvec T -> hvec T :=
+  match i with
+  | 0%fin => fun _ nv v => (nv, v.2)
+  | FS p => fun _ nv v => (v.1, hset p _ nv v.2)
+  end.
+Arguments hset {n} i {T} nv v.
+
+Lemma hvec_get_func {n : nat} {T : fin n -> Type} (i : fin n) (f : forall i, T i) :
+  hget i (hvec_func f) = f i.
+Proof. induction i; hauto. Qed.
+
+Lemma hvec_get_set_same {n : nat} {T : fin n -> Type}
+  (v : hvec T) (i : fin n) (nv : T i) :
+  hget i (hset i nv v) = nv.
+Proof. induction i; hauto. Qed.
+
+Lemma hvec_get_set_diff {n : nat} {T : fin n -> Type}
+  (v : hvec T) (i j : fin n) (nv : T j) :
+  i ≠ j -> hget i (hset j nv v) = hget i v.
+Proof. induction i; sauto dep:on. Qed.
+
+(* Technically, this is mapi, but a plain map can't exist because of dependent
+ typing *)
+Definition hmap {n : nat} {T1 T2 : fin n -> Type} (f : forall i, T1 i -> T2 i)
+  (v : hvec T1) : hvec T2 := hvec_func (fun i => f i (hget i v)).
+
+Definition hmap2 {n : nat} {T1 T2 T3 : fin n -> Type} (f : forall i, T1 i -> T2 i -> T3 i)
+  (v1 : hvec T1) (v2 : hvec T2) : hvec T3
+  := hvec_func (fun i => f i (hget i v1) (hget i v2)).
+
+Lemma hget_hmap {n : nat} {T1 T2 : fin n -> Type} (f : forall i, T1 i -> T2 i)
+  (v : hvec T1) (i : fin n) :
+  hget i (hmap f v) = f i (hget i v).
+Proof.
+  unfold hmap.
+  rewrite hvec_get_func.
+  reflexivity.
+Qed.
+
+Definition hlast {n : nat} {T : fin (S n) -> Type} (v : hvec T) : T (fin_last n)
+  := hget (fin_last n) v.
+
+
+
+
+
+
+
+Global Instance sigT_dec `{EqDecision A} (P : A -> Type)
+  `{forall a: A, EqDecision (P a)} : EqDecision (sigT P).
+  unfold EqDecision.
+  intros [x p] [y q].
+  destruct (decide (x = y)) as [e | e].
+  - destruct e.
+    destruct (decide (p = q)) as [e | e].
+    + destruct e.
+      left.
+      reflexivity.
+    + right.
+      intro.
+      apply e.
+      apply eqdec_existT.
+      assumption.
+  - right.
+    intro.
+    apply e.
+    eapply eq_sigT_fst.
+    eassumption.
+Defined.
+
+Unset Program Cases.
+
+Global Program Instance countable_sigT `{Countable A} (P : A -> Type)
+  {eqP : forall a : A, EqDecision (P a)} {cntP: forall a : A, Countable (P a)}
+  : Countable (sigT P) :=
+  (inj_countable (fun sig => (projT1 sig, encode (projT2 sig)))
+                        (fun '(a, b) =>
+                           bd ← decode b;
+                           Some $ existT a bd) _).
+Next Obligation.
+  intros.
+  cbn.
+  setoid_rewrite decode_encode.
+  hauto lq:on.
+Qed.
+
+Module TLB.
+
+  Module NDCtxt.
+    Record t (lvl : Level) :=
+      make
+        {
+          va : prefix lvl;
+          asid : option (bv 16);
+        }.
+    Arguments make {_} _ _.
+    Arguments va {_}.
+    Arguments asid {_}.
+
+    #[global] Instance dec lvl : EqDecision (t lvl).
+    Proof. solve_decision. Defined.
+
+    #[global] Instance count lvl : Countable (t lvl).
+    Proof.
+      eapply (inj_countable' (fun ndc => (va ndc, asid ndc))
+                        (fun x => make x.1 x.2)).
+      sauto.
+    Qed.
+
+    (* unfold EqDecision. *)
+    (* intros [lvlx vax asidx] [lvly vay asidy]. *)
+    (* destruct (decide (lvlx = lvly)) as [<- | H]. *)
+    (* destruct (decide (vax = vay)) as [<- | H]. *)
+    (* destruct (decide (asidx = asidy)) as [<- | H]. *)
+    (* left. reflexivity. *)
+    (* all :right; inversion 1; autorewrite with core in *; done. *)
+    (* Defined. *)
+  End NDCtxt.
+
+  Module Ctxt.
+    Definition t := {lvl : Level & NDCtxt.t lvl}.
+    Definition lvl : t -> Level := projT1.
+    Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
+    Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
+    Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
+    (* #[global] Instance dec : EqDecision t. *)
+    (* Proof. solve_decision. Defined. *)
+  End Ctxt.
+
+  Module Entry.
+    Definition t (lvl : Level) := vec val (S lvl).
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+    #[global] Instance dec lvl : EqDecision (t lvl).
+    Proof. solve_decision. Defined.
+  End Entry.
+
+  (* Full Entry *)
+  Module FE.
+    Definition t := { ctxt : Ctxt.t & Entry.t (Ctxt.lvl ctxt) }.
+    #[global] Instance dec : EqDecision t.
+    Proof. solve_decision. Defined.
+  End FE.
+
+  Module VATLB.
+    Definition T (lvl : Level) := gmap (NDCtxt.t lvl) (gset (Entry.t lvl)).
+    Definition t := hvec T.
+
+    Definition init : t := hvec_func (fun lvl => ∅).
+
+    Definition get (ctxt : Ctxt.t) (vatlb : t)
+      : gset (Entry.t (Ctxt.lvl ctxt)) :=
+      (hget (Ctxt.lvl ctxt) vatlb) !! (Ctxt.nd ctxt) |> default ∅.
+
+    Definition getFE (ctxt : Ctxt.t) (vatlb : t)
+      : gset (FE.t) :=
+      get ctxt vatlb
+      |> set_map (fun (e : Entry.t (Ctxt.lvl ctxt)) => existT ctxt e).
+
+    #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
+  End VATLB.
+
+  Record t :=
+    make {
+        scse : nat;
+        vatlb : VATLB.t
+      }.
+
+  Definition init := make 0 VATLB.init.
+
+  Definition read_sreg (tlb : t) (ts : TState.t) (time : nat)
+    (sreg : Reg.sys) :=
+    TState.read_sreg ts tlb.(scse) sreg
+    |> filter (fun '(val, v) => v <= time)%nat.
+
+
+
+  (* Program Definition va_fill_lvl0 (tlb : t) (ts : TState.t) *)
+  (*   (init : Memory.initial) *)
+  (*   (mem : Memory.t) (time : nat) : VATLB.t := *)
+  (*   tlb.(vatlb) ∪ *)
+  (*     fun ctxt => *)
+  (*       match ctxt.(Ctxt.lvl) with *)
+  (*       | 0%fin => *)
+  (*           match ctxt.(Ctxt.asid) return gset (Entry.t ctxt.(Ctxt.lvl)) with *)
+  (*           | Some asid => *)
+  (*               ( *)
+  (*                 let valttbrs := *)
+  (*                   (* read_sreg tlb ts time (Reg.TTBR0 0%fin) *) *)
+  (*                   (* |> List.filter (fun '(val,v) => bv_extract 48 16 val =? asid) *) *)
+  (*                   [] *)
+  (*                 in *)
+  (*                 valttbr ← valttbrs; *)
+  (*                 let root_addr := *)
+  (*                   bv_concat 64 (bv_0 16) (bv_extract 0 48 valttbr) in *)
+  (*                 root_loc ← Loc.from_va root_addr |> option_list; *)
+  (*                 let loc := next_entry_loc root_loc ctxt.(Ctxt.va) in *)
+  (*                 let '(val, _) := Memory.read_at loc init mem time in *)
+  (*                 [Vector.const val 1] *)
+  (*               ) *)
+  (*                |> list_to_set *)
+  (*           | None => ∅ *)
+  (*           end *)
+  (*       | _ => ∅ *)
+  (*       end. *)
+
+
+
+
+
+  (** WARNING HACK: Coq is shit so I'm forced to copy paste this function 3
+      times, because after 4 hours I didn't find a way to make it type a generic
+      version (among various internal crashes and similar errors). *)
+
+  (** Needed to do sensible match case on fin values *)
+  Definition fin_case {n : nat} (i : fin (S n)) : option (fin n) :=
+    match i with
+    | Fin.F1 => None
+    | FS n => Some n
+    end.
+
+  (* TODO report bug: Function is incompatible with Keyed Unification *)
+  #[local] Unset Keyed Unification.
+
+  Fixpoint fin_inj1 {n : nat} (p : fin n) : fin (S n) :=
+    match p with
+    | Fin.F1 => Fin.F1
+    | FS p' => FS (fin_inj1 p')
+    end.
+
+
+  Lemma fin_to_nat_fin_inj1 {n : nat} (p : fin n) : fin_inj1 p =@{nat} p.
+    Admitted.
+
+  (* Lemma va_fill_termination {n : nat} (i : fin (S n)) (j : fin n) : *)
+  (*   fin_case i = Some j -> (Fin.L 1 j < i)%nat. *)
+  (*   inv_fin i. *)
+
+  Set Printing Implicit.
+  Set Printing Coercions.
+
+  (* Function va_fill_lvl (tlb : t) (ts : TState.t) *)
+  (*   (init : Memory.initial) *)
+  (*   (mem : Memory.t) (time : nat) (lvl : Level) {measure fin_to_nat lvl } := *)
+  (*   match fin_case lvl return VATLB.t with *)
+  (*   | None => VATLB.init *)
+  (*   | Some n => *)
+  (*       va_fill_lvl tlb ts init mem time (fin_inj1 n) *)
+  (*   end *)
+  (*   ∪ tlb.(vatlb). *)
+  (* Proof. *)
+  (*   intros. *)
+  (*   inv_fin lvl. *)
+  (*   scongruence. *)
+  (*   cbn in *. *)
+  (*   intros. *)
+  (*   inversion teq as []. *)
+  (*   destruct H. *)
+  (*   rewrite fin_to_nat_fin_inj1. *)
+  (*   lia. *)
+  (* Qed. *)
+
+
+
+  (* Program Fixpoint va_fill_lvl (lvl : Level) {measure (fin_to_nat lvl) } := *)
+  (*   fun (tlb : t) (ts : TState.t) *)
+  (*   (init : Memory.initial) *)
+  (*   (mem : Memory.t) (time : nat) => *)
+  (*   match lvl return VATLB.t with *)
+  (*   | Fin.F1 => VATLB.init *)
+  (*   | FS n => va_fill_lvl (n : Level) tlb ts init mem time *)
+  (*   end. *)
+  (* Next Obligation. *)
+  (*   intros. *)
+  (* Admitted. *)
+  (* Next Obligation. *)
+  (* Admitted. *)
+  (* Next Obligation. *)
+  (* Admitted. *)
+
+  (* Print va_fill_lvl. *)
+
+
+  (* Definition va_fill (tlb : t) (ts : TState.t) (init : Memory.initial) *)
+  (*   (mem : Memory.t) (time : nat) : VATLB.t. *)
+  (* Admitted. *)
+
+
+  (** Get the TLB state at a certain timestamp *)
+  (* Definition get (ts : TState.t) (init : Memory.initial) (mem : Memory.t) *)
+  (*               (time : nat) : t. *)
+End TLB.
+
+Module VATLB := TLB.VATLB.
+
+
 
 (*** Instruction semantics ***)
 
@@ -708,22 +1169,6 @@ Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
   if f.(FwdItem.xcl) && negb (ak.(Explicit_access_kind_strength) =? AS_normal)
   then f.(FwdItem.time) else f.(FwdItem.view).
 
-(*** VA helper ***)
-
-Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
-  bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
-
-Definition level_prefix {n : N} (va : bv n) (lvl : N) :=
-  bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
-
-Definition level_index {n : N} (va : bv n) (lvl : N) : bv 9 :=
-  bv_extract 0 9 (level_prefix va lvl).
-
-Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
-  bv_extract 9 (n - 9) va.
-
-Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
-  bv_concat 49 (bv_extract 9 40 loc) index.
 
 
 (** Performs a memory read at a location with a view and return possible output
@@ -972,12 +1417,12 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       Exec.fail_if (negb direct) "Indirect register write unsupported";;
       let wr_view := deps_to_view deps in
       match Reg.from_arch reg with
-      | App app =>
-          let ts := TState.set_reg reg (val, wr_view) ts in
+      | Some (Reg.App app) =>
+          let ts := TState.set_reg app (val, wr_view) ts in
           Exec.ret (iis, ts, mem, ())
-      | Sys sys => Exec.Error "TODO"
+      | Some (Reg.Sys sys) => Exec.Error "TODO"
       | None => Exec.Error "Writing to unsupported system register"
-
+      end
   | RegRead reg direct => Exec.Error "TODO"
   | MemRead 8 rr =>
       '(ts, iis, val) ← run_mem_read rr iis ts init mem;

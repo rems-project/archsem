@@ -99,6 +99,11 @@ Module Loc.
   Definition to_va (loc : t) : bv 64 :=
     bv_concat 64 (bv_0 8) $ bv_concat 52 loc (bv_0 3).
 
+  Definition from_va (addr : bv 64) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 49 addr)
+    else None.
+
 End Loc.
 
 

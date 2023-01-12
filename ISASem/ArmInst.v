@@ -1,12 +1,15 @@
 Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 Require Import stdpp.strings.
+Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import Interface.
 Require Import Sail.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Reals.
 From RecordUpdate Require Import RecordSet.
+
+Require Import stdpp.decidable.
 
 Inductive regval  :=
   | Regval_unknown : regval
@@ -17,8 +20,26 @@ Inductive regval  :=
   | Regval_int : Z -> regval
   | Regval_real : R -> regval
   | Regval_string : string -> regval
-  | Regval_bitvector z : mword z -> regval
+  | Regval_bitvector z : bv z -> regval
   | Regval_struct : list (string * regval) -> regval.
+
+Definition regval_bv (n : N) (rv : regval) : option (bv n).
+Proof.
+  destruct rv.
+  exact None.
+  exact None.
+  exact None.
+  exact None.
+  exact None.
+  exact None.
+  exact None.
+  exact None.
+  destruct (decide (n = z)).
+  destruct e.
+  exact (Some b).
+  exact None.
+  exact None.
+Qed.
 
 #[global] Instance FullAddress_eta : Settable _ :=
   settable! Build_FullAddress <FullAddress_paspace; FullAddress_address>.
@@ -78,6 +99,7 @@ Module Arm <: Arch.
   Definition tlb_op := TLBI.
   Definition fault := Exn.
 End Arm.
+Bind Scope string_scope with Arm.reg.
 
 Module Inst := Interface Arm.
 

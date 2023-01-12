@@ -51,6 +51,7 @@ Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be import
     #[global] Instance eq_dec : EqDecision t.
     Proof. solve_decision. Defined.
 
+
     #[global] Instance countable : Countable t.
     Proof.
       eapply (inj_countable' (fun eid => (tid eid, iid eid, num eid))
