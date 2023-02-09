@@ -5,12 +5,73 @@
     operations like equality. *)
 From stdpp Require Import base.
 From stdpp Require Export decidable.
+From stdpp Require Export sets.
 From Hammer Require Import Tactics.
 Require Export DecidableClass.
 
 Require Import CBase.
 
-(********** Boolean reflection **********)
+(*** Bool unfold ***)
+
+(* This an attempt to have a custom boolean unfolding, to not need to handle the mess
+   with having both is_true and Is_true coercion. *)
+
+Class BoolUnfold (b : bool) (P : Prop) :=
+  {bool_unfold : b <-> P }.
+Global Hint Mode BoolUnfold + - : typeclass_instances.
+
+Global Instance BoolUnfold_proper :
+  Proper (eq ==> iff ==> iff) BoolUnfold.
+Proof.
+  unfold Proper.
+  unfold respectful.
+  intros.
+  split; destruct 1; constructor; sfirstorder.
+Qed.
+
+Global Instance bool_unfold_default (b : bool) :
+  BoolUnfold b b | 1000.
+Proof. done. Qed.
+
+Global Instance bool_unfold_false : BoolUnfold false False.
+Proof. done. Qed.
+
+Global Instance bool_unfold_true : BoolUnfold true True.
+Proof. done. Qed.
+
+Global Instance bool_unfold_and (b b' : bool) P Q :
+  BoolUnfold b P -> BoolUnfold b' Q ->
+  BoolUnfold (b && b') (P /\ Q).
+Proof. tcclean. destruct b; destruct b'; naive_solver. Qed.
+
+Global Instance bool_unfold_or (b b' : bool) P Q :
+  BoolUnfold b P -> BoolUnfold b' Q ->
+  BoolUnfold (b || b') (P \/ Q).
+Proof. tcclean. destruct b; destruct b'; naive_solver. Qed.
+
+Global Instance bool_unfold_not (b : bool) P :
+  BoolUnfold b P ->
+  BoolUnfold (negb b) (¬ P).
+Proof. tcclean. destruct b; naive_solver. Qed.
+
+Global Instance bool_unfold_implb (b b' : bool) P Q :
+  BoolUnfold b P -> BoolUnfold b' Q ->
+  BoolUnfold (implb b b') (P -> Q).
+Proof. tcclean. destruct b; destruct b'; naive_solver. Qed.
+
+Global Instance bool_unfold_iff (b b' : bool) P Q :
+  BoolUnfold b P -> BoolUnfold b' Q ->
+  BoolUnfold (eqb b b') (P <-> Q).
+Proof. tcclean. destruct b; destruct b'; naive_solver. Qed.
+
+Global Instance bool_unfold_bool_decide `{Decision P} :
+  BoolUnfold (bool_decide P) P.
+Proof. tcclean. destruct (decide P); naive_solver. Qed.
+
+
+
+
+(*** Boolean reflection ***)
 
 (* This is a hack to make CoqHammer boolean reflection use the Is_true coercion
     from stdpp*)

@@ -16,6 +16,8 @@
     Sequence is obtained with r⨾r' and a set s is converted to a diagonal
     relation with ⦗s⦘. *)
 
+Require Import Wellfounded.
+
 From stdpp Require Export option.
 Require Import Common.
 
@@ -310,152 +312,281 @@ Section GRel.
   Typeclasses Opaque grel_from_set.
 
 
-  (*** Plus operation ***)
+  (*** Transitive closure ***)
 
-  (** Compute the set of all point reachable through rm from a point of r *)
-  Definition reachable_from (r : gset A) (rm : grel_map) : gset A :=
-    set_fold (fun x res => res ∪ rm !!! x) ∅ r.
-
-  Lemma reachable_from_spec r rm x :
-     x ∈ reachable_from r rm <-> ∃' y ∈ r, x ∈ rm !!! y.
-  Proof using.
-    unfold reachable_from.
-    cinduction r using set_fold_cind_L; set_solver.
-  Qed.
-
-  Global Instance set_unfold_elem_of_reachable_from x r rm P Q:
-    (forall y, SetUnfoldElemOf x (rm !!! y) (Q y)) ->
-    (forall y, SetUnfoldElemOf y r (P y)) ->
-    SetUnfoldElemOf x (reachable_from r rm) (exists y, P y /\ Q y).
-  Proof using. tcclean. apply reachable_from_spec. Qed.
-
-  (** Add point a to all the set associated in rm to the keys in r *)
-  Definition add_to_all (a : A) (rm : grel_map) (r : gset A) : grel_map :=
-    set_fold (fun x res => <[x := {[a]} ∪ (res !!! x)]> res) rm r.
-
-  Lemma add_to_all_spec (a : A) (rm : grel_map) (r : gset A) (x y : A) :
-    x ∈ (add_to_all a rm r) !!! y <->
-      x ∈ rm !!! y \/ x = a /\ y ∈ r.
-  Proof using.
-    unfold add_to_all.
-    cinduction r using set_fold_cind_L.
-    - set_solver.
-    - setoid_rewrite (lookup_total_unfold). set_unfold. hauto q:on.
-  Qed.
-
-  Global Instance set_unfold_elem_of_add_to_all x y r rm a P Q:
-    SetUnfoldElemOf y r Q ->
-    SetUnfoldElemOf x (rm !!! y) P ->
-    SetUnfoldElemOf x (add_to_all a rm r !!! y) (P \/ x = a /\ Q).
-  Proof using. tcclean. apply add_to_all_spec. Qed.
-
-
-
-  Fixpoint grel_plus_aux (l : list A) (rm rminv : grel_map)
-    : grel_map * grel_map :=
+  (** Decides if there exists a path between x and y in r that goes only through
+      points in l. x and y themselves don't need to be in l *)
+  Fixpoint exists_path (r : grel) (l : list A) (x y : A) : bool :=
     match l with
-    | [] => (∅, ∅)
+    | [] => bool_decide ((x,y) ∈ r)
     | a :: t =>
-        let '(rmp, rmpinv) := grel_plus_aux t rm rminv in
-        let reachable_from_a := reachable_from (rm !!! a) rmp in
-        let can_reach_a := reachable_from (rminv !!! a) rmpinv in
-        let rmp := <[ a := reachable_from_a]> rmp in
-        let rmp := add_to_all a rmp can_reach_a in
-        let rmpinv := <[ a := can_reach_a]> rmpinv in
-        let rmpinv := add_to_all a rmpinv reachable_from_a in
-        if reachable_from_a ∩ can_reach_a =? ∅ then
-          (rmp, rmpinv)
-        else
-          let rmp := <[a := {[a]} ∪ rmp !!! a ]> rmp in
-          let rmpinv := <[a := {[a]} ∪ rmpinv !!! a]> rmpinv in
-          (rmp, rmpinv)
+        exists_path r t x y || (exists_path r t x a && exists_path r t a y)
     end.
 
+  (** State that l is a path between x and y in r *)
+  Fixpoint is_path (r : grel) (x y : A) (l : list A) : Prop :=
+    match l with
+    | [] => (x, y) ∈ r
+    | a :: t => (x, a) ∈ r /\ is_path r a y t
+    end.
+
+  (* Existence of a path implies being in the transitive closure *)
+  Lemma is_path_tc r x y path :
+    is_path r x y path -> tc (grel_to_relation r) x y.
+  Proof using.
+    generalize dependent x.
+    induction path; sauto lq:on rew:off.
+  Qed.
+
+  (** Equivalent definition of exists_path using is_path, and in Prop *)
+  Definition exists_path' (r : grel) (l : list A) (x y : A) :=
+    exists path : list A,
+      is_path r x y path /\ NoDup path /\ ∀' p ∈ path, p ∈ l.
+
+  (* If a list contains an element it can be splitted on that element *)
+  Lemma list_split (l : list A) x :
+    x ∈ l -> exists left right, l = left ++ [x] ++ right.
+  Proof using.
+    intros H.
+    induction l.
+    set_solver.
+    set_unfold in H.
+    destruct H as [H | H].
+    - exists [].
+      exists l.
+      set_solver.
+    - apply IHl in H as [left [right H]].
+      clear IHl.
+      exists (a :: left).
+      exists right.
+      set_solver.
+  Qed.
+
+  (* Split a path on a point *)
+  Lemma is_path_split r x y a left right :
+    is_path r x y (left ++ [a] ++ right) <->
+      is_path r x a left /\ is_path r a y right.
+  Proof using.
+    generalize dependent x.
+    induction left.
+    - naive_solver.
+    - cbn in *.
+      intro x.
+      rewrite IHleft.
+      naive_solver.
+  Qed.
+
+  (* Induction on list length, very convenient *)
+  Definition length_ind := (well_founded_ind
+                                   (wf_inverse_image (list A) nat _ (@length _)
+          lt_wf)).
+
+  (* If there is a path, there a path without duplicate that is a subpath.
+     Technically this asserts only subset *)
+  Lemma is_path_NoDup r x y path :
+    is_path r x y path -> exists npath, is_path r x y npath /\ NoDup npath /\ npath ⊆ path.
+  Proof using.
+    generalize dependent x.
+    induction path using length_ind.
+    intros x IP.
+    destruct path. {exists []. sauto lq:on simp+:set_unfold. }
+    cbn in *.
+    destruct (decide (a ∈ path)).
+    - apply list_split in e as (left & right & ->).
+      rewrite is_path_split in IP.
+      feed pose proof (H (a :: right)) as H'. {rewrite app_length. cbn. lia. }
+      feed destruct (H' x) as [npath H'']. naive_solver.
+      exists npath. set_solver.
+    - feed pose proof (H path) as H'; [lia |].
+      feed destruct (H' a) as [npath H'']; [set_solver .. |].
+      exists (a :: npath).
+      rewrite NoDup_cons.
+      set_solver.
+  Qed.
+
+
+
+  (* Proof that exists_path' satisfies the equation defining exists_path *)
+  Lemma exists_path'_add_one r l a x y :
+    exists_path' r (a :: l) x y <->
+      exists_path' r l x y \/ (exists_path' r l x a /\ exists_path' r l a y).
+  Proof using.
+    split.
+    - intros [path [Hip [HND Hl]]].
+      destruct (decide (a ∈ path)).
+      + right.
+        destruct (list_split _ _ e) as (left & right & ->).
+        rewrite is_path_split in *.
+        rewrite NoDup_app in HND. cbn in HND. rewrite NoDup_cons in HND.
+        split.
+        * exists left. set_solver.
+        * exists right. set_solver.
+      + left.
+        exists path. set_solver.
+    - intros [[path H] | [[left Hl] [right Hr]]].
+      + exists path. set_solver.
+      + feed destruct (is_path_NoDup r x y (left ++ [a] ++ right)) as [npath H].
+        { rewrite is_path_split. naive_solver. }
+        exists npath. set_solver.
+  Qed.
+
+  (* Equivalence between the two exists_path versions *)
+  Lemma exists_path_spec (r : grel) (l : list A) (x y : A) :
+    exists_path r l x y <-> exists_path' r l x y.
+  Proof using.
+    generalize dependent y.
+    generalize dependent x.
+    induction l.
+    - cbn. setoid_rewrite bool_unfold.
+      split.
+      + sfirstorder.
+      + intros [[] H]; set_solver.
+    - cbn. setoid_rewrite bool_unfold.
+      repeat setoid_rewrite IHl.
+      setoid_rewrite exists_path'_add_one.
+      reflexivity.
+  Qed.
+
+
+  Lemma exists_path_dom_rng_l r l x y:
+    exists_path r l x y -> x ∉ grel_dom r -> x ∉ grel_rng r -> False.
+  Proof using.
+    generalize x y.
+    induction l; cbn; setoid_rewrite bool_unfold; set_unfold; naive_solver.
+  Qed.
+
+  Lemma exists_path_dom_rng_r r l x y:
+    exists_path r l x y -> y ∉ grel_dom r -> y ∉ grel_rng r -> False.
+  Proof using.
+    generalize x y.
+    induction l; cbn; setoid_rewrite bool_unfold; set_unfold; naive_solver.
+  Qed.
+
+  (* Implementation of computation transitive closure using Floyd-Warshall
+     algorithm *)
   Definition grel_plus (r : grel) :=
     let lA := elements (grel_dom r ∪ grel_rng r) in
-    let '(rmp, rmpinv) :=
-      grel_plus_aux lA (grel_to_map r) (grel_to_map r⁻¹)
-    in
-    gmap_to_rel rmp.
-
+    foldr
+      (fun k =>
+         fold_left
+           (fun s i =>
+              fold_left
+                (fun s j =>
+                   if bool_decide ((i, k) ∈ s /\ (k, j) ∈ s)
+                   then s ∪ {[(i, j)]}
+                   else s
+                ) lA s
+           ) lA
+      ) r lA.
   Notation "a ⁺" := (grel_plus a) (at level 1, format "a ⁺") : stdpp_scope.
 
-  (** Otherwise set_unfold fails to deal with filter for some cases  *)
-  Typeclasses Transparent Decision.
 
-  Lemma grel_plus_aux_spec l rm rminv :
-    NoDup l ->
-    let r := gmap_to_rel rm in (gmap_to_rel rminv)⁻¹ = r ->
-    let rmpp := grel_plus_aux l rm rminv in
-    let rp := gmap_to_rel rmpp.1 in (gmap_to_rel rmpp.2)⁻¹ = rp /\
-    forall x y : A,
-    (x, y) ∈ rp <->
-      tc (grel_to_relation (filter (fun x => x.1 ∈ l /\ x.2 ∈ l) r)) x y.
+  (* Proofs along fold_left using an invariant *)
+  Lemma fold_left_inv {C B} (I : C -> list B -> Prop) (f : C -> B -> C)  (l : list B) (i : C) :
+    (I i l) -> (forall a : C, forall x : B, forall t : list B, I a (x :: t) -> I (f a x) t)
+    -> I (fold_left f l i) [].
+    generalize dependent i.
+    induction l; sfirstorder.
+  Qed.
+  Lemma fold_left_inv_ND {C B} (I : C -> list B -> Prop) (f : C -> B -> C)
+    (l : list B) (i : C) :
+    NoDup l -> (I i l) ->
+    (forall a : C, forall x : B, forall t : list B, x ∉ t -> I a (x :: t) -> I (f a x) t)
+    -> I (fold_left f l i) [].
+    generalize dependent i.
+    induction l; sauto lq:on.
+  Qed.
+
+
+  Tactic Notation "feed" "rewrite" constr(H) :=
+    feed_core H using (fun p => let H':=fresh in pose proof p as H'; rewrite H').
+  Tactic Notation "efeed" "rewrite" constr(H) :=
+    efeed_core H using (fun p => let H':=fresh in pose proof p as H'; rewrite H').
+
+  Lemma grel_plus_spec' x y r :
+    (x, y) ∈ r⁺ <-> exists_path r (elements (grel_dom r ∪ grel_rng r)) x y.
   Proof using.
-    intros ND r Hrinv.
-    induction l.
-    - simpl.
-      split.
+    unfold grel_plus.
+    set (lA := (elements (grel_dom r ∪ grel_rng r))).
+    generalize dependent y.
+    generalize dependent x.
+    generalize lA at 3 4 as l.
+    induction l. { cbn. setoid_rewrite bool_unfold. reflexivity. }
+    intros x y.
+    cbn - [exists_path].
+    efeed rewrite (fold_left_inv_ND
+                     (fun (c : grel) (t : list A) =>
+                        forall i j, (i,j) ∈ c <->
+                                 exists_path r (a :: l) i j /\
+                                   (i ∈ t -> exists_path r l i j))).
+    - apply NoDup_elements.
+    - clear x y. intros x y.
+      rewrite IHl. clear IHl.
+      destruct (decide (x ∈ lA)).
       + set_solver.
-      + intros x y.
+      + cbn.
+        setoid_rewrite bool_unfold.
+        pose proof exists_path_dom_rng_l.
         set_unfold.
-        split. firstorder.
-        intro H.
-        induction H; [| assumption].
-        unfold grel_to_relation in H.
-        repeat set_unfold; naive_solver.
-    - intro rmpp.
-      destruct rmpp as [rmp rmpinv] eqn:H.
-      cbv [rmpp] in *. clear rmpp.
-      cbn.
-      cbn in H.
-      case_split.
-      cbn in *.
-      inversion_clear ND as [|? ? Ha tmp].
-      apply IHl in tmp; clear IHl; destruct tmp as [IHl1 IHl2].
-      do 2 set_unfold.
-      assert (forall x y : A, x ∈ g !!! y -> x ≠ a /\ y ≠ a) as Hna. {
-        clear H.
-        intros x y H.
-        rewrite IHl2 in H.
-        induction H; unfold grel_to_relation in H; set_solver.
-      }
-      case_split. (* Case split on whether the a -> a edge should exist *)
-      + injection H as Hrmp Hrmpinv.
-        split.
-        * rewrite <- Hrmp; clear Hrmp.
-          rewrite <- Hrmpinv; clear Hrmpinv.
-          intros x y.
-          clear IHl2 H0.
-          set_unfold; case_split; case_split; naive_solver.
-        * intros x y.
-          admit.
-      + (* Case where the edge a -> a should exist *)
-        injection H as Hrmp Hrmpinv.
-        split.
-        * rewrite <- Hrmp; clear Hrmp.
-          rewrite <- Hrmpinv; clear Hrmpinv.
-          intros x y.
-          clear IHl2 H0.
-          set_unfold; case_split; case_split; naive_solver.
-        * intros x y.
-          admit.
-  Admitted.
+        hauto lq:on.
+    - clear x y IHl.
+      intros ri i ti Hti Hri x y.
+      cbn - [exists_path].
+      efeed rewrite (fold_left_inv_ND
+                       (fun (c : grel) (tj : list A) =>
+                          forall i' j, (i',j) ∈ c <->
+                                    exists_path r (a :: l) i' j /\
+                                      (i' ∈ ti -> exists_path r l i' j) /\
+                                      (i' = i -> j ∈ tj -> exists_path r l i j))).
+      + apply NoDup_elements.
+      + clear x y. intros x y.
+        rewrite Hri. clear ri Hri.
+        destruct (decide (y ∈ lA)).
+        * set_solver.
+        * cbn.
+          setoid_rewrite bool_unfold.
+          pose proof exists_path_dom_rng_r.
+          set_solver.
+      + clear x y Hri ri.
+        intros rj j tj Htj Hrj x y.
+        cbn in *.
+        setoid_rewrite bool_unfold.
+        setoid_rewrite bool_unfold in Hrj.
+        destruct (decide (x = i)) as [-> | Hx].
+        * destruct (decide (y = j)) as [-> | Hy].
+           ++ case_split.
+              ** set_unfold.
+                 destruct H as [Hia Haj].
+                 rewrite Hrj in *.
+                 naive_solver.
+              ** rewrite Hrj in *.
+                 naive_solver.
+           ++ case_split; set_unfold; naive_solver.
+        * case_split; set_unfold; naive_solver.
+      + set_solver.
+    - set_solver.
+  Qed.
 
   Lemma grel_plus_spec (r : grel) x y :
     (x, y) ∈ r⁺ <-> tc (grel_to_relation r) x y.
   Proof using.
-    unfold grel_plus.
-    destruct (grel_plus_aux _ _ _) eqn: H.
-    epose (S := grel_plus_aux_spec _ _ _).
-    rewrite H in S.
-    simpl in S.
-    feed pose proof S as S; [apply NoDup_elements | set_unfold; hauto |].
-    destruct S as [_ S].
-    setoid_rewrite S. clear S.
-    split; apply (tc_congruence id);
-    hauto unfold:grel_to_relation simp+:set_unfold l:on.
+    rewrite grel_plus_spec'.
+    rewrite exists_path_spec.
+    split.
+    - intros (? & ? & _).
+      eapply is_path_tc.
+      eassumption.
+    - induction 1.
+      + exists []. set_unfold. time sauto lq:on.
+      + destruct IHtc as [path ?].
+        feed destruct (is_path_NoDup r x z (y :: path)) as [npath ?].
+        * set_solver.
+        * exists npath. set_unfold. qauto.
   Qed.
+
+
+  Typeclasses Opaque grel_plus.
+  Opaque grel_plus.
 
   Lemma grel_plus_once (r : grel) x y : (x, y) ∈ r -> (x, y) ∈ r⁺.
   Proof using. rewrite grel_plus_spec. sauto lq:on. Qed.
@@ -483,7 +614,6 @@ Section GRel.
       + rewrite grel_plus_spec. assumption.
       + assumption.
   Qed.
-
 
   Program Global Instance grel_plus_cind (r : grel) (x y : A) (H : (x, y) ∈ r⁺)
     (P : A -> A -> Prop) : CInduction H (P x y) :=
@@ -549,7 +679,7 @@ Section GRel.
     grel_symmetric r -> forall x y, (x, y) ∈ r -> (y, x) ∈ r.
   Proof using.
     unfold grel_symmetric.
-    breflect in *.
+    rewrite bool_unfold.
     set_solver.
   Qed.
 
@@ -562,7 +692,7 @@ Section GRel.
     grel_irreflexive r <-> ∀''(x, y) ∈ r, x ≠ y.
   Proof using.
     unfold grel_irreflexive.
-    repeat breflect in *.
+    rewrite bool_unfold.
     set_unfold.
     hauto db:core.
   Qed.
@@ -590,7 +720,7 @@ Section GRel.
     grel_transitive r <-> forall x y z, (x, y) ∈ r -> (y, z) ∈ r -> (x, z) ∈ r.
   Proof using.
     unfold grel_transitive.
-    repeat breflect in *.
+    rewrite bool_unfold.
     split; intro H.
     - rewrite H. hauto lq:on db:grel.
     - set_unfold.
@@ -631,7 +761,7 @@ Section GRel.
     unfold grel_map_functional.
     cinduction rm using map_fold_cind with [> | intros i s m r Hi Hr].
     - sauto lq:on.
-    - breflect in *.
+    - rewrite bool_unfold.
       rewrite Hr; clear Hr.
       setoid_rewrite lookup_total_unfold.
       assert (set_size (m !!! i) <= 1).
@@ -682,7 +812,7 @@ Section GRel.
     grel_reflexive r <-> forall x : A, (x, x) ∈ r.
   Proof using.
     unfold grel_reflexive.
-    breflect in *.
+    rewrite bool_unfold.
     split; intro H.
     - rewrite H. hauto lq:on use:grel_rc_spec.
     - set_unfold. hauto lq:on.

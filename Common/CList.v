@@ -101,6 +101,7 @@ Proof.
 Qed.
 #[global] Hint Rewrite existsb_brefl : brefl.
 
+
 (** forallb boolean reflection *)
 Lemma forallb_brefl A (f : A → bool) (l : list A):
   is_true (forallb f l) ↔ ∀'x ∈ l, is_true(f x).
@@ -112,6 +113,29 @@ Proof.
 Qed.
 #[global] Hint Rewrite forallb_brefl : brefl.
 
+Global Instance bool_unfold_existsb A (f : A -> bool) (l : list A) (P : A -> Prop) :
+  (forall a, BoolUnfold (f a) (P a)) ->
+  BoolUnfold (existsb f l) (∃'x ∈ l, P x).
+Proof.
+  tcclean.
+  setoid_rewrite true_is_true.
+  unfold is_true.
+  rewrite existsb_exists.
+  setoid_rewrite elem_of_list_In.
+  reflexivity.
+Qed.
+
+Global Instance bool_unfold_forallb A (f : A -> bool) (l : list A) (P : A -> Prop) :
+  (forall a, BoolUnfold (f a) (P a)) ->
+  BoolUnfold (forallb f l) (∀'x ∈ l, P x).
+Proof.
+  tcclean.
+  setoid_rewrite true_is_true.
+  unfold is_true.
+  rewrite forallb_forall.
+  setoid_rewrite elem_of_list_In.
+  reflexivity.
+Qed.
 
 
 (*** List as sets ***)
