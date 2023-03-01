@@ -419,7 +419,7 @@ Section GRel.
         rewrite is_path_split in *.
         rewrite NoDup_app in HND. cbn in HND. rewrite NoDup_cons in HND.
         split.
-        * exists left. set_solver.
+        * exists left. set_unfold. sfirstorder.
         * exists right. set_solver.
       + left.
         exists path. set_solver.
