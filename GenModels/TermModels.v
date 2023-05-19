@@ -104,6 +104,12 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
   Global Coercion MState.state : MState.init >-> MState.t.
   Global Coercion MState.istate : MState.final >-> MState.init.
 
+  Class SubsetEqEquiv (E : Type) {sse : SubsetEq E} {eq : Equiv E} :=
+    subseteq_equiv : forall a b : E, a ≡ b <-> a ⊆ b /\ b ⊆ a.
+
+  Global Instance set_subseteq_equiv_instance `{ElemOf A C} :
+    SubsetEqEquiv C.
+  Proof. intros a b. set_solver. Qed.
 
   Module ModelResult. (* namespace *)
     Section MR.
@@ -147,34 +153,46 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
 
       (** A model is weaker if it allows more behaviors. This assumes all
           unspecified behaviors to be independent of regular final states, later
-          this may be expanded with an order on the unspecified objects. *)
+          this may be expanded with an order on the unspecified objects.
+          weaker ts ts' <-> "ts' is weaker than ts" <-> "ts' has more behaviour than ts"
+       *)
       Definition weaker (ts ts' : E t) :=
         no_error ts' ->
-        finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts'.
+        finalStates ts ⊆ finalStates ts' /\ unspecifieds ts ⊆ unspecifieds ts'
+        /\ no_error ts.
 
       (** A model is wider if it matches exactly the narrow model when the
           narrow model has no error. This means it is the same model except it
-          has more coverage *)
+          has more coverage
+          wider ts ts' <-> "ts' is a strict extension of ts" <->
+          "ts' only adds new behaviours when ts says error"
+       *)
       Definition wider (ts ts' : E t) :=
-        weaker ts ts' /\
+        (no_error ts' ->
+         finalStates ts ⊆ finalStates ts' /\ unspecifieds ts ⊆ unspecifieds ts') /\
           (no_error ts ->
            finalStates ts ≡ finalStates ts' /\
-             unspecifieds ts ≡ unspecifieds ts /\
+             unspecifieds ts ≡ unspecifieds ts' /\
              no_error ts').
 
-      Lemma wider_weaker (ts ts' : E t) : wider ts ts' -> weaker ts ts'.
-      Proof. firstorder. Qed.
-
+      Context {sseq : forall x, SubsetEqEquiv (E x)}.
+      Lemma wider_weaker (ts ts' : E t) : wider ts ts' -> weaker ts' ts.
+      Proof using sseq. firstorder. Qed.
 
       (** Both kind of equivalence are the same when there is no error.
           The strong equivalence is too restrictive
        *)
-      Definition sEquiv (ts ts' : E t) := wider ts ts' /\ wider ts' ts.
+      Definition equiv (ts ts' : E t) := weaker ts ts' /\ weaker ts' ts.
 
-      Definition wEquiv (ts ts' : E t) := weaker ts ts' /\ weaker ts' ts.
+      Lemma equiv_wider (ts ts' : E t) : equiv ts ts' -> wider ts ts'.
+      Proof using sseq. firstorder. Qed.
 
-      Lemma sEquiv_wEquiv (ts ts' : E t) : sEquiv ts ts' -> wEquiv ts ts'.
-      Proof. firstorder. Qed.
+      Lemma wider_equiv (ts ts' : E t) :
+        wider ts ts' /\ (no_error ts' -> no_error ts) <-> equiv ts ts'.
+      Proof using sseq. firstorder. Qed.
+
+      Lemma equiv_errors (ts ts' : E t) : equiv ts ts' -> (no_error ts <-> no_error ts').
+      Proof using sseq. firstorder. Qed.
 
     End MR.
     Arguments t : clear implicits.
@@ -201,25 +219,19 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
 
       Definition weaker (m1 m2 : t) : Prop
         := forall n initSt, ModelResult.weaker (m1 n initSt) (m2 n initSt).
+      Instance subset : SubsetEq t := weaker.
 
       Definition wider (m1 m2 : t)
         := forall n initSt, ModelResult.wider (m1 n initSt) (m2 n initSt).
+      Instance sqsubset : SqSubsetEq t := wider.
 
-      Definition sEquiv (m1 m2 : t)
-        := forall n initSt, ModelResult.sEquiv (m1 n initSt) (m2 n initSt).
-
-      Definition wEquiv (m1 m2 : t)
-        := forall n initSt, ModelResult.wEquiv (m1 n initSt) (m2 n initSt).
-
-      (** Model identities, this require that any error messages are identical.
-        This is thus only useful when comparing two related versions of the same
-        model *)
-      Global Instance equiv : Equiv t :=
-        fun m1 m2 => forall n initSt, m1 n initSt ≡ m2 n initSt.
+      Instance equiv : Equiv t :=
+        fun m1 m2 =>
+          forall n initSt, ModelResult.equiv (m1 n initSt) (m2 n initSt).
     End M.
     Arguments t : clear implicits.
 
-    Definition map {E E' unspec} (f : forall {A}, E A -> E' A) (m : t E unspec)
+    Definition map_set {E E' unspec} (f : forall {A}, E A -> E' A) (m : t E unspec)
       : t E' unspec :=
       fun n initSt => m n initSt |> f.
 
@@ -230,7 +242,7 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
     Notation c := (t listset).
 
     Definition c_to_nc {unspec} : c unspec -> nc unspec :=
-      map (fun A => Ensemble_from_set).
+      map_set (fun A => Ensemble_from_set).
   End Model.
 
 End TermModels.
