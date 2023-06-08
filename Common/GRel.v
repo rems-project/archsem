@@ -79,7 +79,9 @@ Proof.
   tcclean.
   setoid_rewrite lookup_total_lookup.
   rewrite lookup_unfold.
-  hauto unfold:option_union lq:on simp+:set_simp.
+  cbn.
+  unfold option_union.
+  case_splitting; set_solver.
 Qed.
 
 (** Import this module to make set_unfold use the LookupTotalUnfold typeclass
@@ -134,10 +136,12 @@ Section GRel.
   Proof using.
     intros WF WF' P.
     apply map_eq.
+    intro i.
+    pose proof (P i) as P.
     unfold grel_map_wf in *.
     setoid_rewrite lookup_total_lookup in P.
     unfold default in *.
-    hfcrush.
+    case_splitting; naive_solver.
   Qed.
 
   Lemma grel_to_map_spec r e1 e2:
@@ -148,7 +152,7 @@ Section GRel.
     - set_solver.
     - destruct x as [e3 e4].
       set_unfold.
-      hauto q:on.
+      case_split; naive_solver.
   Qed.
   Hint Rewrite @grel_to_map_spec : grel.
 
@@ -168,7 +172,7 @@ Section GRel.
       rewrite lookup_unfold.
       unfold option_union.
       unfold grel_map in *.
-      case_split; case_split; (congruence || set_solver).
+      case_splitting; (congruence || set_solver).
   Qed.
   Hint Resolve grel_to_map_wf : grel.
 
@@ -180,7 +184,7 @@ Section GRel.
     setoid_rewrite lookup_unfold in Hc.
     unfold option_union in Hc.
     unfold grel_map_wf in *.
-    case_split; try case_split; qauto db:set lq:on.
+    hauto db:set lq:on.
   Qed.
   Hint Resolve grel_map_wf_union : grel.
 
@@ -191,7 +195,7 @@ Section GRel.
     cinduction rm using map_fold_cind.
     - rewrite lookup_total_unfold.
       set_solver.
-    - assert (m !!! i = ∅). rewrite lookup_total_lookup. hauto lq:on.
+    - assert (m !!! i = ∅). {rewrite lookup_total_lookup. hauto lq:on. }
       setoid_rewrite lookup_total_unfold.
       set_unfold. hauto q:on.
   Qed.
@@ -215,13 +219,14 @@ Section GRel.
     apply grel_map_eq_wf; [auto with grel .. |].
     intro a.
     setoid_rewrite lookup_total_unfold.
-    sauto lq:on db:grel simp+:set_unfold.
+    set_unfold.
+    hauto lq:on db:grel.
   Qed.
   Hint Rewrite grel_to_map_union : grel.
 
   Lemma grel_to_map_to_rel (r : grel) :
     r |> grel_to_map |> gmap_to_rel = r.
-  Proof using. hauto simp+:set_unfold. Qed.
+  Proof using. set_unfold. hauto lq:on.  Qed.
   Hint Rewrite grel_to_map_to_rel : grel.
 
 
@@ -348,8 +353,7 @@ Section GRel.
     x ∈ l -> exists left right, l = left ++ [x] ++ right.
   Proof using.
     intros H.
-    induction l.
-    set_solver.
+    induction l. { set_solver. }
     set_unfold in H.
     destruct H as [H | H].
     - exists [].
@@ -577,7 +581,7 @@ Section GRel.
       eapply is_path_tc.
       eassumption.
     - induction 1.
-      + exists []. set_unfold. time sauto lq:on.
+      + exists []. set_unfold. sauto lq:on.
       + destruct IHtc as [path ?].
         feed destruct (is_path_NoDup r x z (y :: path)) as [npath ?].
         * set_solver.
@@ -673,7 +677,7 @@ Section GRel.
 
   Definition grel_symmetric_rew (r : grel) :
     grel_symmetric r -> r⁻¹ = r.
-  Proof using. unfold grel_symmetric. sauto b:on. Qed.
+  Proof using. unfold grel_symmetric. hauto b:on. Qed.
 
   Definition grel_symmetric_spec (r : grel) :
     grel_symmetric r -> forall x y, (x, y) ∈ r -> (y, x) ∈ r.

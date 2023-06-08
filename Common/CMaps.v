@@ -26,22 +26,26 @@ Global Instance lookup_unfold_empty `{FinMap K M} A (k : K) :
   LookupUnfold k (∅ : M A) (None : option A).
 Proof. sfirstorder. Qed.
 
-Global Instance lookup_unfold_partial_alter_same `{FinMap K M} A f (m : M A) o (k : K) :
+Global Instance lookup_unfold_partial_alter_same `{FinMap K M}
+    A f (m : M A) o (k : K) :
   LookupUnfold k m o ->
   LookupUnfold k (partial_alter f k m) (f o) | 10.
 Proof. tcclean. sfirstorder. Qed.
 
-Global Instance lookup_unfold_partial_alter `{FinMap K M} A f (m : M A) o (k k' : K) :
+Global Instance lookup_unfold_partial_alter `{FinMap K M} A f
+    (m : M A) o (k k' : K) :
   LookupUnfold k m o ->
   LookupUnfold k (partial_alter f k' m) (if k =? k' then f o else o) | 20.
 Proof. tcclean. sauto. Qed.
 
-Global Instance lookup_unfold_fmap `{FinMap K M} A B (f : A -> B) (m : M A) (o : option A) (k : K) :
+Global Instance lookup_unfold_fmap `{FinMap K M} A B
+    (f : A -> B) (m : M A) (o : option A) (k : K) :
   LookupUnfold k m o ->
   LookupUnfold k (f <$> m) (f <$> o).
 Proof. tcclean. sfirstorder. Qed.
 
-Global Instance lookup_unfold_omap `{FinMap K M} A B (f : A -> option B) (m : M A) (o : option A) (k : K) :
+Global Instance lookup_unfold_omap `{FinMap K M} A B
+    (f : A -> option B) (m : M A) (o : option A) (k : K) :
   LookupUnfold k m o ->
   LookupUnfold k (omap f m) (o ≫= f).
 Proof. tcclean. sfirstorder. Qed.

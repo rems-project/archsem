@@ -88,30 +88,7 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
     | Zneg _ => None
     end.
 
-(*** List boolean reflection ***)
-
-(** existsb boolean reflection *)
-Lemma existsb_brefl A (f : A → bool) (l : list A):
-  is_true (existsb f l) ↔ ∃'x ∈ l, is_true(f x).
-Proof.
-  unfold is_true.
-  rewrite existsb_exists.
-  setoid_rewrite elem_of_list_In.
-  reflexivity.
-Qed.
-#[global] Hint Rewrite existsb_brefl : brefl.
-
-
-(** forallb boolean reflection *)
-Lemma forallb_brefl A (f : A → bool) (l : list A):
-  is_true (forallb f l) ↔ ∀'x ∈ l, is_true(f x).
-Proof.
-  unfold is_true.
-  rewrite forallb_forall.
-  setoid_rewrite elem_of_list_In.
-  reflexivity.
-Qed.
-#[global] Hint Rewrite forallb_brefl : brefl.
+(*** List boolean unfolding ***)
 
 Global Instance bool_unfold_existsb A (f : A -> bool) (l : list A) (P : A -> Prop) :
   (forall a, BoolUnfold (f a) (P a)) ->

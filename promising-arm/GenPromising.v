@@ -335,7 +335,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
             MState.termCond := term|};
         MState.terminated := _ |}.
     Solve All Obligations with
-      hauto unfold:terminated unfold:MState.is_terminated lb:on db:vec.
+      hauto unfold:terminated unfold:MState.is_terminated l:on db:vec, brefl.
 
     (** Computational evaluate all the possible allowed final states according
         to the promising model prom starting from st *)

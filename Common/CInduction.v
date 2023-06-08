@@ -54,6 +54,7 @@ Ltac instanciate_as_found e :=
    If someone finds a Ltac hack to have exactly the same semantics for any
    number of arguments, Please replace and check that everything depending still
    builds *)
+(* TODO make it recursive *)
 Ltac pattern_for H :=
   lazymatch (type of H) with
   | _ ?a ?b ?c =>

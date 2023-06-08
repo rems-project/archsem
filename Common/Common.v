@@ -84,25 +84,35 @@ Create HintDb vec discriminated.
 (*** Finite decidable quantifiers ***)
 
 (* TODO maybe express with a decidable instance instead : There are consequences
-   for extraction though *)
+   for extraction though
+   TODO: That is the new plan now: move everything to Decision.
+ *)
 
-Definition fforallb {A : Type} `{Finite A} (P : A -> bool) : bool :=
+Definition fforallb `{Finite A} (P : A -> bool) : bool :=
   forallb P (enum A).
 
-Lemma fforallb_brefl A `{Finite A} (P : A → bool):
-  is_true (fforallb P) ↔ forall x : A, P x.
-Proof. unfold fforallb. sauto lqb:on dep:on simp+: unfold_cqual. Qed.
-#[global] Hint Rewrite fforallb_brefl : brefl.
-Opaque fforallb.
+Global Instance fforallb_unfold `{Finite A} (P : A -> bool) Q:
+  (forall a : A, BoolUnfold (P a) (Q a)) ->
+  BoolUnfold (fforallb P) (forall a : A, Q a).
+Proof.
+  tcclean.
+  unfold fforallb.
+  rewrite bool_unfold.
+  sauto lq:on dep:on.
+Qed.
 
-Definition fexistsb {A : Type} `{Finite A} (P : A -> bool) : bool :=
+Definition fexistsb `{Finite A} (P : A -> bool) : bool :=
   existsb P (enum A).
 
-Lemma fexistsb_brefl A `{Finite A} (P : A → bool):
-  is_true (fexistsb P) ↔ exists x : A, P x.
-Proof. unfold fexistsb. sauto lqb:on dep:on simp+: unfold_cqual. Qed.
-#[global] Hint Rewrite fforallb_brefl : brefl.
-Opaque fexistsb.
+Global Instance fexistsb_unfold `{Finite A} (P : A -> bool) Q:
+  (forall a : A, BoolUnfold (P a) (Q a)) ->
+  BoolUnfold (fexistsb P) (exists a : A, Q a).
+Proof.
+  tcclean.
+  unfold fexistsb.
+  rewrite bool_unfold.
+  sauto lq:on dep:on.
+Qed.
 
 
 (*** Finite number utilities *)
@@ -110,7 +120,7 @@ Opaque fexistsb.
 (* TODO upstream to stdpp *)
 Bind Scope fin_scope with fin.
 
-(* stdpp provide notation from 0 to 10. We need them up to 30 for
+(* stdpp provides notation from 0 to 10. We need them up to 30 for
    register numbering *)
 (* Python:
 for i in range(11, 31):

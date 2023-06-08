@@ -125,8 +125,6 @@ Ltac tcclean :=
   repeat (let H := fresh "H" in intro H; try (tcclean_hyp H));
   constructor.
 
-
-
 (*** Integer lattice ***)
 
 (* n ⊔ n' means max and n ⊓ n' means min *)

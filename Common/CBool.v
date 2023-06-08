@@ -11,10 +11,13 @@ Require Export DecidableClass.
 
 Require Import CBase.
 
+From Hammer Require Reflect.
+
+
 (*** Bool unfold ***)
 
-(* This an attempt to have a custom boolean unfolding, to not need to handle the mess
-   with having both is_true and Is_true coercion. *)
+(* This an attempt to have a custom boolean unfolding, to not need to handle the
+   mess with having both is_true and Is_true coercion. *)
 
 Class BoolUnfold (b : bool) (P : Prop) :=
   {bool_unfold : b <-> P }.
@@ -29,6 +32,20 @@ Proof.
   split; destruct 1; constructor; sfirstorder.
 Qed.
 
+
+(* Explain to coq hammer tactic how to use Is_true and BoolUnfold *)
+#[export] Hint Rewrite @bool_unfold using typeclasses eauto : brefl.
+
+Lemma true_is_true (b : bool) : b <-> is_true b.
+  Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- true_is_true : brefl.
+
+Lemma true_eq_true (b : bool) : b <-> b = true.
+  Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- true_eq_true : brefl.
+
+
+(* Basic implementation of BoolUnfold *)
 Global Instance bool_unfold_default (b : bool) :
   BoolUnfold b b | 1000.
 Proof. done. Qed.
@@ -70,64 +87,11 @@ Proof. tcclean. destruct (decide P); naive_solver. Qed.
 
 
 
-
-(*** Boolean reflection ***)
-
-(* This is a hack to make CoqHammer boolean reflection use the Is_true coercion
-    from stdpp*)
-
-(* Using a plain Require and not Require Import is critical to not import the
-   is_true coercion since stdpp already uses the Is_true coercion.
-
-   TODO: In Coq 8.15 replace by Require Import -(coercion) Reflect. *)
-From Hammer Require Reflect.
-
-(** The breflect tactic copy-pasted from Hammer.Reflect because it cannot be *)
-(*     imported without coercion conflict prior to Coq 8.15 *)
-Tactic Notation "breflect" :=
-  try rewrite_strat topdown hints brefl.
-
-Tactic Notation "breflect" "in" hyp(H) :=
-  try rewrite_strat topdown hints brefl in H.
-
-Tactic Notation "breflect" "in" "*" :=
-  breflect;
-  repeat match goal with
-         | [H : _ |- _ ] => rewrite_strat topdown hints brefl in H
-         end.
-
-
-(* Convert the stdpp Is_True coercion to the is_true one that CoqHammer
-expects. *)
-Lemma true_is_true (b : bool) : b <-> is_true b.
-  Proof. sauto lq:on. Qed.
-#[global] Hint Rewrite -> true_is_true : brefl.
-#[global] Hint Rewrite <- true_is_true : breif.
-
-Lemma eq_true_is_true (b : bool) : b = true <-> is_true b.
-  Proof. sauto lq:on. Qed.
-#[global] Hint Rewrite -> eq_true_is_true : brefl.
-
-Lemma eq_false_is_not_true (b : bool) : b = false <-> ¬ is_true b.
-  Proof. sauto lq:on. Qed.
-#[global] Hint Rewrite -> eq_false_is_not_true : brefl.
-
-
-(* Unfortunately all boolean reflection lemmas will thus need be written with
-   is_true instead of the default coercion Is_True for now. When this project
-   start using Coq 8.15, this might change *)
-
-(********** Decidable propositions **********)
+(*** Decidable propositions ***)
 
 (** Decidable equality notation that use the Decision type class from stdpp*)
 Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity)
     : stdpp_scope.
-
-(** Boolean reflection of decidable equality. *)
-Lemma bool_decide_is_true (P : Prop) {dec : Decision P} :
-  is_true (bool_decide P) <-> P.
-Proof. unfold is_true. apply bool_decide_eq_true. Qed.
-#[global] Hint Rewrite bool_decide_is_true : brefl.
 
 (** Convert automatical a Decidable instance (Coq standard library) to
     a Decision instance (stdpp)
