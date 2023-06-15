@@ -119,7 +119,7 @@ Module Interface (A : Arch).
 
   Section T.
     Context {deps : Type}.
-    Context {aOutcome : Type -> Type}.
+    Context {eOutcome : Type -> Type}.
 
   Inductive outcome : Type -> Type :=
     (** The direct or indirect flag is to specify how much coherence is required
@@ -147,10 +147,13 @@ Module Interface (A : Arch).
   | FaultAnnounce : fault deps -> outcome unit
   | EretAnnounce : outcome unit
 
-  (** Architecture specific outcome *)
-  | ArchOutcome {A} : aOutcome A -> outcome A
+  (** Custom outcome to support simplified models on either side that want
+      symbolic outcomes. This can be use to represent abstracted sail function
+      for example the Arm translation function *)
+  | ExtraOutcome {A} : eOutcome A -> outcome A
 
-  (** Bail out when something went wrong; this may be refined in the future *)
+  (** Bail out when something went wrong; this may be refined in the future.
+      This is an ISA model triggered failure *)
   | GenericFail (msg : string) : outcome False
 
   (** The next two outcomes are for handling non-determinism. Choose will branch
