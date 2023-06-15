@@ -27,11 +27,12 @@ Open Scope stdpp_scope.
 Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
   Import Arch.
   Import IA.
-  Notation outcome := (IA.outcome empOutcome).
-  Notation iMon := (IA.iMon empOutcome).
-  Notation iSem := (IA.iSem empOutcome).
-  Notation iEvent := (IA.iEvent empOutcome).
-  Notation iTrace := (IA.iTrace empOutcome).
+  Notation depon := IA.DepOn.t.
+  Notation outcome := (IA.outcome depon empOutcome).
+  Notation iMon := (IA.iMon depon empOutcome).
+  Notation iSem := (IA.iSem depon empOutcome).
+  Notation iEvent := (IA.iEvent depon empOutcome).
+  Notation iTrace := (IA.iTrace depon empOutcome).
 
   (* event ID *)
   Module EID.
@@ -203,7 +204,7 @@ Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be import
       collect_all
         (fun event =>
            match event with
-           | IEvent (TlbOp _) _ => true
+           | IEvent (TlbOp _ _) _ => true
            | _ => false end)
         cd.
 
@@ -211,7 +212,7 @@ Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be import
         (or is an invalid EID) *)
     Definition get_tlbop (cd : t) (eid : EID.t) : option tlb_op :=
       match cd !! eid with
-      | Some (IEvent (TlbOp to) ()) => Some to
+      | Some (IEvent (TlbOp _ to) ()) => Some to
       | _ => None
       end.
 
@@ -282,7 +283,7 @@ Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be import
       collect_all
         (fun event =>
            match event with
-           | IEvent (TlbOp _) _ => true
+           | IEvent (TlbOp _ _) _ => true
            | _ => false end)
         cd.
 

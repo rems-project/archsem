@@ -482,12 +482,6 @@ Module IIS.
     max (from_read_deps deps.(DepOn.mem_reads) iis) $
     List.fold_left (fun v reg => max v $ (regs reg).2) deps.(DepOn.regs) 0%nat.
 
-  Definition from_DepOn_opt (deps : option DepOn.t) regs iis :=
-    match deps with
-    | None => iis.(def)
-    | Some deps => from_DepOn deps regs iis
-    end.
-
 End IIS.
 
 (** Runs an outcome. *)
@@ -495,7 +489,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
            (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (IIS.t * TState.t * Memory.t * A) :=
   let deps_to_view :=
-    fun deps => IIS.from_DepOn_opt deps ts.(TState.regs) iis in
+    fun deps => IIS.from_DepOn deps ts.(TState.regs) iis in
   match o with
   | RegWrite reg direct deps val =>
       Exec.fail_if (negb direct) "Atomic RMV unsupported";;
@@ -508,7 +502,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       Exec.ret (iis, ts, mem, val)
   | MemRead 8 rr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
-      let vaddr := deps_to_view rr.(ReadReq.addr_dep_on) in
+      let vaddr := deps_to_view rr.(ReadReq.addr_deps) in
       match rr.(ReadReq.access_kind) with
       | AK_explicit eak =>
           '(ts, view, val) ← read_mem addr vaddr eak ts init mem;
@@ -519,9 +513,9 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | MemRead _ _ => Exec.Error "Memory read of size other than 8"
   | MemWrite 8 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let vaddr := deps_to_view wr.(WriteReq.addr_dep_on) in
+      let vaddr := deps_to_view wr.(WriteReq.addr_deps) in
       let data := wr.(WriteReq.value) in
-      let vdata := deps_to_view wr.(WriteReq.data_dep_on) in
+      let vdata := deps_to_view wr.(WriteReq.data_deps) in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           '(ts, mem) ← write_mem_xcl tid addr vaddr vdata eak ts mem data;

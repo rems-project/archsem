@@ -97,7 +97,7 @@ Module Arm <: Arch.
   Definition barrier := Barrier.
   Definition cache_op := CacheRecord.
   Definition tlb_op := TLBI.
-  Definition fault := Exn.
+  Definition fault (deps : Type) := Exn. (* TODO fixup dependencies in exception type *)
 End Arm.
 Bind Scope string_scope with Arm.reg.
 

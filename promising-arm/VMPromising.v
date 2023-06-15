@@ -1215,12 +1215,12 @@ Definition read_pte (ts : TState.t) (vaddr : view) (viio : view)
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (rr : ReadReq.t 8) (iis : IIS.t)
+Definition run_mem_read (rr : ReadReq.t DepOn.t 8) (iis : IIS.t)
   (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (TState.t * IIS.t * val) :=
   addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
   let vaddr :=
-    IIS.from_DepOn_opt rr.(ReadReq.addr_dep_on) ts iis
+    IIS.from_DepOn rr.(ReadReq.addr_deps) ts iis
   in
   let va : bv 64 := default (Loc.to_va addr) rr.(ReadReq.va) in
   let trans_res := iis.(IIS.trs) (bv_extract 12 36 va) in
@@ -1246,7 +1246,7 @@ Definition run_mem_read (rr : ReadReq.t 8) (iis : IIS.t)
   end.
 
 
-Definition run_mem_read4 (rr : ReadReq.t 4) (iis : IIS.t)
+Definition run_mem_read4 (rr : ReadReq.t DepOn.t 4) (iis : IIS.t)
   (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (bv 32) :=
   let addr := rr.(ReadReq.pa) in
@@ -1371,8 +1371,9 @@ Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
   | _ => Exec.Error "Unsupported barrier"
   end.
 
-Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (tlbi : TLBI)
-  (mem : Memory.t) : Exec.t string (IIS.t * TState.t * Memory.t) :=
+Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
+  (tlbi : TLBI) (mem : Memory.t)
+  : Exec.t string (IIS.t * TState.t * Memory.t) :=
   Exec.fail_if (tlbi.(TLBI_shareability) =? Shareability_NSH)
     "Non-shareable TLBIs are not supported";;
   Exec.fail_if (negb (tlbi.(TLBI_rec).(TLBIRecord_regime) =? Regime_EL10))
@@ -1381,7 +1382,7 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (tlbi : TLBI)
   let last := tlbi.(TLBI_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let va := bv_extract 12 36 (tlbi.(TLBI_rec).(TLBIRecord_address)) in
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.nreg iis)
-              ⊔ ((* ad-hoc data dep *) IIS.regs iis) in
+              ⊔ view in
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBI_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => Exec.ret $ TLBI.All tid
@@ -1411,7 +1412,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
            (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (IIS.t * TState.t * Memory.t * A) :=
   let deps_to_view :=
-    fun deps => IIS.from_DepOn_opt deps ts iis in
+    fun deps => IIS.from_DepOn deps ts iis in
   match o with
   | RegWrite reg direct deps val =>
       Exec.fail_if (negb direct) "Indirect register write unsupported";;
@@ -1433,9 +1434,9 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | MemRead _ _ => Exec.Error "Memory read of size other than 8 or 4"
   | MemWrite 8 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let vaddr := deps_to_view wr.(WriteReq.addr_dep_on) in
+      let vaddr := deps_to_view wr.(WriteReq.addr_deps) in
       let data := wr.(WriteReq.value) in
-      let vdata := deps_to_view wr.(WriteReq.data_dep_on) in
+      let vdata := deps_to_view wr.(WriteReq.data_deps) in
       let viio := IIS.nreg iis in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
@@ -1452,8 +1453,8 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | Barrier barrier =>
       '(iis, ts) ← run_barrier iis ts barrier;
       Exec.ret (iis, ts, mem, ())
-  | TlbOp tlbi =>
-      '(iis, ts, mem) ← run_tlbi tid iis ts tlbi mem;
+  | TlbOp deps tlbi =>
+      '(iis, ts, mem) ← run_tlbi tid iis ts (deps_to_view deps) tlbi mem;
       Exec.ret (iis, ts, mem, ())
   | EretAnnounce =>
       let '(iis, ts) := run_cse iis ts in

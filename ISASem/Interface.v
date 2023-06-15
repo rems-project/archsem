@@ -61,11 +61,12 @@ Module Type Arch.
   (** Cache operations (data and instruction caches) *)
   Parameter cache_op : Type.
 
-  (** TLB operation *)
+  (** TLB operations *)
   Parameter tlb_op : Type.
 
-  (** Fault type for a fault raised by the instruction (not by the model) *)
-  Parameter fault : Type.
+  (** Fault type for a fault raised by the instruction (not by the concurrency model)
+      In Arm terms, this means any synchronous exception decided by the ISA model *)
+  Parameter fault : Type -> Type.
 End Arch.
 
 Module Interface (A : Arch).
@@ -89,23 +90,20 @@ Module Interface (A : Arch).
   End DepOn.
 
   Module ReadReq.
-    Record t {n : N} :=
+    Record t {deps : Type} {n : N} :=
       make
         { pa : pa;
           access_kind : accessKind;
           va : option va;
           translation : translation;
           tag : bool;
-          (** The address dependency. If unspecified, it can be interpreted as
-            depending on all previous registers and memory values that were read
-            *)
-          addr_dep_on : option DepOn.t;
+          addr_deps : deps;
         }.
     Arguments t : clear implicits.
   End ReadReq.
 
   Module WriteReq.
-    Record t {n : N} :=
+    Record t {deps : Type} {n : N} :=
       make
         { pa : pa;
           access_kind : accessKind;
@@ -113,19 +111,14 @@ Module Interface (A : Arch).
           va : option va;
           translation : A.translation;
           tag : bool;
-          (** The address dependency. If unspecified, it can be interpreted as
-            depending on all previous registers and memory values that were read
-            *)
-          addr_dep_on : option DepOn.t;
-          (** The data dependency. If unspecified, it can be interpreted as
-            depending on all previous registers and memory values that were read
-            *)
-          data_dep_on : option DepOn.t;
+          addr_deps : deps;
+          data_deps : deps;
         }.
     Arguments t : clear implicits.
   End WriteReq.
 
   Section T.
+    Context {deps : Type}.
     Context {aOutcome : Type -> Type}.
 
   Inductive outcome : Type -> Type :=
@@ -140,18 +133,18 @@ Module Interface (A : Arch).
 
         Generally, writing the PC introduces no dependency because control
         dependencies are specified by the branch announce *)
-  | RegWrite (reg : reg) (direct : bool) (dep_on : option DepOn.t)
-    : reg_type -> outcome unit
-  | MemRead (n : N) : ReadReq.t n ->
+  | RegWrite (reg : reg) (direct : bool) (deps : deps)
+             (regval: reg_type) : outcome unit
+  | MemRead (n : N) : ReadReq.t deps n ->
                       outcome (bv (8 * n) * option bool + abort)
-  | MemWrite (n : N) : WriteReq.t n -> outcome (option bool + abort)
+  | MemWrite (n : N) : WriteReq.t deps n -> outcome (option bool + abort)
   | MemWriteAnnounce (n : N) : pa -> outcome unit
     (** The deps here specify the control dependency *)
-  | BranchAnnounce (pa : pa) (dep_on : option DepOn.t) : outcome unit
+  | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
   | Barrier : barrier -> outcome unit
-  | CacheOp : cache_op -> outcome unit
-  | TlbOp : tlb_op -> outcome unit
-  | FaultAnnounce : fault -> outcome unit
+  | CacheOp (deps : deps) : cache_op -> outcome unit
+  | TlbOp (deps : deps) : tlb_op -> outcome unit
+  | FaultAnnounce : fault deps -> outcome unit
   | EretAnnounce : outcome unit
 
   (** Architecture specific outcome *)
@@ -170,11 +163,12 @@ Module Interface (A : Arch).
   | Discard : outcome False.
 
 
-
   (********** Monad instance **********)
 
   (** This is a naive but inefficient implementation of the instruction monad.
       It might be replaced by an more efficient version later. *)
+  (* TODO: Do something like itrees to take the full outcome type as a
+     parameter *)
   Inductive iMon {A : Type} :=
   | Ret : A -> iMon
   | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
@@ -264,29 +258,33 @@ Module Interface (A : Arch).
   Arguments iSem : clear implicits.
   Arguments iTrace : clear implicits.
   Arguments iEvent : clear implicits.
+  Notation dOutcome := (outcome DepOn.t).
+  Notation ndOutcome := (outcome unit).
 
-  Definition iMonArchMap (out1 out2 : Type -> Type)
-    := forall (A : Type), out1 A -> iMon out2 A.
+  Definition iMonArchMap (deps : Type) (out1 out2 : Type -> Type)
+    := forall (A : Type), out1 A -> iMon deps out2 A.
 
   (** Suppose we can simulate the outcome of out1 in the instruction monad with
       architecture outcomes out2. Then  *)
-  Fixpoint map_arch_iMon {out1 out2 : Type -> Type} {B : Type}
-    (f : iMonArchMap out1 out2) (mon : iMon out1 B) : iMon out2 B :=
-    match mon in iMon _ _ return iMon out2 _ with
+  Fixpoint map_arch_iMon {deps : Type} {out1 out2 : Type -> Type} {B : Type}
+    (f : iMonArchMap deps out1 out2) (mon : iMon deps out1 B) :
+    iMon deps out2 B :=
+    match mon in iMon _ _ _ return iMon deps out2 _ with
     | Ret b => Ret b
     | Next oc k0 =>
         let k := fun x => map_arch_iMon f (k0 x) in
-        match oc in outcome _ T return (T -> iMon out2 B) -> iMon out2 B with
+        match oc in outcome _ _ T
+              return (T -> iMon deps out2 B) -> iMon deps out2 B with
         | RegRead reg direct => Next (RegRead reg direct)
-        | RegWrite reg direct dep_on val =>
-            Next (RegWrite reg direct dep_on val)
+        | RegWrite reg direct deps val =>
+            Next (RegWrite reg direct deps val)
         | MemRead n readreq => Next (MemRead n readreq)
         | MemWrite n writereq => Next (MemWrite n writereq)
         | MemWriteAnnounce n pa => Next (MemWriteAnnounce n pa)
-        | BranchAnnounce pa dep_on => Next (BranchAnnounce pa dep_on)
+        | BranchAnnounce pa deps => Next (BranchAnnounce pa deps)
         | Barrier barrier => Next (Barrier barrier)
-        | CacheOp cache_op => Next (CacheOp cache_op)
-        | TlbOp tlb_op => Next (TlbOp tlb_op)
+        | CacheOp deps cache_op => Next (CacheOp deps cache_op)
+        | TlbOp deps tlb_op => Next (TlbOp deps tlb_op)
         | FaultAnnounce fault => Next (FaultAnnounce fault)
         | EretAnnounce => Next EretAnnounce
         | ArchOutcome aout => iMon_bind (f _ aout)
