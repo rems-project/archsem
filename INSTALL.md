@@ -15,7 +15,7 @@ projects or coq file (assuming you are using a Coq setup from opam):
  - SSCCommon (this project extra standard library, basically a stdpp extension)
  - ISASem (The ISA Model interface)
  - GenModels (Generic model definitions)
- - PromisingArm (The promising Arm model)
+ - PromisingArm (The promising Arm models)
 
 
 ## Software Dependencies
@@ -41,40 +41,57 @@ opam install dune
 
 ### Coq
 
-This project was tested with Coq 8.14. If you want exactly that version do:
+This project was tested with Coq 8.16. If you want exactly that version do:
 ```
-opam pin coq 8.14.0
+opam pin coq 8.16.0
 ```
 otherwise you can install it with `opam install coq`
+
+Until recently it was working on 8.14, but no guarantees are made to keep
+supporting it. 8.17 is not supported yet, due to some dependencies (`coq-bbv`)
+not working on that version.
 
 
 ### Sail
 
-(1) This project uses the head version of Sail that hasn't been released yet. The
-simplest to get it to clone it somewhere
-```
-git clone https://github.com/rems-project/sail
-```
+This project temporarily doesn't use Sail for technical reason, as generated files
+have been checked in, it will start using Sail again later. As reference the
+previous text is here:
 
-Then, if you want the precise version of sail this project was tested
-against, do:
-```
-git checkout f421b04d
-```
-
-Then you can install sail with `opam pin .` in the `sail` directory.
-
-(2) You will also need to install the `coq-sail` library, from the `sail` directory do:
-```
-opam pin lib/coq
-```
-This will also automatically install `coq-bbv` which is
-need by the exported sail code.
+> This project uses the head version of Sail that hasn't been released yet. The
+> simplest to get it to clone it somewhere
+> ```
+> git clone https://github.com/rems-project/sail
+> ```
+>
+> Then, if you want the precise version of sail this project was tested
+> against, do:
+> ```
+> git checkout f421b04d
+> ```
+>
+> Then you can install sail with `opam pin .` in the `sail` directory.
 
 
 ### Coq libraries
 
 For coq-hammer-tactics and coq-record-update below
+
+#### Coq Sail
+
+The Coq Sail library is now in its own repository, do:
+
+```
+git clone https://github.com/rems-project/coq-sail
+```
+
+Then (optionally), in that repository, if you want the version used for development, do:
+```
+git checkout aeca2c5
+```
+
+Then you can install `coq-sail` with `opam pin .` in the repository. It should
+install its own dependencies such as `coq-bbv`.
 
 #### stdpp
 
@@ -87,11 +104,11 @@ git clone https://gitlab.mpi-sws.org/iris/stdpp
 Then, if you want the precise version of stdpp this project was tested
 against, do:
 ```
-git checkout 2c03aca
+git checkout 283bda3
 ```
 
 Then you can install stdpp with `opam pin .` in the `stdpp` directory. Opam will
-also propose to install `coq-stdpp-unstable` which you should accept
+also propose to install `coq-stdpp-unstable` which you should accept.
 
 #### Coq Hammer
 

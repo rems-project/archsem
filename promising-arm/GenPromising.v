@@ -348,7 +348,7 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
             nextSt ← run_step fuel st;
             run fuel st
       end.
-    Solve All Obligations with hauto b:on.
+    Solve All Obligations with naive_solver.
     End CPS.
     Arguments final {_} _ {_}.
     Arguments to_final_MState {_ _ _ _}.
