@@ -138,14 +138,13 @@ Module Interface (A : Arch).
   | MemRead (n : N) : ReadReq.t deps n ->
                       outcome (bv (8 * n) * option bool + abort)
   | MemWrite (n : N) : WriteReq.t deps n -> outcome (option bool + abort)
-  | MemWriteAnnounce (n : N) : pa -> outcome unit
     (** The deps here specify the control dependency *)
   | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
   | Barrier : barrier -> outcome unit
   | CacheOp (deps : deps) : cache_op -> outcome unit
   | TlbOp (deps : deps) : tlb_op -> outcome unit
-  | FaultAnnounce : fault deps -> outcome unit
-  | EretAnnounce : outcome unit
+  | TakeException : fault deps -> outcome unit
+  | ReturnException (pa : pa) : outcome unit
 
   (** Custom outcome to support simplified models on either side that want
       symbolic outcomes. This can be use to represent abstracted sail function
@@ -264,18 +263,18 @@ Module Interface (A : Arch).
   Notation dOutcome := (outcome DepOn.t).
   Notation ndOutcome := (outcome unit).
 
-  Definition iMonArchMap (deps : Type) (out1 out2 : Type -> Type)
+  Definition iMonExtraMap (deps : Type) (out1 out2 : Type -> Type)
     := forall (A : Type), out1 A -> iMon deps out2 A.
 
   (** Suppose we can simulate the outcome of out1 in the instruction monad with
       architecture outcomes out2. Then  *)
-  Fixpoint map_arch_iMon {deps : Type} {out1 out2 : Type -> Type} {B : Type}
-    (f : iMonArchMap deps out1 out2) (mon : iMon deps out1 B) :
+  Fixpoint map_extra_iMon {deps : Type} {out1 out2 : Type -> Type} {B : Type}
+    (f : iMonExtraMap deps out1 out2) (mon : iMon deps out1 B) :
     iMon deps out2 B :=
     match mon in iMon _ _ _ return iMon deps out2 _ with
     | Ret b => Ret b
     | Next oc k0 =>
-        let k := fun x => map_arch_iMon f (k0 x) in
+        let k := fun x => map_extra_iMon f (k0 x) in
         match oc in outcome _ _ T
               return (T -> iMon deps out2 B) -> iMon deps out2 B with
         | RegRead reg direct => Next (RegRead reg direct)
@@ -283,14 +282,13 @@ Module Interface (A : Arch).
             Next (RegWrite reg direct deps val)
         | MemRead n readreq => Next (MemRead n readreq)
         | MemWrite n writereq => Next (MemWrite n writereq)
-        | MemWriteAnnounce n pa => Next (MemWriteAnnounce n pa)
         | BranchAnnounce pa deps => Next (BranchAnnounce pa deps)
         | Barrier barrier => Next (Barrier barrier)
         | CacheOp deps cache_op => Next (CacheOp deps cache_op)
         | TlbOp deps tlb_op => Next (TlbOp deps tlb_op)
-        | FaultAnnounce fault => Next (FaultAnnounce fault)
-        | EretAnnounce => Next EretAnnounce
-        | ArchOutcome aout => iMon_bind (f _ aout)
+        | TakeException fault => Next (TakeException fault)
+        | ReturnException pa => Next (ReturnException pa)
+        | ExtraOutcome aout => iMon_bind (f _ aout)
         | GenericFail msg => Next (GenericFail msg)
         | Choose n => Next (Choose n)
         | Discard => Next (Discard)

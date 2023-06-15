@@ -1456,7 +1456,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | TlbOp deps tlbi =>
       '(iis, ts, mem) ← run_tlbi tid iis ts (deps_to_view deps) tlbi mem;
       Exec.ret (iis, ts, mem, ())
-  | EretAnnounce =>
+  | ReturnException _ =>
       let '(iis, ts) := run_cse iis ts in
       Exec.ret (iis, ts, mem, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
