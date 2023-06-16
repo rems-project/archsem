@@ -1,3 +1,3 @@
-(lang dune 3.0)
+(lang dune 3.8)
 (name system-semantic-coq)
-(using coq 0.3)
+(using coq 0.8)

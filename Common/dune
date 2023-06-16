@@ -17,4 +17,5 @@
    Effects
    FMon
    Exec)
+  (theories stdpp Hammer RecordUpdate Equations)
 )

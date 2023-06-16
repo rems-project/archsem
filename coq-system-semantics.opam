@@ -11,9 +11,10 @@ synopsis: "Coq infrastructure to reason about hardware system semantics"
 
 depends: [
   "coq" { (>= "8.14.0") | (= "dev") }
-  "dune" {>= "3.0"}
+  "dune" {>= "3.8"}
   "coq-stdpp"
   "coq-stdpp-unstable"
+  "coq-equations" {>= "1.3"}
   "coq-record-update" {>= "0.3.0"}
   "coq-sail-stdpp" {>= "0.15"}
   "coq-hammer-tactics" {>= "1.3.2"}
