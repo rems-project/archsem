@@ -20,19 +20,21 @@ Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.
 
 Require Import ISASem.Interface.
+Require Import ISASem.Deps.
 
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
-Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
+Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch)
+                           (Deps : DepsT Arch IA). (* to be imported *)
   Import Arch.
   Import IA.
-  Notation depon := IA.DepOn.t.
-  Notation outcome := (IA.outcome depon empOutcome).
-  Notation iMon := (IA.iMon depon empOutcome).
-  Notation iSem := (IA.iSem depon empOutcome).
-  Notation iEvent := (IA.iEvent depon empOutcome).
-  Notation iTrace := (IA.iTrace depon empOutcome).
+  Import Deps.
+  Notation outcome := (IA.outcome DepOn.t empOutcome).
+  Notation iMon := (IA.iMon DepOn.t empOutcome).
+  Notation iSem := (IA.iSem DepOn.t empOutcome).
+  Notation iEvent := (IA.iEvent DepOn.t empOutcome).
+  Notation iTrace := (IA.iTrace DepOn.t empOutcome).
 
   (* event ID *)
   Module EID.

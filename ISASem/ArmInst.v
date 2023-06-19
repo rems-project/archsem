@@ -4,6 +4,7 @@ Require Import stdpp.strings.
 Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import Interface.
+Require Import Deps.
 Require Import Sail.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Reals.
@@ -102,5 +103,7 @@ End Arm.
 Bind Scope string_scope with Arm.reg.
 
 Module Inst := Interface Arm.
+Module ArmDeps := Deps Arm Inst.
 
 Export Inst.
+Export ArmDeps.

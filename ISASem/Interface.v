@@ -75,20 +75,6 @@ Module Interface (A : Arch).
   Definition va := bv va_size.
   Definition accessKind := Access_kind arch_ak.
 
-  Module DepOn.
-    Record t :=
-      make
-        {
-          (** The list of registers the effect depends on. *)
-          regs : list reg;
-          (** The list of memory access the effect depends on. The number
-              corresponds to the memory reads done by the instruction in the
-              order specified by the instruction semantics. The indexing starts
-              at 0. *)
-          mem_reads : list N
-        }.
-  End DepOn.
-
   Module ReadReq.
     Record t {deps : Type} {n : N} :=
       make
@@ -260,8 +246,6 @@ Module Interface (A : Arch).
   Arguments iSem : clear implicits.
   Arguments iTrace : clear implicits.
   Arguments iEvent : clear implicits.
-  Notation dOutcome := (outcome DepOn.t).
-  Notation ndOutcome := (outcome unit).
 
   Definition iMonExtraMap (deps : Type) (out1 out2 : Type -> Type)
     := forall (A : Type), out1 A -> iMon deps out2 A.

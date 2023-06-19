@@ -22,6 +22,7 @@ Open Scope Z_scope.
 Open Scope stdpp_scope.
 
 Require Import ISASem.Interface.
+Require Import ISASem.Deps.
 
 Require Import GenModels.TermModels.
 
@@ -89,14 +90,16 @@ Arguments t : clear implicits.
 End PromMemory.
 
 (* to be imported *)
-Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
+Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA)
+           (Deps : DepsT Arch IA).
+  Import Arch.
   Import IA.
-  Notation depon := IA.DepOn.t.
-  Notation outcome := (IA.outcome depon empOutcome).
-  Notation iMon := (IA.iMon depon empOutcome).
-  Notation iSem := (IA.iSem depon empOutcome).
-
+  Import Deps.
   Import TM.
+  Notation outcome := (IA.outcome DepOn.t empOutcome).
+  Notation iMon := (IA.iMon DepOn.t empOutcome).
+  Notation iSem := (IA.iSem DepOn.t empOutcome).
+
 
   (** Promising thread *)
   Module PThread. (* namespace *)
@@ -371,6 +374,6 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA).
 End Gen.
 
 Module Type GenT (Arch : Arch) (IA : InterfaceT Arch)
-  (TM : TermModelsT Arch IA).
-  Include Gen Arch IA TM.
+  (TM : TermModelsT Arch IA) (Deps : DepsT Arch IA).
+  Include Gen Arch IA TM Deps.
 End GenT.

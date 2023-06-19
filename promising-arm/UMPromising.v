@@ -11,7 +11,7 @@ Require Import GenModels.TermModels.
 Module TM := TermModels Arm Inst.
 Import TM.
 Require Import GenPromising.
-Module GP := Gen Arm Inst TM.
+Module GP := Gen Arm Inst TM ArmDeps.
 Import GP.
 
 (** The goal of this module is to define an User-mode promising model,
