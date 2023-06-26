@@ -550,3 +550,8 @@ Definition bv_set_bit (i : N) {n : N} (b : bv n) : bv n :=
 
 Definition bv_unset_bit (i : N) {n : N} (b : bv n) : bv n :=
   bv_or b (bv_not (Z_to_bv n (bv_modulus i))).
+
+
+Definition BVN (n : N) (val : Z) {wf: BvWf n val} : bvn := BV n val.
+
+#[global] Instance bvn_empty : Empty bvn := BVN 0 0.

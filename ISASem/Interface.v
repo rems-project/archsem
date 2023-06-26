@@ -70,7 +70,7 @@ Module Type Arch.
 End Arch.
 
 Module Interface (A : Arch).
-  Include A.
+  Import A.
 
   Definition va := bv va_size.
   Definition accessKind := Access_kind arch_ak.
@@ -86,6 +86,21 @@ Module Interface (A : Arch).
           addr_deps : deps;
         }.
     Arguments t : clear implicits.
+
+    Definition set_deps {d1 d2 : Type} {n : N} (f : d1 -> d2) (rr : t d1 n)
+      : t d2 n :=
+      {|
+        pa := rr.(pa);
+        access_kind := rr.(access_kind);
+        va := rr.(va);
+        translation := rr.(translation);
+        tag := rr.(tag);
+        addr_deps := f rr.(addr_deps);
+        |}.
+
+    Definition setv_deps {d1 d2 : Type} {n : N} (adeps : d2) (rr : t d1 n) :=
+      set_deps (fun _ => adeps) rr.
+
   End ReadReq.
 
   Module WriteReq.
@@ -101,6 +116,33 @@ Module Interface (A : Arch).
           data_deps : deps;
         }.
     Arguments t : clear implicits.
+
+    Definition set_deps {d1 d2 : Type} {n : N} (f : d1 -> d2) (wr : t d1 n)
+      : t d2 n :=
+      {|
+        pa := wr.(pa);
+        access_kind := wr.(access_kind);
+        value := wr.(value);
+        va := wr.(va);
+        translation := wr.(translation);
+        tag := wr.(tag);
+        addr_deps := f wr.(addr_deps);
+        data_deps := f wr.(data_deps);
+        |}.
+
+    Definition setv_deps {d1 d2 : Type} {n : N} (adeps ddeps : d2)
+      (wr : t d1 n) : t d2 n:=
+      {|
+        pa := wr.(pa);
+        access_kind := wr.(access_kind);
+        value := wr.(value);
+        va := wr.(va);
+        translation := wr.(translation);
+        tag := wr.(tag);
+        addr_deps := adeps;
+        data_deps := ddeps;
+        |}.
+
   End WriteReq.
 
   Section T.
@@ -124,6 +166,9 @@ Module Interface (A : Arch).
   | MemRead (n : N) : ReadReq.t deps n ->
                       outcome (bv (8 * n) * option bool + abort)
   | MemWrite (n : N) : WriteReq.t deps n -> outcome (option bool + abort)
+    (** Declare the opcode of the current instruction when known. Used for
+        dependency computation *)
+  | InstrAnnounce (opcode : bvn) : outcome unit
     (** The deps here specify the control dependency *)
   | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
   | Barrier : barrier -> outcome unit
@@ -266,6 +311,7 @@ Module Interface (A : Arch).
             Next (RegWrite reg direct deps val)
         | MemRead n readreq => Next (MemRead n readreq)
         | MemWrite n writereq => Next (MemWrite n writereq)
+        | InstrAnnounce opcode => Next (InstrAnnounce opcode)
         | BranchAnnounce pa deps => Next (BranchAnnounce pa deps)
         | Barrier barrier => Next (Barrier barrier)
         | CacheOp deps cache_op => Next (CacheOp deps cache_op)
@@ -284,3 +330,9 @@ End Interface.
 Module Type InterfaceT (A : Arch).
   Include Interface A.
 End InterfaceT.
+
+Module Type InterfaceWithArch.
+  Declare Module Arch : Arch.
+  Include Arch.
+  Include Interface Arch.
+End InterfaceWithArch.

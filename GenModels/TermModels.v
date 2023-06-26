@@ -26,9 +26,8 @@ Require Import ISASem.Interface.
     The definitions in this module are highly experimental and will change
     heavily depending on various requirements that are not yet known.
  *)
-Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
-  Import Arch.
-  Import IA.
+Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
+  Import IWA.
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
   Definition memoryMap := pa -> bv 8.
@@ -247,6 +246,6 @@ Module TermModels (Arch : Arch) (IA : InterfaceT Arch). (* to be imported *)
 
 End TermModels.
 
-Module Type TermModelsT (A : Arch) (IA : InterfaceT A).
-  Include TermModels A IA.
+Module Type TermModelsT (IWA : InterfaceWithArch).
+  Include TermModels IWA.
 End TermModelsT.

@@ -25,16 +25,13 @@ Require Import ISASem.Deps.
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
-Module CandidateExecutions (Arch : Arch) (IA : InterfaceT Arch)
-                           (Deps : DepsT Arch IA). (* to be imported *)
-  Import Arch.
-  Import IA.
-  Import Deps.
-  Notation outcome := (IA.outcome DepOn.t empOutcome).
-  Notation iMon := (IA.iMon DepOn.t empOutcome).
-  Notation iSem := (IA.iSem DepOn.t empOutcome).
-  Notation iEvent := (IA.iEvent DepOn.t empOutcome).
-  Notation iTrace := (IA.iTrace DepOn.t empOutcome).
+Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
+  Import IWD.
+  Notation outcome := (IWD.outcome DepOn.t empOutcome).
+  Notation iMon := (IWD.iMon DepOn.t empOutcome).
+  Notation iSem := (IWD.iSem DepOn.t empOutcome).
+  Notation iEvent := (IWD.iEvent DepOn.t empOutcome).
+  Notation iTrace := (IWD.iTrace DepOn.t empOutcome).
 
   (* event ID *)
   Module EID.

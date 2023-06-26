@@ -7,8 +7,9 @@ Require Import Interface.
 Require Import Deps.
 Require Import Sail.Base.
 Require Export SailArmInstTypes.
-Require Import Coq.Reals.Reals.
+Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
+
 
 Require Import stdpp.decidable.
 
@@ -83,27 +84,63 @@ Proof.
   intro x. by destruct x.
 Qed.
 
-Module Arm <: Arch.
-  Definition reg := string.
-  Definition reg_eq : EqDecision reg := _.
-  Definition reg_countable : Countable reg := _.
-  Definition reg_type := regval.
-  Definition va_size := 64%N.
-  Definition pa := FullAddress.
-  Definition pa_eq : EqDecision pa := _.
-  Definition pa_countable : Countable pa := _.
-  Definition arch_ak := arm_acc_type.
-  Definition translation := TranslationInfo.
-  Definition abort := PhysMemRetStatus.
-  Definition barrier := Barrier.
-  Definition cache_op := CacheRecord.
-  Definition tlb_op := TLBI.
-  Definition fault (deps : Type) := Exn. (* TODO fixup dependencies in exception type *)
+Module Arm.
+
+  Module Arch <: Arch.
+    Definition reg := string.
+    Definition reg_eq : EqDecision reg := _.
+    Definition reg_countable : Countable reg := _.
+    Definition reg_type := regval.
+    Definition va_size := 64%N.
+    Definition pa := FullAddress.
+    Definition pa_eq : EqDecision pa := _.
+    Definition pa_countable : Countable pa := _.
+    Definition arch_ak := arm_acc_type.
+    Definition translation := TranslationInfo.
+    Definition abort := PhysMemRetStatus.
+    Definition barrier := Barrier.
+    Definition cache_op := CacheRecord.
+    Definition tlb_op := TLBI.
+    Definition fault (deps : Type) := Exn. (* TODO fixup dependencies in exception type *)
+    Definition footprint_system_registers : list reg := [].
+  End Arch.
+  Include Arch.
+
+  Module Interface := Interface Arch.
+  Include Interface.
+  Module IWA <: InterfaceWithArch.
+    Module Arch := Arch.
+    Include Arch.
+    Include Interface.
+  End IWA.
+  Module DepsDefs := DepsDefs IWA.
+  Include DepsDefs.
+  Module IWD <: InterfaceWithDeps.
+    Module IWA := IWA.
+    Include IWA.
+    Include DepsDefs.
+  End IWD.
+  Module ArchDeps <: ArchDeps IWD.
+    Import IWD.
+    Definition footprint_context := unit.
+    Definition get_footprint_context {deps : Type} {out : Type -> Type}
+      : iMon deps out () := Ret ().
+    Definition fault_add_empty_deps := @id Exn.
+    Definition fault_add_deps (_ : Footprint.t) := @id Exn.
+  End ArchDeps.
+  Module AD := ArchDeps.
+  Include ArchDeps.
+  Module DepsComp := DepsComp IWD ArchDeps.
+  Include DepsComp.
+  Module IWDC <: InterfaceWithDepsComp.
+    Module IWD := IWD.
+    Module AD := ArchDeps.
+    Include IWD.
+    Include ArchDeps.
+    Include DepsComp.
+  End IWDC.
 End Arm.
+
 Bind Scope string_scope with Arm.reg.
 
-Module Inst := Interface Arm.
-Module ArmDeps := Deps Arm Inst.
-
-Export Inst.
-Export ArmDeps.
+Export Arm.

@@ -90,15 +90,12 @@ Arguments t : clear implicits.
 End PromMemory.
 
 (* to be imported *)
-Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA)
-           (Deps : DepsT Arch IA).
-  Import Arch.
-  Import IA.
-  Import Deps.
+Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
+  Import IWD.
   Import TM.
-  Notation outcome := (IA.outcome DepOn.t empOutcome).
-  Notation iMon := (IA.iMon DepOn.t empOutcome).
-  Notation iSem := (IA.iSem DepOn.t empOutcome).
+  Notation outcome := (IWD.outcome DepOn.t empOutcome).
+  Notation iMon := (IWD.iMon DepOn.t empOutcome).
+  Notation iSem := (IWD.iSem DepOn.t empOutcome).
 
 
   (** Promising thread *)
@@ -373,7 +370,6 @@ Module Gen (Arch : Arch) (IA : InterfaceT Arch) (TM : TermModelsT Arch IA)
 
 End Gen.
 
-Module Type GenT (Arch : Arch) (IA : InterfaceT Arch)
-  (TM : TermModelsT Arch IA) (Deps : DepsT Arch IA).
-  Include Gen Arch IA TM Deps.
+Module Type GenT (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
+  Include Gen IWD TM.
 End GenT.

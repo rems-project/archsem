@@ -8,10 +8,10 @@ From stdpp Require Import decidable.
 
 Require Import ISASem.ArmInst.
 Require Import GenModels.TermModels.
-Module TM := TermModels Arm Inst.
+Module TM := TermModels Arm.
 Import TM.
 Require Import GenPromising.
-Module GP := Gen Arm Inst TM ArmDeps.
+Module GP := Gen Arm TM.
 Import GP.
 
 (** The goal of this module is to define an User-mode promising model,
@@ -472,7 +472,7 @@ Module IIS.
   Definition add_reg (v : view) (iis : t) : t :=
     iis |> set def (max v).
 
-  Definition from_read_deps (deps : list N) (iis : t) : view :=
+  Definition from_read_deps (deps : list nat) (iis : t) : view :=
    List.fold_left (fun v dep => match iis.(reads) !! dep with
                                   | Some v' => max v v'
                                   | None => v end) deps 0%nat.

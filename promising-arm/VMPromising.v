@@ -377,7 +377,7 @@ Module Reg.
     | _ => None
     end.
 
-  Definition to_arch (reg : t) : Inst.reg :=
+  Definition to_arch (reg : t) : Arm.reg :=
     match reg with
     | App (R n) => "R" ++ (pretty n)
     | App (SP n) => "SP_EL" ++ (pretty n)
@@ -1139,7 +1139,7 @@ Module IIS.
   Definition add_reg (v : view) (iis : t) : t :=
     iis |> set regs (max v).
 
-  Definition from_read_deps (deps : list N) (iis : t) : view :=
+  Definition from_read_deps (deps : list nat) (iis : t) : view :=
    List.fold_left (fun v dep => match iis.(reads) !! dep with
                                   | Some v' => max v v'
                                   | None => v end) deps 0%nat.

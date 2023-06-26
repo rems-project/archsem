@@ -8,6 +8,7 @@
    ; SailArmInst_types
    SailArmInstTypes
    ArmInst)
+  (theories SSCCommon)
 )
 
 ; (rule
