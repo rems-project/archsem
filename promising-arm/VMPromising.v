@@ -1414,8 +1414,9 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   let deps_to_view :=
     fun deps => IIS.from_DepOn deps ts iis in
   match o with
-  | RegWrite reg direct deps val =>
-      Exec.fail_if (negb direct) "Indirect register write unsupported";;
+  | RegWrite reg racc deps val =>
+      Exec.fail_if (bool_decide (racc ≠ None))
+        "Non trivial write reg access types unsupported";;
       let wr_view := deps_to_view deps in
       match Reg.from_arch reg with
       | Some (Reg.App app) =>

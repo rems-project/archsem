@@ -24,8 +24,13 @@ Module Type Arch.
   #[export] Existing Instance reg_countable.
 
   (** The type of registers. This needs to be a type generic enough to contain
-      the value of any register *)
+      the value of any register.
+
+      TODO: Decide if an architecture should provide a standard default value *)
   Parameter reg_type : Type.
+
+  (** Register access kind (architecture specific) *)
+  Parameter reg_acc : Type.
 
   (** Virtual address size *)
   Parameter va_size : N.
@@ -150,9 +155,8 @@ Module Interface (A : Arch).
     Context {eOutcome : Type -> Type}.
 
   Inductive outcome : Type -> Type :=
-    (** The direct or indirect flag is to specify how much coherence is required
-        for relaxed registers *)
-  | RegRead (reg : reg) (direct : bool) : outcome reg_type
+    (** reg_acc kind *)
+  | RegRead (reg : reg) (racc : reg_acc) : outcome reg_type
 
     (** The direct or indirect flag is to specify how much coherence is required
         for relaxed registers.
@@ -161,7 +165,7 @@ Module Interface (A : Arch).
 
         Generally, writing the PC introduces no dependency because control
         dependencies are specified by the branch announce *)
-  | RegWrite (reg : reg) (direct : bool) (deps : deps)
+  | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
              (regval: reg_type) : outcome unit
   | MemRead (n : N) : ReadReq.t deps n ->
                       outcome (bv (8 * n) * option bool + abort)

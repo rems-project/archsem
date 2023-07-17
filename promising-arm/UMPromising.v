@@ -491,12 +491,15 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   let deps_to_view :=
     fun deps => IIS.from_DepOn deps ts.(TState.regs) iis in
   match o with
-  | RegWrite reg direct deps val =>
-      Exec.fail_if (negb direct) "Atomic RMV unsupported";;
+  | RegWrite reg racc deps val =>
+      Exec.fail_if (bool_decide (racc ≠ None))
+        "Non trivial reg access types unsupported";;
       let wr_view := deps_to_view deps in
       let ts := TState.set_reg reg (val, wr_view) ts in
       Exec.ret (iis, ts, mem, ())
-  | RegRead reg direct =>
+  | RegRead reg racc =>
+      Exec.fail_if (bool_decide (racc ≠ None))
+        "Non trivial reg access types unsupported";;
       let (val, view) := ts.(TState.regs) reg in
       let iis := IIS.add_reg view iis in
       Exec.ret (iis, ts, mem, val)

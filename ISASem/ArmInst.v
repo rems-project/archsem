@@ -87,10 +87,14 @@ Qed.
 Module Arm.
 
   Module Arch <: Arch.
+    (* TODO: This should be an enum not a string *)
     Definition reg := string.
     Definition reg_eq : EqDecision reg := _.
     Definition reg_countable : Countable reg := _.
     Definition reg_type := regval.
+    (** None means default access (strict or relaxed is up to the concurrency model).
+        Some s, means access with a MSR/MRS with name "s" *)
+    Definition reg_acc := option string.
     Definition va_size := 64%N.
     Definition pa := FullAddress.
     Definition pa_eq : EqDecision pa := _.
