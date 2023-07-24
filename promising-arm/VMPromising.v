@@ -1461,8 +1461,8 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       let '(iis, ts) := run_cse iis ts in
       Exec.ret (iis, ts, mem, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
-  | Choose n =>
-      v ← Exec.choose (bv n);
+  | Choose l =>
+      v ← Exec.Results l;
       Exec.ret(iis, ts, mem, v)
   | Discard => Exec.discard
   | _ => Exec.Error "Unsupported outcome"

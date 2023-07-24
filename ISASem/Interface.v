@@ -2,6 +2,7 @@
 Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 Require Import stdpp.countable.
+Require Import stdpp.finite.
 
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.
@@ -191,14 +192,14 @@ Module Interface (A : Arch).
   | GenericFail (msg : string) : outcome False
 
   (** The next two outcomes are for handling non-determinism. Choose will branch
-      the possible executions non-deterministically for every bitvector of
-      size n. *)
-  | Choose (n : N) : outcome (bv n)
+      the possible executions non-deterministically for every value of the type *)
+  | Choose {F : Type} (l : list F) : outcome F
   (** Discard means that the instruction could never have made the previous
       non-deterministic choices and the current execution can be silently
       discarded. *)
   | Discard : outcome False.
 
+  Definition choose_fin F `{Finite F} : outcome F := Choose (enum F).
 
   (********** Monad instance **********)
 
@@ -279,8 +280,8 @@ Module Interface (A : Arch).
   | TMNext T (oc : outcome T) (f : T -> iMon A) (obj : T) tl res :
     iTrace_match (f obj) (tl, res) ->
     iTrace_match (Next oc f) ((IEvent oc obj) :: tl, res)
-  | TMChoose n f (v : bv n) tr :
-    iTrace_match (f v) tr -> iTrace_match (Next (Choose n) f) tr
+  | TMChoose F (l : list F) f v tr :
+    v ∈ l → iTrace_match (f v) tr -> iTrace_match (Next (Choose l) f) tr
   | TMSuccess a : iTrace_match (Ret a) ([], inl a)
   | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], inr s).
 
