@@ -24,13 +24,9 @@ Qed.
 (** The size of a finite set. *)
 Definition set_size `{Elements A C} (s : C) : nat := length (elements s).
 
-Global Instance proper_set_size `{Elements A C} :
-  Proper (eq ==> eq) (set_size : C -> nat) | 10.
-Proof. solve_proper. Qed.
-
 Global Instance proper_set_size_equiv `{FinSet A C} :
-  Proper (equiv ==> eq) (set_size : C -> nat) | 20.
-Admitted. (* TODO *)
+  Proper (equiv ==> eq) (set_size : C -> nat).
+Proof. solve_proper2_funcs. Qed.
 
 Lemma set_size_zero `{FinSet A C} (s : C) :
   set_size s = 0 <-> s ≡ ∅.
@@ -54,14 +50,14 @@ Qed.
 
 Lemma set_size_one_L `{FinSet A C} {lei : LeibnizEquiv C} (s : C) :
   set_size s = 1 <-> exists x : A, s = {[x]}.
-Proof. rewrite set_size_one. set_unfold. hauto l:on. Qed.
+Proof. rewrite set_size_one. set_solver. Qed.
 
 Lemma set_size_le1 `{FinSet A C} (s : C) :
   set_size s ≤ 1 ↔ (∀ y z : A, y ∈ s → z ∈ s → y = z).
 Proof.
   unfold set_size.
   setoid_rewrite <- elem_of_elements.
-  assert (NoDup (elements s)). sfirstorder.
+  assert (NoDup (elements s)). { sfirstorder. }
   generalize dependent (elements s). intros l ND.
   do 2 (destruct ND;[sauto lq:on rew:off|]).
   split.

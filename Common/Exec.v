@@ -251,21 +251,11 @@ Proof. by destruct p. Qed.
 
 Global Instance UnfoldElemOf_proper {A E} :
   Proper (@eq A ==> @eq (t E A) ==> iff ==> iff) UnfoldElemOf.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
+Proof. solve_proper2_tc. Qed.
 
 Global Instance UnfoldHasResults_proper {A E} :
   Proper (@eq (t E A) ==> iff ==> iff) UnfoldHasResults.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
+Proof. solve_proper2_tc. Qed.
 
 (** Importing this will make set_unfold also unfold exec values *)
 Module SetUnfoldExecUnfold.

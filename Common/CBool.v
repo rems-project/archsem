@@ -25,12 +25,7 @@ Global Hint Mode BoolUnfold + - : typeclass_instances.
 
 Global Instance BoolUnfold_proper :
   Proper (eq ==> iff ==> iff) BoolUnfold.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
+Proof. solve_proper2_tc. Qed.
 
 
 (* Explain to coq hammer tactic how to use Is_true and BoolUnfold *)

@@ -155,25 +155,36 @@ Proof.
   solve_proper.
 Qed.
 
-(* TODO make solve_proper work *)
-(* TODO upstream to stdpp *)
+(* A variation of solve_proper that uses setoid_rewrite *)
+
+Ltac solve_proper2_core tac :=
+  match goal with
+  | |- Proper _ _ => unfold Proper; solve_proper2_core tac
+  | |- respectful _ _ _ _ =>
+    let H := fresh "h" in
+    intros ? ? H; solve_proper2_core tac;
+    let t := type of H in
+    try rewrite H in *
+  | |- _ => tac
+  end.
+
+(* For Proper of a typeclass in Prop (the last relation must be iff)
+   The tactic passed to core will see a goal of the form
+   TC arg1 arg2 ↔ TC arg1' arg2' *)
+Ltac solve_proper2_tc :=
+  solve_proper2_core ltac:(split; destruct 1; constructor); assumption.
+
+(* For Proper of an unfoldable function *)
+Ltac solve_proper2_funcs :=
+  solve_proper2_core solve_proper_unfold; reflexivity.
+
 Global Instance SetUnfold_proper :
   Proper (iff ==> iff ==> iff) SetUnfold.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
+Proof. solve_proper2_tc. Qed.
 
 Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
   Proper ((=@{A}) ==> (≡@{C}) ==> iff ==> iff) SetUnfoldElemOf.
-Proof.
-  unfold Proper.
-  unfold respectful.
-  intros.
-  split; destruct 1; constructor; sfirstorder.
-Qed.
+Proof. solve_proper2_tc. Qed.
 
 
 
