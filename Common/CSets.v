@@ -158,6 +158,12 @@ Module SetUnfoldPair.
   (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
   SetUnfold (X = Y) (∀ x y, P x y ↔ Q x y) | 9.
   Proof. tcclean. unfold_leibniz. set_unfold. hauto. Qed.
+
+  #[export] Instance set_elem_of_let_pair A B `{ElemOf D C} (S : A → B → C)
+    (c : A * B) P (x : D):
+    SetUnfoldElemOf x (S c.1 c.2) P →
+    SetUnfoldElemOf x (let '(a, b) := c in S a b) P.
+  Proof. tcclean. hauto l:on. Qed.
 End SetUnfoldPair.
 
 

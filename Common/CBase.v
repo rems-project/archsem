@@ -47,13 +47,13 @@ Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
 
 (*** Constrained quantifiers ***)
 
-Notation "∀' x ∈ b , P" := (forall x, x ∈ b -> P)
+Notation "∀' x ∈ b , P" := (∀ x, x ∈ b → P)
   (at level 200, x binder, right associativity,
   format "'[ ' '[ ' ∀' x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
-(* The formatting, doesn't work so this is still printed as exists x, x ∈ b /\ P
+(* The formatting, doesn't work so this is still printed as exists x, x ∈ b ∧ P
    but that's not really a problem *)
-Notation "∃' x ∈ b , P" := (exists x, x ∈ b /\ P)
+Notation "∃' x ∈ b , P" := (∃ x, x ∈ b ∧ P)
   (at level 200, x binder, right associativity,
   format "'[ ' '[ ' ∃' x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
@@ -154,6 +154,9 @@ Proof.
   unfold Proper.
   solve_proper.
 Qed.
+
+(* I don't want unfolding typeclasses such as SetUnfold to unfold an mbind ever *)
+Global Typeclasses Opaque mbind.
 
 (* A variation of solve_proper that uses setoid_rewrite *)
 

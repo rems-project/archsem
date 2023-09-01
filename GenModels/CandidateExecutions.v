@@ -89,7 +89,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
         }.
 
     (** Get an event at a given event ID in a candidate *)
-    Global Instance lookup : Lookup EID.t iEvent t :=
+    Global Instance lookup_eid : Lookup EID.t iEvent t :=
       fun eid cd =>
         traces ← cd.(events) !! eid.(EID.tid);
         '(trace, result) ← traces !! eid.(EID.iid);
@@ -109,17 +109,90 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
        '(num, event) ← enumerate trace;
        [(EID.make tid iid num, event)].
 
-    Definition event_map (cd : t) : gmap EID.t iEvent :=
-          event_list cd |> list_to_map.
+    Global Typeclasses Opaque event_list.
 
-    Lemma event_map_match cd eid : cd !! eid = (event_map cd) !! eid.
-    Admitted.
+    Import SetUnfoldPair.
+
+    Lemma event_list_match cd eid ev :
+      cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
+    Proof.
+      (* Unfold everything properly on both side, and naive_solver does it. *)
+      unfold lookup at 1.
+      unfold lookup_eid.
+      repeat setoid_rewrite bind_Some.
+      unfold event_list.
+      destruct eid.
+      set_unfold.
+      repeat setoid_rewrite exists_pair.
+      naive_solver.
+    Qed.
+
+    Global Instance set_unfold_elem_of_event_list cd x :
+      SetUnfoldElemOf x (event_list cd) (cd !! x.1 = Some x.2).
+    Proof. tcclean. destruct x. symmetry. apply event_list_match. Qed.
+
+    Lemma event_list_NoDup1 cd : NoDup (event_list cd).*1.
+    Proof.
+      unfold event_list.
+      rewrite fmap_unfold.
+      cbn.
+      apply NoDup_bind;
+        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+      intros [? ?] ?.
+      apply NoDup_bind;
+        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+      intros [? [? ?]] ?.
+      apply NoDup_bind;
+        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+      intros [? [? ?]] ?.
+      auto with nodup.
+    Qed.
+
+    Lemma event_list_NoDup cd : NoDup (event_list cd).
+    Proof. eapply NoDup_fmap_1. apply event_list_NoDup1. Qed.
+
+    Definition event_map (cd : t) : gmap EID.t iEvent :=
+      event_list cd |> list_to_map.
+
+
+    Lemma event_map_match cd eid : (event_map cd) !! eid = cd !! eid.
+    Proof.
+      unfold event_map.
+      destruct (cd !! eid) eqn: Heq.
+      - apply elem_of_list_to_map.
+        + apply event_list_NoDup1.
+        + set_solver.
+      - apply not_elem_of_list_to_map_1.
+        set_solver.
+    Qed.
+
+    Global Instance lookup_unfold_event_map x cd R :
+      LookupUnfold x cd R → LookupUnfold x (event_map cd) R.
+    Proof. tcclean. apply event_map_match. Qed.
+
 
     (*** Accessors ***)
 
     Definition collect_all (P : iEvent -> bool) (cd : t) : gset EID.t :=
       filter (fun '(eid, event) => P event) (event_list cd)
         |> map fst |> list_to_set.
+
+    Global Instance set_unfold_elem_of_filter `{FinSet A B}
+      `{∀ x : A, Decision (P x)} x (a : B) Q:
+      SetUnfoldElemOf x a Q ->
+      SetUnfoldElemOf x (filter P a) (P x ∧ Q).
+    Proof. tcclean. apply elem_of_filter. Qed.
+
+    Global Instance set_unfold_elem_of_filter_list A
+      `{∀ x : A, Decision (P x)} x (a : list A) Q:
+      SetUnfoldElemOf x a Q ->
+      SetUnfoldElemOf x (filter P a) (P x ∧ Q).
+    Proof. tcclean. apply elem_of_list_filter. Qed.
+
+    Global Instance set_elem_of_collect_all eid P cd :
+      SetUnfoldElemOf eid (collect_all P cd) (∃x, cd !! eid = Some x ∧ P x).
+    Proof. tcclean. set_unfold. hauto db:core. Qed.
+    Global Typeclasses Opaque collect_all.
 
     (** Get the set of all valid EID for that candidate *)
     Definition valid_eid (cd : t) :=
@@ -135,6 +208,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
            | _ => false end)
         cd.
 
+    Global Instance set_elem_of_reg_read eid cd :
+      SetUnfoldElemOf eid (reg_reads cd)
+        (∃ reg reg_acc res,
+            cd !! eid = Some (IEvent (RegRead reg reg_acc) res)).
+    Proof. tcclean. set_unfold. hauto l:on. Qed.
+    Global Typeclasses Opaque reg_reads.
+
     (** Get the set of all register writes *)
     Definition reg_writes (cd : t) :=
       collect_all
@@ -143,6 +223,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
            | IEvent (RegWrite _ _ _ _) _ => true
            | _ => false end)
         cd.
+
+    Global Instance set_elem_of_reg_writes eid cd :
+      SetUnfoldElemOf eid (reg_writes cd)
+        (∃ reg reg_acc dep val,
+            cd !! eid = Some (IEvent (RegWrite reg reg_acc dep val) ())).
+    Proof. tcclean. set_unfold. sauto dep:on. Qed.
+    Global Typeclasses Opaque reg_writes.
 
     (** Get the set of all memory reads *)
     Definition mem_reads (cd : t) :=
@@ -153,6 +240,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
            | _ => false end)
         cd.
 
+    Global Instance set_elem_of_mem_reads eid cd :
+      SetUnfoldElemOf eid (mem_reads cd)
+        (∃ n rr res, cd !! eid = Some (IEvent (MemRead n rr) res)).
+    Proof. tcclean. set_unfold. hauto l:on. Qed.
+    Global Typeclasses Opaque mem_reads.
+
     (** Get the set of all memory writes *)
     Definition mem_writes (cd : t) :=
       collect_all
@@ -161,6 +254,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
            | IEvent (MemWrite _ _) _ => true
            | _ => false end)
         cd.
+
+    Global Instance set_elem_of_mem_writes eid cd :
+      SetUnfoldElemOf eid (mem_writes cd)
+        (∃ n wr res, cd !! eid = Some (IEvent (MemWrite n wr) res)).
+    Proof. tcclean. set_unfold. hauto l:on. Qed.
+    Global Typeclasses Opaque mem_writes.
 
     (** Get the set of all memory writes *)
     Definition mem_events (cd : t) :=

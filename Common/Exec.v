@@ -100,6 +100,7 @@ Global Instance mbind_inst {E} : MBind (t E) :=
     | Results l => foldl merge discard (map f l)
     end
   }.
+Global Typeclasses Opaque mbind_inst.
 
 Global Instance fmap_inst {E} : FMap (t E) :=
   { fmap _ _  f x :=
@@ -107,6 +108,7 @@ Global Instance fmap_inst {E} : FMap (t E) :=
     | Error e => Error e
     | Results l => Results (map f l)
     end }.
+Global Typeclasses Opaque fmap_inst.
 
 
 
@@ -146,8 +148,8 @@ Proof. by destruct e. Qed.
 
 Lemma merge_discard2 E A (e : t E A) : merge e discard = e.
 Proof. destruct e; hauto db:list. Qed.
-#[global] Hint Rewrite merge_discard : exec.
-#[global] Hint Rewrite merge_discard : execc.
+#[global] Hint Rewrite merge_discard2 : exec.
+#[global] Hint Rewrite merge_discard2 : execc.
 
 Lemma mbind_cons E A B (x : A) (l : list A) (f : A -> t E B):
   Results (x :: l) ≫= f =
@@ -496,11 +498,13 @@ Proof.
       inv:elem_of_list ctrs:elem_of_list lq:on hint:db:exec.
 Qed.
 
+
 Lemma elem_of_results_mbind' E A B (x : B) (l : list A) (f: A -> t E B) :
   x ∈ (Results l ≫= f) <-> (∃'y ∈ l, x ∈ (f y)) /\ ∀'z ∈ l, has_results (f z).
 Proof.
   induction l.
-  - set_unfold. sfirstorder.
+  - autorewrite with execc.
+    set_solver.
   - autorewrite with execc.
     set_unfold.
     hauto lq:on hint:db:execc.
@@ -596,7 +600,7 @@ Global Instance unfold_elem_of_assert_mbind
 Proof.
   tcclean.
   unfold assert.
-  sauto simp+:dest_unit simp+:exec_unfold.
+  case_split; autorewrite with execc; set_solver.
 Qed.
 
 
