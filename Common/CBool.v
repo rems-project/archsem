@@ -7,7 +7,7 @@ From stdpp Require Import base.
 From stdpp Require Export decidable.
 From stdpp Require Export sets.
 From Hammer Require Import Tactics.
-Require Export DecidableClass.
+Require Import DecidableClass.
 
 Require Import CBase.
 
