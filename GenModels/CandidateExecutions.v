@@ -21,12 +21,14 @@ Require Import SSCCommon.GRel.
 
 Require Import ISASem.Interface.
 Require Import ISASem.Deps.
+Require Import TermModels.
 
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
-Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
+Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD). (* to be imported *)
   Import IWD.
+  Import Term.
   Notation outcome := (IWD.outcome DepOn.t empOutcome).
   Notation iMon := (IWD.iMon DepOn.t empOutcome).
   Notation iSem := (IWD.iSem DepOn.t empOutcome).
@@ -64,10 +66,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
 
     Record t :=
       make {
+          num_threads : nat;
+          (** Initial state *)
+          init : MState.t num_threads;
           (** Each thread is a list of instruction who each have a trace,
               we force the return type to be unit, but it just means we
               forget the actual value *)
-          events : list (list (iTrace ()));
+          events : vec (list (iTrace ())) num_threads;
           (* TODO po can be deduced by the order of events in the trace *)
           (** Program order. The per-thread order of all events in the trace *)
           po : grel EID.t;
@@ -124,6 +129,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
       destruct eid.
       set_unfold.
       repeat setoid_rewrite exists_pair.
+      setoid_rewrite lookup_unfold.
       naive_solver.
     Qed.
 

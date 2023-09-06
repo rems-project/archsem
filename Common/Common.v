@@ -115,7 +115,7 @@ Proof.
 Qed.
 
 
-(*** Finite number utilities *)
+(*** Finite number utilities ***)
 
 (* TODO upstream to stdpp *)
 Bind Scope fin_scope with fin.
@@ -151,5 +151,40 @@ Global Instance pretty_fin (n : nat) : Pretty (fin n)  :=
   (fun n => pretty (n : nat)).
 Global Hint Mode Pretty ! : typeclass_instances.
 
-Definition fin_to_N {n : nat} : fin n -> N := N.of_nat ∘ fin_to_nat.
+Definition fin_to_N {n : nat} : fin n → N := N.of_nat ∘ fin_to_nat.
 Coercion fin_to_N : fin >-> N.
+
+
+
+(*** VectorLookup ***)
+Section VecLookup.
+  Context {T : Type}.
+  Context {n : nat}.
+
+  Global Instance vec_lookup_nat : Lookup nat T (vec T n) :=
+    fun m v =>
+      match decide (m < n) with
+      | left H => Some (v !!! Fin.of_nat_lt H)
+      | right _ => None
+      end.
+
+  Lemma vec_to_list_lookup (v : vec T n) m : vec_to_list v !! m = v !! m.
+  Proof using.
+    unfold lookup at 2.
+    unfold vec_lookup_nat.
+    case_decide.
+    - apply vlookup_lookup'.
+      naive_solver.
+    - apply lookup_ge_None.
+      rewrite vec_to_list_length.
+      lia.
+  Qed.
+
+  Global Instance vec_lookup_nat_unfold m (v : vec T n) r:
+    LookupUnfold m v r →
+    LookupUnfold m (vec_to_list v) r.
+  Proof using. tcclean. apply vec_to_list_lookup. Qed.
+
+  Global Instance vec_lookup_N : Lookup N T (vec T n) :=
+    fun m v => v !! (N.to_nat m).
+End VecLookup.
