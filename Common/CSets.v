@@ -141,6 +141,12 @@ Global Instance set_unfold_enum `{Finite A} a :
   SetUnfoldElemOf a (enum A) True.
 Proof. tcclean. sauto. Qed.
 
+Global Instance set_unfold_elem_of_filter `{FinSet A B}
+  `{∀ x : A, Decision (P x)} x (a : B) Q:
+  SetUnfoldElemOf x a Q ->
+  SetUnfoldElemOf x (filter P a) (P x ∧ Q).
+Proof. tcclean. apply elem_of_filter. Qed.
+
 (** Import this module so that set_unfold unfold X = Y into
     (x,y) ∈ X  <-> (x,y) ∈ Y if X and Y are sets of pairs *)
 Module SetUnfoldPair.

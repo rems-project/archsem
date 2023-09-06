@@ -132,6 +132,11 @@ Global Instance list_omap : OMap listset := λ A B f '(Listset l),
 
 Global Instance list_Empty {A} : Empty (list A) := [].
 
+Global Instance set_unfold_elem_of_filter_list A
+  `{∀ x : A, Decision (P x)} x (a : list A) Q:
+  SetUnfoldElemOf x a Q ->
+  SetUnfoldElemOf x (filter P a) (P x ∧ Q).
+Proof. tcclean. apply elem_of_list_filter. Qed.
 
 (*** List utility functions ***)
 

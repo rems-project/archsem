@@ -177,18 +177,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps). (* to be imported *)
       filter (fun '(eid, event) => P event) (event_list cd)
         |> map fst |> list_to_set.
 
-    Global Instance set_unfold_elem_of_filter `{FinSet A B}
-      `{∀ x : A, Decision (P x)} x (a : B) Q:
-      SetUnfoldElemOf x a Q ->
-      SetUnfoldElemOf x (filter P a) (P x ∧ Q).
-    Proof. tcclean. apply elem_of_filter. Qed.
-
-    Global Instance set_unfold_elem_of_filter_list A
-      `{∀ x : A, Decision (P x)} x (a : list A) Q:
-      SetUnfoldElemOf x a Q ->
-      SetUnfoldElemOf x (filter P a) (P x ∧ Q).
-    Proof. tcclean. apply elem_of_list_filter. Qed.
-
     Global Instance set_elem_of_collect_all eid P cd :
       SetUnfoldElemOf eid (collect_all P cd) (∃x, cd !! eid = Some x ∧ P x).
     Proof. tcclean. set_unfold. hauto db:core. Qed.
