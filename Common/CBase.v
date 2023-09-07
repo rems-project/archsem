@@ -18,6 +18,12 @@ Require Import ZArith.
     that a = b |> f will be parsed as a = (b |> f). *)
 Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
 
+(* FMap notations *)
+Notation "v |$> f" := (fmap f v) (at level 69, only parsing, left associativity).
+Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v) (at level 61, only parsing, left associativity).
+Notation "v |$>@{ M } f" := (@fmap M _ _ _ f v) (at level 69, only parsing, left associativity).
+
+
 (** Monadic bind with an explicit monad annotation *)
 Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
   (at level 20, y at level 100, z at level 200, only parsing) : stdpp_scope.
