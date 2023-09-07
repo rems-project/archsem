@@ -5,7 +5,7 @@ Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import Interface.
 Require Import Deps.
-Require Import Sail.Base.
+Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.

@@ -3,7 +3,6 @@
  *)
 
 From Hammer Require Export Tactics.
-Require Export bbv.Word.
 Require Import DecidableClass.
 From stdpp Require Export strings.
 From stdpp Require Export fin.

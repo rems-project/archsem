@@ -15,8 +15,7 @@ depends: [
   "coq-stdpp"
   "coq-stdpp-unstable"
   "coq-record-update" {>= "0.3.0"}
-  "coq-hammer-tactics"
-  "coq-sail" {>= "0.15"}
+  "coq-sail-stdpp" {>= "0.15"}
   "coq-hammer-tactics" {>= "1.3.2"}
 ]
 

@@ -41,15 +41,14 @@ opam install dune
 
 ### Coq
 
-This project was tested with Coq 8.16. If you want exactly that version do:
+This project was tested with Coq 8.17.1. If you want exactly that version do:
 ```
-opam pin coq 8.16.0
+opam pin coq 8.17.1
 ```
 otherwise you can install it with `opam install coq`
 
-Until recently it was working on 8.14, but no guarantees are made to keep
-supporting it. 8.17 is not supported yet, due to some dependencies (`coq-bbv`)
-not working on that version.
+Until recently it was working on 8.14 and 8.16, but no guarantees are made to keep
+supporting them.
 
 
 ### Sail
@@ -75,23 +74,12 @@ previous text is here:
 
 ### Coq libraries
 
-For coq-hammer-tactics and coq-record-update below
+#### Regular coq libraries
 
-#### Coq Sail
-
-The Coq Sail library is now in its own repository, do:
-
+Install via opam
 ```
-git clone https://github.com/rems-project/coq-sail
+opam install coq-hammer-tactics coq-record-update coq-equations
 ```
-
-Then (optionally), in that repository, if you want the version used for development, do:
-```
-git checkout aeca2c5
-```
-
-Then you can install `coq-sail` with `opam pin .` in the repository. It should
-install its own dependencies such as `coq-bbv`.
 
 #### stdpp
 
@@ -110,17 +98,21 @@ git checkout 283bda3
 Then you can install stdpp with `opam pin .` in the `stdpp` directory. Opam will
 also propose to install `coq-stdpp-unstable` which you should accept.
 
-#### Coq Hammer
 
-This repository uses the `sauto` family of tactics from the Coq Hammer project.
-To install it, do:
+#### Coq Sail (stdpp version)
+
+The Coq Sail library is now in its own repository, do:
+
 ```
-opam install coq-hammer-tactics
+git clone https://github.com/rems-project/coq-sail
 ```
 
-#### Coq Record Update
+Then (optionally), in that repository, if you want the version used for development, do:
+```
+git checkout aeca2c5
+```
 
-This repository use the Coq record update library. To install it do:
-```
-opam install coq-record-update
-```
+Then you can install `coq-sail-stdpp` with `opam pin coq-sail-stdpp .` in the
+repository. It should install its own dependencies such as `coq-bbv`.
+
+

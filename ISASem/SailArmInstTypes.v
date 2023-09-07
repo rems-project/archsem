@@ -68,8 +68,8 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
 *)
 
-Require Import Sail.Base.
-Require Import Sail.Real.
+Require Import SailStdpp.Base.
+Require Import SailStdpp.Real.
 Require Import stdpp.unstable.bitvector.
 Import ListNotations.
 Open Scope string.
