@@ -43,13 +43,6 @@ Definition Prop_for_rewrite {P : Prop} (H : P) : P <-> True.
   firstorder.
 Defined.
 
-Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
-  set proj (fun _ => v).
-
-(** This allows to use set fst and set snd on pairs *)
-#[global] Instance eta_pair A B : Settable (A * B) :=
-  settable! (fun (a : A) (b : B) => (a, b)) <fst;snd>.
-
 
 (*** Constrained quantifiers ***)
 
@@ -196,6 +189,25 @@ Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
 Proof. solve_proper2_tc. Qed.
 
 
+(*** Record management ***)
+
+Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
+  set proj (fun _ => v).
+
+(** This allows to use set fst and set snd on pairs *)
+Global Instance eta_pair A B : Settable (A * B) :=
+  settable! (fun (a : A) (b : B) => (a, b)) <fst;snd>.
+
+Global Instance Setter_compose `{SRT : Setter R T proj}
+  `{STT : Setter T T' proj'} :
+  Setter (proj' ∘ proj) := fun x => SRT (STT x).
+
+Global Program Instance Setter_compose_wf `{SRT : SetterWf R T proj}
+  `{STT : SetterWf T T' proj'} : SetterWf (proj' ∘ proj) :=
+  { set_wf := Setter_compose;
+    set_get := _;
+    set_eq := _ }.
+Solve All Obligations with sauto lq:on.
 
 (*** Generic hints ***)
 
