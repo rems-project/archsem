@@ -188,7 +188,7 @@ End SetUnfoldPair.
    same result so we don't really care which one is chosen *)
 
 Program Global Instance set_cind `{FinSet A C} (X : C) (P : C -> Prop)
-  {pr: Proper (equiv ==> iff) P} : CInduction X (P X) :=
+  {pr: Proper (equiv ==> impl) P} : CInduction X (P X) :=
   {|
     induction_requirement :=
       (P ∅) /\ (forall x X, x ∉ X -> P X -> P ({[x]} ∪ X))
@@ -206,7 +206,7 @@ Solve All Obligations with intros; apply set_ind_L; naive_solver.
 (** Induction principles over set_fold *)
 Program Definition set_fold_cind `{FinSet A C} B (X : C)
   (b : B) (f : A -> B -> B) (P : C -> B -> Prop)
-  {pr: Proper (equiv ==> eq ==> iff) P} : CInduction X (P X (set_fold f b X)) :=
+  {pr: Proper (equiv ==> eq ==> impl) P} : CInduction X (P X (set_fold f b X)) :=
   {|
     induction_requirement :=
       (P ∅ b) /\ (forall x X r, x ∉ X -> P X r -> P ({[x]} ∪ X) (f x r))

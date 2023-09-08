@@ -119,33 +119,6 @@ Qed.
 (* TODO upstream to stdpp *)
 Bind Scope fin_scope with fin.
 
-(* stdpp provides notation from 0 to 10. We need them up to 30 for
-   register numbering *)
-(* Python:
-for i in range(11, 31):
-    print("Notation \"{}\" := (FS {}) : fin_scope.".format(i, i - 1))
-*)
-Notation "11" := (FS 10) : fin_scope.
-Notation "12" := (FS 11) : fin_scope.
-Notation "13" := (FS 12) : fin_scope.
-Notation "14" := (FS 13) : fin_scope.
-Notation "15" := (FS 14) : fin_scope.
-Notation "16" := (FS 15) : fin_scope.
-Notation "17" := (FS 16) : fin_scope.
-Notation "18" := (FS 17) : fin_scope.
-Notation "19" := (FS 18) : fin_scope.
-Notation "20" := (FS 19) : fin_scope.
-Notation "21" := (FS 20) : fin_scope.
-Notation "22" := (FS 21) : fin_scope.
-Notation "23" := (FS 22) : fin_scope.
-Notation "24" := (FS 23) : fin_scope.
-Notation "25" := (FS 24) : fin_scope.
-Notation "26" := (FS 25) : fin_scope.
-Notation "27" := (FS 26) : fin_scope.
-Notation "28" := (FS 27) : fin_scope.
-Notation "29" := (FS 28) : fin_scope.
-Notation "30" := (FS 29) : fin_scope.
-
 Global Instance pretty_fin (n : nat) : Pretty (fin n)  :=
   (fun n => pretty (n : nat)).
 Global Hint Mode Pretty ! : typeclass_instances.
