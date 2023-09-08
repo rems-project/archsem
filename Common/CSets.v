@@ -78,6 +78,15 @@ Global Instance set_unfold_option_to_set `{SemiSet A C} (o : option A) x:
   SetUnfoldElemOf x (option_to_set C o) (o = Some x).
 Proof. tcclean. unfold option_to_set. sauto lq:on. Qed.
 
+Global Instance forall_gset_decision `{Countable A} P (S : gset A):
+  (∀ x : A, Decision (P x)) → Decision (∀'x ∈ S, P x).
+Proof.
+  intro.
+  (* setoid_rewrite should do that in one go *)
+  eapply Proper_Decision. {setoid_rewrite <- elem_of_elements. reflexivity. }
+  solve_decision.
+Defined.
+
 (*** Simplification ***)
 
 (** Automation for set simplifications *)

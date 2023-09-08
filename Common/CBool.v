@@ -31,13 +31,18 @@ Proof. solve_proper2_tc. Qed.
 (* Explain to coq hammer tactic how to use Is_true and BoolUnfold *)
 #[export] Hint Rewrite @bool_unfold using typeclasses eauto : brefl.
 
-Lemma true_is_true (b : bool) : b <-> is_true b.
+Lemma true_is_true (b : bool) : b ↔ is_true b.
   Proof. destruct b; naive_solver. Qed.
 #[export] Hint Rewrite <- true_is_true : brefl.
 
-Lemma true_eq_true (b : bool) : b <-> b = true.
+Lemma true_eq_true (b : bool) : b ↔ b = true.
   Proof. destruct b; naive_solver. Qed.
 #[export] Hint Rewrite <- true_eq_true : brefl.
+
+Lemma not_eq_false (b : bool) : ¬ b ↔ b = false.
+  Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- not_eq_false : brefl.
+
 
 
 (* Basic implementation of BoolUnfold *)
@@ -80,6 +85,10 @@ Global Instance bool_unfold_bool_decide `{Decision P} :
   BoolUnfold (bool_decide P) P.
 Proof. tcclean. destruct (decide P); naive_solver. Qed.
 
+Global Instance bool_unfold_pair A B c (b : A → B → bool) P:
+  (∀ x y, BoolUnfold (b x y) (P x y)) →
+  BoolUnfold (let '(x, y) := c in b x y) (let '(x, y) := c in P x y).
+Proof. by destruct c. Qed.
 
 
 (*** Decidable propositions ***)
@@ -100,3 +109,26 @@ Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P :=
   | {| Decidable_witness := false; Decidable_spec := spec |} =>
    right (fun HP => match (iffRL spec HP) with end)
   end.
+
+Section ProperDecision.
+  Import CMorphisms.
+
+  (** Magic that allow rewriting in decision instances using ↔
+      Might be slow, so you might need to use it by hand
+   *)
+  Global Instance Proper_Decision :
+    Proper (iff ==> (flip arrow)) Decision.
+  Proof using.
+    intros x y H []; [left | right]; naive_solver.
+  Defined.
+End ProperDecision.
+
+Ltac pair_let_clean_Decision :=
+  match goal with
+    |- context G [(let '(x, y) := _ in _)] =>
+      eapply Proper_Decision;[
+        pair_let_clean; reflexivity
+      |]
+  end.
+#[export] Hint Extern 10 (Decision _) =>
+  pair_let_clean_Decision : typeclass_instances.

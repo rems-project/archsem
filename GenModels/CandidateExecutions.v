@@ -185,7 +185,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD). (
 
     Global Instance set_elem_of_collect_all eid P cd :
       SetUnfoldElemOf eid (collect_all P cd) (∃x, cd !! eid = Some x ∧ P x).
-    Proof. tcclean. set_unfold. hauto db:core. Qed.
+    Proof. tcclean. set_unfold. hauto db:pair. Qed.
     Global Typeclasses Opaque collect_all.
 
     (** Get the set of all valid EID for that candidate *)
@@ -396,8 +396,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD). (
       let co := co cd in
       let loc := loc cd in
       let writes := mem_writes cd in
-      grel_irreflexive co &&
-        grel_transitive co &&
+      bool_decide (grel_irreflexive co) &&
+        bool_decide (grel_transitive co) &&
         bool_decide (co ⊆ loc) &&
         bool_decide (grel_dom co ⊆ writes) &&
         bool_decide (grel_rng co ⊆ writes) &&
@@ -411,7 +411,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD). (
       let writes := mem_writes cd in
       bool_decide (grel_dom rf ⊆ reads) &&
         bool_decide (grel_rng rf ⊆ writes) &&
-        grel_functional (rf⁻¹) &&
+        bool_decide (grel_functional (rf⁻¹)) &&
         bool_decide (rf ⊆ loc ∩ val).
     (* TODO incomplete *)
 

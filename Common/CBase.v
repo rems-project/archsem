@@ -209,15 +209,23 @@ Global Program Instance Setter_compose_wf `{SRT : SetterWf R T proj}
     set_eq := _ }.
 Solve All Obligations with sauto lq:on.
 
-(*** Generic hints ***)
+(*** Pair management ***)
 
+Create HintDb pair discriminated.
 Lemma exists_pair B C P:
-  (exists x : C * B, P x) <-> exists x y, P (x, y).
+  (∃ x : C * B, P x) ↔ (∃ x y, P (x, y)).
 Proof. hauto lq:on. Qed.
-#[global] Hint Resolve <- exists_pair : core.
-#[global] Hint Rewrite exists_pair : core.
+#[global] Hint Resolve <- exists_pair : pair.
+#[global] Hint Rewrite exists_pair : pair.
 
-Lemma forall_pair B C (P : B * C -> Prop):
-  (forall x : B * C, P x) <-> forall x y, P (x, y).
+Lemma forall_pair B C (P : B * C → Prop):
+  (∀ x : B * C, P x) ↔ ∀ x y, P (x, y).
 Proof. hauto lq:on. Qed.
-#[global] Hint Rewrite forall_pair : core.
+#[global] Hint Rewrite forall_pair : pair.
+
+Lemma pair_let_simp A B (z : A * B) P : (let '(x,y) := z in P x y) ↔ P z.1 z.2.
+Proof. by destruct z. Qed.
+#[global] Hint Rewrite pair_let_simp : pair.
+#[global] Hint Rewrite <- surjective_pairing : pair.
+Ltac pair_let_clean :=
+  setoid_rewrite pair_let_simp; try (setoid_rewrite <- surjective_pairing).

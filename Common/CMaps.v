@@ -173,6 +173,14 @@ Proof.
   hauto.
 Qed.
 
+(*** Map related Set unfoldings ***)
+
+Global Instance set_unfold_elem_of_map_to_list `{Countable A} B (x : A * B)
+    (m : gmap A B) me :
+  LookupUnfold x.1 m me →
+  SetUnfoldElemOf x (map_to_list m) (me = Some x.2).
+Proof. tcclean. destruct x. apply elem_of_map_to_list. Qed.
+
 
 (*** Map induction ***)
 
