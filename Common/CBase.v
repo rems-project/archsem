@@ -75,6 +75,11 @@ Ltac deintro :=
 Ltac deintros := repeat deintro.
 Ltac print_full_goal := try(deintros; match goal with |- ?G => idtac G end; fail).
 
+(* Take an evar and puts it in a pattern shape. Use as (do n pattern_evar) if you have n evars in your goal. This is needed for typeclass-based rewriting tactics *)
+(* TODO detect the number of evar automatically *)
+Ltac pattern_evar :=
+  match goal with | |- context G [?x] => is_evar x; pattern x end.
+
 (* run tac on all hypotheses in first-to-last order *)
 Ltac forall_hyps tac :=
   lazymatch goal with
