@@ -649,7 +649,7 @@ Section GRel.
     {|
       induction_requirement :=
         (forall x y : A, (x, y) ∈ r -> P x y) /\
-          (forall x y z : A, (x, y) ∈ r⁺ -> (y, z) ∈ r -> P y z -> P x z)
+          (forall x y z : A, (x, y) ∈ r⁺ -> (y, z) ∈ r -> P x y -> P x z)
     |}.
   Solve All Obligations with intros; eapply grel_plus_ind_r; hauto.
 
