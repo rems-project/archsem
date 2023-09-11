@@ -15,6 +15,7 @@ Require Export Ensembles.
 Require Export CBase.
 Require Export CBool.
 Require Export CList.
+Require Export CResult.
 Require Export CBitvector.
 Require Export CSets.
 Require Export CMaps.

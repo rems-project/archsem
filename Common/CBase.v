@@ -1,5 +1,6 @@
 
 From stdpp Require Export base.
+From stdpp Require Export fin.
 From stdpp Require Export tactics.
 From stdpp Require Import vector.
 Require Import DecidableClass.
@@ -31,6 +32,9 @@ Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
 Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
   (at level 20, x pattern, y at level 100, z at level 200, only parsing) : stdpp_scope.
 
+(** Useful for defining decision procedures *)
+Notation dec_if D := (match D with | left _ => left _ | right _ => right _ end).
+Notation dec_swap D := (match D with | left _ => right _ | right _ => left _ end).
 
 (*** Utility functions ***)
 
@@ -43,6 +47,30 @@ Definition iffRL {A B : Prop} (i : A <-> B) : B -> A := proj2 i.
 Definition Prop_for_rewrite {P : Prop} (H : P) : P <-> True.
   firstorder.
 Defined.
+
+(** Unpack an exception *)
+Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
+  match v with
+  | None => mthrow err
+  | Some x => mret x
+  end.
+
+Definition inspect {A} (a : A) : {b | a = b} :=
+  exist _ a eq_refl.
+
+Notation "x 'eq:' p" := (exist _ x p) (only parsing, at level 20).
+
+Definition mapl {A B C} (f : A → B) (x : A + C) : B + C :=
+  match x with
+  | inl l => inl (f l)
+  | inr r => inr r
+  end.
+
+Definition mapr {A B C} (f : B → C) (x : A + B) : A + C :=
+  match x with
+  | inl l => inl l
+  | inr r => inr (f r)
+  end.
 
 
 (*** Constrained quantifiers ***)
@@ -71,7 +99,7 @@ Ltac unblock := unfold block in *.
 (* useful for debugging *)
 Ltac deintro :=
   match goal with
-  | H : _ |- _ => generalize dependent H
+  | H : _ |- _ => revert H
   end.
 Ltac deintros := repeat deintro.
 Ltac print_full_goal := try(deintros; match goal with |- ?G => idtac G end; fail).
@@ -94,7 +122,7 @@ Tactic Notation "orewrite" "*" uconstr(p) :=
 
 (** Actual dependent rewrite by calling destruct on the equality.
     The rewrite must be of the form var = exp where var is a plain variable and not
-    a complicated expression *)
+    a complicated expression. Use subst if you can, this is last resort *)
 Tactic Notation "drewrite" "<-" constr(H) :=
   match type of H with
   | _ = _ => destruct H
@@ -244,3 +272,45 @@ Proof. by destruct z. Qed.
 #[global] Hint Rewrite <- surjective_pairing : pair.
 Ltac pair_let_clean :=
   setoid_rewrite pair_let_simp; try (setoid_rewrite <- surjective_pairing).
+
+(*** EmptyT and DecisionT *)
+
+(** Mark a type as empty, useable for guiding typeclass resolution. *)
+Class EmptyT (T : Type) := emptyT : (T → False : Prop).
+Global Hint Mode EmptyT ! : typeclass_instances.
+
+
+(** Typeclass for type (and more usefully families of types) that are decidably
+    empty or not *)
+Class DecisionT (T : Type) := decideT : T + {T → False}.
+Global Hint Mode DecisionT ! : typeclass_instances.
+Global Arguments decideT _ {_} : simpl never, assert.
+
+Global Instance inabited_decisionT `{Inhabited T} : DecisionT T :=
+  inleft inhabitant.
+Global Instance emptyT_decisionT `{EmptyT T} : DecisionT T := inright emptyT.
+
+(** Application of DecisionT to fin *)
+Global Instance emptyT_fin0 : EmptyT (fin 0).
+Proof. inversion 1. Qed.
+
+Global Instance inhabited_finSn n : Inhabited (fin (S n)).
+Proof. repeat constructor. Qed.
+
+Global Instance decisionT_fin n : DecisionT (fin n).
+Proof. destruct n; apply _. Qed.
+
+Global Instance emptyT_pair1  `{EmptyT A} B : EmptyT (A * B).
+Proof. sfirstorder. Qed.
+
+Global Instance emptyT_pair2 A `{EmptyT B} : EmptyT (A * B).
+Proof. sfirstorder. Qed.
+
+Global Instance emptyT_sum  `{EmptyT A} `{EmptyT B} : EmptyT (A + B).
+Proof. sfirstorder. Qed.
+
+Global Instance DecisionT_pair  `{DecisionT A} `{DecisionT B} : DecisionT (A * B).
+Proof. sfirstorder. Qed.
+
+Global Instance DecisionT_sum  `{DecisionT A} `{DecisionT B} : DecisionT (A + B).
+Proof. sfirstorder. Qed.

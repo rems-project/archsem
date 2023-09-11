@@ -16,6 +16,7 @@
    an error with hopefully a descriptive message. *)
 
 Require Import Common.
+Require Import Effects.
 
 
 (*** Tactics ***)
@@ -109,6 +110,16 @@ Global Instance fmap_inst {E} : FMap (t E) :=
     | Results l => Results (map f l)
     end }.
 Global Typeclasses Opaque fmap_inst.
+
+#[global] Instance throw_inst {E} : MThrow E (t E) := @Error E.
+#[global] Typeclasses Opaque throw_inst.
+
+#[global] Instance choose_inst {E} : MChoose (t E) :=
+  λ _ '(ChooseFin n), Results (enum (fin n)).
+#[global] Typeclasses Opaque choose_inst.
+
+
+
 
 
 

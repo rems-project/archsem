@@ -1,6 +1,8 @@
 Require Import CBase CBool CMaps.
 From stdpp Require Import base.
 From stdpp Require Export list.
+From stdpp Require Import finite.
+From stdpp Require Import sets.
 From stdpp Require Export listset.
 
 Global Instance proper_list_mbind A B :
@@ -123,6 +125,8 @@ Proof.
   reflexivity.
 Qed.
 
+(*** Decisions ***)
+
 Global Instance forall_list_decision A P (l : list A):
   (∀ x : A, Decision (P x)) → Decision (∀'x ∈ l, P x).
 Proof. intro. rewrite <- Forall_forall. solve_decision. Defined.
@@ -130,7 +134,6 @@ Proof. intro. rewrite <- Forall_forall. solve_decision. Defined.
 Global Instance exist_list_decision A P (l : list A):
   (∀ x : A, Decision (P x)) → Decision (∃'x ∈ l, P x).
 Proof. intro. rewrite <- Exists_exists. solve_decision. Defined.
-
 
 (*** List as sets ***)
 
@@ -346,3 +349,49 @@ Proof.
   apply NoDup_seq.
 Qed.
 Global Hint Resolve NoDup_enumerate : nodup.
+
+
+(** * InT
+
+   When doing manual induction rules on inductives that recurse through list,
+   such as [Inductive TreeList A := Node (a : A) (subtrees : list (TreeList A))]
+   then you what the inductive property to look like
+   [(∀x, x ∈ l → P x) → P (Node a l)]. However if you want to recurse on
+   [TreeList] in [Type], you need [x ∈ l] to be in [Type], hence [InT]. *)
+
+(** [InT a l] is a proof that a is in l in a way that can be used in a regular
+    computable program. A program can receive a value of Type [InT] and branch
+    on whether the element is the head of the list or is in the tail to do a
+    computation. *)
+Inductive InT {A} (a : A) : list A → Type :=
+| InT_here l : InT a (a :: l)
+| InT_further y l : InT a l → InT a (y :: l).
+
+(** Trivially [InT x l] implies [x ∈ l], but the reverse is not true. [x] could
+    be in multiple places in [l], in which case an irrelevant proof of [x ∈ l]
+    cannot be used to construct a value of type [InT x l] as multiple values are
+    possible *)
+Lemma InT_elem_of {A} (x : A) l : InT x l → x ∈ l.
+Proof. intro H. induction H; sauto lq:on. Qed.
+#[global] Hint Resolve InT_elem_of : list.
+
+
+(** When working on type that recurse trough list, we need to manipulate [InT] as
+    part of the proof of [EqDecision] *)
+#[global] Hint Constructors InT : eqdec.
+
+(** More precise version than [list_eq_dec] *)
+Lemma list_InT_eq_dec A (l l' : list A) :
+  (∀x y, InT x l → InT y l' → Decision (x = y)) → Decision (l = l').
+Proof. revert l'. induction l; destruct l'; auto with eqdec. Defined.
+#[global] Hint Extern 8 (Decision (?a =@{list _} ?b)) =>
+  is_var a; is_var b; apply list_InT_eq_dec : eqdec.
+
+(** Additional helper lemmas for [EqDecision] on types that recurse to themselve
+    as a member of a list of pair *)
+Lemma InT_fmap_fst A B a b (l : list (A * B)) : InT (a, b) l → InT a l.*1.
+Proof. intro H. induction H; auto with eqdec. Defined.
+#[global] Hint Resolve InT_fmap_fst : eqdec.
+Lemma InT_fmap_snd A B a b (l : list (A * B)) : InT (a, b) l → InT b l.*2.
+Proof. intro H. induction H; auto with eqdec. Defined.
+#[global] Hint Resolve InT_fmap_snd : eqdec.
