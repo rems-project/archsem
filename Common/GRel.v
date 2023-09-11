@@ -661,6 +661,29 @@ Section GRel.
     - intro H; cinduction H; qauto db:grel.
     - hauto db:grel.
   Qed.
+  Hint Rewrite grel_plus_plus: grel.
+
+  Lemma grel_dom_plus (r : grel) : grel_dom r⁺ = grel_dom r.
+  Proof using.
+    set_unfold.
+    intro.
+    split.
+    - intros [? H].
+      cinduction H; naive_solver.
+    - hauto lq:on db:grel.
+  Qed.
+  Hint Rewrite grel_dom_plus: grel.
+
+  Lemma grel_rng_plus (r : grel) : grel_rng r⁺ = grel_rng r.
+  Proof using.
+    set_unfold.
+    intro.
+    split.
+    - intros [? H].
+      cinduction H; naive_solver.
+    - hauto lq:on db:grel.
+  Qed.
+  Hint Rewrite grel_rng_plus: grel.
 
 
   (*** Symmetric ***)
