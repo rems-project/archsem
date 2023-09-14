@@ -93,6 +93,14 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD). (
           iio_ctrl : grel EID.t;
         }.
 
+    (** Asserts that a candidate conforms to an ISA model.
+        This version only supports ISA model without inter-instruction state.
+        We'll see later if such state is required *)
+    Definition ISA_match (cd : t) (isem : iMon ()) :=
+      ∀ tid : fin cd.(num_threads),
+      ∀'trc ∈ cd.(events) !!! tid,
+      iTrace_match isem trc.
+
     (** Get an event at a given event ID in a candidate *)
     Global Instance lookup_eid : Lookup EID.t iEvent t :=
       fun eid cd =>
