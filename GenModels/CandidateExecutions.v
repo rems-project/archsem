@@ -64,11 +64,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
   End EID.
 
-
-  (* Add a hint for resolving decision instances *)
-  #[export] Hint Extern 10 (Decision (match ?x with _ => _ end)) =>
-    destruct x : typeclass_instances.
-
   Module Candidate.
   Section Cand.
     Context {nmth : nat}.
@@ -83,16 +78,17 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
           events : vec (list (iTrace ())) nmth;
           (* TODO po can be deduced by the order of events in the trace *)
           (** Program order. The per-thread order of all events in the trace *)
-          po : grel EID.t;
-          (** Memory read from *)
-          rf : grel EID.t;
-          (** Memory coherence: for each pa, list of writes in order *)
-          co : grel EID.t;
+          generic_po : grel EID.t;
+          (** Generic memory read from *)
+          generic_rf : grel EID.t;
+          (** Generic casual order *)
+          generic_co : grel EID.t;
+          (** Load-reserve/store conditional pair *)
+          lxsx : grel EID.t;
+          (** Atomic modify: relates reads and writes emitted by atomic rmw instructions *)
+          amo : grel EID.t;
           (** Register read from (needed because of potentially relaxed register) *)
           rrf : grel EID.t;
-          (* TODO can be deduced from trace structure *)
-          (** Same instruction, should be an equivalence relation. *)
-          si : grel EID.t;
           (** intra-instruction address dependencies (to memory events) *)
           iio_addr : grel EID.t;
           (** intra-instruction data dependencies (to memory and register writes) *)
@@ -100,6 +96,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
           (** intra-instruction control dependencies (to branches) *)
           iio_ctrl : grel EID.t;
         }.
+
 
     (** Asserts that a candidate conforms to an ISA model.
         This version only supports ISA model without inter-instruction state.
@@ -212,7 +209,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** Get the set of all valid EID for that candidate *)
     Definition valid_eids (cd : t) :=
-      collect_all (fun _ _ => true) cd.
+      collect_all (fun _ _ => True) cd.
 
     Global Instance set_elem_of_valid_eids eid cd :
       SetUnfoldElemOf eid (valid_eids cd) (∃ x, cd !! eid = Some x).
@@ -221,8 +218,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_reg_read (event : iEvent) : Prop :=
       match event with
-      | RegRead _ _ &→ _ => true
-      | _ => false
+      | RegRead _ _ &→ _ => True
+      | _ => False
       end.
 
     Global Instance is_reg_read_decision event : (Decision (is_reg_read event)).
@@ -234,7 +231,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_reg_write (event : iEvent) : Prop :=
       match event with
-      | RegWrite _ _ _ _ &→ _ => true
+      | RegWrite _ _ _ _ &→ _ => True
       | _ => false
       end.
 
@@ -247,8 +244,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_read (event : iEvent) : Prop :=
       match event with
-      | MemRead _ _ &→ _ => true
-      | _ => false
+      | MemRead _ _ &→ _ => True
+      | _ => False
       end.
 
     Global Instance is_mem_read_decision event : (Decision (is_mem_read event)).
@@ -260,8 +257,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_write (event : iEvent) :=
       match event with
-      | MemWrite _ _ &→ _ => true
-      | _ => false
+      | MemWrite _ _ &→ _ => True
+      | _ => False
       end.
 
     Global Instance is_mem_write_decision event : (Decision (is_mem_write event)).
@@ -273,9 +270,9 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_event (event : iEvent) : Prop :=
       match event with
-      | MemRead _ _ &→ _ => true
-      | MemWrite _ _ &→ _ => true
-      | _ => false
+      | MemRead _ _ &→ _ => True
+      | MemWrite _ _ &→ _ => True
+      | _ => False
       end.
 
     Global Instance is_mem_event_decision event : (Decision (is_mem_event event)).
@@ -287,8 +284,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_branch (event : iEvent) : Prop :=
       match event with
-      | BranchAnnounce _ _ &→ _ => true
-      | _ => false
+      | BranchAnnounce _ _ &→ _ => True
+      | _ => False
       end.
 
     Global Instance is_branch_decision event : (Decision (is_branch event)).
@@ -319,8 +316,21 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     (** Get the set of all TLB operations *)
-    Definition tlpops (cd : t) :=
+    Definition tlbops (cd : t) :=
       collect_all (λ _ event, is_Some (get_tlbop event)) cd.
+
+    (** Get the content of a cache operation, returns none if not a cache operation
+        (or is an invalid EID) *)
+    Definition get_cacheop (event : iEvent) : option cache_op :=
+      match event with
+      | CacheOp _ co &→ () => Some co
+      | _ => None
+      end.
+
+    (** Get the set of all cache operations *)
+    Definition cacheops (cd : t) :=
+      collect_all (λ _ event, is_Some (get_cacheop event)) cd.
+
 
     (** * Connection to final state *)
 
@@ -364,7 +374,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
                   let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
                   match mmap !! pa with
                   | Some (eid', _) =>
-                      match decide ((eid, eid') ∈ cd.(co)) with
+                      match decide ((eid, eid') ∈ cd.(generic_co)) with
                       | left _ => mmap
                       | right _ => <[pa := (eid, byte)]> mmap
                       end
@@ -390,34 +400,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** * Utility relations ***)
 
-    (** Intra instruction order *)
-    Definition iio (cd : t) := po cd ∩ si cd.
-
-    (** NOTE: make the dependencies opaque, and directly define wellformedness
-        conditions for them for now *)
-    Definition addr (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_addr cd⨾
-        ⦗mem_events cd⦘.
-    Global Typeclasses Opaque addr.
-
-    Definition data (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_data cd⨾
-        ⦗mem_events cd⦘.
-    Global Typeclasses Opaque data.
-
-    Definition ctrl (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_ctrl cd⨾
-        ⦗branches cd⦘⨾
-        (po cd ∖ si cd).
-    Global Typeclasses Opaque ctrl.
-
-
     Definition gather_by_key_aux `{Countable K} (cd : t) (b : gmap K (gset EID.t))
       (P : EID.t -> iEvent -> option K) :=
       fold_left (λ acc '(eid, event), (match (P eid event) with
@@ -434,7 +416,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Lemma lookup_total_unfold_gather_by_key_aux `{Countable K} (cd : t)
       (get_key : EID.t -> iEvent -> option K) (b : gmap K (gset EID.t)) (k: K):
-      (forall k, b !!! k ## collect_all (λ _ _, true) cd) ->
+      (forall k, b !!! k ## collect_all (λ _ _, True) cd) ->
       gather_by_key_aux cd b get_key !!! k =
       (b !!! k ∪ collect_all (λ eid event, (get_key eid event) =? Some k) cd).
     Proof using.
@@ -604,13 +586,47 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition loc (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ _ event, get_pa event).
 
+    (** Symmetry relation referring to events of a same instruction *)
+    Definition same_instruction (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
+
     (** Symmetry relation referring to events of a same thread *)
-    Definition sthd (cd : t) : grel EID.t :=
+    Definition int (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
+
+    (** Inter instruction order *)
+    Definition instruction_order (cd : t) := generic_po cd ∖ same_instruction cd.
+
+    (** Intra instruction order *)
+    Definition iio (cd : t) := generic_po cd ∩ same_instruction cd.
+
+    (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
+    Definition addr (cd : t) :=
+      ⦗mem_reads cd⦘⨾
+        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
+        iio_addr cd⨾
+        ⦗mem_events cd⦘.
+    Global Typeclasses Opaque addr.
+
+    Definition data (cd : t) :=
+      ⦗mem_reads cd⦘⨾
+        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
+        iio_data cd⨾
+        ⦗mem_events cd⦘.
+    Global Typeclasses Opaque data.
+
+    Definition ctrl (cd : t) :=
+      ⦗mem_reads cd⦘⨾
+        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
+        iio_ctrl cd⨾
+        ⦗branches cd⦘⨾
+        (instruction_order cd ∖ same_instruction cd).
+    Global Typeclasses Opaque ctrl.
 
     End Cand.
   End Candidate.
   Arguments Candidate.t : clear implicits.
+
 
   (** Non-mixed size well-formedness *)
   Module NMSWF.
@@ -630,31 +646,25 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** This relation only make sense for 8-bytes non-mixed-size models.
         It relates events with the same values *)
-    Definition val (cd : t nmth) : grel EID.t :=
+    Definition val8 (cd : t nmth) : grel EID.t :=
       sym_rel_with_same_key cd (λ _ event, get_val event).
 
-    Definition co_wf (cd : t nmth) : bool :=
-      let co := co cd in
-      let loc := loc cd in
-      let writes := mem_writes cd in
-      bool_decide (grel_irreflexive co) &&
-        bool_decide (grel_transitive co) &&
-        bool_decide (co ⊆ loc) &&
-        bool_decide (grel_dom co ⊆ writes) &&
-        bool_decide (grel_rng co ⊆ writes) &&
-        (loc ∩ (writes × writes) =? co ∪ co⁻¹ ∪ ⦗writes⦘).
+    Definition is_not_size8 (event : iEvent) :Prop :=
+      match event with
+      | MemRead 8 _ &→ _ => False
+      | MemRead _ _ &→ _ => True
+      | MemWrite 8 _ &→ _ => False
+      | MemWrite _ _ &→ _ => True
+      | _ => False
+      end.
 
-    Definition rf_wf (cd : t nmth) : bool :=
-      let rf := rf cd in
-      let loc := loc cd in
-      let val := val cd in
-      let reads := mem_reads cd in
-      let writes := mem_writes cd in
-      bool_decide (grel_dom rf ⊆ reads) &&
-        bool_decide (grel_rng rf ⊆ writes) &&
-        bool_decide (grel_functional (rf⁻¹)) &&
-        bool_decide (rf ⊆ loc ∩ val).
-    (* TODO incomplete *)
+    Global Instance is_not_size8_decision event : Decision (is_not_size8 event).
+    Proof. unfold is_not_size8. apply _. Qed.
+      
+    (** Check that all memory accesses have size 8. Alignment checking need to
+        know how pa work and thus need to be architecture specific*)
+    Definition size8_wf (cd : t nmth) : Prop :=
+      collect_all (λ _ event, is_not_size8 event) cd = ∅.
 
     (* Definition last_reg_access : gmap reg EID.t. *)
 
@@ -763,6 +773,74 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (* End IIO. *)
 
+    Section def.
+
+    Context (cd : Candidate.t nmth).
+
+    Notation "'generic_po'" := (generic_po cd).
+    Notation "'generic_co'" := (generic_co cd).
+    Notation "'generic_rf'" := (generic_rf cd).
+    Notation "'loc'" := (loc cd).
+    Notation "'val8'" := (val8 cd).
+    Notation "'addr'" := (addr cd).
+    Notation "'data'" := (data cd).
+    Notation "'ctrl'" := (ctrl cd).
+    Notation "'writes'" := (mem_writes cd).
+    Notation "'reads'" := (mem_reads cd).
+    Notation "'mevents'" := (mem_events cd).
+
+    Record generic_co_wf' :=
+      {
+        generic_co_irr : grel_irreflexive generic_co;
+        generic_co_trans : grel_transitive generic_co;
+      }.
+
+    Record generic_rf_wf' :=
+      {
+        grf_dom : grel_dom generic_rf ⊆ reads;
+        grf_rng : grel_rng generic_rf ⊆ writes;
+        grf_inv_func : grel_functional (generic_rf⁻¹);
+        grf_in_loc_val : generic_rf ⊆ loc ∩ val8;
+      }.
+
+    Record generic_po_wf' :=
+      {
+        generic_po_irr : grel_irreflexive generic_po;
+        generic_po_trans : grel_transitive generic_po;
+        generic_po_total : generic_po ∪ generic_po⁻¹ = int cd;
+      }.
+
+    Record addr_wf' :=
+      {
+        addr_dom : grel_dom addr ⊆ reads;
+        addr_rng : grel_rng addr ⊆ mevents;
+        addr_in_instruction_order : addr ⊆ generic_po;
+      }.
+
+    Record data_wf' :=
+      {
+        data_dom : grel_dom data ⊆ reads;
+        data_rng : grel_rng data ⊆ writes;
+        data_in_instruction_order : data ⊆ generic_po;
+      }.
+
+    Record ctrl_wf' :=
+      {
+        ctrl_dom : grel_dom ctrl ⊆ reads;
+        ctrl_in_instruction_order : ctrl ⊆ generic_po;
+        ctrl_instruction_order_in_ctrl : ctrl⨾generic_po ⊆ ctrl;
+      }.
+
+    Record wf :=
+      {
+        generic_po_wf :> generic_po_wf';
+        generic_co_wf :> generic_co_wf';
+        generic_rf_wf :> generic_rf_wf';
+        ctrl_wf :> ctrl_wf';
+        data_wf :> data_wf';
+        addr_wf :> addr_wf';
+      }.
+    End def.
 
   End NMSWF.
   End NMSWF.
@@ -899,7 +977,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
                ∧ ISA_match cd isem
                ∧ to_ModelResult ax cd initSt.(MState.termCond) = Some mr
           ]}.
-
 
       Lemma wider_Model (isem : iMon ()) (ax ax' : t) :
         wider ax ax' → Model.wider (to_Modelnc isem ax) (to_Modelnc isem ax').

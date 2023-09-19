@@ -228,3 +228,7 @@ Global Instance sigT_dec `{EqDecision A} (P : A -> Type)
     eapply eq_sigT_fst.
     eassumption.
 Defined.
+
+(* Add a hint for resolving Decision of matches*)
+#[export] Hint Extern 10 (Decision (match ?x with _ => _ end)) =>
+  destruct x : typeclass_instances.

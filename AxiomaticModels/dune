@@ -1,0 +1,6 @@
+(coq.theory
+ (name AxiomaticModels)
+ (package coq-system-semantics)
+ (modules GenAxiomaticArm VMUMEquivThm)
+ (theories ISASem SSCCommon GenModels)
+)
