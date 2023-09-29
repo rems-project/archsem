@@ -12,6 +12,7 @@
    CSets
    GRel
    CResult
+   StateT
    Effects
    FMon
    Exec)
