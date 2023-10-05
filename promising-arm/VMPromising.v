@@ -625,12 +625,6 @@ Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
 
 (*** TLB ***)
 
-Lemma eqdec_existT `{EqDecision A} {P : A -> Type} (p : A) (x y : P p) :
-  existT p x = existT p y <-> x = y.
-  Proof. hauto q:on use: Eqdep_dec.inj_pair2_eq_dec. Qed.
-#[global] Hint Rewrite @eqdec_existT using typeclasses eauto : core.
-
-
 
 (* Set Printing Universes. *)
 
@@ -835,31 +829,6 @@ Definition hlast {n : nat} {T : fin (S n) -> Type} (v : hvec T) : T (fin_last n)
 
 
 
-
-
-
-
-Global Instance sigT_dec `{EqDecision A} (P : A -> Type)
-  `{forall a: A, EqDecision (P a)} : EqDecision (sigT P).
-  unfold EqDecision.
-  intros [x p] [y q].
-  destruct (decide (x = y)) as [e | e].
-  - destruct e.
-    destruct (decide (p = q)) as [e | e].
-    + destruct e.
-      left.
-      reflexivity.
-    + right.
-      intro.
-      apply e.
-      apply eqdec_existT.
-      assumption.
-  - right.
-    intro.
-    apply e.
-    eapply eq_sigT_fst.
-    eassumption.
-Defined.
 
 Unset Program Cases.
 
