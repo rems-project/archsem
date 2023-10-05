@@ -6,6 +6,9 @@ Require Import SailArmInstTypes.
 Require Import Interface.
 
 Require Import SSCCommon.Common.
+Require Import SSCCommon.Effects.
+Require Import SSCCommon.FMon.
+Require Import SSCCommon.StateT.
 
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
@@ -26,6 +29,9 @@ Module DepsDefs (IWA : InterfaceWithArch). (* to be imported *)
               at 0. *)
           mem_reads : list nat
         }.
+
+    Global Instance eq_dec : EqDecision t.
+    Proof using. solve_decision. Defined.
 
     Definition emp := make [] [].
   End DepOn.
@@ -113,22 +119,24 @@ Module Type ArchDeps (IWD : InterfaceWithDeps).
   Parameter footprint_context : Type.
 
   Parameter get_footprint_context :
-    forall {deps : Type} {out : Type -> Type}, iMon deps out footprint_context.
+    ∀ {deps : Type}, iMon deps footprint_context.
 
-  Parameter fault_add_empty_deps : fault unit -> fault DepOn.t.
+  Parameter fault_add_empty_deps : fault unit → fault DepOn.t.
 
-  Parameter fault_add_deps : Footprint.t -> fault unit -> fault DepOn.t.
+  Parameter fault_add_deps : Footprint.t → fault unit → fault DepOn.t.
 End ArchDeps.
 
 Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
   Import IWD.
   Import AD.
 
-  Definition footprint_model := bvn -> footprint_context -> Footprint.t.
+  Definition footprint_model := bvn → footprint_context → Footprint.t.
+
+  Record footprint_state := { num_reads : nat; fprt : option Footprint.t}.
 
   Definition add_fine_grained_dependency_fprt_outcome {A : Type}
-      (out : outcome unit empOutcome A) (fprt : Footprint.t) (num_read : nat)
-      : nat * outcome DepOn.t empOutcome A :=
+      (out : outcome unit A) (fprt : Footprint.t) (num_read : nat)
+      : nat * outcome DepOn.t A :=
     match out with
     | RegRead reg direct => (num_read, RegRead reg direct)
     | RegWrite reg direct () val =>
@@ -157,26 +165,11 @@ Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
         (num_read, TakeException (fault_add_deps fprt fault))
     | ReturnException pa => (num_read, ReturnException pa)
     | GenericFail msg => (num_read, GenericFail msg)
-    | Choose n => (num_read, Choose n)
-    | Discard => (num_read, Discard)
-    | ExtraOutcome e => match e with end
-    end.
-
-  Fixpoint add_fine_grained_dependency_fprt {A : Type}
-      (orig : iMon unit empOutcome A) (fprt : Footprint.t) (num_read : nat)
-      : iMon DepOn.t empOutcome A :=
-    match orig with
-    | Ret a => Ret a
-    | Next outcome k =>
-        let '(num_read, newoutcome) :=
-          add_fine_grained_dependency_fprt_outcome outcome fprt num_read
-        in
-        Next newoutcome (fun x => add_fine_grained_dependency_fprt (k x) fprt num_read)
     end.
 
   Definition add_empty_dependency_outcome {A : Type}
-      (out : outcome unit empOutcome A) (num_read : nat)
-      : nat * outcome DepOn.t empOutcome A :=
+      (out : outcome unit A) (num_read : nat)
+      : nat * outcome DepOn.t A :=
     match out with
     | RegRead reg direct => (num_read, RegRead reg direct)
     | RegWrite reg direct () val =>
@@ -199,27 +192,42 @@ Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
         (num_read, TakeException (fault_add_empty_deps fault))
     | ReturnException pa => (num_read, ReturnException pa)
     | GenericFail msg => (num_read, GenericFail msg)
-    | Choose n => (num_read, Choose n)
-    | Discard => (num_read, Discard)
-    | ExtraOutcome e => match e with end
     end.
 
+  Definition add_dependency_handler (fmod : footprint_model) :
+      fHandler (outcome unit) (ST.t (nat * option Footprint.t) (iMon DepOn.t)) :=
+    λ T out,
+      '(num_read, fprt) ← ST.geta;
+      match fprt with
+      | Some fprt =>
+          let '(num_read, out) :=
+            add_fine_grained_dependency_fprt_outcome out fprt num_read
+          in
+          ST.setv fst num_read;;
+          mcall out
+      | _ =>
+          match out in outcome _ T'
+                return ST.t (nat * option Footprint.t) (iMon DepOn.t) T' with
+          | InstrAnnounce opcode =>
+              ctxt ← ST.lift get_footprint_context;
+              let fprt' : Footprint.t := fmod opcode ctxt in
+              ST.setv snd (Some fprt')
+          | out =>
+              let '(num_read, out) :=
+                add_empty_dependency_outcome out num_read
+              in
+              ST.setv fst num_read;;
+              (* No idea why this doesn't type better *)
+              (@mcall (outcome DepOn.t) _ _ _ (out : outcome DepOn.t _)
+                : ST.t _ (iMon DepOn.t) _)
+          end
+      end.
+
   (** Add fine grained dependencies after the InstrAnnounce depending on a
-  footprint model *)
-  Fixpoint add_fine_grained_dependency {A : Type} (orig : iMon unit empOutcome A)
-      (fmod : footprint_model) (num_read : nat) : iMon DepOn.t empOutcome A :=
-    match orig with
-    | Ret a => Ret a
-    | Next (InstrAnnounce opcode) k =>
-        ctxt ← get_footprint_context;
-        let fprt := fmod opcode ctxt in
-        add_fine_grained_dependency_fprt (k ()) fprt num_read
-    | Next outcome k =>
-        let '(num_read, newoutcome) :=
-          add_empty_dependency_outcome outcome num_read
-        in
-        Next newoutcome (fun x => add_fine_grained_dependency (k x) fmod num_read)
-    end.
+      footprint model *)
+  Definition add_fine_grained_dependency {A : Type} (prog : iMon unit A)
+      (fmod : footprint_model) : iMon DepOn.t A :=
+    cinterp (add_dependency_handler fmod) prog (0%nat, None) |$> snd.
 
 End DepsComp.
 
@@ -230,10 +238,3 @@ Module Type InterfaceWithDepsComp.
   Include AD.
   Include DepsComp IWD AD.
 End InterfaceWithDepsComp.
-
-
-(* DepOn *)
-
-(* Full Footprint type *)
-
-(* Conversion boilerplate code *)

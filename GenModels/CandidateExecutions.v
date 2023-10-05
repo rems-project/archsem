@@ -18,6 +18,7 @@ From stdpp Require Export gmap.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.
+Require Import SSCCommon.FMon.
 
 Require Import ISASem.Interface.
 Require Import ISASem.Deps.
@@ -26,17 +27,15 @@ Require Import TermModels.
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
-
-
-(* to be imported *)
+(* Module to be imported *)
 Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
   Import IWD.
   Import Term.
-  Notation outcome := (IWD.outcome DepOn.t empOutcome).
-  Notation iMon := (IWD.iMon DepOn.t empOutcome).
-  Notation iSem := (IWD.iSem DepOn.t empOutcome).
-  Notation iEvent := (IWD.iEvent DepOn.t empOutcome).
-  Notation iTrace := (IWD.iTrace DepOn.t empOutcome).
+  Notation outcome := (IWD.outcome DepOn.t).
+  Notation iMon := (IWD.iMon DepOn.t).
+  Notation iSem := (IWD.iSem DepOn.t).
+  Notation iEvent := (IWD.iEvent DepOn.t).
+  Notation iTrace := (IWD.iTrace DepOn.t).
 
   (* event ID *)
   Module EID.
@@ -109,6 +108,9 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       ∀'trc ∈ cd.(events) !!! tid,
       iTrace_match isem trc.
 
+    #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
+    Proof. solve_decision. Qed.
+
     (** Get an event at a given event ID in a candidate *)
     Global Instance lookup_eid : Lookup EID.t iEvent t :=
       fun eid cd =>
@@ -116,13 +118,14 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         '(trace, result) ← traces !! eid.(EID.iid);
         trace !! eid.(EID.num).
 
-    (** This true if one of the thread had an ISA model failure
-        like a Sail assertion or an Isla assumption that failed *)
-    Definition failed (cd : t) : bool :=
-      existsb (fun traces =>
-                 let '(trace, trace_end) := List.last traces ([], inl ()) in
-                 match trace_end with | inr _ => true | inl _ => false end)
-              cd.(events).
+    (** This true if one of the instruction had an ISA model failure like a Sail
+        assertion or an Isla assumption that failed. Due to out of order
+        effects, an error might not be from the last instruction. *)
+    Definition ISA_failed (cd : t) :=
+      ∃'thread ∈ (vec_to_list cd.(events)), ∃'instr ∈ thread, is_Error instr.2.
+
+    #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
+    Proof. solve_decision. Qed.
 
     Definition event_list (cd : t) : list (EID.t*iEvent) :=
       '(tid, traces) ← enumerate cd.(events);
@@ -159,13 +162,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       rewrite fmap_unfold.
       cbn.
       apply NoDup_bind;
-        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
       intros [? ?] ?.
       apply NoDup_bind;
-        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
       intros [? [? ?]] ?.
       apply NoDup_bind;
-        [set_unfold; hauto lq:on rew:off | idtac | apply NoDup_enumerate].
+        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
       intros [? [? ?]] ?.
       auto with nodup.
     Qed.
@@ -217,7 +220,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_reg_read (event : iEvent) : Prop :=
       match event with
-      | IEvent (RegRead _ _) _ => true
+      | RegRead _ _ &→ _ => true
       | _ => false
       end.
 
@@ -230,7 +233,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_reg_write (event : iEvent) : Prop :=
       match event with
-      | IEvent (RegWrite _ _ _ _) _ => true
+      | RegWrite _ _ _ _ &→ _ => true
       | _ => false
       end.
 
@@ -243,7 +246,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_read (event : iEvent) : Prop :=
       match event with
-      | IEvent (MemRead _ _) _ => true
+      | MemRead _ _ &→ _ => true
       | _ => false
       end.
 
@@ -256,7 +259,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_write (event : iEvent) :=
       match event with
-      | IEvent (MemWrite _ _) _ => true
+      | MemWrite _ _ &→ _ => true
       | _ => false
       end.
 
@@ -269,8 +272,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_mem_event (event : iEvent) : Prop :=
       match event with
-      | IEvent (MemRead _ _) _ => true
-      | IEvent (MemWrite _ _) _ => true
+      | MemRead _ _ &→ _ => true
+      | MemWrite _ _ &→ _ => true
       | _ => false
       end.
 
@@ -283,7 +286,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition is_branch (event : iEvent) : Prop :=
       match event with
-      | IEvent (BranchAnnounce _ _) _ => true
+      | BranchAnnounce _ _ &→ _ => true
       | _ => false
       end.
 
@@ -298,7 +301,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         invalid EID) *)
     Definition get_barrier (event : iEvent) : option barrier:=
       match event with
-      | IEvent (Barrier b) () => Some b
+      | Barrier b &→ () => Some b
       | _ => None
       end.
 
@@ -310,7 +313,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         (or is an invalid EID) *)
     Definition get_tlbop (event : iEvent) : option tlb_op :=
       match event with
-      | IEvent (TlbOp _ to) () => Some to
+      | TlbOp _ to &→ () => Some to
       | _ => None
       end.
 
@@ -524,8 +527,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     (** get physical address of an event *)
     Definition get_pa (e : iEvent) : option (Arch.pa):=
       match e with
-      | IEvent (MemRead _ rr) _ => Some (rr.(ReadReq.pa))
-      | IEvent (MemWrite n rr) _ => Some (rr.(WriteReq.pa))
+      | MemRead _ rr &→ _ => Some (rr.(ReadReq.pa))
+      | MemWrite n rr &→ _ => Some (rr.(WriteReq.pa))
       | _ => None
       end.
 
@@ -547,9 +550,9 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     (** Get 8 bytes values*)
     Definition get_val (event : iEvent) :=
       match event : iEvent with
-      | IEvent (MemRead 8 rr) (inl (val, _)) =>
+      | MemRead 8 rr &→ inl (val, _) =>
           Some val
-      | IEvent (MemWrite 8 rr) _ =>
+      | MemWrite 8 rr &→ _ =>
           Some (rr.(WriteReq.value))
       | _ => None
       end.

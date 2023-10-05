@@ -2,6 +2,8 @@
 Require Import Strings.String.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
+Require Import SSCCommon.StateT.
+Require Import SSCCommon.FMon.
 Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
@@ -304,7 +306,7 @@ Module TState.
   (** Extract a plain register map from the thread state without views.
       This is used to decide if a thread has terminated, and to observe the
       results of the model *)
-  Definition regs_only (ts : t) : registerMap :=
+  Definition reg_map (ts : t) : registerMap :=
     fun reg => (ts.(regs) reg).1.
 
   (** Sets the value of a register *)
@@ -485,31 +487,31 @@ Module IIS.
 End IIS.
 
 (** Runs an outcome. *)
-Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
-           (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (IIS.t * TState.t * Memory.t * A) :=
+Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
+   ST.t (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
+  let initmem := Memory.initial_from_memMap initmem in
   let deps_to_view :=
-    fun deps => IIS.from_DepOn deps ts.(TState.regs) iis in
+    λ deps, IIS.from_DepOn deps ts.(TState.regs) iis in
   match o with
   | RegWrite reg racc deps val =>
       Exec.fail_if (bool_decide (racc ≠ None))
         "Non trivial reg access types unsupported";;
       let wr_view := deps_to_view deps in
       let ts := TState.set_reg reg (val, wr_view) ts in
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | RegRead reg racc =>
       Exec.fail_if (bool_decide (racc ≠ None))
         "Non trivial reg access types unsupported";;
       let (val, view) := ts.(TState.regs) reg in
       let iis := IIS.add_reg view iis in
-      Exec.ret (iis, ts, mem, val)
+      Exec.ret (ts, mem, iis, val)
   | MemRead 8 rr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
       let vaddr := deps_to_view rr.(ReadReq.addr_deps) in
       match rr.(ReadReq.access_kind) with
       | AK_explicit eak =>
-          '(ts, view, val) ← read_mem addr vaddr eak ts init mem;
-          Exec.ret (IIS.add_read view iis, ts, mem, inl (val, None))
+          '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
+          Exec.ret (ts, mem, IIS.add_read view iis, inl (val, None))
       | AK_ifetch () => Exec.Error "TODO ifetch"
       | _ => Exec.Error "Only ifetch and explicit accesses supported"
       end
@@ -522,138 +524,92 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           '(ts, mem) ← write_mem_xcl tid addr vaddr vdata eak ts mem data;
-          Exec.ret (iis, ts, mem, inl None)
+          Exec.ret (ts, mem, iis, inl None)
       | AK_ifetch () => Exec.Error "Write of type ifetch ???"
       | AK_ttw () => Exec.Error "Write of type TTW ???"
       | _ => Exec.Error "Unsupported non-explicit write"
       end
   | BranchAnnounce _ deps =>
       let ts := TState.update TState.vcap (deps_to_view deps) ts in
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
           let ts :=
             TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
-          Exec.ret (iis, ts, mem, ())
+          Exec.ret (ts, mem, iis, ())
       | MBReqTypes_Reads (* dmb ld *) =>
           let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
-          Exec.ret (iis, ts, mem, ())
+          Exec.ret (ts, mem, iis, ())
       | MBReqTypes_Writes (* dmb st *) =>
           let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
-          Exec.ret (iis, ts, mem, ())
+          Exec.ret (ts, mem, iis, ())
       end
   | Barrier (Barrier_ISB ()) => (* isb *)
       let ts := TState.update TState.visb (TState.vcap ts) ts in
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
-  | Choose l =>
-      v ← Exec.Results l;
-      Exec.ret(iis, ts, mem, v)
-  | Discard => Exec.discard
   | _ => Exec.Error "Unsupported outcome"
   end.
 
+(** * Implement GenPromising ***)
 
-(** Runs an instruction monad object run_outcome as the effect handler *)
-Fixpoint run_iMon {A : Type} (i : iMon A) (iis : IIS.t) (tid : nat)
-         (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * Memory.t * A) :=
-  match i with
-  | Ret a => Exec.ret (ts, mem, a)
-  | Next o next =>
-      '(iis, ts, mem, res) ← run_outcome tid o iis ts init mem;
-      run_iMon (next res) iis tid ts init mem
-  end.
+(** A thread is allowed to promise any promises with the correct tid for a
+    non-certified promising model *)
+Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
+  (mem : Memory.t) msg := msg.(Msg.tid) = tid.
+Arguments allowed_promises_nocert _ _ _ _ /.
 
-(*** Implement GenPromising ***)
+Definition UMPromising_nocert' : PromisingModel :=
+  {|tState := TState.t;
+    tState_init := λ tid, TState.init;
+    tState_regs := TState.reg_map;
+    tState_nopromises := is_emptyb ∘ TState.prom;
+    iis := IIS.t;
+    iis_init := IIS.init;
+    mEvent := Msg.t;
+    handler := run_outcome;
+    allowed_promises := allowed_promises_nocert;
+    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    memory_snapshot :=
+      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
+  |}.
 
-Section PromStruct.
-  Context (isem : iSem).
+Definition UMPromising_nocert isem :=
+  Promising_to_Modelnc isem UMPromising_nocert'.
 
-  Definition tState' : Type := TState.t * isem.(isa_state).
+(* The certified version only works on simple ISA model without internal
+     state *)
 
-  Definition tState_init' (tid : nat) (mem : memoryMap) (regs : registerMap)
-      : tState':=
-    (TState.init mem regs, isem.(init_state) tid).
+Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
+  : relation (TState.t * Memory.t) :=
+  let handler := run_outcome tid initmem in
+  λ tsmem tsmem',
+    tsmem' ∈ (cinterp handler isem (tsmem, IIS.init) |$> fst ∘ fst).
 
-  Definition tState_nopromises' (tstate : tState') :=
-    tstate.1.(TState.prom) |> is_emptyb.
-
-  Local Notation pThread := (PThread.t tState' Msg.t).
-
-(** Run an iSem on a pThread  *)
-  Definition run_pthread (pthread : pThread) : Exec.t string pThread :=
-    let imon := isem.(semantic) pthread.(PThread.tstate).2 in
-    let initmem := pthread.(PThread.initmem) |> Memory.initial_from_memMap in
-    '(ts, mem, isa_st) ←@{Exec.t string}
-      run_iMon
-        imon
-        IIS.init
-        pthread.(PThread.tid)
-        pthread.(PThread.tstate).1
-        initmem
-        pthread.(PThread.events);
-    pthread |> setv PThread.tstate (ts, isa_st)
-            |> setv PThread.events mem
-            |> Exec.ret.
-
-
-  (* A thread is allowed to promise any promises with the correct tid.
-    This a non-certified promising model *)
-  Definition allowed_promises_nocert (pthread : pThread) :=
-    fun msg => msg.(Msg.tid) = pthread.(PThread.tid).
-  Arguments allowed_promises_nocert _ _ /.
-
-  Definition emit_promise' (pthread : pThread) (msg : Msg.t) : tState' :=
-    let vmsg := length pthread.(PThread.events) in
-    pthread.(PThread.tstate) |> set fst (TState.promise vmsg).
-
-  Definition memory_snapshot' (memMap : memoryMap) (mem : Memory.t) : memoryMap :=
-    Memory.to_memMap (Memory.initial_from_memMap memMap) mem.
-
-  Definition UMPromising_nocert' : PromisingModel isem :=
-    {|tState := tState';
-      tState_init := tState_init';
-      tState_regs := fun x => TState.regs_only x.1;
-      tState_isa_state := fun x => x.2;
-      tState_nopromises := tState_nopromises';
-      mEvent := Msg.t;
-      run_instr := run_pthread;
-      allowed_promises := allowed_promises_nocert;
-      emit_promise := emit_promise';
-      memory_snapshot := memory_snapshot';
-    |}.
-
-  Definition UMPromising_nocert := Promising_to_Modelnc UMPromising_nocert'.
-
-  Definition seq_step (p1 p2 : pThread) : Prop := p2 ∈ run_pthread p1.
-
-  Definition allowed_promises_cert (pthread : pThread) : Ensemble Msg.t :=
-    fun msg =>
-      let pthread_after :=
-        pthread
-          |> (setv PThread.tstate $ emit_promise' pthread msg)
-          |> PThread.promise msg in
-      exists pe,
-        rtc seq_step pthread_after pe ∧
-        pe.(PThread.tstate).1.(TState.prom) = [].
+Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
+  (ts : TState.t) (mem : Memory.t) : Ensemble Msg.t :=
+  λ msg,
+    let ts := TState.promise (length mem) ts in
+    let mem := msg :: mem in
+    ∃ ts' mem',
+      rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
+        TState.prom ts' = [].
 
 
-  Definition UMPromising_cert' : PromisingModel isem :=
-    {|tState := tState';
-      tState_init := tState_init';
-      tState_regs := fun x => TState.regs_only x.1;
-      tState_isa_state := fun x => x.2;
-      tState_nopromises := tState_nopromises';
-      mEvent := Msg.t;
-      run_instr := run_pthread;
-      allowed_promises := allowed_promises_cert;
-      emit_promise := emit_promise';
-      memory_snapshot := memory_snapshot';
-    |}.
+Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
+  {|tState := TState.t;
+    tState_init := λ tid, TState.init;
+    tState_regs := TState.reg_map;
+    tState_nopromises := is_emptyb ∘ TState.prom;
+    iis := IIS.t;
+    iis_init := IIS.init;
+    mEvent := Msg.t;
+    handler := run_outcome;
+    allowed_promises := allowed_promises_cert isem;
+    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    memory_snapshot :=
+      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
+  |}.
 
-  Definition UMPromising_cert := Promising_to_Modelnc UMPromising_cert'.
-
-End PromStruct.
-Arguments allowed_promises_nocert _ _ _ /.
+(* Definition UMPromising_cert isem := Promising_to_Modelnc UMPromising_cert'. *)

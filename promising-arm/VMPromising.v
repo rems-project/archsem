@@ -3,6 +3,8 @@ Require Import Strings.String.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.
+Require Import SSCCommon.StateT.
+Require Import SSCCommon.FMon.
 Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
@@ -1377,9 +1379,9 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
 
 
 (** Runs an outcome. *)
-Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
-           (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (IIS.t * TState.t * Memory.t * A) :=
+Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
+   ST.t (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
+  let initmem := Memory.initial_from_memMap initmem in
   let deps_to_view :=
     fun deps => IIS.from_DepOn deps ts iis in
   match o with
@@ -1390,17 +1392,17 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       match Reg.from_arch reg with
       | Some (Reg.App app) =>
           let ts := TState.set_reg app (val, wr_view) ts in
-          Exec.ret (iis, ts, mem, ())
+          Exec.ret (ts, mem, iis, ())
       | Some (Reg.Sys sys) => Exec.Error "TODO"
       | None => Exec.Error "Writing to unsupported system register"
       end
   | RegRead reg direct => Exec.Error "TODO"
   | MemRead 8 rr =>
-      '(ts, iis, val) ← run_mem_read rr iis ts init mem;
-      Exec.ret (iis, ts, mem, inl (val, None))
+      '(ts, iis, val) ← run_mem_read rr iis ts initmem mem;
+      Exec.ret (ts, mem, iis, inl (val, None))
   | MemRead 4 rr => (* ifetch *)
-      opcode ← run_mem_read4 rr iis ts init mem;
-      Exec.ret (iis, ts, mem, inl (opcode, None))
+      opcode ← run_mem_read4 rr iis ts initmem mem;
+      Exec.ret (ts, mem, iis, inl (opcode, None))
   | MemRead _ _ => Exec.Error "Memory read of size other than 8 or 4"
   | MemWrite 8 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
@@ -1411,7 +1413,7 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           '(ts, mem) ← write_mem_xcl tid addr vaddr vdata viio eak ts mem data;
-          Exec.ret (iis, ts, mem, inl None)
+          Exec.ret (ts, mem, iis, inl None)
       | AK_ifetch () => Exec.Error "Write of type ifetch ???"
       | AK_ttw () => Exec.Error "Write of type TTW ???"
       | _ => Exec.Error "Unsupported non-explicit write"
@@ -1419,96 +1421,77 @@ Definition run_outcome {A} (tid : nat) (o : outcome A) (iis : IIS.t)
   | MemWrite _ _ => Exec.Error "Memory write of size other than 8"
   | BranchAnnounce _ deps =>
       let ts := TState.update TState.vspec (deps_to_view deps) ts in
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | Barrier barrier =>
       '(iis, ts) ← run_barrier iis ts barrier;
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | TlbOp deps tlbi =>
       '(iis, ts, mem) ← run_tlbi tid iis ts (deps_to_view deps) tlbi mem;
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | ReturnException _ =>
       let '(iis, ts) := run_cse iis ts in
-      Exec.ret (iis, ts, mem, ())
+      Exec.ret (ts, mem, iis, ())
   | GenericFail s => Exec.Error ("Instruction failure: " ++ s)%string
-  | Choose l =>
-      v ← Exec.Results l;
-      Exec.ret(iis, ts, mem, v)
-  | Discard => Exec.discard
   | _ => Exec.Error "Unsupported outcome"
   end.
 
 
-(** Runs an instruction monad object run_outcome as the effect handler *)
-Fixpoint run_iMon {A : Type} (i : iMon A) (iis : IIS.t) (tid : nat)
-         (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * Memory.t * A) :=
-  match i with
-  | Ret a => Exec.ret (ts, mem, a)
-  | Next o next =>
-      '(iis, ts, mem, res) ← run_outcome tid o iis ts init mem;
-      run_iMon (next res) iis tid ts init mem
-  end.
+(** * Implement GenPromising ***)
 
-(*** Implement GenPromising ***)
+(** A thread is allowed to promise any promises with the correct tid for a
+    non-certified promising model *)
+Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
+  (mem : Memory.t) ev := (Ev.tid ev) = tid.
+Arguments allowed_promises_nocert _ _ _ _ /.
 
-Section PromStruct.
-  Context (isem : iSem).
+Definition VMPromising_nocert' : PromisingModel :=
+  {|tState := TState.t;
+    tState_init := λ tid, TState.init;
+    tState_regs := TState.reg_map;
+    tState_nopromises := is_emptyb ∘ TState.prom;
+    iis := IIS.t;
+    iis_init := IIS.init;
+    mEvent := Ev.t;
+    handler := run_outcome;
+    allowed_promises := allowed_promises_nocert;
+    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    memory_snapshot :=
+      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
+  |}.
 
-  Definition tState' : Type := TState.t * isem.(isa_state).
+Definition VMPromising_nocert isem :=
+  Promising_to_Modelnc isem VMPromising_nocert'.
 
-  Definition tState_init' (tid : nat) (mem : memoryMap) (regs : registerMap)
-      : tState':=
-    (TState.init mem regs, isem.(init_state) tid).
+(* The certified version only works on simple ISA model without internal
+     state *)
 
-  Definition tState_nopromises' (tstate : tState') :=
-    tstate.1.(TState.prom) |> is_emptyb.
+Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
+  : relation (TState.t * Memory.t) :=
+  let handler := run_outcome tid initmem in
+  λ tsmem tsmem',
+    tsmem' ∈ (cinterp handler isem (tsmem, IIS.init) |$> fst ∘ fst).
 
-  Local Notation pThread := (PThread.t tState' Ev.t).
-
-(** Run an iSem on a pThread  *)
-  Definition run_pthread (pthread : pThread) : Exec.t string pThread :=
-    let imon := isem.(semantic) pthread.(PThread.tstate).2 in
-    let initmem := pthread.(PThread.initmem) |> Memory.initial_from_memMap in
-    '(ts, mem, isa_st) ←@{Exec.t string}
-      run_iMon
-        imon
-        IIS.init
-        pthread.(PThread.tid)
-        pthread.(PThread.tstate).1
-        initmem
-        pthread.(PThread.events);
-    pthread |> setv PThread.tstate (ts, isa_st)
-            |> setv PThread.events mem
-            |> Exec.ret.
+Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
+  (ts : TState.t) (mem : Memory.t) : Ensemble Ev.t :=
+  λ msg,
+    let ts := TState.promise (length mem) ts in
+    let mem := msg :: mem in
+    ∃ ts' mem',
+      rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
+        TState.prom ts' = [].
 
 
-  (* A thread is allowed to promise any promises with the correct tid.
-    This a non-certified promising model *)
-  Definition allowed_promises_nocert (pthread : pThread) :=
-    fun ev => Ev.tid ev = pthread.(PThread.tid).
-  Arguments allowed_promises_nocert _ _ /.
-
-  Definition emit_promise' (pthread : pThread) (ev : Ev.t) : tState' :=
-    let vev := length pthread.(PThread.events) in
-    pthread.(PThread.tstate) |> set fst (TState.promise vev).
-
-  Definition memory_snapshot' (memMap : memoryMap) (mem : Memory.t) : memoryMap :=
-    Memory.to_memMap (Memory.initial_from_memMap memMap) mem.
-
-  Definition UMPromising_nocert' : PromisingModel isem :=
-    {|tState := tState';
-      tState_init := tState_init';
-      tState_regs := TState.reg_map ∘ fst;
-      tState_isa_state := fun x => x.2;
-      tState_nopromises := tState_nopromises';
-      mEvent := Ev.t;
-      run_instr := run_pthread;
-      allowed_promises := allowed_promises_nocert;
-      emit_promise := emit_promise';
-      memory_snapshot := memory_snapshot';
-    |}.
-
-  Definition UMPromising_nocert := Promising_to_Modelnc UMPromising_nocert'.
-
-End PromStruct.
-Arguments allowed_promises_nocert _ _ _ /.
+Definition VMPromising_cert' (isem : iMon ()) : PromisingModel  :=
+  {|tState := TState.t;
+    tState_init := λ tid, TState.init;
+    tState_regs := TState.reg_map;
+    tState_nopromises := is_emptyb ∘ TState.prom;
+    iis := IIS.t;
+    iis_init := IIS.init;
+    mEvent := Ev.t;
+    handler := run_outcome;
+    allowed_promises := allowed_promises_cert isem;
+    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    memory_snapshot :=
+      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
+  |}.

@@ -7,10 +7,21 @@ Require Import stdpp.finite.
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.
 
+Require Import SSCCommon.CBase.
+Require Import SSCCommon.Effects.
+Require Import SSCCommon.FMon.
+Require Import SSCCommon.CResult.
+Require Import SSCCommon.CBool.
+
+
+#[global] Instance Explicit_access_kind_dec : EqDecision Explicit_access_kind.
+Proof. solve_decision. Defined.
+
+#[global] Instance Access_kind_dec `{EqDecision arch_ak} : EqDecision (Access_kind arch_ak).
+Proof. solve_decision. Defined.
+
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
-
-Inductive empOutcome (R : Type) :=.
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -29,9 +40,18 @@ Module Type Arch.
 
       TODO: Decide if an architecture should provide a standard default value *)
   Parameter reg_type : Type.
+  Parameter reg_type_eq : EqDecision reg_type.
+  #[export] Existing Instance reg_type_eq.
+  Parameter reg_type_inhabited : Inhabited reg_type.
+  #[export] Existing Instance reg_type_inhabited.
+
 
   (** Register access kind (architecture specific) *)
   Parameter reg_acc : Type.
+
+  Parameter reg_acc_eq : EqDecision reg_acc.
+  #[export] Existing Instance reg_acc_eq.
+
 
   (** Virtual address size *)
   Parameter va_size : N.
@@ -52,9 +72,15 @@ Module Type Arch.
   (** Parameter for extra architecture specific access types. Can be an empty
       type if not used *)
   Parameter arch_ak : Type.
+  Parameter arch_ak_eq : EqDecision arch_ak.
+  #[export] Existing Instance arch_ak_eq.
+
 
   (** Translation summary *)
   Parameter translation : Type.
+
+  Parameter translation_eq : EqDecision translation.
+  #[export] Existing Instance translation_eq.
 
   (** Abort description. This represent physical memory aborts on memory
       accesses, for example when trying to access outside of physical memory
@@ -64,15 +90,29 @@ Module Type Arch.
   (** Barrier types *)
   Parameter barrier : Type.
 
+  Parameter barrier_eq : EqDecision barrier.
+  #[export] Existing Instance barrier_eq.
+
+
   (** Cache operations (data and instruction caches) *)
   Parameter cache_op : Type.
+
+  Parameter cache_op_eq : EqDecision cache_op.
+  #[export] Existing Instance cache_op_eq.
 
   (** TLB operations *)
   Parameter tlb_op : Type.
 
+  Parameter tlb_op_eq : EqDecision tlb_op.
+  #[export] Existing Instance tlb_op_eq.
+
   (** Fault type for a fault raised by the instruction (not by the concurrency model)
       In Arm terms, this means any synchronous exception decided by the ISA model *)
   Parameter fault : Type -> Type.
+
+  Parameter fault_eq : ∀ deps, EqDecision deps → EqDecision (fault deps).
+  #[export] Existing Instance fault_eq.
+
 End Arch.
 
 Module Interface (A : Arch).
@@ -106,6 +146,9 @@ Module Interface (A : Arch).
 
     Definition setv_deps {d1 d2 : Type} {n : N} (adeps : d2) (rr : t d1 n) :=
       set_deps (fun _ => adeps) rr.
+
+    #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
+    Proof. solve_decision. Defined.
 
   End ReadReq.
 
@@ -149,13 +192,15 @@ Module Interface (A : Arch).
         data_deps := ddeps;
         |}.
 
+    #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
+    Proof. solve_decision. Defined.
+
   End WriteReq.
 
   Section T.
     Context {deps : Type}.
-    Context {eOutcome : Type -> Type}.
 
-  Inductive outcome : Type -> Type :=
+  Inductive outcome : eff :=
     (** reg_acc kind *)
   | RegRead (reg : reg) (racc : reg_acc) : outcome reg_type
 
@@ -168,73 +213,53 @@ Module Interface (A : Arch).
         dependencies are specified by the branch announce *)
   | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
              (regval: reg_type) : outcome unit
-  | MemRead (n : N) : ReadReq.t deps n ->
-                      outcome (bv (8 * n) * option bool + abort)
-  | MemWrite (n : N) : WriteReq.t deps n -> outcome (option bool + abort)
+  | MemRead (n : N) : ReadReq.t deps n →
+                      outcome (bv (8 * n) * option bool + abort)%type
+  | MemWrite (n : N) : WriteReq.t deps n → outcome (option bool + abort)%type
     (** Declare the opcode of the current instruction when known. Used for
         dependency computation *)
   | InstrAnnounce (opcode : bvn) : outcome unit
     (** The deps here specify the control dependency *)
   | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
   | Barrier : barrier -> outcome unit
-  | CacheOp (deps : deps) : cache_op -> outcome unit
-  | TlbOp (deps : deps) : tlb_op -> outcome unit
-  | TakeException : fault deps -> outcome unit
+  | CacheOp (deps : deps) : cache_op → outcome unit
+  | TlbOp (deps : deps) : tlb_op → outcome unit
+  | TakeException : fault deps → outcome unit
   | ReturnException (pa : pa) : outcome unit
-
-  (** Custom outcome to support simplified models on either side that want
-      symbolic outcomes. This can be use to represent abstracted sail function
-      for example the Arm translation function *)
-  | ExtraOutcome {A} : eOutcome A -> outcome A
 
   (** Bail out when something went wrong; this may be refined in the future.
       This is an ISA model triggered failure *)
-  | GenericFail (msg : string) : outcome False
+  | GenericFail (msg : string) : outcome noreturn.
+  Arguments outcome _%type.
 
-  (** The next two outcomes are for handling non-determinism. Choose will branch
-      the possible executions non-deterministically for every value of the type *)
-  | Choose {F : Type} (l : list F) : outcome F
-  (** Discard means that the instruction could never have made the previous
-      non-deterministic choices and the current execution can be silently
-      discarded. *)
-  | Discard : outcome False.
+  #[global] Instance outcome_wf : Eff.Wf outcome.
+  Proof using. intros T []; apply _. Qed.
 
-  Definition choose_fin F `{Finite F} : outcome F := Choose (enum F).
+  (* Automatically implies EqDecision (outcome T) on any T *)
+  #[global] Instance outcome_eff_dec `{EqDecision deps} : Eff.Decision outcome.
+  Proof using. intros ? ? [] []; decide_eff_eq. Qed.
 
-  (********** Monad instance **********)
 
-  (** This is a naive but inefficient implementation of the instruction monad.
-      It might be replaced by an more efficient version later. *)
-  (* TODO: Do something like itrees to take the full outcome type as a
-     parameter *)
-  Inductive iMon {A : Type} :=
-  | Ret : A -> iMon
-  | Next {T : Type} : outcome T -> (T -> iMon) -> iMon.
-  Arguments iMon : clear implicits.
-
-  Global Instance iMon_mret_inst : MRet iMon := { mret a := Ret }.
-
-  Fixpoint iMon_bind {a b : Type} (ma : iMon a) (f : a -> iMon b) :=
-    match ma with
-    | Ret x => f x
-    | Next oc k => Next oc (fun x => iMon_bind (k x) f) end.
-  Global Instance iMon_mbind_inst : MBind iMon :=
-    { mbind _ _ f x := iMon_bind x f}.
-
-  Fixpoint iMon_fmap {a b : Type} (ma : iMon a) (f : a -> b) :=
-    match ma with
-    | Ret x => Ret (f x)
-    | Next oc k => Next oc (fun x => iMon_fmap (k x) f)
-    end.
-  Global Instance iMon_fmap_inst : FMap iMon :=
-    { fmap _ _  f x := iMon_fmap x f}.
+  #[global] Program Instance outcome_exc : Eff.Exc outcome :=
+    { exc := string;
+      exc2eff := λ s, existT _ (GenericFail s);
+      eff2exc := λ _ x,
+          match x return option string with
+          | GenericFail s => Some s
+          | _ => None
+          end
+    }.
+  Next Obligation. hauto qb:on. Qed.
+  Next Obligation.
+    intros. cbn.
+    case_split; try (apply Eff.exc_empty_helper); sfirstorder.
+  Qed.
 
 
 
-
-
-
-  (********** Instruction semantics and traces **********)
+  (** An instruction semantic is a non-deterministic program using the
+      uninterpreted effect familly [outcome] *)
+  Definition iMon := cMon outcome.
 
   (** The semantics of an complete instruction. A full definition of instruction
       semantics is allowed to have an internal state that gets passed from one
@@ -251,84 +276,29 @@ Module Interface (A : Arch).
       semantic : isa_state -> iMon isa_state
     }.
 
-  (** A single event in an instruction execution. As implied by the definition
-      events cannot contain termination outcome (outcomes of type
-      `outcome False`) *)
-  Inductive iEvent :=
-  | IEvent {T : Type} : outcome T -> T -> iEvent.
+  (** A single event in an instruction execution. Events cannot contain
+      termination outcome (outcomes of type `outcome False`)
+
+      IEvent cannot be used a pattern in a match anymore, sorry, use FEvent
+      instead *)
+  Definition iEvent := fEvent outcome.
+  Definition IEvent {T} : outcome T → T → iEvent := @FEvent outcome T.
 
   (** An execution trace for a single instruction.
       If the result is an A, it means a successful execution that returned A
       If the result is a string, it means a GenericFail *)
-  Definition iTrace (A : Type) : Type := list iEvent * (A + string).
+  Definition iTrace (A : Type) : Type := list iEvent * result string A.
 
-  (** A trace is pure if it only contains external events. That means it must not
-      contain control-flow event. The name "pure" is WIP.*)
-  Fixpoint pure_iTrace_aux (tr : list iEvent) : Prop :=
-    match tr with
-    | (IEvent (Choose _) _) :: _ => False
-    | _ :: t => pure_iTrace_aux t
-    | [] => True
-    end.
-  Definition pure_iTrace {A : Type} (tr : iTrace A) :=
-    let '(t,r) := tr in pure_iTrace_aux t.
-
-  (** Definition of a trace semantics matching a trace. A trace is allowed to
-      omit control-flow outcomes such as Choose and still be considered
-      matching. *)
-  Inductive iTrace_match {A : Type} : iMon A -> iTrace A -> Prop :=
-  | TMNext T (oc : outcome T) (f : T -> iMon A) (obj : T) tl res :
-    iTrace_match (f obj) (tl, res) ->
-    iTrace_match (Next oc f) ((IEvent oc obj) :: tl, res)
-  | TMChoose F (l : list F) f v tr :
-    v ∈ l → iTrace_match (f v) tr -> iTrace_match (Next (Choose l) f) tr
-  | TMSuccess a : iTrace_match (Ret a) ([], inl a)
-  | TMFailure f s : iTrace_match (Next (GenericFail s) f) ([], inr s).
-
-  (** Semantic equivalence for instructions *)
-  Definition iMon_equiv `{Equiv A} (i1 i2 : iMon A) : Prop :=
-    forall trace : iTrace A,
-    pure_iTrace trace -> (iTrace_match i1 trace <-> iTrace_match i2 trace).
+  Definition iTrace_match {A : Type} (f : iMon A) (tr : iTrace A) :=
+    cmatch f (fTrace_list_res_full tr.1 tr.2).
 
   End T.
-  Arguments outcome : clear implicits.
+
+  Arguments outcome _%type _%type : clear implicits.
   Arguments iMon : clear implicits.
   Arguments iSem : clear implicits.
   Arguments iTrace : clear implicits.
   Arguments iEvent : clear implicits.
-
-  Definition iMonExtraMap (deps : Type) (out1 out2 : Type -> Type)
-    := forall (A : Type), out1 A -> iMon deps out2 A.
-
-  (** Suppose we can simulate the outcome of out1 in the instruction monad with
-      architecture outcomes out2. Then  *)
-  Fixpoint map_extra_iMon {deps : Type} {out1 out2 : Type -> Type} {B : Type}
-    (f : iMonExtraMap deps out1 out2) (mon : iMon deps out1 B) :
-    iMon deps out2 B :=
-    match mon in iMon _ _ _ return iMon deps out2 _ with
-    | Ret b => Ret b
-    | Next oc k0 =>
-        let k := fun x => map_extra_iMon f (k0 x) in
-        match oc in outcome _ _ T
-              return (T -> iMon deps out2 B) -> iMon deps out2 B with
-        | RegRead reg direct => Next (RegRead reg direct)
-        | RegWrite reg direct deps val =>
-            Next (RegWrite reg direct deps val)
-        | MemRead n readreq => Next (MemRead n readreq)
-        | MemWrite n writereq => Next (MemWrite n writereq)
-        | InstrAnnounce opcode => Next (InstrAnnounce opcode)
-        | BranchAnnounce pa deps => Next (BranchAnnounce pa deps)
-        | Barrier barrier => Next (Barrier barrier)
-        | CacheOp deps cache_op => Next (CacheOp deps cache_op)
-        | TlbOp deps tlb_op => Next (TlbOp deps tlb_op)
-        | TakeException fault => Next (TakeException fault)
-        | ReturnException pa => Next (ReturnException pa)
-        | ExtraOutcome aout => iMon_bind (f _ aout)
-        | GenericFail msg => Next (GenericFail msg)
-        | Choose n => Next (Choose n)
-        | Discard => Next (Discard)
-        end k
-    end.
 
 End Interface.
 

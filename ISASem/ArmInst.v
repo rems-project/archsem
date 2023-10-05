@@ -9,39 +9,158 @@ Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
+From SSCCommon Require Import CBase CList CBitvector Effects.
+
+
+From Equations Require Import Equations.
 
 
 Require Import stdpp.decidable.
+Require Import stdpp.list.
 
-Inductive regval  :=
-  | Regval_unknown : regval
-  | Regval_vector : list regval -> regval
-  | Regval_list : list regval -> regval
-  | Regval_option : option regval -> regval
-  | Regval_bool : bool -> regval
-  | Regval_int : Z -> regval
-  | Regval_real : R -> regval
-  | Regval_string : string -> regval
-  | Regval_bitvector z : bv z -> regval
-  | Regval_struct : list (string * regval) -> regval.
+Unset Elimination Schemes.
+Inductive regval :=
+  | Regval_unknown
+  | Regval_vector (l : list regval)
+  | Regval_list (l : list regval)
+  | Regval_option (opt : option regval)
+  | Regval_bool (b : bool)
+  | Regval_int (z : Z)
+  | Regval_string (s : string)
+  | Regval_bitvector {n} (b : bv n)
+  | Regval_struct (fields : list (string * regval)).
+Set Elimination Schemes.
 
-Definition regval_bv (n : N) (rv : regval) : option (bv n).
-Proof.
-  destruct rv.
-  exact None.
-  exact None.
-  exact None.
-  exact None.
-  exact None.
-  exact None.
-  exact None.
-  exact None.
-  destruct (decide (n = z)).
-  destruct e.
-  exact (Some b).
-  exact None.
-  exact None.
-Qed.
+
+Section regval_rect_gen. (* Most boring code ever *)
+  Variable T : regval → Type.
+  Variable Tl : list regval → Type.
+  Hypothesis T_nil : Tl [].
+  Hypothesis T_cons : ∀ {t l}, T t → Tl l → Tl (t :: l).
+  Hypothesis T_unknown : T (Regval_unknown).
+  Hypothesis T_vector : ∀ {l}, Tl l → T (Regval_vector l).
+  Hypothesis T_list : ∀ {l}, Tl l → T (Regval_list l).
+  Hypothesis T_None : T (Regval_option None).
+  Hypothesis T_Some : ∀ {rv}, T rv → T (Regval_option (Some rv)).
+  Hypothesis T_bool : ∀ b, T (Regval_bool b).
+  Hypothesis T_int : ∀ z, T (Regval_int z).
+  Hypothesis T_string : ∀ s, T (Regval_string s).
+  Hypothesis T_bitvector : ∀ {n}, ∀ b : bv n, T (Regval_bitvector b).
+  Hypothesis T_struct : ∀ {fields}, Tl fields.*2 → T (Regval_struct fields).
+
+  Fixpoint regval_rect_gen (rv : regval) : T rv :=
+    let fix go_list (l : list regval) : Tl l :=
+        match l with
+        | [] => T_nil
+        | t :: l => T_cons (regval_rect_gen t) (go_list l)
+        end
+    in
+    let fix go_list' (l : list (string * regval)) : Tl l.*2 :=
+        match l with
+        | [] => T_nil
+        | (s, t) :: l => T_cons (regval_rect_gen t) (go_list' l)
+        end
+    in
+    match rv with
+    | Regval_unknown => T_unknown
+    | Regval_vector l => T_vector (go_list l)
+    | Regval_list l => T_list (go_list l)
+    | Regval_option None => T_None
+    | Regval_option (Some o) => T_Some (regval_rect_gen o)
+    | Regval_bool b => T_bool b
+    | Regval_int z => T_int z
+    | Regval_string s => T_string s
+    | Regval_bitvector b => T_bitvector b
+    | Regval_struct l => T_struct (go_list' l)
+    end.
+End regval_rect_gen.
+
+Section regval_rect.
+  Variable T : regval → Type.
+  Let Tl (l : list regval) := ∀ x, InT x l → T x.
+  Lemma T_nil : Tl [].
+  Proof using. sauto lq:on. Defined.
+  Lemma T_cons : ∀ t l, T t → Tl l → Tl (t :: l).
+  Proof using. sauto lq:on. Defined.
+  Hypothesis T_unknown : T (Regval_unknown).
+  Hypothesis T_vector : ∀ l, Tl l → T (Regval_vector l).
+  Hypothesis T_list : ∀ l, Tl l → T (Regval_list l).
+  Hypothesis T_None : T (Regval_option None).
+  Hypothesis T_Some : ∀ rv, T rv → T (Regval_option (Some rv)).
+  Hypothesis T_bool : ∀ b, T (Regval_bool b).
+  Hypothesis T_int : ∀ z, T (Regval_int z).
+  Hypothesis T_string : ∀ s, T (Regval_string s).
+  Hypothesis T_bitvector : ∀ n, ∀ b : bv n, T (Regval_bitvector b).
+  Hypothesis T_struct : ∀ fields, Tl fields.*2 → T (Regval_struct fields).
+
+  Definition regval_rect : ∀ rv, T rv :=
+    regval_rect_gen T Tl
+                    T_nil
+                    T_cons
+                    T_unknown
+                    T_vector
+                    T_list
+                    T_None
+                    T_Some
+                    T_bool
+                    T_int
+                    T_string
+                    T_bitvector
+                    T_struct.
+End regval_rect.
+Definition regval_rec := regval_rect.
+
+Section regval_ind.
+  Variable P : regval → Prop.
+  Let Pl (l : list regval) := ∀'x ∈ l, P x.
+  Lemma P_nil : Pl []. Proof using. sauto lq:on. Qed.
+  Lemma P_cons : ∀ t l, P t → Pl l → Pl (t :: l).
+  Proof using. induction l; sauto lq:on. Qed.
+  Hypothesis P_unknown : P (Regval_unknown).
+  Hypothesis P_vector : ∀ l, Pl l -> P (Regval_vector l).
+  Hypothesis P_list : ∀ l, Pl l -> P (Regval_list l).
+  Hypothesis P_None : P (Regval_option None).
+  Hypothesis P_Some : ∀ rv, P rv → P (Regval_option (Some rv)).
+  Hypothesis P_bool : ∀ b, P (Regval_bool b).
+  Hypothesis P_int : ∀ z, P (Regval_int z).
+  Hypothesis P_string : ∀ s, P (Regval_string s).
+  Hypothesis P_bitvector : ∀ n, ∀ b : bv n, P (Regval_bitvector b).
+  Hypothesis P_struct : ∀ fields, Pl fields.*2 → P (Regval_struct fields).
+
+  Definition regval_ind : ∀ rv, P rv :=
+    regval_rect_gen P Pl
+                    P_nil
+                    P_cons
+                    P_unknown
+                    P_vector
+                    P_list
+                    P_None
+                    P_Some
+                    P_bool
+                    P_int
+                    P_string
+                    P_bitvector
+                    P_struct.
+End regval_ind.
+
+(* Can't be bothered to do regval_sind *)
+
+#[global] Instance regval_eq_dec : EqDecision regval.
+Proof. intro x; induction x; intro y; destruct y; typeclasses eauto with eqdec.
+Defined.
+
+#[global] Instance regval_inhabited : Inhabited regval :=
+  populate Regval_unknown.
+
+Definition regval_bv (n : N) (rv : regval) : option (bv n) :=
+  match rv with
+  | @Regval_bitvector z b =>
+      match decide (z = n) with
+      | left e => Some (bv_conv e b)
+      | right _ => None
+      end
+  | _ => None
+  end.
 
 #[global] Instance FullAddress_eta : Settable _ :=
   settable! Build_FullAddress <FullAddress_paspace; FullAddress_address>.
@@ -75,14 +194,62 @@ Proof. by destruct pa. Qed.
 #[global] Instance PASpace_countable : Countable PASpace.
 Proof.
   apply (inj_countable PASpace_to_nat PASpace_from_nat PASpace_from_nat_to_nat).
-Qed.
+Defined.
 
 #[global] Instance FullAddress_countable : Countable FullAddress.
 Proof.
   eapply (inj_countable (fun fa => (FullAddress_paspace fa, FullAddress_address fa))
                         (fun x => Some (Build_FullAddress x.1 x.2))).
   intro x. by destruct x.
-Qed.
+Defined.
+
+#[global] Instance arm_acc_type_eq_dec : EqDecision arm_acc_type.
+Proof. solve_decision. Defined.
+
+#[global] Instance MemAttrHints_eq_dec : EqDecision MemAttrHints.
+Proof. solve_decision. Defined.
+
+#[global] Instance MemoryAttributes_eq_dec : EqDecision MemoryAttributes.
+Proof. solve_decision. Defined.
+
+#[global] Instance S1TTWParams_eq_dec : EqDecision S1TTWParams.
+Proof. solve_decision. Defined.
+
+#[global] Instance S2TTWParams_eq_dec : EqDecision S2TTWParams.
+Proof. solve_decision. Defined.
+
+#[global] Instance ArithFact_eq_dec P : EqDecision (ArithFact P).
+Proof. left. apply ArithFact_irrelevant. Defined.
+
+#[global] Instance TranslationInfo_eq_dec : EqDecision TranslationInfo.
+Proof. solve_decision. Defined.
+
+#[global] Instance DxB_eq_dec : EqDecision DxB.
+Proof. solve_decision. Defined.
+
+#[global] Instance Barrier_eq_dec : EqDecision Barrier.
+Proof. solve_decision. Defined.
+
+#[global] Instance CacheRecord_eq_dec : EqDecision CacheRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance TLBIRecord_eq_dec : EqDecision TLBIRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance TLBI_eq_dec : EqDecision TLBI.
+Proof. solve_decision. Defined.
+
+#[global] Instance ExceptionRecord_eq_dec : EqDecision ExceptionRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance GPCFRecord_eq_dec : EqDecision GPCFRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance FaultRecord_eq_dec : EqDecision FaultRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance Exn_eq_dec : EqDecision Exn.
+Proof. solve_decision. Defined.
 
 Module Arm.
 
@@ -92,21 +259,36 @@ Module Arm.
     Definition reg_eq : EqDecision reg := _.
     Definition reg_countable : Countable reg := _.
     Definition reg_type := regval.
+    Definition reg_type_eq : EqDecision reg_type := _.
+    Definition reg_type_inhabited : Inhabited reg_type := _.
+
     (** None means default access (strict or relaxed is up to the concurrency model).
         Some s, means access with a MSR/MRS with name "s" *)
     Definition reg_acc := option string.
+    Definition reg_acc_eq : EqDecision reg_acc := _.
+
     Definition va_size := 64%N.
     Definition pa := FullAddress.
     Definition pa_eq : EqDecision pa := _.
     Definition pa_countable : Countable pa := _.
+
     Definition arch_ak := arm_acc_type.
+    Definition arch_ak_eq : EqDecision arm_acc_type := _.
     Definition translation := TranslationInfo.
+    Definition translation_eq : EqDecision TranslationInfo := _.
     Definition abort := PhysMemRetStatus.
+
     Definition barrier := Barrier.
+    Definition barrier_eq : EqDecision Barrier := _.
     Definition cache_op := CacheRecord.
+    Definition cache_op_eq : EqDecision CacheRecord := _.
     Definition tlb_op := TLBI.
-    Definition fault (deps : Type) := Exn. (* TODO fixup dependencies in exception type *)
-    Definition footprint_system_registers : list reg := [].
+    Definition tlb_op_eq : EqDecision TLBI := _.
+
+    (* TODO fixup dependencies in exception type *)
+    Definition fault (deps : Type) := Exn.
+    Definition fault_eq :
+      ∀ deps, EqDecision deps → EqDecision (fault deps) := _.
   End Arch.
   Include Arch.
 
@@ -127,8 +309,8 @@ Module Arm.
   Module ArchDeps <: ArchDeps IWD.
     Import IWD.
     Definition footprint_context := unit.
-    Definition get_footprint_context {deps : Type} {out : Type -> Type}
-      : iMon deps out () := Ret ().
+    Definition get_footprint_context {deps : Type}
+      : iMon deps () := mret ().
     Definition fault_add_empty_deps := @id Exn.
     Definition fault_add_deps (_ : Footprint.t) := @id Exn.
   End ArchDeps.
