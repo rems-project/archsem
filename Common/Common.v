@@ -63,21 +63,53 @@ Global Instance Ensemble_Set A : Set_ A (Ensemble A).
 Proof. sauto l:on. Qed.
 
 
-(*** Vectors ***)
+(** * Vectors ***)
 
-(* This is purposefully not in stdpp because Coq does not apply it automatically
-   because of dependent types. This can be solved with a Hint Resolve *)
-Global Instance vector_insert {n} {V} : Insert (fin n) V (vec V n) := vinsert.
-Global Hint Resolve vector_insert : typeclass_instances.
+Section Vector.
+  Context {A : Type}.
+  Context {n : nat}.
+
+  #[global] Instance vinsert' : Insert (fin n) A (vec A n) := vinsert.
+
+  #[global] Instance valter : Alter (fin n) A (vec A n) :=
+    λ f k v, vinsert k (f (v !!! k)) v.
+
+  Lemma vlookup_alter (k : fin n) f (v : vec A n) :
+    alter f k v !!! k = f (v !!! k).
+  Proof using.
+    unfold alter, valter.
+    rewrite vlookup_insert.
+    reflexivity.
+  Qed.
+
+  Lemma valter_eq (k : fin n) f (v : vec A n) :
+    f (v !!! k) = v !!! k → alter f k v = v.
+  Proof using.
+    unfold alter, valter.
+    intros ->.
+    apply vlookup_insert_self.
+  Qed.
+
+
+  #[global] Instance Setter_valter_wf (k : fin n) :
+    @SetterWf (vec A n) A (lookup_total k) :=
+    { set_wf := Setter_alter k;
+      set_get := vlookup_alter k;
+      set_eq := valter_eq k
+    }.
+
+End Vector.
 
 Create HintDb vec discriminated.
 
 #[global] Hint Rewrite @lookup_fun_to_vec : vec.
 #[global] Hint Rewrite @vlookup_map : vec.
 #[global] Hint Rewrite @vlookup_zip_with : vec.
+#[global] Hint Rewrite @vlookup_insert : vec.
+#[global] Hint Rewrite @vlookup_alter : vec.
+#[global] Hint Rewrite @vlookup_insert_self : vec.
+#[global] Hint Rewrite @valter_eq using done : vec.
 
-(* There are probably lots of other lemmas to be added here,
-   I'll do case by case. *)
 
 
 (*** Finite decidable quantifiers ***)

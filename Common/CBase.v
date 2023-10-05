@@ -1,6 +1,7 @@
 
 From stdpp Require Export base.
 From stdpp Require Export tactics.
+From stdpp Require Import vector.
 Require Import DecidableClass.
 Require Export Relations.
 From RecordUpdate Require Export RecordSet.
@@ -209,10 +210,14 @@ Global Instance Setter_compose `{SRT : Setter R T proj}
 
 Global Program Instance Setter_compose_wf `{SRT : SetterWf R T proj}
   `{STT : SetterWf T T' proj'} : SetterWf (proj' ∘ proj) :=
-  { set_wf := Setter_compose;
-    set_get := _;
-    set_eq := _ }.
+  { set_wf := Setter_compose }.
 Solve All Obligations with sauto lq:on.
+
+(* SetterWF can only be proven for particular Ms *)
+#[global] Instance Setter_alter `{LookupTotal K A M, Alter K A M} k :
+  @Setter M A (lookup_total k) := λ f, alter f k.
+
+
 
 (*** Pair management ***)
 
