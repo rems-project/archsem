@@ -141,7 +141,7 @@ Module Memory.
 
   (** Convert from a memoryMap to the internal representation: initial *)
   Definition initial_from_memMap (mem : memoryMap) : initial :=
-    fun loc => Loc.to_pas loc |> map mem |> bv_of_bytes 8 64.
+    fun loc => Loc.to_pas loc |> map mem |> bv_of_bytes 64.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.

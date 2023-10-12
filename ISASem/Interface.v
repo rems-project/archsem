@@ -3,6 +3,7 @@ Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 Require Import stdpp.countable.
 Require Import stdpp.finite.
+Require Import stdpp.gmap.
 
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.
@@ -67,7 +68,16 @@ Module Type Arch.
   Parameter pa_countable : @Countable pa pa_eq.
   #[export] Existing Instance pa_countable.
 
+  (** Add an offset to a physical address. Can wrap if out of bounds *)
+  Parameter pa_addZ : pa → Z → pa.
 
+  (** This need to behave sensibly.
+      For fancy words: pa_addZ need to be an action of the group Z on pa *)
+  Parameter pa_addZ_assoc :
+    ∀ pa z z', pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
+  Parameter pa_addZ_zero : ∀ pa, pa_addZ pa 0 = pa.
+  #[export] Hint Rewrite pa_addZ_assoc : arch.
+  #[export] Hint Rewrite pa_addZ_zero : arch.
 
   (** Parameter for extra architecture specific access types. Can be an empty
       type if not used *)
@@ -121,6 +131,10 @@ Module Interface (A : Arch).
   Definition va := bv va_size.
   Definition accessKind := Access_kind arch_ak.
 
+  Definition pa_range pa n := seq 0 n |> map (λ n, pa_addZ pa (Z.of_nat n)).
+  Lemma pa_range_length pa n : length (pa_range pa n) = n.
+  Proof. unfold pa_range. by autorewrite with list. Qed.
+
   Module ReadReq.
     Record t {deps : Type} {n : N} :=
       make
@@ -150,6 +164,7 @@ Module Interface (A : Arch).
     #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
     Proof. solve_decision. Defined.
 
+    Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End ReadReq.
 
   Module WriteReq.
@@ -195,6 +210,7 @@ Module Interface (A : Arch).
     #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
     Proof. solve_decision. Defined.
 
+    Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End WriteReq.
 
   Section T.

@@ -3,6 +3,7 @@ Require Import stdpp.unstable.bitvector.
 Require Import stdpp.strings.
 Require Import stdpp.base.
 Require Import stdpp.countable.
+Require Import stdpp.vector.
 Require Import Interface.
 Require Import Deps.
 Require Import SailStdpp.Base.
@@ -271,6 +272,13 @@ Module Arm.
     Definition pa := FullAddress.
     Definition pa_eq : EqDecision pa := _.
     Definition pa_countable : Countable pa := _.
+    Definition pa_addZ pa z :=
+      set FullAddress_address (λ addr, addr `+Z` z)%bv pa.
+    Lemma pa_addZ_assoc pa z z' :
+      pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
+    Proof. record_eq. cbn. bv_solve. Qed.
+    Lemma pa_addZ_zero pa : pa_addZ pa 0 = pa.
+    Proof. record_eq. cbn. bv_solve. Qed.
 
     Definition arch_ak := arm_acc_type.
     Definition arch_ak_eq : EqDecision arm_acc_type := _.

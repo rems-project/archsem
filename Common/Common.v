@@ -66,22 +66,18 @@ Proof. sauto l:on. Qed.
 
 (** * Vectors ***)
 
-Section Vector.
+
+
+Section VAlter.
   Context {A : Type}.
   Context {n : nat}.
 
-  #[global] Instance vinsert' : Insert (fin n) A (vec A n) := vinsert.
-
-  #[global] Instance valter : Alter (fin n) A (vec A n) :=
+  Local Instance valter : Alter (fin n) A (vec A n) :=
     λ f k v, vinsert k (f (v !!! k)) v.
 
   Lemma vlookup_alter (k : fin n) f (v : vec A n) :
     alter f k v !!! k = f (v !!! k).
-  Proof using.
-    unfold alter, valter.
-    rewrite vlookup_insert.
-    reflexivity.
-  Qed.
+  Proof using. unfold alter, valter. by rewrite vlookup_insert. Qed.
 
   Lemma valter_eq (k : fin n) f (v : vec A n) :
     f (v !!! k) = v !!! k → alter f k v = v.
@@ -98,8 +94,19 @@ Section Vector.
       set_get := vlookup_alter k;
       set_eq := valter_eq k
     }.
+End VAlter.
 
-End Vector.
+(* Vector typeclasses work better with apply rather than the simple apply of the
+   default Hint Resolve/Instance *)
+Global Hint Extern 3 (LookupTotal _ _ (vec _ _)) =>
+         apply vector_lookup_total : typeclass_instances.
+
+Global Hint Extern 3 (Insert _ _ (vec _ _)) =>
+         unfold Insert; apply vinsert : typeclass_instances.
+
+Global Hint Extern 3 (Alter _ _ (vec _ _)) =>
+         apply valter : typeclass_instances.
+
 
 Create HintDb vec discriminated.
 
@@ -110,6 +117,7 @@ Create HintDb vec discriminated.
 #[global] Hint Rewrite @vlookup_alter : vec.
 #[global] Hint Rewrite @vlookup_insert_self : vec.
 #[global] Hint Rewrite @valter_eq using done : vec.
+#[global] Hint Rewrite @vec_to_list_length : vec.
 
 
 

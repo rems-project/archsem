@@ -196,7 +196,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Proof. tcclean. apply event_map_match. Qed.
 
 
-    (*** Accessors ***)
+    (** * Accessors ***)
 
     Definition collect_all (P : EID.t -> iEvent -> Prop)
       `{∀ eid event, Decision (P eid event)}
@@ -321,7 +321,74 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition tlpops (cd : t) :=
       collect_all (λ _ event, is_Some (get_tlbop event)) cd.
 
-    (*** Utility relations ***)
+    (** * Connection to final state *)
+
+    (** Get the list of final register values in a candidate for a thread *)
+    Definition final_reg_gmap_tid (cd : t) (tid : fin cd.(num_threads)) :
+        gmap reg reg_type :=
+      foldl (λ umap itrc,
+          foldl (λ umap ev,
+              match ev with
+              | RegWrite reg _ _ val &→ _ => <[reg := val]> umap
+              | _ => umap
+              end
+            ) umap itrc.1
+        ) (∅ : gmap reg reg_type) (cd.(events) !!! tid).
+
+
+    (** Get the final register maps of all threads from a candidate *)
+    Definition final_reg_map_tid (cd : t) (tid : fin cd.(num_threads)) :
+        registerMap :=
+      let umap := final_reg_gmap_tid cd tid in
+      λ reg,
+        match umap !! reg with
+        | Some val => val
+        | None => (cd.(init).(MState.regs) !!! tid) reg
+        end.
+
+    (** Get all the final register map from candidate *)
+    Definition final_reg_map (cd : t) : vec registerMap cd.(num_threads) :=
+      fun_to_vec (final_reg_map_tid cd).
+
+    (** Get the last write for each pa in candidate. If it's not in the map, it
+        was not written by the candidate *)
+    Definition final_write_per_pa (cd : t) : gmap pa (EID.t * bv 8) :=
+      foldl
+        (λ mmap '(eid, ev),
+          match ev with
+          | MemWrite n wr &→ _ =>
+              foldl
+                (λ mmap i,
+                  let pa := pa_addZ (WriteReq.pa wr) (Z.of_nat i) in
+                  let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
+                  match mmap !! pa with
+                  | Some (eid', _) =>
+                      match decide ((eid, eid') ∈ cd.(co)) with
+                      | left _ => mmap
+                      | right _ => <[pa := (eid, byte)]> mmap
+                      end
+                  | None => <[pa := (eid, byte)]> mmap
+                  end) mmap (seq 0 (N.to_nat n))
+          | _ => mmap
+          end) ∅ (event_list cd).
+
+    Definition final_mem_map (cd : t) : memoryMap :=
+      let mmap := final_write_per_pa cd in
+      λ pa,
+        match mmap !! pa with
+        | Some (_, val) => val
+        | None => cd.(init).(MState.memory) pa
+        end.
+
+    Definition cd_to_MState (cd : t) : MState.t (cd.(num_threads)) :=
+      {| MState.regs := final_reg_map cd; MState.memory := final_mem_map cd |}.
+
+    Definition cd_to_MState_final (cd : t)
+        (term : terminationCondition cd.(num_threads)) :
+        option (MState.final cd.(num_threads)) :=
+      MState.finalize (MState.MakeI (cd_to_MState cd) term).
+
+    (** * Utility relations ***)
 
     (** Intra instruction order *)
     Definition iio (cd : t) := po cd ∩ si cd.

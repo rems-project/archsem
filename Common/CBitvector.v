@@ -7,6 +7,7 @@ Require Export stdpp.unstable.bitvector.
 Require Export stdpp.unstable.bitvector_tactics.
 Require Import CBase.
 Require Import CBool.
+Require Import CList.
 
 
 (** This make lia slower and more powerful. I think it's better with it on *)
@@ -110,23 +111,55 @@ Ltac bv_solve' :=
 (* This section might be upstreamed to stdpp. *)
 (* TODO add bv_solve support for this section *)
 
-(* Give minimal number of block of size n to cover m
+(** Divide [m] by [n] and rounds up. The result is the number of block of size
+    [n] required to cover [m]
 
-   Unspecified if n = 0
- *)
-Definition align_up (m n : N) := ((m + (n - 1)) / n)%N.
+    Undefined if [n] is zero (in practice the result will also be 0) *)
+Definition div_round_up (m n : N) := ((m + (n - 1)) / n)%N.
 
 (** Transform a bitvector to bytes of size n. *)
 Definition bv_to_bytes (n : N) {m : N} (b : bv m) : list (bv n) :=
-  bv_to_little_endian (Z.of_N $ align_up m n) n (bv_unsigned b).
+  bv_to_little_endian (Z.of_N $ div_round_up m n) n (bv_unsigned b).
 
 (** Transform a list of bytes of size n to a bitvector of size m.
 
     If m is larger than n*(length l), the result is zero-extended to m
     If m is smaller than n*(length l), the result is truncated to m *)
-Definition bv_of_bytes (n : N) (m : N) (l : list (bv n)) : bv m :=
+Definition bv_of_bytes {n : N} (m : N) (l : list (bv n)) : bv m :=
   little_endian_to_bv n l |> Z_to_bv m.
 
+Definition bv_get_byte (n i : N) {m} (b : bv m) : bv n :=
+  bv_extract (i * n) n b.
+
+Lemma bv_to_bytes_bv_get_byte (n i : N) {m} (b : bv m) (byte : bv n) :
+  (0 < n)%N →
+  (bv_to_bytes n b) !! i = Some byte ↔ (i * n < m)%N ∧ bv_get_byte n i b = byte.
+Proof.
+  intro N0.
+  unfold bv_get_byte.
+  unfold bv_to_bytes.
+  unfold div_round_up.
+  setoid_rewrite bv_to_little_endian_lookup_Some; [|lia].
+  split; intros [H H']; subst; (split; [nia | bv_solve]).
+Qed.
+
+Lemma bv_of_bytes_bv_to_bytes n `(b : bv m) :
+  n ≠ 0%N → bv_of_bytes m (bv_to_bytes n b) = b.
+Proof.
+  intro H.
+  unfold bv_of_bytes, bv_to_bytes.
+
+  (* Convert in a Z problem *)
+  apply bv_eq. bv_unfold. rewrite <- bv_wrap_bv_unsigned.
+  generalize (bv_unsigned b); clear b; intro b.
+
+  rewrite little_endian_to_bv_to_little_endian; [|lia].
+  rewrite <- N2Z.inj_mul.
+  fold (bv_modulus (div_round_up m n * n)).
+  fold (bv_wrap (div_round_up m n * n) (bv_wrap m b)).
+  rewrite bv_wrap_bv_wrap; [| unfold div_round_up; lia].
+  by rewrite bv_wrap_idemp.
+Qed.
 
 Definition bv_get_bit (i : N) {n : N} (b : bv n) : bool :=
   negb (bv_extract i 1 b =? bv_0 1).

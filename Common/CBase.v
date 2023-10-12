@@ -250,7 +250,17 @@ Solve All Obligations with sauto lq:on.
 #[global] Instance Setter_alter `{LookupTotal K A M, Alter K A M} k :
   @Setter M A (lookup_total k) := λ f, alter f k.
 
-
+(** Tactic to prove record equality by proving equality for all fields. If two
+    fields are identical (according to the reflexivity tactic), this will not
+    create a subgoal for them, so the number of subgoal may vary, don't rely on
+    it *)
+Ltac record_eq :=
+  setoid_rewrite <- mkT_ok;
+  lazymatch goal with
+    |- mkT ?T ?T_eta _ = mkT ?T' ?T_eta' _ =>
+      unify T T'; unify T_eta T_eta';
+      cbn [T_eta mkT]
+  end; f_equal.
 
 (*** Pair management ***)
 
