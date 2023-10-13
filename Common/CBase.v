@@ -87,6 +87,11 @@ Ltac forall_hyps tac :=
   | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
   end.
 
+Tactic Notation "orewrite" uconstr(p) :=
+  opose_core p ltac: (fun p => rewrite p).
+Tactic Notation "orewrite" "*" uconstr(p) :=
+  opose_specialize_foralls_core p () ltac: (fun p => rewrite p).
+
 (** Actual dependent rewrite by calling destruct on the equality.
     The rewrite must be of the form var = exp where var is a plain variable and not
     a complicated expression *)

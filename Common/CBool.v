@@ -135,7 +135,7 @@ Ltac pair_let_clean_Decision :=
 
 Tactic Notation "decide_field" constr(a) constr(b) :=
   tryif unify a b then idtac else
-  (feed destruct (@decide (a = b));
+  (odestruct (@decide (a = b));
   [ try (apply _) |
     subst |
     let H := fresh "H" in

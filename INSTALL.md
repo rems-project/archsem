@@ -92,7 +92,7 @@ git clone https://gitlab.mpi-sws.org/iris/stdpp
 Then, if you want the precise version of stdpp this project was tested
 against, do:
 ```
-git checkout 1ce7096
+git checkout 75a2c41
 ```
 
 Then you can install stdpp with `opam pin .` in the `stdpp` directory. Opam will
@@ -109,10 +109,10 @@ git clone https://github.com/rems-project/coq-sail
 
 Then (optionally), in that repository, if you want the version used for development, do:
 ```
-git checkout b804545
+git checkout c79d1a7
 ```
 
 Then you can install `coq-sail-stdpp` with `opam pin coq-sail-stdpp .` in the
-repository. It should install its own dependencies such as `coq-bbv`.
+repository.
 
 

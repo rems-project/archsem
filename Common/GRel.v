@@ -390,11 +390,11 @@ Section GRel.
     destruct (decide (a ∈ path)).
     - apply list_split in e as (left & right & ->).
       rewrite is_path_split in IP.
-      feed pose proof (H (a :: right)) as H'. {rewrite app_length. cbn. lia. }
-      feed destruct (H' x) as [npath H'']. naive_solver.
+      opose proof (H (a :: right) _) as H'. {rewrite app_length. cbn. lia. }
+      destruct (H' x) as [npath H'']. { naive_solver. }
       exists npath. set_solver.
-    - feed pose proof (H path) as H'; [lia |].
-      feed destruct (H' a) as [npath H'']; [set_solver .. |].
+    - opose proof (H path _) as H'; [lia |].
+      destruct (H' a) as [npath H'']. { naive_solver. }
       exists (a :: npath).
       rewrite NoDup_cons.
       set_solver.
@@ -421,7 +421,7 @@ Section GRel.
         exists path. set_solver.
     - intros [[path H] | [[left Hl] [right Hr]]].
       + exists path. set_solver.
-      + feed destruct (is_path_NoDup r x y (left ++ [a] ++ right)) as [npath H].
+      + destruct (is_path_NoDup r x y (left ++ [a] ++ right)) as [npath H].
         { rewrite is_path_split. naive_solver. }
         exists npath. set_solver.
   Qed.
@@ -494,11 +494,6 @@ Section GRel.
   Qed.
 
 
-  Tactic Notation "feed" "rewrite" constr(H) :=
-    feed_core H using (fun p => let H':=fresh in pose proof p as H'; rewrite H').
-  Tactic Notation "efeed" "rewrite" constr(H) :=
-    efeed_core H using (fun p => let H':=fresh in pose proof p as H'; rewrite H').
-
   Lemma grel_plus_spec' x y r :
     (x, y) ∈ r⁺ <-> exists_path r (elements (grel_dom r ∪ grel_rng r)) x y.
   Proof using.
@@ -510,7 +505,7 @@ Section GRel.
     induction l. { cbn. setoid_rewrite bool_unfold. reflexivity. }
     intros x y.
     cbn - [exists_path].
-    efeed rewrite (fold_left_inv_ND
+    orewrite* (fold_left_inv_ND
                      (fun (c : grel) (t : list A) =>
                         forall i j, (i,j) ∈ c <->
                                  exists_path r (a :: l) i j /\
@@ -528,7 +523,7 @@ Section GRel.
     - clear x y IHl.
       intros ri i ti Hti Hri x y.
       cbn - [exists_path].
-      efeed rewrite (fold_left_inv_ND
+      orewrite* (fold_left_inv_ND
                        (fun (c : grel) (tj : list A) =>
                           forall i' j, (i',j) ∈ c <->
                                     exists_path r (a :: l) i' j /\
@@ -575,7 +570,7 @@ Section GRel.
     - induction 1.
       + exists []. set_unfold. sauto lq:on.
       + destruct IHtc as [path ?].
-        feed destruct (is_path_NoDup r x z (y :: path)) as [npath ?].
+        destruct (is_path_NoDup r x z (y :: path)) as [npath ?].
         * set_solver.
         * exists npath. set_unfold. qauto.
   Qed.

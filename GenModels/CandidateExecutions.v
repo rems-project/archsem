@@ -509,7 +509,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         repeat rewrite bool_unfold in *.
         hauto lq:on.
       - intros (?&?&k&Hlk1&Hloc1&?&Hloc2); right.
-        feed pose proof (lookup_is_Some_gather_by_key cd get_key k) as HSome.
+        opose proof* (lookup_is_Some_gather_by_key cd get_key k) as HSome.
         set_unfold. hauto.
         destruct HSome as [? HSome].
         pose proof (lookup_total_unfold_gather_by_key cd get_key k) as Hunfold.
