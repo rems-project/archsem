@@ -70,16 +70,17 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     destruct x : typeclass_instances.
 
   Module Candidate.
+  Section Cand.
+    Context {nmth : nat}.
 
     Record t :=
       make {
-          num_threads : nat;
           (** Initial state *)
-          init : MState.t num_threads;
+          init : MState.t nmth;
           (** Each thread is a list of instruction who each have a trace,
               we force the return type to be unit, but it just means we
               forget the actual value *)
-          events : vec (list (iTrace ())) num_threads;
+          events : vec (list (iTrace ())) nmth;
           (* TODO po can be deduced by the order of events in the trace *)
           (** Program order. The per-thread order of all events in the trace *)
           po : grel EID.t;
@@ -104,12 +105,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         This version only supports ISA model without inter-instruction state.
         We'll see later if such state is required *)
     Definition ISA_match (cd : t) (isem : iMon ()) :=
-      ∀ tid : fin cd.(num_threads),
+      ∀ tid : fin nmth,
       ∀'trc ∈ cd.(events) !!! tid,
       iTrace_match isem trc.
 
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
-    Proof. solve_decision. Qed.
+    Proof using. solve_decision. Qed.
 
     (** Get an event at a given event ID in a candidate *)
     Global Instance lookup_eid : Lookup EID.t iEvent t :=
@@ -125,7 +126,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       ∃'thread ∈ (vec_to_list cd.(events)), ∃'instr ∈ thread, is_Error instr.2.
 
     #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
-    Proof. solve_decision. Qed.
+    Proof using. solve_decision. Qed.
 
     Definition event_list (cd : t) : list (EID.t*iEvent) :=
       '(tid, traces) ← enumerate cd.(events);
@@ -139,7 +140,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Lemma event_list_match cd eid ev :
       cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
-    Proof.
+    Proof using.
       (* Unfold everything properly on both side, and naive_solver does it. *)
       unfold lookup at 1.
       unfold lookup_eid.
@@ -154,10 +155,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Global Instance set_unfold_elem_of_event_list cd x :
       SetUnfoldElemOf x (event_list cd) (cd !! x.1 = Some x.2).
-    Proof. tcclean. destruct x. symmetry. apply event_list_match. Qed.
+    Proof using . tcclean. destruct x. symmetry. apply event_list_match. Qed.
 
     Lemma event_list_NoDup1 cd : NoDup (event_list cd).*1.
-    Proof.
+    Proof using.
       unfold event_list.
       rewrite fmap_unfold.
       cbn.
@@ -174,14 +175,14 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
 
     Lemma event_list_NoDup cd : NoDup (event_list cd).
-    Proof. eapply NoDup_fmap_1. apply event_list_NoDup1. Qed.
+    Proof using. eapply NoDup_fmap_1. apply event_list_NoDup1. Qed.
 
     Definition event_map (cd : t) : gmap EID.t iEvent :=
       event_list cd |> list_to_map.
 
 
     Lemma event_map_match cd eid : (event_map cd) !! eid = cd !! eid.
-    Proof.
+    Proof using.
       unfold event_map.
       destruct (cd !! eid) eqn: Heq.
       - apply elem_of_list_to_map.
@@ -193,7 +194,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Global Instance lookup_unfold_event_map x cd R :
       LookupUnfold x cd R → LookupUnfold x (event_map cd) R.
-    Proof. tcclean. apply event_map_match. Qed.
+    Proof using. tcclean. apply event_map_match. Qed.
 
 
     (** * Accessors ***)
@@ -206,7 +207,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Global Instance set_elem_of_collect_all eid P
       `{∀ eid event, Decision (P eid event)} cd :
       SetUnfoldElemOf eid (collect_all P cd) (∃x, cd !! eid = Some x ∧ P eid x).
-    Proof. tcclean. set_unfold. hauto db:pair. Qed.
+    Proof using. tcclean. set_unfold. hauto db:pair. Qed.
     Global Typeclasses Opaque collect_all.
 
     (** Get the set of all valid EID for that candidate *)
@@ -215,7 +216,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Global Instance set_elem_of_valid_eids eid cd :
       SetUnfoldElemOf eid (valid_eids cd) (∃ x, cd !! eid = Some x).
-    Proof. tcclean. set_unfold. hauto db:pair. Qed.
+    Proof using. tcclean. set_unfold. hauto db:pair. Qed.
     Global Typeclasses Opaque valid_eids.
 
     Definition is_reg_read (event : iEvent) : Prop :=
@@ -225,7 +226,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_reg_read_decision event : (Decision (is_reg_read event)).
-    Proof. unfold is_reg_read. apply _. Qed.
+    Proof using. unfold is_reg_read. apply _. Qed.
 
     (** Get the set of all register reads *)
     Definition reg_reads (cd : t) :=
@@ -238,7 +239,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_reg_write_decision event : (Decision (is_reg_write event)).
-    Proof. unfold is_reg_write. apply _. Qed.
+    Proof using. unfold is_reg_write. apply _. Qed.
 
     (** Get the set of all register writes *)
     Definition reg_writes (cd : t) :=
@@ -251,7 +252,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_mem_read_decision event : (Decision (is_mem_read event)).
-    Proof. unfold is_mem_read. apply _. Qed.
+    Proof using. unfold is_mem_read. apply _. Qed.
 
     (** Get the set of all memory reads *)
     Definition mem_reads (cd : t) :=
@@ -264,7 +265,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_mem_write_decision event : (Decision (is_mem_write event)).
-    Proof. unfold is_mem_write. apply _. Qed.
+    Proof using. unfold is_mem_write. apply _. Qed.
 
     (** Get the set of all memory writes *)
     Definition mem_writes (cd : t) :=
@@ -278,7 +279,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_mem_event_decision event : (Decision (is_mem_event event)).
-    Proof. unfold is_mem_event. apply _. Qed.
+    Proof using. unfold is_mem_event. apply _. Qed.
 
     (** Get the set of all memory writes *)
     Definition mem_events (cd : t) :=
@@ -291,7 +292,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       end.
 
     Global Instance is_branch_decision event : (Decision (is_branch event)).
-    Proof. unfold is_branch. apply _. Qed.
+    Proof using. unfold is_branch. apply _. Qed.
 
     (** Get the set of all branches *)
     Definition branches (cd : t) :=
@@ -324,8 +325,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     (** * Connection to final state *)
 
     (** Get the list of final register values in a candidate for a thread *)
-    Definition final_reg_gmap_tid (cd : t) (tid : fin cd.(num_threads)) :
-        gmap reg reg_type :=
+    Definition final_reg_gmap_tid (cd : t) (tid : fin nmth) :
+      gmap reg reg_type :=
       foldl (λ umap itrc,
           foldl (λ umap ev,
               match ev with
@@ -337,7 +338,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
     (** Get the final register maps of all threads from a candidate *)
-    Definition final_reg_map_tid (cd : t) (tid : fin cd.(num_threads)) :
+    Definition final_reg_map_tid (cd : t) (tid : fin nmth) :
         registerMap :=
       let umap := final_reg_gmap_tid cd tid in
       λ reg,
@@ -347,7 +348,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         end.
 
     (** Get all the final register map from candidate *)
-    Definition final_reg_map (cd : t) : vec registerMap cd.(num_threads) :=
+    Definition final_reg_map (cd : t) : vec registerMap nmth :=
       fun_to_vec (final_reg_map_tid cd).
 
     (** Get the last write for each pa in candidate. If it's not in the map, it
@@ -380,12 +381,11 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         | None => cd.(init).(MState.memory) pa
         end.
 
-    Definition cd_to_MState (cd : t) : MState.t (cd.(num_threads)) :=
+    Definition cd_to_MState (cd : t) : MState.t nmth :=
       {| MState.regs := final_reg_map cd; MState.memory := final_mem_map cd |}.
 
-    Definition cd_to_MState_final (cd : t)
-        (term : terminationCondition cd.(num_threads)) :
-        option (MState.final cd.(num_threads)) :=
+    Definition cd_to_MState_final (cd : t) (term : terminationCondition nmth) :
+        option (MState.final nmth) :=
       MState.finalize (MState.MakeI (cd_to_MState cd) term).
 
     (** * Utility relations ***)
@@ -437,7 +437,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (forall k, b !!! k ## collect_all (λ _ _, true) cd) ->
       gather_by_key_aux cd b get_key !!! k =
       (b !!! k ∪ collect_all (λ eid event, (get_key eid event) =? Some k) cd).
-    Proof.
+    Proof using.
       unfold gather_by_key_aux, valid_eids, collect_all. revert b.
       pose proof (event_list_NoDup1 cd) as Hdup.
 
@@ -472,7 +472,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (get_key : EID.t -> iEvent -> option K) (k: K):
       gather_by_key cd get_key !!! k =
       collect_all (λ eid event, (get_key eid event) =? Some k) cd.
-    Proof.
+    Proof using.
       rewrite lookup_total_unfold_gather_by_key_aux.
       rewrite lookup_total_empty. set_solver +.
       intros. rewrite lookup_total_empty. set_solver +.
@@ -482,7 +482,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (get_key : EID.t -> iEvent -> option K) (k: K) (eid : EID.t):
       SetUnfoldElemOf eid (gather_by_key cd get_key !!! k)
         (∃ E, cd !! eid = Some E ∧ get_key eid E = Some k).
-    Proof.
+    Proof using.
       tcclean. rewrite lookup_total_unfold_gather_by_key. set_unfold.
       split; intros [? Heq]. rewrite bool_unfold in Heq. all:hauto.
     Qed.
@@ -492,7 +492,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (is_Some (b !! k) ∨ ∃ eid event, (eid, event) ∈ event_list cd
                                        ∧ get_key eid event = Some k) ->
        is_Some((gather_by_key_aux cd b get_key) !! k).
-    Proof.
+    Proof using.
       unfold gather_by_key_aux. revert b.
       induction (event_list cd); intros ? Hinit; first set_solver.
       simpl. destruct a as [eid event]. destruct Hinit as [Hinit|Hinit].
@@ -527,7 +527,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (get_key : EID.t -> iEvent -> option K) (k: K):
       (∃ eid event, (eid, event) ∈ event_list cd ∧ get_key eid event = Some k) ->
        is_Some((gather_by_key cd get_key) !! k).
-    Proof.
+    Proof using.
       unfold gather_by_key. intro Hexists.
       apply lookup_is_Some_gather_by_key_aux. right; hauto.
     Qed.
@@ -548,7 +548,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       SetUnfoldElemOf (e)
         (map_fold (fun (k: K) (v : V) (r : gset K') => r ∪ (f k v)) b m)
         (e ∈ b ∨ ∃ k v, m !! k = Some v ∧ e ∈ (f k v)).
-    Proof.
+    Proof using.
       tcclean. cinduction m using map_fold_cind.
       hauto lq:on use:lookup_empty_Some.
       set_unfold. setoid_rewrite H2; clear H2.
@@ -568,7 +568,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         (sym_rel_with_same_key cd get_key)
         (∃ E1 E2 (k: K), cd !! eid1 = Some E1 ∧ cd !! eid2 = Some E2
                          ∧ get_key eid1 E1 = Some k ∧ get_key eid2 E2 = Some k).
-    Proof.
+    Proof using.
       tcclean. set_unfold.
       split.
       - intros [|(k&?&Hfold&?)]; first done.
@@ -608,11 +608,15 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition sthd (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
 
+    End Cand.
   End Candidate.
+  Arguments Candidate.t : clear implicits.
 
   (** Non-mixed size well-formedness *)
   Module NMSWF.
     Import Candidate.
+  Section NMSWF.
+    Context {nmth : nat}.
 
     (** Get 8 bytes values*)
     Definition get_val (event : iEvent) :=
@@ -626,10 +630,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** This relation only make sense for 8-bytes non-mixed-size models.
         It relates events with the same values *)
-    Definition val (cd : t) : grel EID.t :=
+    Definition val (cd : t nmth) : grel EID.t :=
       sym_rel_with_same_key cd (λ _ event, get_val event).
 
-    Definition co_wf (cd : t) : bool :=
+    Definition co_wf (cd : t nmth) : bool :=
       let co := co cd in
       let loc := loc cd in
       let writes := mem_writes cd in
@@ -640,7 +644,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         bool_decide (grel_rng co ⊆ writes) &&
         (loc ∩ (writes × writes) =? co ∪ co⁻¹ ∪ ⦗writes⦘).
 
-    Definition rf_wf (cd : t) : bool :=
+    Definition rf_wf (cd : t nmth) : bool :=
       let rf := rf cd in
       let loc := loc cd in
       let val := val cd in
@@ -654,24 +658,24 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (* Definition last_reg_access : gmap reg EID.t. *)
 
-    Module IIO.
-      Record t :=
-        make {
-            last_reg_access : gmap reg EID.t;
-            last_reg_read : list EID.t;
-            last_mem_reads : list EID.t;
-            iio_data : grel EID.t;
-            iio_addr : grel EID.t;
-            iio_ctrl : grel EID.t;
-          }.
+    (* Module IIO. *)
+    (*   Record t := *)
+    (*     make { *)
+    (*         last_reg_access : gmap reg EID.t; *)
+    (*         last_reg_read : list EID.t; *)
+    (*         last_mem_reads : list EID.t; *)
+    (*         iio_data : grel EID.t; *)
+    (*         iio_addr : grel EID.t; *)
+    (*         iio_ctrl : grel EID.t; *)
+    (*       }. *)
 
-      #[global] Instance eta : Settable _ :=
-        settable! make
-        <last_reg_access; last_reg_read; last_mem_reads; iio_data; iio_addr; iio_ctrl>.
+    (*   #[global] Instance eta : Settable _ := *)
+    (*     settable! make *)
+    (*     <last_reg_access; last_reg_read; last_mem_reads; iio_data; iio_addr; iio_ctrl>. *)
 
-      Definition init := make ∅ ∅ ∅ ∅.
+    (*   Definition init := make ∅ ∅ ∅ ∅. *)
 
-      Definition reset_thread := setv last_reg_access ∅.
+    (*   Definition reset_thread := setv last_reg_access ∅. *)
 
       (* WIP *)
 
@@ -757,9 +761,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     (* Check that a candidate is self consistent *)
     (* Definition wf (cd : t) : bool := *)
 
-    End IIO.
+    (* End IIO. *)
 
 
+  End NMSWF.
   End NMSWF.
 
 
