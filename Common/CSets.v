@@ -87,6 +87,9 @@ Proof.
   solve_decision.
 Defined.
 
+Definition mset_omap {E} `{MonadSet E} {A B} (f : A → option B) (S : E A) : E B :=
+  x ← S; othrow () (f x).
+
 (*** Simplification ***)
 
 (** Automation for set simplifications *)
@@ -155,6 +158,8 @@ Global Instance set_unfold_elem_of_filter `{FinSet A B}
   SetUnfoldElemOf x a Q ->
   SetUnfoldElemOf x (filter P a) (P x ∧ Q).
 Proof. tcclean. apply elem_of_filter. Qed.
+
+
 
 (** Import this module so that set_unfold unfold X = Y into
     (x,y) ∈ X  <-> (x,y) ∈ Y if X and Y are sets of pairs *)

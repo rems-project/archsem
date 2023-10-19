@@ -557,7 +557,7 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
 (** A thread is allowed to promise any promises with the correct tid for a
     non-certified promising model *)
 Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
-  (mem : Memory.t) msg := msg.(Msg.tid) = tid.
+  (mem : Memory.t) := {[ msg | msg.(Msg.tid) = tid]}.
 Arguments allowed_promises_nocert _ _ _ _ /.
 
 Definition UMPromising_nocert' : PromisingModel :=
@@ -588,13 +588,14 @@ Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
     tsmem' ∈ (cinterp handler isem (tsmem, IIS.init) |$> fst ∘ fst).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
-  (ts : TState.t) (mem : Memory.t) : Ensemble Msg.t :=
-  λ msg,
-    let ts := TState.promise (length mem) ts in
-    let mem := msg :: mem in
-    ∃ ts' mem',
-      rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
-        TState.prom ts' = [].
+    (ts : TState.t) (mem : Memory.t) :=
+  {[ msg |
+     let ts := TState.promise (length mem) ts in
+     let mem := msg :: mem in
+     ∃ ts' mem',
+       rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
+         TState.prom ts' = []
+  ]}.
 
 
 Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=

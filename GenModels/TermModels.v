@@ -1,8 +1,6 @@
 
 Require Import SSCCommon.Exec.
 
-Require Import Ensembles.
-
 Require Import Strings.String.
 
 Require Import SSCCommon.Common.
@@ -30,7 +28,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Import IWA.
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
-  Definition memoryMap := pa -> bv 8.
+  Definition memoryMap := pa → bv 8.
 
   Definition registerMap := reg → reg_type.
 
@@ -38,7 +36,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
       For now it only needs a register maps as I expect it will most often just
       be `PC = ...` or `PC >= ...` *)
-  Definition terminationCondition (n : nat) := fin n -> registerMap -> bool.
+  Definition terminationCondition (n : nat) := fin n → registerMap → bool.
 
   (** This module define a concept of simple machine state without any
       micro-architectural details.
@@ -55,7 +53,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     (** A simple machine state for comparing models and defining sequential
         semantics *)
     Record t :=
-      Make{
+      Make {
           memory : memoryMap;
           regs: vec registerMap n;
         }.
@@ -85,7 +83,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       | right _ => None
       end.
 
-    Lemma finalize_same (s : init) (f : final) : finalize s = Some f -> s = f.
+    Lemma finalize_same (s : init) (f : final) : finalize s = Some f → s = f.
     Proof. unfold finalize. hauto lq:on. Qed.
 
     Lemma finalize_final (s : final) : finalize s = Some s.
@@ -104,20 +102,23 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Global Coercion MState.istate : MState.final >-> MState.init.
 
   Class SubsetEqEquiv (E : Type) {sse : SubsetEq E} {eq : Equiv E} :=
-    subseteq_equiv : forall a b : E, a ≡ b <-> a ⊆ b /\ b ⊆ a.
+    subseteq_equiv : forall a b : E, a ≡ b ↔ a ⊆ b ∧ b ⊆ a.
 
   Global Instance set_subseteq_equiv_instance `{ElemOf A C} :
     SubsetEqEquiv C.
   Proof. intros a b. set_solver. Qed.
 
-  Module ModelResult. (* namespace *)
-    Section MR.
+  Module Model. (* namespace *)
+    Module Res. (* namespace *)
+      Section MR.
       Context {unspecified : Type} {n : nat}.
+      (* TODO consider replacing this type with:
+         result string (MState.final n + unspecified) *)
       Inductive t :=
-      | FinalState : MState.final n -> t
+      | FinalState (finSt : MState.final n)
       (** Unspecified is any kind of behavior that is not fully specified but is
         not a model error. For example a BBM failure. *)
-      | Unspecified : unspecified -> t
+      | Unspecified (unspec : unspecified)
       (** Expected reasons for failures:
 
         - The model does not support a specific outcome.
@@ -127,25 +128,42 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         - A fuel-limited executable model did not have enough fuel.
 
         - The test has an infinite execution (not the fault of the model) *)
-      | Error : string -> t.
+      | Error (msg : string).
 
-      Context `{OMap E}.
-      Context `{Empty (E string)}.
-      Context {sse : forall x, SubsetEq (E x)}.
-      (* even if not directly required, Equiv should match subseteq for the
-         definition to make sense *)
-      Context {eqe : forall x, Equiv (E x)}.
+      (** * Sets of model results *)
+
+      (** We are only interested in monadsets, so sets that support fmap, bind,
+      ... *)
+      Context `{MonadSet E}.
 
       Definition finalStates (ts : E t) :=
-        omap (fun x => match x with | FinalState fs => Some fs | _ => None end) ts.
+        mset_omap
+          (λ x, match x with | FinalState fs => Some fs | _ => None end) ts.
 
-      Definition unspecifieds  (ts : E t) :=
-        omap (fun x => match x with | Unspecified us => Some us | _ => None end) ts.
+      Definition unspecifieds (ts : E t) :=
+        mset_omap
+          (λ x, match x with | Unspecified us => Some us | _ => None end) ts.
 
-      Definition errors  (ts : E t) :=
-        omap (fun x => match x with | Error us => Some us | _ => None end) ts.
+      Definition errors (ts : E t) :=
+        mset_omap (λ x, match x with | Error us => Some us | _ => None end) ts.
 
       Definition no_error (ts : E t) := errors ts ⊆ ∅.
+
+      #[global] Instance set_unfold_elem_of_unspecifieds ts us P:
+        SetUnfoldElemOf (Unspecified us) ts P →
+        SetUnfoldElemOf us (unspecifieds ts) P.
+      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      #[global] Instance set_unfold_elem_of_finalStates ts fs P:
+        SetUnfoldElemOf (FinalState fs) ts P →
+        SetUnfoldElemOf fs (finalStates ts) P.
+      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      #[global] Instance set_unfold_elem_of_errors ts msg P:
+        SetUnfoldElemOf (Error msg) ts P → SetUnfoldElemOf msg (errors ts) P.
+      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      #[global] Typeclasses Opaque finalStates.
+      #[global] Typeclasses Opaque unspecifieds.
+      #[global] Typeclasses Opaque errors.
+
 
       (* The definition of weaker and wider are intended as an experimental
          guide, not as final definitions *)
@@ -153,95 +171,114 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       (** A model is weaker if it allows more behaviors. This assumes all
           unspecified behaviors to be independent of regular final states, later
           this may be expanded with an order on the unspecified objects.
-          weaker ts ts' <-> "ts' is weaker than ts" <-> "ts' has more behaviour than ts"
-       *)
+          weaker ts ts' ↔ "ts' is weaker than ts" ↔
+          "ts' has more behaviours than ts" *)
       Definition weaker (ts ts' : E t) :=
-        no_error ts' ->
-        finalStates ts ⊆ finalStates ts' /\ unspecifieds ts ⊆ unspecifieds ts'
-        /\ no_error ts.
+        no_error ts' →
+        finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts'
+        ∧ no_error ts.
 
       (** A model is wider if it matches exactly the narrow model when the
           narrow model has no error. This means it is the same model except it
           has more coverage
-          wider ts ts' <-> "ts' is a strict extension of ts" <->
+          wider ts ts' ↔ "ts' is a strict extension of ts" ↔<→
           "ts' only adds new behaviours when ts says error"
        *)
       Definition wider (ts ts' : E t) :=
-        (no_error ts' ->
-         finalStates ts ⊆ finalStates ts' /\ unspecifieds ts ⊆ unspecifieds ts') /\
-          (no_error ts ->
-           finalStates ts ≡ finalStates ts' /\
-             unspecifieds ts ≡ unspecifieds ts' /\
+        (no_error ts' →
+         finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts') ∧
+          (no_error ts →
+           finalStates ts ≡ finalStates ts' ∧
+             unspecifieds ts ≡ unspecifieds ts' ∧
              no_error ts').
 
-      Context {sseq : forall x, SubsetEqEquiv (E x)}.
-      Lemma wider_weaker (ts ts' : E t) : wider ts ts' -> weaker ts' ts.
-      Proof using sseq. firstorder. Qed.
+      Lemma wider_weaker (ts ts' : E t) : wider ts ts' → weaker ts' ts.
+      Proof using. firstorder. Qed.
 
       (** Both kind of equivalence are the same when there is no error.
           The strong equivalence is too restrictive
        *)
-      Definition equiv (ts ts' : E t) := weaker ts ts' /\ weaker ts' ts.
-
-      Lemma equiv_wider (ts ts' : E t) : equiv ts ts' -> wider ts ts'.
-      Proof using sseq. firstorder. Qed.
-
-      Lemma wider_equiv (ts ts' : E t) :
-        wider ts ts' /\ (no_error ts' -> no_error ts) <-> equiv ts ts'.
-      Proof using sseq. firstorder. Qed.
-
-      Lemma equiv_errors (ts ts' : E t) : equiv ts ts' -> (no_error ts <-> no_error ts').
-      Proof using sseq. firstorder. Qed.
-
-    End MR.
-    Arguments t : clear implicits.
-
-    Definition from_exec {n} (e : Exec.t string (MState.final n)) : listset (t False n) :=
-      match e with
-      | Exec.Error s => Listset [Error s]
-      | Exec.Results l => FinalState <$> (Listset l)
-      end.
-
-  End ModelResult.
+      Definition equiv (ts ts' : E t) := weaker ts ts' ∧ weaker ts' ts.
 
 
-  Module Model. (* namespace *)
-    Section M.
-      Context `{OMap E}.
-      Context `{Empty (E string)}.
-      Context {sse : forall x, SubsetEq (E x)}.
-      Context {eqe : forall x, Equiv (E x)}.
+      Lemma equiv_wider (ts ts' : E t) :
+        equiv ts ts' ↔ wider ts ts' ∧ (no_error ts' → no_error ts).
+      Proof using. firstorder. Qed.
+
+      Lemma equiv_wider' (ts ts' : E t) : equiv ts ts' → wider ts ts'.
+      Proof using. firstorder. Qed.
+
+      Lemma equiv_errors (ts ts' : E t) :
+        equiv ts ts' → (no_error ts ↔ no_error ts').
+      Proof using. firstorder. Qed.
+
+      End MR.
+      Arguments t : clear implicits.
+
+      Definition from_exec {n} (e : Exec.t string (MState.final n)) : listset (t False n) :=
+        match e with
+        | Exec.Error s => Listset [Error s]
+        | Exec.Results l => FinalState <$> (Listset l)
+        end.
+
+    End Res.
+
+    Section Model.
+      Context `{MonadSet E}.
       Context {unspec : Type}.
 
       Definition t : Type :=
-        forall n : nat, MState.init n -> E (ModelResult.t unspec n).
+        ∀ n : nat, MState.init n → E (Res.t unspec n).
 
-      Definition weaker (m1 m2 : t) : Prop
-        := forall n initSt, ModelResult.weaker (m1 n initSt) (m2 n initSt).
-      Instance subset : SubsetEq t := weaker.
+      Definition weaker (m m' : t) : Prop
+        := ∀ n initSt, Res.weaker (m n initSt) (m' n initSt).
 
-      Definition wider (m1 m2 : t)
-        := forall n initSt, ModelResult.wider (m1 n initSt) (m2 n initSt).
-      Instance sqsubset : SqSubsetEq t := wider.
+      Definition wider (m m' : t)
+        := ∀ n initSt, Res.wider (m n initSt) (m' n initSt).
 
       Instance equiv : Equiv t :=
-        fun m1 m2 =>
-          forall n initSt, ModelResult.equiv (m1 n initSt) (m2 n initSt).
-    End M.
+        λ m m', ∀ n initSt, Res.equiv (m n initSt) (m' n initSt).
+
+      Lemma wider_weaker (m m' : t) : wider m m' → weaker m' m.
+      Proof using.
+        unfold wider, weaker. intros. apply Res.wider_weaker. naive_solver.
+      Qed.
+
+      Lemma equiv_weaker (m m' : t) :
+        equiv m m' ↔ weaker m m' ∧ weaker m' m.
+      Proof using. unfold equiv, weaker, Res.equiv. naive_solver. Qed.
+
+      Lemma equiv_wider (m m' : t) :
+        equiv m m' ↔
+          wider m m' ∧
+          (∀ n initSt, Res.no_error (m' n initSt) → Res.no_error (m n initSt)).
+      Proof using.
+        unfold equiv, wider. setoid_rewrite Res.equiv_wider. naive_solver.
+      Qed.
+      Lemma equiv_wider' (m m' : t) :
+        equiv m m' → wider m m'.
+      Proof using. rewrite equiv_wider. naive_solver. Qed.
+      Lemma equiv_errors (m m' : t) :
+        equiv m m' →
+        (∀ n initSt, Res.no_error (m n initSt) ↔ Res.no_error (m' n initSt)).
+      Proof using.
+        unfold equiv. intros. apply Res.equiv_errors. naive_solver.
+      Qed.
+
+    End Model.
     Arguments t : clear implicits.
 
-    Definition map_set {E E' unspec} (f : forall {A}, E A -> E' A) (m : t E unspec)
-      : t E' unspec :=
-      fun n initSt => m n initSt |> f.
+    Definition map_set {E E' unspec} (f : ∀ {A}, E A → E' A) (m : t E unspec)
+      : t E' unspec := λ n initSt, f (m n initSt).
 
     (** Non computational model *)
-    Notation nc := (t Ensemble).
+    Notation nc := (t propset).
 
     (** Computational model *)
     Notation c := (t listset).
 
-    Definition c_to_nc {unspec} : c unspec -> nc unspec :=
-      map_set (fun A => Ensemble_from_set).
+    Definition to_nc {unspec} `{MonadSet E} : t E unspec → nc unspec :=
+      map_set (λ A, set_to_propset).
   End Model.
 
 End TermModels.

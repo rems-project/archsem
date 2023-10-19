@@ -83,6 +83,12 @@ Proof.
   - sfirstorder use:NoDup_Permutation.
 Qed.
 
+Global Instance set_unfold_elem_of_filter_list A
+  `{∀ x : A, Decision (P x)} x (a : list A) Q:
+  SetUnfoldElemOf x a Q →
+  SetUnfoldElemOf x (filter P a) (P x ∧ Q).
+Proof. tcclean. apply elem_of_list_filter. Qed.
+
 (*** List lookup with different keys ***)
 
 Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
@@ -135,19 +141,6 @@ Global Instance exist_list_decision A P (l : list A):
   (∀ x : A, Decision (P x)) → Decision (∃'x ∈ l, P x).
 Proof. intro. rewrite <- Exists_exists. solve_decision. Defined.
 
-(*** List as sets ***)
-
-(* TODO make a PR to stdpp with this: *)
-Global Instance list_omap : OMap listset := λ A B f '(Listset l),
-    Listset (omap f l).
-
-Global Instance list_Empty {A} : Empty (list A) := [].
-
-Global Instance set_unfold_elem_of_filter_list A
-  `{∀ x : A, Decision (P x)} x (a : list A) Q:
-  SetUnfoldElemOf x a Q ->
-  SetUnfoldElemOf x (filter P a) (P x ∧ Q).
-Proof. tcclean. apply elem_of_list_filter. Qed.
 
 (*** List utility functions ***)
 

@@ -113,7 +113,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
                 fHandler outcome
                   (ST.t (tState * PromMemory.t mEvent * iis) (Exec.t string));
       allowed_promises : (* tid *) nat → memoryMap → tState →
-                         PromMemory.t mEvent → Ensemble mEvent;
+                         PromMemory.t mEvent → propset mEvent;
       (** I'm not considering that emit_promise can fail or have a
       non-deterministic behaviour *)
       emit_promise : (* tid *) nat → memoryMap → PromMemory.t mEvent →
@@ -139,7 +139,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
       promise_select_sound :
       ∀ n tid initMem ts mem,
         ∀'ev ∈ (promise_select n tid initMem ts mem),
-          pModel.(allowed_promises) tid initMem ts mem ev;
+          ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
       ∀ n tid initMem ts mem,
         Exec.has_results (promise_select n tid initMem ts mem) →
@@ -254,19 +254,20 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
   (** Create a non-computational model from an ISA model and promising model *)
   Definition Promising_to_Modelnc (isem : iSem) (prom : PromisingModel)
     : Model.nc False :=
-    λ n (initMs : MState.init n) (mr : ModelResult.t False n),
-      let initPs := PState.from_MState isem prom initMs in
-      match mr with
-      | ModelResult.FinalState fs =>
-          ∃ finPs, rtc (PState.step isem prom) initPs finPs ∧
-                     fs.(MState.state) = PState.to_MState isem prom finPs ∧
-                     fs.(MState.termCond) = initMs.(MState.termCond) ∧
-                     PState.nopromises isem prom finPs
-      | ModelResult.Error s =>
-          ∃ finPs tid, rtc (PState.step isem prom) initPs finPs /\
-                         PState.run_tid isem prom finPs tid = Exec.Error s
-      | _ => False
-      end.
+    λ n (initMs : MState.init n),
+      {[ mr |
+         let initPs := PState.from_MState isem prom initMs in
+         match mr with
+         | Model.Res.FinalState fs =>
+             ∃ finPs, rtc (PState.step isem prom) initPs finPs ∧
+                        fs.(MState.state) = PState.to_MState isem prom finPs ∧
+                        fs.(MState.termCond) = initMs.(MState.termCond) ∧
+                        PState.nopromises isem prom finPs
+         | Model.Res.Error s =>
+             ∃ finPs tid, rtc (PState.step isem prom) initPs finPs ∧
+                            PState.run_tid isem prom finPs tid = Exec.Error s
+         | _ => False
+         end]}.
 
   (** Computational promising state. Right now it the same type as PState.t but
       with more methods *)
@@ -339,7 +340,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
       (fuel : nat) : Model.c False :=
       fun n (initMs : MState.init n) =>
         let initPs := PState.from_MState isem prom initMs in
-        ModelResult.from_exec
+        Model.Res.from_exec
           $ CPState.to_final_MState
           <$> CPState.run isem prom initMs.(MState.termCond) fuel initPs.
 
