@@ -767,6 +767,194 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
   End NMSWF.
   End NMSWF.
 
+  Module Ax.
+    Import Candidate.
+    Notation cand := t.
+      (* Context {unspec : Type}. *)
+      (* Notation mresult := (ModelResult.t unspec). *)
+      (* Notation model := (Model.nc unspec). *)
 
+    (** Behaviors an axiomatic model can give to a candidate *)
+    Inductive behavior {unspec : Type} :=
+    (** The candidate execution is allowed *)
+    | Allowed
+    (** The candidate execution is forbidden *)
+    | Rejected
+    (** The candidate execution leads to some unspecified behavior.
+          Unspecified is any kind of behavior that is not fully specified but is
+          not a model error. For example a BBM failure. *)
+    | Unspecified (u : unspec).
+    Arguments behavior : clear implicits.
+
+    (** An axiomatic model is just a candidate classifier. *)
+    Definition t unspec := ∀ n, cand n → result string (behavior unspec).
+
+    Module Res.
+      Section Res.
+        Context {unspec : Type}.
+        Notation axres := (result string (behavior unspec)).
+        Notation mres := (Model.Res.t unspec).
+        Notation model := (Model.nc unspec).
+
+      Definition to_ModelResult (axr : axres) {n} (cd : cand n)
+        (term : terminationCondition n) : option (mres n) :=
+        match axr with
+        | Ok Allowed => cd_to_MState_final cd term |$> Model.Res.FinalState
+        | Ok Rejected => None
+        | Ok (Unspecified u) => Some (Model.Res.Unspecified u)
+        | Error msg => Some (Model.Res.Error msg)
+        end.
+
+      (** When a model gives a more precise definition for the error of another
+      model. See [Model.wider]. This means axr' is wider than axr *)
+      Definition wider (axr axr' : axres) :=
+        match axr with
+        | Ok x => axr' = Ok x
+        | _ => True
+        end.
+
+      Definition weaker (axr axr' : axres) :=
+        match axr, axr' with
+        | _, Error _ => True
+        | Ok Allowed, Ok Allowed => True
+        | Ok Rejected, _ => True
+        | Ok (Unspecified u), Ok (Unspecified u') => u = u'
+        | _, _ => False
+        end.
+
+      Lemma wider_weaker (axr axr' : axres) : wider axr axr' → weaker axr' axr.
+      Proof using. unfold wider, weaker. repeat case_split; naive_solver. Qed.
+
+      Definition equiv (axr axr' : axres) :=
+        match axr, axr' with
+        | Ok val, Ok val' => val = val'
+        | Error _, Error _ => True
+        | _,_=> False
+        end.
+
+      Lemma equiv_weaker axr axr' :
+        equiv axr axr' ↔ weaker axr axr' ∧ weaker axr' axr.
+      Proof using. unfold equiv, weaker. repeat case_split; naive_solver. Qed.
+
+      Lemma equiv_wider axr axr' :
+        equiv axr axr' ↔ wider axr axr' ∧ (is_Ok axr' → is_Ok axr).
+      Proof using. unfold equiv, wider. sauto lq:on. Qed.
+
+      Lemma equiv_wider' axr axr' : equiv axr axr' → wider axr axr'.
+      Proof using. rewrite equiv_wider. naive_solver. Qed.
+
+      Lemma equiv_is_ok axr axr' :
+        equiv axr axr' → (is_Ok axr ↔ is_Ok axr').
+      Proof using. unfold equiv. sauto lq:on. Qed.
+      End Res.
+    End Res.
+
+    Section Ax.
+      Context {unspec : Type}.
+      Notation axres := (result string (behavior unspec)).
+      Notation mres := (Model.Res.t unspec).
+      Notation model := (Model.nc unspec).
+      Notation t := (t unspec).
+
+      (** Lifting Res definition to Ax *)
+      Definition wider (ax ax' : t) := ∀ n cd, Res.wider (ax n cd) (ax' n cd).
+      Definition weaker (ax ax' : t) := ∀ n cd, Res.weaker (ax n cd) (ax' n cd).
+      Definition equiv (ax ax' : t) := ∀ n cd, Res.equiv (ax n cd) (ax' n cd).
+      Lemma wider_weaker (ax ax' : t) : wider ax ax' → weaker ax' ax.
+      Proof using.
+        unfold wider, weaker. intros. apply Res.wider_weaker. naive_solver.
+      Qed.
+      Lemma equiv_weaker (ax ax' : t) :
+        equiv ax ax' ↔ weaker ax ax' ∧ weaker ax' ax.
+      Proof using.
+        unfold equiv, weaker. setoid_rewrite Res.equiv_weaker. naive_solver.
+      Qed.
+
+      Lemma equiv_wider (ax ax' : t) :
+        equiv ax ax' ↔
+          wider ax ax' ∧ (∀ n cd, is_Ok (ax' n cd) → is_Ok (ax n cd)).
+      Proof using.
+        unfold equiv, wider. setoid_rewrite Res.equiv_wider. naive_solver.
+      Qed.
+      Lemma equiv_wider' (ax ax' : t) :
+        equiv ax ax' → wider ax ax'.
+      Proof using. rewrite equiv_wider. naive_solver. Qed.
+      Lemma equiv_is_ok (ax ax' : t) :
+        equiv ax ax' → (∀ n cd, is_Ok (ax n cd) ↔ is_Ok (ax' n cd)).
+      Proof using.
+        unfold equiv. intros. apply Res.equiv_is_ok. naive_solver.
+      Qed.
+
+      Definition to_ModelResult (ax : t) {n} (cd : cand n)
+        (term : terminationCondition n) : option (mres n) :=
+        Res.to_ModelResult (ax n cd) cd term.
+
+      (** Creates a non-computational model from an instruction semantic and an
+          axiomatic model *)
+      Definition to_Modelnc (isem : iMon ()) (ax : t) : model :=
+        λ n initSt,
+          {[ mr |
+             ∃ cd : cand n,
+               cd.(init) = initSt
+               ∧ ISA_match cd isem
+               ∧ to_ModelResult ax cd initSt.(MState.termCond) = Some mr
+          ]}.
+
+
+      Lemma wider_Model (isem : iMon ()) (ax ax' : t) :
+        wider ax ax' → Model.wider (to_Modelnc isem ax) (to_Modelnc isem ax').
+      Proof using.
+        intros WD nmth initSt.
+        split.
+        all: intros NE.
+        all: set_unfold.
+        all: repeat split_and.
+        all: intros ?.
+        all: try split.
+        all: intros [cd ?].
+        all: specialize (WD nmth cd); unfold Res.wider.
+        all: destruct (ax nmth cd) as [[]|] eqn:Heqn.
+        all: destruct (ax' nmth cd) as [[]|] eqn:Heqn'.
+        all: try (eapply NE; clear NE).
+        all: (exists cd; intuition).
+        all: unfold to_ModelResult, Res.to_ModelResult in *.
+        all: rewrite Heqn in *.
+        all: rewrite Heqn' in *.
+        all: hauto l:on.
+        Unshelve.
+        all: exact "".
+      Qed.
+
+      Lemma weaker_Model (isem : iMon ()) (ax ax' : t) :
+        weaker ax ax' → Model.weaker (to_Modelnc isem ax) (to_Modelnc isem ax').
+      Proof using.
+        intros WD nmth initSt.
+        intros NE.
+        repeat split_and.
+        all: set_unfold.
+        all: intros ? [cd ?].
+        all: specialize (WD nmth cd); unfold Res.weaker.
+        all: destruct (ax nmth cd) as [[]|] eqn:Heqn.
+        all: destruct (ax' nmth cd) as [[]|] eqn:Heqn'.
+        all: try (eapply NE; clear NE).
+        all: (exists cd; intuition).
+        all: unfold to_ModelResult, Res.to_ModelResult in *.
+        all: rewrite Heqn in *.
+        all: rewrite Heqn' in *.
+        all: hauto l:on.
+        Unshelve.
+        all: exact "".
+      Qed.
+
+      Lemma equiv_Model (isem : iMon ()) (ax ax' : t) :
+        equiv ax ax' → Model.equiv (to_Modelnc isem ax) (to_Modelnc isem ax').
+      Proof using.
+        rewrite Model.equiv_weaker.
+        rewrite equiv_weaker.
+        intros [].
+        split; by apply weaker_Model.
+      Qed.
+    End Ax.
+  End Ax.
 
 End CandidateExecutions.
