@@ -8,6 +8,7 @@ Require Import stdpp.gmap.
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.
 
+Require Import SSCCommon.Options.
 Require Import SSCCommon.CBase.
 Require Import SSCCommon.Effects.
 Require Import SSCCommon.FMon.

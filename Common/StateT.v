@@ -1,6 +1,7 @@
 (** Add a state monad transformer *)
 
 Require Import CBase.
+Require Import Options.
 Require Import Effects.
 
 Module ST.

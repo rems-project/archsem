@@ -2,6 +2,7 @@ Require Import Strings.String.
 
 From stdpp Require Import decidable.
 
+Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.GRel.
 Require Import SSCCommon.FMon.

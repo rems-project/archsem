@@ -1,4 +1,5 @@
 Require Import CBase CBool CMaps.
+Require Import Options.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.

@@ -15,6 +15,7 @@ Require Import Strings.String.
 From stdpp Require Export listset.
 From stdpp Require Export gmap.
 
+Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.
@@ -426,10 +427,11 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       induction (event_list cd); first set_solver.
       assert (map fst (filter (λ '(_, _), True) l) = l.*1) as Heql.
       { clear. induction l; first done.
-        rewrite filter_cons_True. hauto lq:on use: map_cons. hauto. }
+        rewrite filter_cons_True; hauto l:on use: map_cons. }
 
       destruct a as [eid event].
-      rewrite fmap_cons in Hdup. specialize (IHl (NoDup_cons_1_2 _ _ Hdup)).
+      rewrite fmap_cons in Hdup.
+      specialize (IHl (NoDup_cons_1_2 _ _ Hdup)).
       apply NoDup_cons_1_1 in Hdup.
       do 2 rewrite filter_cons; simpl.
 
@@ -456,8 +458,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       collect_all (λ eid event, (get_key eid event) =? Some k) cd.
     Proof using.
       rewrite lookup_total_unfold_gather_by_key_aux.
-      rewrite lookup_total_empty. set_solver +.
-      intros. rewrite lookup_total_empty. set_solver +.
+      - rewrite lookup_total_empty. set_solver +.
+      - intros. rewrite lookup_total_empty. set_solver +.
     Qed.
 
     Global Instance set_elem_of_gather_by_key_lookup `{Countable K} (cd : t)
@@ -466,7 +468,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         (∃ E, cd !! eid = Some E ∧ get_key eid E = Some k).
     Proof using.
       tcclean. rewrite lookup_total_unfold_gather_by_key. set_unfold.
-      split; intros [? Heq]. rewrite bool_unfold in Heq. all:hauto.
+      split; intros [? Heq]; first rewrite bool_unfold in Heq; hauto.
     Qed.
 
     Lemma lookup_is_Some_gather_by_key_aux `{Countable K} (cd : t)
@@ -478,30 +480,37 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       unfold gather_by_key_aux. revert b.
       induction (event_list cd); intros ? Hinit; first set_solver.
       simpl. destruct a as [eid event]. destruct Hinit as [Hinit|Hinit].
-      apply IHl. destruct Hinit. left. case_match. destruct (decide (k = k0)).
-      subst k0. exists ({[eid]} ∪ x).
-      assert (Some {[eid]} ∪ₒ Some x = Some ({[eid]} ∪ x)) as <-. done.
-      apply lookup_unfold_pointwise_union. tcclean.
-      rewrite lookup_singleton_Some; hauto. done.
-     + exists x. assert (None ∪ₒ Some x = Some x) as <-. done.
-       apply lookup_unfold_pointwise_union. tcclean.
-       rewrite lookup_singleton_None; hauto. done.
-     + exists x. assert (None ∪ₒ Some x = Some x) as <-. done.
-       apply lookup_unfold_pointwise_union. tcclean.
-       rewrite lookup_empty; hauto. done.
-     + destruct Hinit as (?&?&Hcons&HP).
+      - apply IHl. destruct Hinit. left. case_match.
+        + destruct (decide (k = k0)).
+          * subst k0. exists ({[eid]} ∪ x).
+            assert (Some {[eid]} ∪ₒ Some x = Some ({[eid]} ∪ x)) as <-. { done. }
+            apply lookup_unfold_pointwise_union. 2:{ done. }
+            tcclean.
+            rewrite lookup_singleton_Some; hauto.
+          * exists x. assert (None ∪ₒ Some x = Some x) as <-. { done. }
+            apply lookup_unfold_pointwise_union. 2:{ done. }
+            tcclean.
+            rewrite lookup_singleton_None; hauto.
+        + exists x. assert (None ∪ₒ Some x = Some x) as <-. { done. }
+          apply lookup_unfold_pointwise_union. 2:{ done. }
+          tcclean.
+          rewrite lookup_empty; hauto.
+     - destruct Hinit as (?&?&Hcons&HP).
        rewrite elem_of_cons in Hcons. destruct Hcons as [Hhd | Hin].
-       inversion Hhd; subst.
-       * rewrite HP. apply IHl. left.
+       + inversion Hhd; subst.
+         rewrite HP. apply IHl. left.
          destruct (b !! k) eqn:Hb.
-         exists ({[eid]} ∪ g).
-         assert (Some {[eid]} ∪ₒ Some g = Some ({[eid]} ∪ g)) as <-. done.
-         apply lookup_unfold_pointwise_union. tcclean.
-         rewrite lookup_singleton_Some; hauto. done.
-         exists {[eid]}. assert (Some {[eid]} ∪ₒ None = Some {[eid]}) as <-. done.
-         apply lookup_unfold_pointwise_union. tcclean.
-         rewrite lookup_singleton_Some; hauto. done.
-       * apply IHl. right. do 2 eexists. naive_solver.
+         * exists ({[eid]} ∪ g).
+           assert (Some {[eid]} ∪ₒ Some g = Some ({[eid]} ∪ g)) as <-. { done. }
+           apply lookup_unfold_pointwise_union. 2: { done. }
+           tcclean.
+           rewrite lookup_singleton_Some; hauto.
+         * exists {[eid]}.
+           assert (Some {[eid]} ∪ₒ None = Some {[eid]}) as <-. { done. }
+           apply lookup_unfold_pointwise_union. 2: { done. }
+           tcclean.
+           rewrite lookup_singleton_Some; hauto.
+       + apply IHl. right. do 2 eexists. naive_solver.
     Qed.
 
     (** if exists an event with key [k], them [k] must in the gathered map *)
@@ -532,7 +541,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         (e ∈ b ∨ ∃ k v, m !! k = Some v ∧ e ∈ (f k v)).
     Proof using.
       tcclean. cinduction m using map_fold_cind.
-      hauto lq:on use:lookup_empty_Some.
+      1: hauto lq:on use:lookup_empty_Some.
       set_unfold. setoid_rewrite H2; clear H2.
       split.
       - intros [[| (?&?&?&?)]|]; first hauto lq:on;
@@ -562,7 +571,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         hauto lq:on.
       - intros (?&?&k&Hlk1&Hloc1&?&Hloc2); right.
         opose proof* (lookup_is_Some_gather_by_key cd get_key k) as HSome.
-        set_unfold. hauto.
+        1: set_unfold; hauto.
         destruct HSome as [? HSome].
         pose proof (lookup_total_unfold_gather_by_key cd get_key k) as Hunfold.
         rewrite lookup_total_alt in Hunfold.

@@ -8,8 +8,8 @@ Require Export Relations.
 From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
 Require Import ZArith.
+Require Import Options.
 
-#[export] Set Keyed Unification.
 
 (*** Notations ***)
 

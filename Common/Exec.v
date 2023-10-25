@@ -15,6 +15,7 @@
    invalid code that would trigger them will make the whole execution return
    an error with hopefully a descriptive message. *)
 
+Require Import Options.
 Require Import Common.
 Require Import Effects.
 

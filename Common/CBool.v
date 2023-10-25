@@ -10,6 +10,7 @@ From Hammer Require Import Tactics.
 Require Import DecidableClass.
 
 Require Import CBase.
+Require Import Options.
 
 From Hammer Require Reflect.
 

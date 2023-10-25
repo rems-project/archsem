@@ -18,6 +18,7 @@
 
 Require Import Wellfounded.
 
+Require Import Options.
 From stdpp Require Export option.
 Require Import Common.
 

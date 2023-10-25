@@ -1,4 +1,5 @@
 Require Import CBase.
+Require Import Options.
 From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to

@@ -3,6 +3,7 @@ From stdpp Require Export gmap. (* <- contains gset *)
 From stdpp Require Export finite.
 
 Require Import CBase.
+Require Import Options.
 Require Import CBool.
 Require Import CList.
 Require Import CInduction.
@@ -15,8 +16,8 @@ Lemma elements_singleton_iff `{FinSet A C} (s : C) (a : A) :
   elements s = [a] <-> s ≡ {[a]}.
 Proof.
   rewrite <- Permutation_singleton_r.
-  assert (NoDup [a]). sauto lq:on.
-  assert (NoDup (elements s)). sfirstorder.
+  assert (NoDup [a]). { sauto lq:on. }
+  assert (NoDup (elements s)). { sfirstorder. }
   set_solver.
 Qed.
 
@@ -112,14 +113,14 @@ Tactic Notation "set_simp" :=
 
 Section SetSimp.
   Context {A C : Type}.
-  Context `{SemiSet A C}.
+  Context `{SS : SemiSet A C}.
   Context {lei : LeibnizEquiv C}.
 
   Lemma set_left_id_union (s : C) : ∅ ∪ s = s.
-  Proof. apply leibniz_equiv. set_unfold. naive_solver. Qed.
+  Proof using SS lei. apply leibniz_equiv. set_unfold. naive_solver. Qed.
 
   Lemma set_right_id_union (s : C) : s ∪ ∅ = s.
-  Proof. apply leibniz_equiv. set_unfold. naive_solver. Qed.
+  Proof using SS lei. apply leibniz_equiv. set_unfold. naive_solver. Qed.
 End SetSimp.
 #[global] Hint Rewrite @set_left_id_union using typeclasses eauto : set.
 #[global] Hint Rewrite @set_right_id_union using typeclasses eauto : set.

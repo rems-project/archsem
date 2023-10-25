@@ -2,6 +2,7 @@ Require Import Strings.String.
 
 From stdpp Require Import decidable.
 
+Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.GRel.
 Require Import SSCCommon.FMon.
@@ -162,7 +163,7 @@ Module Thm2.
       Local Typeclasses Opaque VMSA.rf VMSA.fr VMSA.co.
       assert (UM.po_loc erased_cd ∪ VMSA.fr cd ∪ VMSA.co cd ∪ VMSA.rf cd
         ⊆ VMSA.po_loc cd ∪ VMSA.fr cd ∪ VMSA.co cd ∪ VMSA.rf cd).
-      set_solver + H.
+      { set_solver + H. }
       clear H. apply grel_plus_subseteq in H0.
       set_solver.
       Local Typeclasses Transparent VMSA.rf VMSA.fr VMSA.co.
@@ -330,7 +331,8 @@ Module Thm2.
       unfold VMSA.obtlbi_translate.
       Local Typeclasses Opaque T VMSA.Stage1 VMSA.tlb_barriered
       VMSA.maybe_TLB_cached VMSA.trf VMSA.same_translation.
-      assert (TLBI cd = ∅). set_unfold; sauto lq:on. clear H1.
+      assert (TLBI cd = ∅). { set_unfold; sauto lq:on. }
+      clear H1.
       assert (VMSA.TLBI_S1 cd = ∅).
       {
         Local Typeclasses Opaque VMSA.is_tlbi_op.
@@ -572,8 +574,8 @@ Module Thm2.
           rewrite assoc. 2: apply _.
           set_unfold.
           intros ? (?&?&?). destruct H as (? & ?& [? |?]).
-          apply (H7 (x1, x0)). hauto l:on.
-          apply (H8 (x1, x0)). hauto l:on.
+          - apply (H7 (x1, x0)). hauto l:on.
+          - apply (H8 (x1, x0)). hauto l:on.
           Local Typeclasses Transparent T W instruction_order data addr VMSA.po VMSA.rfi.
         }
         assert (⦗T cd⦘⨾ ((addr cd ∪ data cd) ⨾ VMSA.trfi cd) = ∅).
@@ -583,8 +585,8 @@ Module Thm2.
           rewrite assoc. 2: apply _.
           set_unfold.
           intros ? (?&?&?). destruct H as (? & ?& [? |?]).
-          apply (H7 (x1, x0)). hauto l:on.
-          apply (H8 (x1, x0)). hauto l:on.
+          - apply (H7 (x1, x0)). hauto l:on.
+          - apply (H8 (x1, x0)). hauto l:on.
           Local Typeclasses Transparent T W instruction_order data addr VMSA.po VMSA.rfi.
         }
         clear -H7 H8 H9 H11 H12 H13 H14.

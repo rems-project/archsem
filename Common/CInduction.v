@@ -1,6 +1,7 @@
 Require Import Program.Tactics.
 Require Import Arith.
 Require Import CBase.
+Require Import Options.
 
 (** This module exists because I got fed up by how the normal induction tactic
     did not work on custom induction principles. This new tactic is named

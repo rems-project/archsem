@@ -5,6 +5,7 @@ Require Import stdpp.unstable.bitvector.
 Require Import SailArmInstTypes.
 Require Import Interface.
 
+Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Effects.
 Require Import SSCCommon.FMon.

@@ -6,8 +6,10 @@ Require Import stdpp.decidable.
 Require Export stdpp.unstable.bitvector.
 Require Export stdpp.unstable.bitvector_tactics.
 Require Import CBase.
+Require Import Options.
 Require Import CBool.
 Require Import CList.
+
 
 
 (** This make lia slower and more powerful. I think it's better with it on *)

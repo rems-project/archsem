@@ -4,6 +4,7 @@
  (modules
    Common
    CBase
+   Options
    CList
    CBool
    CBitvector

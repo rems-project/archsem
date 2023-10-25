@@ -1,5 +1,5 @@
 
-Require Import Strings.String.
+Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.

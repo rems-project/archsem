@@ -2,6 +2,7 @@
     It uses UIP *)
 
 Require Import CBase CBool.
+Require Import Options.
 From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.

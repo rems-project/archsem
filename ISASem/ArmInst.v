@@ -4,6 +4,7 @@ Require Import stdpp.strings.
 Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import stdpp.vector.
+Require Import SSCCommon.Options.
 Require Import Interface.
 Require Import Deps.
 Require Import SailStdpp.Base.

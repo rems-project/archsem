@@ -1,7 +1,5 @@
-
-Require Import CBase.
-Require Import CResult.
 Require Import Common.
+Require Import Options.
 From stdpp Require Import option.
 
 (* Reexporting Effects. Using FMon implies using Effects *)
@@ -158,7 +156,7 @@ Section FMon.
   Hint Resolve ftfull_FTStop : fmon.
   Lemma ftfull_FTStop_spec {A} T (call : Eff T) :
     ftfull (A := A) (FTStop call) ↔ (T → False).
-  Proof using. split. sfirstorder. apply ftfull_FTStop. Qed.
+  Proof using. split; [sfirstorder | apply ftfull_FTStop]. Qed.
   Hint Rewrite @ftfull_FTStop_spec : fmon.
 
   Equations ftfull_dec {A} `{Eff.Wf Eff} (ft : fTrace A) : Decision (ftfull ft) :=
@@ -281,7 +279,7 @@ Section FMon.
 
   Lemma ftrace_ftfull_exists {A} (m : fMon A) : ∃ t, fmatch m t ∧ ftfull t.
   Proof using Wf.
-    induction m. hauto lq:on ctrs:fmatch hint:db:fmon.
+    induction m. { hauto lq:on ctrs:fmatch hint:db:fmon. }
     destruct (decideT T).
     - hauto lq:on ctrs:fmatch.
     - hauto lq:on ctrs:fmatch db:fmon.
@@ -298,7 +296,7 @@ Section FMon.
     - hauto ctrs:fmatch inv:fmatch q:on db:fmon.
     - destruct (ftrace_ftfull_exists (Next call k)) as [tr [Htr Hfull]].
       pose proof Htr as Htr2.
-      apply Ht in Htr2.
+      apply Ht in Htr2. 2: done.
       dependent destruction Htr;
       dependent destruction Htr2.
       + clear dependent tr.
@@ -309,7 +307,6 @@ Section FMon.
         specialize Ht with (FTNext (call &→ a) trc).
         by setoid_rewrite fmatch_next in Ht.
       + constructor. intro. hauto l:on db:fmon.
-      + done.
   Qed.
 
   (** * Fmon Handling *)
