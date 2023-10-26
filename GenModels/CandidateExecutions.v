@@ -65,6 +65,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
   End EID.
 
+  (* Namespace *)
+  (* TODO rename to Cand ? *)
   Module Candidate.
   Section Cand.
     Context {nmth : nat}.

@@ -1,6 +1,6 @@
 (coq.theory
  (name GenModels)
  (package coq-system-semantics)
- (modules TermModels CandidateExecutions)
+ (modules TermModels CandidateExecutions ArmInst)
  (theories ISASem SSCCommon)
 )

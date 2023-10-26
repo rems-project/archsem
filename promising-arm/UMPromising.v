@@ -8,13 +8,10 @@ Require Import Coq.Program.Equality.
 
 From stdpp Require Import decidable.
 
-Require Import ISASem.ArmInst.
-Require Import GenModels.TermModels.
-Module TM := TermModels Arm.
-Import TM.
+Require Import GenModels.ArmInst.
 Require Import GenPromising.
-Module GP := Gen Arm TM.
-Import GP.
+Module ArmGP := Gen Arm ArmTM.
+Import ArmGP.
 
 (** The goal of this module is to define an User-mode promising model,
     without mixed-size on top of the new interface *)

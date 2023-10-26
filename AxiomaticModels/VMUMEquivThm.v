@@ -6,17 +6,13 @@ Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.GRel.
 Require Import SSCCommon.FMon.
-Require Import ISASem.ArmInst.
-Require Import ISASem.SailArmInstTypes.
-Require Import GenModels.TermModels.
-Module ArmTM := TermModels Arm.
-Require Import GenModels.CandidateExecutions.
-Module ArmCand := CandidateExecutions Arm ArmTM.
+Require Import GenModels.ArmInst.
 Require Import GenAxiomaticArm.
+Require UMArm.
+Module UM := UMArm.
+Require VMSA22Arm.
+Module VMSA := VMSA22Arm.
 
-Import Arm.
-Import ArmTM.
-Import ArmCand.
 
 Module Thm2.
 

@@ -12,11 +12,9 @@ From stdpp Require Import pretty.
 
 Require UMPromising.
 
-Require Import ISASem.ArmInst.
-Require Import GenModels.TermModels.
-Import UMPromising.TM.
+Require Import GenModels.ArmInst.
 Require Import GenPromising.
-Import UMPromising.GP.
+Import UMPromising.ArmGP.
 
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)
