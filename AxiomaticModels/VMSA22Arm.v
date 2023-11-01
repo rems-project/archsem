@@ -83,15 +83,15 @@ Section rel.
 
   (* rf orders explicit reads and writes,
     is unusual because of the handle of initial writes *)
-  Definition fr := (loc ∩ (W × R)) ∖ (co? ⨾ rf)⁻¹.
+  Definition fr := (loc ∩ (W × R)) ∖ (co ∪ ⦗W⦘ ⨾ rf)⁻¹.
   Definition fri := fr ∩ int.
   Definition fre := fr ∖ fri.
 
   (* armv9-interface/translation.cat#L46 *)
   (* Definition tfr := ((trf⁻¹⨾co) ∖ id ) ∩ overlap_loc. *)
   (* NOTE: To take initial writes under consideration, we have another
-      impelemtation for tfr *)
-  Definition tfr := (overlap_loc ∩ (W × T)) ∖ (co?⨾ rf)⁻¹.
+      implementation for tfr *)
+  Definition tfr := (overlap_loc ∩ (W × T)) ∖ (co ∪ ⦗W⦘⨾ rf)⁻¹.
   Definition tfri := tfr ∩ int.
   Definition tfre := tfr ∖ tfr.
 

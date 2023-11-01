@@ -29,10 +29,10 @@ Module Thm2.
   (* This predicate is an substitution of the translate function in the paper proof *)
   Axiom translate_read_chain_agree_with_translate : ∀ nmth, Candidate.t nmth -> (va -> pa) -> Prop.
 
-  (* A candidate generated from a full ISA *)
-  Definition cd := GenAxiomaticArm.GenArm.cd.
-  (* the initial memory *)
-  Definition init_mem := GenAxiomaticArm.GenArm.init_mem.
+  Context (nmth : nat).
+  Context (cd : Candidate.t nmth).
+  Context (init_mem : memoryMap).
+
   (* The candidate is wellformed *)
   Context (Hwf : GenArm.wellformed cd).
   (* this is the mathematical characterisation of the page table *)

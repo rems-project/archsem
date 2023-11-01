@@ -513,9 +513,4 @@ Module GenArm.
 
   End def.
 
-  (* TODO remove this and fix VMUMEquivThm *)
-  Variable nmth : nat.
-  Variable cd : Candidate.t nmth.
-  Variable init_mem : memoryMap.
-
 End GenArm.

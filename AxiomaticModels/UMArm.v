@@ -64,11 +64,9 @@ Section rel.
   Definition valid_eids_rc r := r ∪ id.
   Definition valid_eids_compl a := (valid_eids cd) ∖ a.
 
-  Notation "a ?" := (valid_eids_rc a) (at level 1, format "a ?") : stdpp_scope.
-
   (* rf orders explicit reads and writes,
      is unusual because of the handle of initial writes *)
-  Definition fr := (loc ∩ (W × R)) ∖ (co? ⨾ rf)⁻¹.
+  Definition fr := (loc ∩ (W × R)) ∖ (co ∪ ⦗W⦘ ⨾ rf)⁻¹.
   Definition fri := fr ∩ int.
   Definition fre := fr ∖ fri.
 
