@@ -233,3 +233,5 @@ Defined.
 (* Add a hint for resolving Decision of matches*)
 #[export] Hint Extern 10 (Decision match ?x with _ => _ end) =>
   destruct x : typeclass_instances.
+
+#[export] Hint Extern 3 (Decision _) => progress cbn : typeclass_instances.

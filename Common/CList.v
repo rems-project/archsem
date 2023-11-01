@@ -262,6 +262,50 @@ Lemma length_one_iff_singleton A (l : list A) :
   length l = 1 <-> exists a, l = [a].
 Proof. sauto lq: on rew:off. Qed.
 
+(** Proofs along fold_left using an invariant.
+    The invariant takes as a parameter the value produced so far and the
+    remaining elements of the list. *)
+Lemma fold_left_inv {C B} (I : C → list B → Prop) (f : C → B → C)
+    (l : list B) (i : C) :
+  (I i l)
+  → (∀ (a : C) (x : B) (tl : list B), x ∈ l → I a (x :: tl) → I (f a x) tl)
+  → I (fold_left f l i) [].
+  generalize dependent i.
+  induction l; sauto lq:on.
+Qed.
+
+(** Tries to find a fold_left in the goal and pose the proofs of the
+[fold_left_inv] on that one *)
+Tactic Notation "fold_left_inv_pose" uconstr(I) "as" simple_intropattern(pat) :=
+  match goal with
+  | |- context [fold_left ?f ?l ?i] =>
+      opose proof (fold_left_inv I f l i _ _) as pat
+  end.
+Tactic Notation "fold_left_inv_pose" uconstr(I) :=
+  let H := fresh "H" in fold_left_inv_pose I as H.
+
+(** The same as [fold_left_inv], but add the assumption that there is no
+    duplicate and gives the information that at each loop, the element being
+    processes is not in the remaining tail of the list *)
+Lemma fold_left_inv_ND {C B} (I : C → list B → Prop) (f : C → B → C)
+    (l : list B) (i : C) :
+  NoDup l
+  → (I i l)
+  → (∀ (a : C) (x : B) (t : list B), x ∈ l → x ∉ t → I a (x :: t) → I (f a x) t)
+  → I (fold_left f l i) [].
+  generalize dependent i.
+  induction l; sauto lq:on.
+Qed.
+
+(** Same as [fold_left_inv_pose] but for [fold_left_inv_ND] *)
+Tactic Notation "fold_left_inv_ND_pose" uconstr(I) "as" simple_intropattern(pat) :=
+  match goal with
+  | |- context [fold_left ?f ?l ?i] =>
+      opose proof (fold_left_inv_ND I f l i _ _ _) as pat
+  end.
+Tactic Notation "fold_left_inv_ND_pose" uconstr(I) :=
+  let H := fresh "H" in fold_left_inv_ND_pose I as H.
+
 
 (*** Fmap Unfold ***)
 Class FMapUnfold {M : Type → Type} {fm : FMap M}

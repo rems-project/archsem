@@ -33,6 +33,13 @@ Global Instance lookup_unfold_partial_alter_same `{FinMap K M}
   LookupUnfold k (partial_alter f k m) (f o) | 10.
 Proof. tcclean. sfirstorder. Qed.
 
+Global Instance lookup_unfold_partial_alter_different
+  `{FinMap K M} A f (m : M A) o (k k' : K):
+  TCFastDone (k ≠ k') ->
+  LookupUnfold k m o ->
+  LookupUnfold k (partial_alter f k' m) o | 15.
+Proof. tcclean. sauto. Qed.
+
 Global Instance lookup_unfold_partial_alter `{FinMap K M} A f
     (m : M A) o (k k' : K) :
   LookupUnfold k m o ->
@@ -85,6 +92,21 @@ Lemma lookup_lookup_total `{FinMap K M} `{Inhabited A} (m : M A) (k : K) g :
   m !! k = Some g -> m !! k = Some (m !!! k).
 Proof. rewrite lookup_total_lookup. hauto lq:on. Qed.
 
+Lemma lookup_lookup_total' `{FinMap K M} `{Inhabited A} (m : M A) (k : K) g :
+  m !! k = Some g → g = m !!! k.
+Proof. rewrite lookup_total_lookup. hauto lq:on. Qed.
+
+(** When there is a [m !! k = Some v] in the context, where [v] is a variable,
+    this will replace [v] by [m !!! k] if possible. *)
+Ltac lookup_lookup_total :=
+  match goal with
+  | H : ?m !! ?k = Some ?v |- _ =>
+      is_var v;
+      let H2 := fresh "H" in
+      pose proof H as H2;
+      apply lookup_lookup_total' in H2;
+      subst v
+  end.
 
 Global Instance lookup_total_unfold_default
   `{LookupTotal K A M} (k : K) (m : M) :
@@ -206,3 +228,40 @@ Program Definition map_fold_cind `{FinMap K M} A B (m : M A)
   |}.
 Solve All Obligations with intros; apply (map_fold_ind (fun x y => P y x)); hauto.
 Arguments map_fold_cind : clear implicits.
+
+
+(*** FinMap reduce ***)
+
+(** This take a mapping function, an operator, and a neutral (or starting)
+    element and then reduce using the operator after applying a conversion
+    function to the key and value *)
+Definition finmap_reduce `{FinMap K M} {A B} (f : K → A → B)
+    (op : B → B → B) : B → M A → B :=
+  map_fold (λ (k : K) (v : A) (acc : B), op acc (f k v)).
+
+Definition finmap_reduce_union `{FinMap K M} {A} `{Empty B, Union B}
+    (f : K → A → B) : M A → B := finmap_reduce f (∪) ∅.
+
+Global Instance set_unfold_elem_of_finmap_reduce_union
+    `{FinMap K M} {A} `{SemiSet X B}
+    (m : M A) (f : K → A → B) (x : X) P:
+  (∀ k v, SetUnfoldElemOf x (f k v) (P k v)) →
+  SetUnfoldElemOf x (finmap_reduce_union f m) (∃ k v, m !! k = Some v ∧ P k v).
+Proof.
+  tcclean. clear dependent P.
+  unfold finmap_reduce_union, finmap_reduce.
+  cinduction m using map_fold_cind with idtac.
+  - setoid_rewrite lookup_unfold.
+    set_solver.
+  - clear m. intros i v m r Hn Hxr.
+    set_unfold.
+    setoid_rewrite Hxr; clear Hxr.
+    split.
+    + intros [(k&v'&?) | ?].
+      * exists k.
+        exists v'.
+        rewrite lookup_unfold.
+        hauto l:on.
+      * sfirstorder.
+    + hauto lq:on rew:off simp+:rewrite lookup_unfold in *.
+Qed.

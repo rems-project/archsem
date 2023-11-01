@@ -403,156 +403,96 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** * Utility relations ***)
 
-    Definition gather_by_key_aux `{Countable K} (cd : t) (b : gmap K (gset EID.t))
-      (P : EID.t -> iEvent -> option K) :=
-      fold_left (λ acc '(eid, event), (match (P eid event) with
-                                       | Some k => {[ k := {[eid]}]}
-                                       | None =>  ∅
-                                       end) ∪ₘ acc) (event_list cd) b.
-
     (** This helper computes an optional key from each eid and event pair of a
         candidate using [get_key], and gathers all eids with the same key
         together into a set. It returns a map from keys to sets of eids *)
     Definition gather_by_key `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) :=
-      gather_by_key_aux cd (∅ : gmap K (gset EID.t)) get_key.
-
-    Lemma lookup_total_unfold_gather_by_key_aux `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) (b : gmap K (gset EID.t)) (k: K):
-      (forall k, b !!! k ## collect_all (λ _ _, True) cd) ->
-      gather_by_key_aux cd b get_key !!! k =
-      (b !!! k ∪ collect_all (λ eid event, (get_key eid event) =? Some k) cd).
-    Proof using.
-      unfold gather_by_key_aux, valid_eids, collect_all. revert b.
-      pose proof (event_list_NoDup1 cd) as Hdup.
-
-      induction (event_list cd); first set_solver.
-      assert (map fst (filter (λ '(_, _), True) l) = l.*1) as Heql.
-      { clear. induction l; first done.
-        rewrite filter_cons_True; hauto l:on use: map_cons. }
-
-      destruct a as [eid event].
-      rewrite fmap_cons in Hdup.
-      specialize (IHl (NoDup_cons_1_2 _ _ Hdup)).
-      apply NoDup_cons_1_1 in Hdup.
-      do 2 rewrite filter_cons; simpl.
-
-      intros b Hb;simpl. rewrite IHl.
-      - destruct (get_key eid event);
-          (case_decide as Hk;[rewrite bool_unfold in Hk; inversion Hk; subst|]).
-        + rewrite lookup_total_unfold; set_solver + Hb.
-        + assert (k ≠ k0) as Hnk by naive_solver.
-          rewrite lookup_total_unfold; set_solver + Hb.
-        + rewrite lookup_total_unfold; set_solver +.
-      - intros k'. case_match eqn:PP.
-        + destruct (decide (k0 = k')).
-          * subst k0. rewrite lookup_total_unfold.
-            rewrite Heql. rewrite Heql in Hb. set_solver + Hb Hdup.
-          * rewrite lookup_total_unfold; set_solver + Hb.
-        + rewrite lookup_total_unfold; set_solver + Hb.
-    Qed.
-
-    (** The set of eids with key [k] in the gathered map generated with [get_key]
-        is equiv to the set of all eids filtered with [get_key] *)
-    Lemma lookup_total_unfold_gather_by_key `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) (k: K):
-      gather_by_key cd get_key !!! k =
-      collect_all (λ eid event, (get_key eid event) =? Some k) cd.
-    Proof using.
-      rewrite lookup_total_unfold_gather_by_key_aux.
-      - rewrite lookup_total_empty. set_solver +.
-      - intros. rewrite lookup_total_empty. set_solver +.
-    Qed.
+        (get_key : EID.t -> iEvent -> option K) : gmap K (gset EID.t) :=
+      fold_left (λ acc '(eid, event), match get_key eid event with
+                                       | Some k => {[ k := {[eid]}]}
+                                       | None => ∅
+                                       end ∪ₘ acc) (event_list cd) ∅.
 
     Global Instance set_elem_of_gather_by_key_lookup `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) (k: K) (eid : EID.t):
+      (get_key : EID.t → iEvent → option K) (k: K) (eid : EID.t):
       SetUnfoldElemOf eid (gather_by_key cd get_key !!! k)
         (∃ E, cd !! eid = Some E ∧ get_key eid E = Some k).
-    Proof using.
-      tcclean. rewrite lookup_total_unfold_gather_by_key. set_unfold.
-      split; intros [? Heq]; first rewrite bool_unfold in Heq; hauto.
+    Proof.
+      tcclean.
+      unfold gather_by_key.
+      orewrite* (fold_left_inv_ND
+        (λ map tl, ∀ eid k,
+           eid ∈ map !!! k ↔
+             ∃ ev, cd !! eid = Some ev
+                   ∧ (eid, ev) ∉ tl
+                   ∧ get_key eid ev = Some k)).
+      - apply event_list_NoDup.
+      - clear eid k. intros eid k.
+        rewrite lookup_total_unfold.
+        setoid_rewrite event_list_match.
+        set_solver.
+      - clear eid k. intros map [eid ev] tl Hel Hntl Hinv eid' k.
+        rewrite <- event_list_match in Hel.
+        destruct (get_key eid ev) as [k' |] eqn:Hgk.
+        1: destruct decide subst k k'.
+        all: destruct decide subst eid eid'.
+        all: rewrite lookup_total_unfold.
+        all: set_unfold.
+        all: rewrite Hinv.
+        all: set_solver - Hinv.
+      - set_solver.
     Qed.
 
-    Lemma lookup_is_Some_gather_by_key_aux `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) (k: K) b:
-      (is_Some (b !! k) ∨ ∃ eid event, (eid, event) ∈ event_list cd
-                                       ∧ get_key eid event = Some k) ->
-       is_Some((gather_by_key_aux cd b get_key) !! k).
-    Proof using.
-      unfold gather_by_key_aux. revert b.
-      induction (event_list cd); intros ? Hinit; first set_solver.
-      simpl. destruct a as [eid event]. destruct Hinit as [Hinit|Hinit].
-      - apply IHl. destruct Hinit. left. case_match.
-        + destruct (decide (k = k0)).
-          * subst k0. exists ({[eid]} ∪ x).
-            assert (Some {[eid]} ∪ₒ Some x = Some ({[eid]} ∪ x)) as <-. { done. }
-            apply lookup_unfold_pointwise_union. 2:{ done. }
-            tcclean.
-            rewrite lookup_singleton_Some; hauto.
-          * exists x. assert (None ∪ₒ Some x = Some x) as <-. { done. }
-            apply lookup_unfold_pointwise_union. 2:{ done. }
-            tcclean.
-            rewrite lookup_singleton_None; hauto.
-        + exists x. assert (None ∪ₒ Some x = Some x) as <-. { done. }
-          apply lookup_unfold_pointwise_union. 2:{ done. }
-          tcclean.
-          rewrite lookup_empty; hauto.
-     - destruct Hinit as (?&?&Hcons&HP).
-       rewrite elem_of_cons in Hcons. destruct Hcons as [Hhd | Hin].
-       + inversion Hhd; subst.
-         rewrite HP. apply IHl. left.
-         destruct (b !! k) eqn:Hb.
-         * exists ({[eid]} ∪ g).
-           assert (Some {[eid]} ∪ₒ Some g = Some ({[eid]} ∪ g)) as <-. { done. }
-           apply lookup_unfold_pointwise_union. 2: { done. }
-           tcclean.
-           rewrite lookup_singleton_Some; hauto.
-         * exists {[eid]}.
-           assert (Some {[eid]} ∪ₒ None = Some {[eid]}) as <-. { done. }
-           apply lookup_unfold_pointwise_union. 2: { done. }
-           tcclean.
-           rewrite lookup_singleton_Some; hauto.
-       + apply IHl. right. do 2 eexists. naive_solver.
+    Global Instance lookup_total_unfold_gather_by_key `{Countable K} (cd : t)
+        (get_key : EID.t → iEvent → option K) (k: K):
+      LookupTotalUnfold k (gather_by_key cd get_key)
+        (collect_all (λ eid event, get_key eid event = Some k) cd).
+    Proof. tcclean. set_solver. Qed.
+
+
+    Lemma gather_by_key_None `{Countable K} (cd : t)
+        (get_key : EID.t → iEvent → option K) (k : K):
+      gather_by_key cd get_key !! k = None ↔
+      ∀ eid ev, (eid, ev) ∈ event_list cd → get_key eid ev ≠ Some k.
+    Proof.
+      unfold gather_by_key.
+      orewrite* (fold_left_inv_ND
+        (λ map tl, ∀ k,
+           map !! k = None ↔
+             ∀ eid ev, (eid, ev) ∈ event_list cd →
+           (eid, ev) ∈ tl ∨ get_key eid ev ≠ Some k)).
+      - apply event_list_NoDup.
+      - clear k.
+        intro k.
+        rewrite lookup_unfold.
+        hauto lq:on.
+      - clear k. intros map [eid ev] tl Hel Hntl Hinv k.
+        destruct (get_key eid ev) as [k' |] eqn:Hgk.
+        1: destruct decide subst k k'.
+        all: rewrite lookup_unfold.
+        all: rewrite option_union_None.
+        all: rewrite Hinv; clear Hinv.
+        all: set_solver.
+      - set_solver.
     Qed.
 
-    (** if exists an event with key [k], them [k] must in the gathered map *)
+    (** If there is an event with key [k], then [k] must in the gathered map *)
     Lemma lookup_is_Some_gather_by_key `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) (k: K):
-      (∃ eid event, (eid, event) ∈ event_list cd ∧ get_key eid event = Some k) ->
-       is_Some((gather_by_key cd get_key) !! k).
-    Proof using.
-      unfold gather_by_key. intro Hexists.
-      apply lookup_is_Some_gather_by_key_aux. right; hauto.
+        (get_key : EID.t → iEvent → option K) (k: K):
+      (∃ eid event, (eid, event) ∈ event_list cd ∧ get_key eid event = Some k) →
+       is_Some (gather_by_key cd get_key !! k).
+    Proof.
+      destruct (gather_by_key cd get_key !! k) eqn:Heqn.
+      - done.
+      - rewrite gather_by_key_None in Heqn.
+        naive_solver.
     Qed.
 
-    (** returns a symmetric relation, such that two events in the relation have
-        the same key computed with [get_key] *)
+    (** Returns a symmetric relation, such that two events are in the relation
+        iff they have the same key computed with [get_key] *)
     Definition sym_rel_with_same_key `{Countable K} (cd : t)
       (get_key : EID.t -> iEvent -> option K) :=
-      let map : gmap K (gset EID.t) :=
-        gather_by_key cd get_key in
-      map_fold (fun (k : K) (s : gset EID.t) (r : grel EID.t) => r ∪ (s × s))
-        ∅ map.
-
-    (** A local unfold instance for [map_fold] with an union combinator which is
-        used in [sym_rel_by_key] *)
-    Local Instance set_elem_of_map_fold_set_union `{Countable K, Countable K'}
-      {V} (m : gmap K V) b e (f : K -> V -> gset K') :
-      SetUnfoldElemOf (e)
-        (map_fold (fun (k: K) (v : V) (r : gset K') => r ∪ (f k v)) b m)
-        (e ∈ b ∨ ∃ k v, m !! k = Some v ∧ e ∈ (f k v)).
-    Proof using.
-      tcclean. cinduction m using map_fold_cind.
-      1: hauto lq:on use:lookup_empty_Some.
-      set_unfold. setoid_rewrite H2; clear H2.
-      split.
-      - intros [[| (?&?&?&?)]|]; first hauto lq:on;
-          (destruct (decide (e ∈ b)); [hauto lq:on | right; do 2 eexists;
-                                                     rewrite lookup_insert_Some;
-                                                     sauto lq:on]).
-      - intros [|(?&?&Hlk&?)]; first hauto lq:on;
-          rewrite lookup_insert_Some in Hlk; hauto lq:on.
-    Qed.
+      finmap_reduce_union (λ k s, s × s) (gather_by_key cd get_key).
 
     (** An unfold instance for [sym_rel_by_key] *)
     Global Instance set_elem_of_sym_rel_with_same_key `{Countable K} cd
@@ -561,27 +501,17 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         (sym_rel_with_same_key cd get_key)
         (∃ E1 E2 (k: K), cd !! eid1 = Some E1 ∧ cd !! eid2 = Some E2
                          ∧ get_key eid1 E1 = Some k ∧ get_key eid2 E2 = Some k).
-    Proof using.
+    Proof.
       tcclean. set_unfold.
       split.
-      - intros [|(k&?&Hfold&?)]; first done.
-        pose proof (lookup_total_unfold_gather_by_key cd get_key k) as Hunfold.
-        rewrite lookup_total_alt in Hunfold. rewrite Hfold in Hunfold. set_unfold.
-        pose proof (Hunfold eid1) as [(E1 & Hlk1 & Heq1) _]; first set_solver.
-        pose proof (Hunfold eid2) as [(E2 & Hlk2 & Heq2) _]; first set_solver.
-        repeat rewrite bool_unfold in *.
-        hauto lq:on.
-      - intros (?&?&k&Hlk1&Hloc1&?&Hloc2); right.
-        opose proof* (lookup_is_Some_gather_by_key cd get_key k) as HSome.
-        1: set_unfold; hauto.
-        destruct HSome as [? HSome].
-        pose proof (lookup_total_unfold_gather_by_key cd get_key k) as Hunfold.
-        rewrite lookup_total_alt in Hunfold.
-        rewrite HSome in Hunfold. simpl in Hunfold.
-        do 2 eexists. split.
-        + eassumption.
-        + set_unfold. do 2 rewrite Hunfold.
-          split;eexists;(split;[eassumption|rewrite bool_unfold;hauto lq:on]).
+      - intros (?&?&?&?).
+        lookup_lookup_total; set_solver.
+      - intros (?&?&k&?). destruct_and!.
+        opose proof* (lookup_is_Some_gather_by_key cd get_key k) as [? HSome].
+        { set_solver. }
+        do 2 eexists.
+        repeat split_and; first eassumption.
+        all: lookup_lookup_total; set_solver.
     Qed.
 
     (** get physical address of an event *)

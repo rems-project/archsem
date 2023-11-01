@@ -47,6 +47,10 @@ Notation "(∪ₒ)" := option_union (only parsing) : stdpp_scope.
 Notation "( x ∪ₒ.)" := (option_union x) (only parsing) : stdpp_scope.
 Notation "(.∪ₒ x )" := (λ y, option_union y x) (only parsing) : stdpp_scope.
 
+Lemma option_union_None `{Union A} (ov1 ov2 : option A) :
+  ov1 ∪ₒ ov2 = None ↔ ov1 = None ∧ ov2 = None.
+Proof. destruct ov1; destruct ov2; sfirstorder. Qed.
+
 
 (** Define a pointwise union of map of sets. If both maps contains a set for a given key, then the
     result contains the unions of the sets for that key. *)
@@ -478,23 +482,6 @@ Section GRel.
   Notation "a ⁺" := (grel_plus a) (at level 1, format "a ⁺") : stdpp_scope.
 
 
-  (* Proofs along fold_left using an invariant *)
-  Lemma fold_left_inv {C B} (I : C -> list B -> Prop) (f : C -> B -> C)  (l : list B) (i : C) :
-    (I i l) -> (forall a : C, forall x : B, forall t : list B, I a (x :: t) -> I (f a x) t)
-    -> I (fold_left f l i) [].
-    generalize dependent i.
-    induction l; sfirstorder.
-  Qed.
-  Lemma fold_left_inv_ND {C B} (I : C -> list B -> Prop) (f : C -> B -> C)
-    (l : list B) (i : C) :
-    NoDup l -> (I i l) ->
-    (forall a : C, forall x : B, forall t : list B, x ∉ t -> I a (x :: t) -> I (f a x) t)
-    -> I (fold_left f l i) [].
-    generalize dependent i.
-    induction l; sauto lq:on.
-  Qed.
-
-
   Lemma grel_plus_spec' x y r :
     (x, y) ∈ r⁺ <-> exists_path r (elements (grel_dom r ∪ grel_rng r)) x y.
   Proof using.
@@ -522,7 +509,7 @@ Section GRel.
         set_unfold.
         hauto lq:on.
     - clear x y IHl.
-      intros ri i ti Hti Hri x y.
+      intros ri i ti _ Hti Hri x y.
       cbn - [exists_path].
       orewrite* (fold_left_inv_ND
                        (fun (c : grel) (tj : list A) =>
@@ -540,7 +527,7 @@ Section GRel.
           pose proof exists_path_dom_rng_r.
           set_solver.
       + clear x y Hri ri.
-        intros rj j tj Htj Hrj x y.
+        intros rj j tj _ Htj Hrj x y.
         cbn in *.
         setoid_rewrite bool_unfold.
         setoid_rewrite bool_unfold in Hrj.

@@ -3,7 +3,7 @@ From stdpp Require Export base.
 From stdpp Require Export fin.
 From stdpp Require Export tactics.
 From stdpp Require Import vector.
-Require Import DecidableClass.
+From stdpp Require Import decidable.
 Require Export Relations.
 From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
@@ -120,6 +120,11 @@ Tactic Notation "orewrite" uconstr(p) :=
 Tactic Notation "orewrite" "*" uconstr(p) :=
   opose_specialize_foralls_core p () ltac: (fun p => rewrite p).
 
+Tactic Notation "osrewrite" uconstr(p) :=
+  opose_core p ltac: (fun p => setoid_rewrite p).
+Tactic Notation "osrewrite" "*" uconstr(p) :=
+  opose_specialize_foralls_core p () ltac: (fun p => setoid_rewrite p).
+
 (** Actual dependent rewrite by calling destruct on the equality.
     The rewrite must be of the form var = exp where var is a plain variable and not
     a complicated expression. Use subst if you can, this is last resort *)
@@ -162,6 +167,20 @@ Ltac tcclean_hyp H :=
 Ltac tcclean :=
   repeat (let H := fresh "H" in intro H; try (tcclean_hyp H));
   constructor.
+
+(** Convenient notation for deciding a proposition in a proof *)
+Tactic Notation "destruct" "decide" constr(P) := destruct (decide P).
+Tactic Notation "destruct" "decide" constr(P) "as" simple_intropattern(pat) :=
+  destruct (decide P) as pat.
+
+(** Check if x = y. If yes, replace all y by x in the goal *)
+Tactic Notation "destruct" "decide" "subst" constr(x) constr (y) :=
+  destruct decide (x = y);[subst y |].
+
+Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
+    "as" simple_intropattern(pat) :=
+  destruct decide (x = y) as [? | pat]; [subst y |].
+
 
 (*** Integer lattice ***)
 
