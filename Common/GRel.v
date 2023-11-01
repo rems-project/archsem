@@ -816,4 +816,12 @@ Infix "⨾" := grel_seq (at level 44, left associativity) : stdpp_scope.
 Notation "r ⁻¹" := (grel_inv r) (at level 1) : stdpp_scope.
 Notation "⦗ a ⦘" := (grel_from_set a) (format "⦗ a ⦘") : stdpp_scope.
 Notation "a ⁺" := (grel_plus a) (at level 1, format "a ⁺") : stdpp_scope.
-Notation "a ?" := (grel_rc a) (at level 1, format "a ?") : stdpp_scope.
+
+(** Users might not want the reflexive notation from finite type. Sometimes you
+work on an infinite type with an context-dependent finite set of value of that
+type. You could then want to define [a ?] as the reflexive closure on that set.
+Import this module if you want the general reflexivity notation for finite types
+*)
+Module GRelReflNot.
+  Notation "a ?" := (grel_rc a) (at level 1, format "a ?") : stdpp_scope.
+End GRelReflNot.
