@@ -11,7 +11,7 @@ Require Import ZArith.
 Require Import Options.
 
 
-(*** Notations ***)
+(** * Notations ***)
 
 
 (** Functional pipe notation.
@@ -36,7 +36,7 @@ Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
 Notation dec_if D := (match D with | left _ => left _ | right _ => right _ end).
 Notation dec_swap D := (match D with | left _ => right _ | right _ => left _ end).
 
-(*** Utility functions ***)
+(** * Utility functions ***)
 
 (** Convenient iff destruction *)
 Definition iffLR {A B : Prop} (i : A <-> B) : A -> B := proj1 i.
@@ -55,9 +55,13 @@ Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
   | Some x => mret x
   end.
 
+(** This is useful for keeping the equality in a match for dependent typing
+    purposes *)
 Definition inspect {A} (a : A) : {b | a = b} :=
   exist _ a eq_refl.
 
+(** When matching [inspect p] instead of [p], this notation allows to have the
+    cases be [| pat_for_p ed: Heq => ...] *)
 Notation "x 'eq:' p" := (exist _ x p) (only parsing, at level 20).
 
 Definition mapl {A B C} (f : A → B) (x : A + C) : B + C :=
@@ -73,7 +77,7 @@ Definition mapr {A B C} (f : B → C) (x : A + B) : A + C :=
   end.
 
 
-(*** Constrained quantifiers ***)
+(** * Constrained quantifiers ***)
 
 Notation "∀' x ∈ b , P" := (∀ x, x ∈ b → P)
   (at level 200, x binder, right associativity,
@@ -86,12 +90,12 @@ Notation "∃' x ∈ b , P" := (∃ x, x ∈ b ∧ P)
   format "'[ ' '[ ' ∃' x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
 
-(*** Relations ***)
+(** * Relations ***)
 
 Arguments clos_refl_trans {_}.
 
 
-(*** Utility tactics ***)
+(** * Utility tactics ***)
 
 Ltac block t := change t with (block t) in *.
 Ltac unblock := unfold block in *.
@@ -165,8 +169,7 @@ Ltac tcclean_hyp H :=
   end.
 
 Ltac tcclean :=
-  repeat (let H := fresh "H" in intro H; try (tcclean_hyp H));
-  constructor.
+  (let H := fresh "H" in intro H; tcclean; try(tcclean_hyp H)) || constructor.
 
 (** Convenient notation for deciding a proposition in a proof *)
 Tactic Notation "destruct" "decide" constr(P) := destruct (decide P).
@@ -196,7 +199,7 @@ Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
 #[global] Instance meet_Z : Meet Z := Z.min.
 
 
-(*** Typeclass magic ***)
+(** * Typeclass magic ***)
 
 Require Import Morphisms.
 Import Morphisms.ProperNotations.
@@ -247,7 +250,7 @@ Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
 Proof. solve_proper2_tc. Qed.
 
 
-(*** Record management ***)
+(** * Record management ***)
 
 Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
   set proj (fun _ => v).
@@ -281,7 +284,7 @@ Ltac record_eq :=
       cbn [T_eta mkT]
   end; f_equal.
 
-(*** Pair management ***)
+(** * Pair management ***)
 
 Create HintDb pair discriminated.
 Lemma exists_pair B C P:
@@ -302,7 +305,7 @@ Proof. by destruct z. Qed.
 Ltac pair_let_clean :=
   setoid_rewrite pair_let_simp; try (setoid_rewrite <- surjective_pairing).
 
-(*** EmptyT and DecisionT *)
+(** * EmptyT and DecisionT *)
 
 (** Mark a type as empty, useable for guiding typeclass resolution. *)
 Class EmptyT (T : Type) := emptyT : (T → False : Prop).
