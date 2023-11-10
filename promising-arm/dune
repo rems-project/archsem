@@ -3,4 +3,11 @@
  (package coq-system-semantics)
  (modules GenPromising UMPromising VMPromising)
  (theories ISASem SSCCommon GenModels)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
+               --external ../../Common/SSCCommon.html SSCCommon
+               --external ../../ISASem/ISASem.html ISASem
+               --external ../../GenModels/GenModels.html GenModels
+               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+ )
 )

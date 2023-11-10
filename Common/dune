@@ -17,5 +17,9 @@
    Effects
    FMon
    Exec)
-  (theories stdpp Hammer RecordUpdate Equations)
+ (theories stdpp Hammer RecordUpdate Equations)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
+               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+ )
 )

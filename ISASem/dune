@@ -9,6 +9,11 @@
    SailArmInstTypes
    ArmInst)
  (theories SailStdpp SSCCommon)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
+               --external ../../Common/SSCCommon.html SSCCommon
+               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+ )
 )
 
 ; (rule

@@ -3,4 +3,10 @@
  (package coq-system-semantics)
  (modules TermModels CandidateExecutions ArmInst)
  (theories ISASem SSCCommon)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
+               --external ../../Common/SSCCommon.html SSCCommon
+               --external ../../ISASem/ISASem.html ISASem
+               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+ )
 )
