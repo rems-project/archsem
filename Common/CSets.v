@@ -131,14 +131,50 @@ End SetSimp.
 
 (** This section is mostly about improving the set_unfold tactic *)
 
+(** Allows [set_unfold] and related tactics to unfold through match case (and
+    thus also let binding with patterns) *)
+Class SetUnfoldMatch := {}.
+
+(** To enable that option file wide, use
+    [#[local] Existing Instance set_unfold_match] *)
+Definition set_unfold_match : SetUnfoldMatch := ltac:(constructor).
+
+(** This unfold [x ∈ match exp with pat1 => exp1 | pat2 => exp2 end] into [match
+exp with | pat1 => x ∈ exp1 | pat2 => x ∈ exp2] *)
+#[export] Hint Extern 5 (SetUnfoldElemOf ?x (match ?b with _ => _ end) ?G) =>
+  has_option SetUnfoldMatch;
+  let H := fresh in
+  match G with
+  | ?Q => is_evar Q; unshelve eassert (SetUnfoldElemOf x _ _) as H
+  | ?Q ?y => is_evar Q; unshelve eassert (SetUnfoldElemOf x _ (_ y)) as H
+  | ?Q ?x ?y => is_evar Q; unshelve eassert (SetUnfoldElemOf x _ (_ x y)) as H
+  | ?Q ?x ?y ?z => is_evar Q; unshelve eassert (SetUnfoldElemOf x _ (_ x y z)) as H
+  end;
+  [.. | apply H];
+  [intros; destruct b; shelve | ..];
+  destruct b; cbn zeta match : typeclass_instances.
+
+#[export] Hint Extern 5 (SetUnfold (match ?b with _ => _ end) ?G) =>
+  has_option SetUnfoldMatch;
+  let H := fresh in
+  match G with
+  | ?Q => is_evar Q; unshelve eassert (SetUnfold _ _) as H
+  | ?Q ?y => is_evar Q; unshelve eassert (SetUnfold _ (_ y)) as H
+  | ?Q ?x ?y => is_evar Q; unshelve eassert (SetUnfold _ (_ x y)) as H
+  | ?Q ?x ?y ?z => is_evar Q; unshelve eassert (SetUnfold _ (_ x y z)) as H
+  end;
+  [.. | apply H];
+  [destruct b; shelve | ..];
+  destruct b; cbn zeta match : typeclass_instances.
 
 
+(** [set unfold] on [if bool_decide ...]. This is redundant with the above but enable
+    systematically without option *)
 Global Instance set_unfold_elem_of_if_bool_decide `{ElemOf A C} `{Decision P}
   (x : A) (X Y : C) Q R:
   SetUnfoldElemOf x X Q -> SetUnfoldElemOf x Y R ->
   SetUnfoldElemOf x (if bool_decide P then X else Y) (if bool_decide P then Q else R).
 Proof. sauto q:on. Qed.
-
 
 Global Instance set_unfold_elem_of_if_decide `{ElemOf A C} `{Decision P}
   (x : A) (X Y : C) Q R:
@@ -146,6 +182,7 @@ Global Instance set_unfold_elem_of_if_decide `{ElemOf A C} `{Decision P}
   SetUnfoldElemOf x (if decide P then X else Y) (if decide P then Q else R).
 Proof. sauto lq:on. Qed.
 
+(* TODO delete, this had noting to do with sets *)
 Global Instance set_unfold_Some A Q (x y : A) :
   SetUnfold (x = y) Q -> SetUnfold (Some x = Some y) Q.
 Proof. sauto lq:on. Qed.
@@ -161,9 +198,9 @@ Global Instance set_unfold_elem_of_filter `{FinSet A B}
 Proof. tcclean. apply elem_of_filter. Qed.
 
 
-
 (** Import this module so that set_unfold unfold X = Y into
     (x,y) ∈ X  <-> (x,y) ∈ Y if X and Y are sets of pairs *)
+(* TODO use a tactic option instead of a module *)
 Module SetUnfoldPair.
 
   #[export] Instance set_unfold_equiv_pair `{ElemOf (A * B) C}
@@ -179,12 +216,6 @@ Module SetUnfoldPair.
   (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
   SetUnfold (X = Y) (∀ x y, P x y ↔ Q x y) | 9.
   Proof. tcclean. unfold_leibniz. set_unfold. hauto. Qed.
-
-  #[export] Instance set_elem_of_let_pair A B `{ElemOf D C} (S : A → B → C)
-    (c : A * B) P (x : D):
-    SetUnfoldElemOf x (S c.1 c.2) P →
-    SetUnfoldElemOf x (let '(a, b) := c in S a b) P.
-  Proof. tcclean. hauto l:on. Qed.
 End SetUnfoldPair.
 
 

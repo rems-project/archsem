@@ -136,7 +136,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Global Typeclasses Opaque event_list.
 
-    Import SetUnfoldPair.
+    (** Allow [set_unfold] to unfold through [match] constructs *)
+    #[local] Existing Instance set_unfold_match.
 
     Lemma event_list_match cd eid ev :
       cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
