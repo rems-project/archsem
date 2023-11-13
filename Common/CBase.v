@@ -299,7 +299,7 @@ Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
 
 (** This allows to use set fst and set snd on pairs *)
 Global Instance eta_pair A B : Settable (A * B) :=
-  settable! (fun (a : A) (b : B) => (a, b)) <fst;snd>.
+  settable! (@pair A B) <fst;snd>.
 
 Global Instance Setter_compose `{SRT : Setter R T proj}
   `{STT : Setter T T' proj'} :
@@ -314,17 +314,52 @@ Solve All Obligations with sauto lq:on.
 #[global] Instance Setter_alter `{LookupTotal K A M, Alter K A M} k :
   @Setter M A (lookup_total k) := λ f, alter f k.
 
-(** Tactic to prove record equality by proving equality for all fields. If two
-    fields are identical (according to the reflexivity tactic), this will not
-    create a subgoal for them, so the number of subgoal may vary, don't rely on
-    it *)
-Ltac record_eq :=
-  setoid_rewrite <- mkT_ok;
-  lazymatch goal with
-    |- mkT ?T ?T_eta _ = mkT ?T' ?T_eta' _ =>
-      unify T T'; unify T_eta T_eta';
-      cbn [T_eta mkT]
-  end; f_equal.
+(** For a record type A, this typeclass provides an output predicate Q that is a
+    conjunction of field_wise equality that is equivalent to the record
+    equality. This is automatically derived from a [Settable] instance although
+    the user is free to define his own instances *)
+Class RecordEqUnfold A (Q : A → A → Prop) := {record_eq_unfold a b : a = b ↔ Q a b}.
+#[global] Hint Mode RecordEqUnfold + - : typeclass_instances.
+
+(** Helper for the following [Hint Extern] *)
+Lemma __rec_eq_help (A B C : Prop) : (B ∧ A → C) → A → B → C.
+Proof. firstorder. Qed.
+
+(** Generate a [RecordEqUnfold] instance from a [Settable] instance *)
+#[export] Hint Extern 0 (RecordEqUnfold ?T _) =>
+  has_option (Settable T);
+  let H := fresh in
+  constructor;
+  intros ? ?;
+    setoid_rewrite <- mkT_ok at 1 2;
+  cbn;
+  split;
+  [intro H;
+   injection H;
+   repeat
+     lazymatch goal with
+       |- _ → _ → _ => refine (__rec_eq_help _ _ _ _)
+     end;
+   clear H;
+   intro H;
+   exact H|];
+  cbn beta;
+  intro H;
+  destruct_and! H;
+  congruence : typeclass_instances.
+
+(** Tactic to prove record equality by proving equality for all fields. The
+    number of subgoal is exactly the number of field*)
+Ltac record_eq := apply record_eq_unfold; repeat split_and.
+
+(** Take an equality hypothesis [H] of the form [rec = rec'] and destruct it
+    into an equlity for each field. The "as" version is use with a conjunction
+    pattern: [record_inj H as (Hfield1 & Hfield2 & ...)] *)
+Tactic Notation "record_inj" hyp(H) :=
+  apply record_eq_unfold in H; destruct_and! H.
+Tactic Notation "record_inj" hyp(H) "as" simple_intropattern(pat) :=
+  apply record_eq_unfold in H; destruct H as pat.
+
 
 (** * Pair management ***)
 
