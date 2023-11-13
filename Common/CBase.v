@@ -95,6 +95,48 @@ Notation "∃' x ∈ b , P" := (∃ x, x ∈ b ∧ P)
 Arguments clos_refl_trans {_}.
 
 
+(** * Tactic options
+
+This development relies a lot on automation. This automation sometime needs to
+be configured in what it should or should not do. A typeclass option is an empty
+typeclass like [Class Option1 := {}] It can take parameter like [Class Option2
+(n : nat) := {}.]. When defining options it nice to provide a default instance
+like [Definition option1 : Option1 := ltac:(constructor)]. This allows the user
+to enable the option with a plain [Existing Instance].
+
+Options can be used in typeclass resolution by requiring the option typeclass in
+specific instances: [Instance myinstance: `{Option1} param1 param2 : MyTypeclass
+param 1 param2.] *)
+
+(** To use such an option in a tactic, one can use [has_option opt] which will
+    succeed if the option is turned on (aka the typeclass resolution found the
+    option), and fail other wise.
+
+    This can be used more generally to check if a typeclass instance exists *)
+Ltac has_option opt := assert_succeeds (eassert opt; first tc_solve).
+
+(** To enable an option locally, one can either do it at Section/Module scope
+    with: [#[local] Exixting Instance option1.]. Alternatively one can use the
+    [#] combinator to add an option for the time of a single tactic. If it's an
+    option with universally quantified parameters you need to manually write the
+    foralls: [tac # (∀ n, Option2 (S n))] *)
+Tactic Notation (at level 4) tactic4(tac) "#" constr(opt) :=
+  let Opt := fresh "Opt" in
+  assert opt as Opt by (intros; constructor);
+  tac;
+  clear Opt.
+
+(** Another way to use options or other lemma is the [use] combinator. For
+    example [tac use lem] add the lemma/Instance [lem] temporaryly, just while
+    [tac] is running. In general, for clarity, prefer [#] for options and [use]
+    for other lemmas. *)
+Tactic Notation (at level 4) tactic4(tac) "use" constr(p) :=
+  let Use := fresh "Use" in
+  pose proof p as Use;
+  tac;
+  clear Use.
+
+
 (** * Utility tactics ***)
 
 Ltac block t := change t with (block t) in *.
