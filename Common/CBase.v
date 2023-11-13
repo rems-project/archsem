@@ -257,20 +257,6 @@ Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
   destruct decide (x = y) as [? | pat]; [subst y |].
 
 
-(*** Integer lattice ***)
-
-(* n ⊔ n' means max and n ⊓ n' means min *)
-
-#[global] Instance join_nat : Join nat := Nat.max.
-#[global] Instance meet_nat : Meet nat := Nat.min.
-#[global] Instance join_pos : Join positive := Pos.max.
-#[global] Instance meet_pos : Meet positive := Pos.min.
-#[global] Instance join_N : Join N := N.max.
-#[global] Instance meet_N : Meet N := N.min.
-#[global] Instance join_Z : Join Z := Z.max.
-#[global] Instance meet_Z : Meet Z := Z.min.
-
-
 (** * Typeclass magic ***)
 
 Require Import Morphisms.

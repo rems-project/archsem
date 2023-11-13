@@ -5,6 +5,7 @@
    Common
    CBase
    Options
+   CArith
    CList
    CBool
    CBitvector
