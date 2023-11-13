@@ -5,6 +5,7 @@
    Common
    CBase
    Options
+   CDestruct
    CArith
    CList
    CBool

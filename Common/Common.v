@@ -14,6 +14,7 @@ From stdpp Require Export propset.
 Require Export Ensembles.
 
 Require Export CBase.
+Require Export CDestruct.
 Require Export CArith.
 Require Export CBool.
 Require Export CList.
