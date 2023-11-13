@@ -47,11 +47,16 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
           (* Instruction ID *)
           iid : nat;
           (* event number *)
-          num : nat
+          num : nat;
+          (* byte number for event that are split per byte, None for others *)
+          byte : option nat
           }.
 
     #[global] Instance eta : Settable _ :=
-        settable! make <tid; iid; num>.
+        settable! make <tid; iid; num; byte>.
+
+    #[global] Instance cdestr_rec_inj : CDestrRecInj t make.
+    Proof. Qed.
 
     #[global] Instance eq_dec : EqDecision t.
     Proof. solve_decision. Defined.
@@ -59,8 +64,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     #[global] Instance countable : Countable t.
     Proof.
-      eapply (inj_countable' (fun eid => (tid eid, iid eid, num eid))
-                        (fun x => make x.1.1 x.1.2 x.2)).
+      eapply (inj_countable' (fun eid => (tid eid, iid eid, num eid, byte eid))
+                        (fun x => make x.1.1.1 x.1.1.2 x.1.2 x.2)).
       sauto.
     Qed.
   End EID.
@@ -68,10 +73,28 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
   (* Namespace *)
   (* TODO rename to Cand ? *)
   Module Candidate.
-  Section Cand.
-    Context {nmth : nat}.
 
-    Record t :=
+    (** Type of execution and thus candidate. For now only Not-Mixed-Size and
+        Mixed-size This determine how events are split in the [byte_per_event]
+        function *)
+    Inductive exec_type := NMS | MS.
+
+    (** An ISA event is either represented by a single event in the candidate,
+        or by an event per byte. This is the function that decides which event
+        are split per byte. [None] means not split, and [Some n], means split in
+        [n] *)
+    Definition byte_per_event (et : exec_type) (ev : iEvent) : option nat :=
+      match et with
+      | MS =>
+          match ev with
+          | MemRead n _ &→ _ => Some (N.to_nat n)
+          | _ => None
+          end
+      | NMS => None
+      end.
+
+
+    Record t {et : exec_type} {nmth : nat} :=
       make {
           (** Initial state *)
           init : MState.t nmth;
@@ -99,7 +122,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
           (** intra-instruction control dependencies (to branches) *)
           iio_ctrl : grel EID.t;
         }.
+    Arguments t : clear implicits.
+    Arguments make _ {_}.
 
+    Section Cand.
+      Context {et : exec_type} {nmth : nat}.
+      Notation t := (t et nmth).
 
     (** Asserts that a candidate conforms to an ISA model.
         This version only supports ISA model without inter-instruction state.
@@ -112,12 +140,18 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
     Proof using. solve_decision. Qed.
 
+
     (** Get an event at a given event ID in a candidate *)
     Global Instance lookup_eid : Lookup EID.t iEvent t :=
-      fun eid cd =>
+      λ eid cd,
         traces ← cd.(events) !! eid.(EID.tid);
         '(trace, result) ← traces !! eid.(EID.iid);
-        trace !! eid.(EID.num).
+        ev ← trace !! eid.(EID.num);
+        match byte_per_event et ev, eid.(EID.byte) with
+        | None, None => Some ev
+        | Some n, Some m => guard (m < n)%nat;; Some ev
+        | _, _ => None
+        end.
 
     (** This true if one of the instruction had an ISA model failure like a Sail
         assertion or an Isla assumption that failed. Due to out of order
@@ -128,12 +162,14 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
     Proof using. solve_decision. Qed.
 
-    Definition event_list (cd : t) : list (EID.t*iEvent) :=
+    Definition event_list (cd : t) : list (EID.t * iEvent) :=
       '(tid, traces) ← enumerate cd.(events);
       '(iid, (trace, trace_end)) ← enumerate traces;
        '(num, event) ← enumerate trace;
-       [(EID.make tid iid num, event)].
-
+       match byte_per_event et event with
+       | None => [(EID.make tid iid num None, event)]
+       | Some n => seq 0 n |$> λ b, (EID.make tid iid num (Some b), event)
+       end.
     Global Typeclasses Opaque event_list.
 
     (** Allow [set_unfold] to unfold through [match] constructs *)
@@ -142,16 +178,21 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Lemma event_list_match cd eid ev :
       cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
     Proof using.
-      (* Unfold everything properly on both side, and naive_solver does it. *)
       unfold lookup at 1.
       unfold lookup_eid.
-      repeat setoid_rewrite bind_Some.
       unfold event_list.
-      destruct eid.
+      cbn.
       set_unfold.
+      repeat setoid_rewrite bind_Some.
       repeat setoid_rewrite exists_pair.
+      repeat setoid_rewrite bind_Some.
       setoid_rewrite lookup_unfold.
-      naive_solver.
+      destruct eid.
+      split.
+      all: cdestruct_intro # CDestrMatch # CDestrSubst.
+      all: repeat (eassumption || eexists || split_and).
+      all: repeat (case_split || case_guard).
+      all: hauto l:on.
     Qed.
 
     Global Instance set_unfold_elem_of_event_list cd x :
@@ -163,16 +204,16 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       unfold event_list.
       rewrite fmap_unfold.
       cbn.
-      apply NoDup_bind;
-        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
-      intros [? ?] ?.
-      apply NoDup_bind;
-        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
-      intros [? [? ?]] ?.
-      apply NoDup_bind;
-        [set_unfold; hauto l:on | idtac | apply NoDup_enumerate].
-      intros [? [? ?]] ?.
-      auto with nodup.
+      repeat (
+          apply NoDup_bind;
+          [set_unfold; hauto l:on | .. | solve [apply NoDup_enumerate]];
+          cdestruct_intros).
+      case_split.
+      - try rewrite <- list_fmap_compose.
+        apply NoDup_fmap_2_strong. { set_unfold. hauto l:on. }
+        auto with nodup.
+      - cbn.
+        auto with nodup.
     Qed.
 
     Lemma event_list_NoDup cd : NoDup (event_list cd).
@@ -216,7 +257,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       collect_all (fun _ _ => True) cd.
 
     Global Instance set_elem_of_valid_eids eid cd :
-      SetUnfoldElemOf eid (valid_eids cd) (∃ x, cd !! eid = Some x).
+      SetUnfoldElemOf eid (valid_eids cd) (is_Some (cd !! eid)).
     Proof using. tcclean. set_unfold. hauto db:pair. Qed.
     Global Typeclasses Opaque valid_eids.
 
@@ -413,6 +454,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
                                        | Some k => {[ k := {[eid]}]}
                                        | None => ∅
                                        end ∪ₘ acc) (event_list cd) ∅.
+    #[global] Typeclasses Opaque gather_by_key.
 
     Global Instance set_elem_of_gather_by_key_lookup `{Countable K} (cd : t)
       (get_key : EID.t → iEvent → option K) (k: K) (eid : EID.t):
@@ -495,15 +537,16 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (get_key : EID.t -> iEvent -> option K) :=
       finmap_reduce_union (λ k s, s × s) (gather_by_key cd get_key).
 
-    (** An unfold instance for [sym_rel_by_key] *)
+    (** An unfold instance for [sym_rel_with_same_key] *)
     Global Instance set_elem_of_sym_rel_with_same_key `{Countable K} cd
-      get_key eid1 eid2 :
-      SetUnfoldElemOf (eid1, eid2)
+      get_key eids :
+      SetUnfoldElemOf eids
         (sym_rel_with_same_key cd get_key)
-        (∃ E1 E2 (k: K), cd !! eid1 = Some E1 ∧ cd !! eid2 = Some E2
-                         ∧ get_key eid1 E1 = Some k ∧ get_key eid2 E2 = Some k).
+        (∃ E1 E2 (k: K), cd !! eids.1 = Some E1 ∧ cd !! eids.2 = Some E2
+                         ∧ get_key eids.1 E1 = Some k ∧ get_key eids.2 E2 = Some k).
     Proof.
-      tcclean. set_unfold.
+      tcclean. destruct eids.
+      set_unfold.
       split.
       - intros (?&?&?&?).
         lookup_lookup_total; set_solver.
@@ -514,6 +557,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         repeat split_and; first eassumption.
         all: lookup_lookup_total; set_solver.
     Qed.
+    #[global] Typeclasses Opaque sym_rel_with_same_key.
 
     (** get physical address of an event *)
     Definition get_pa (e : iEvent) : option (Arch.pa):=
@@ -531,10 +575,37 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     (** Symmetry relation referring to events of a same instruction *)
     Definition same_instruction (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
+    #[global] Typeclasses Opaque same_instruction.
+    #[global] Instance set_elem_of_same_instruction (cd : t) eids:
+      SetUnfoldElemOf eids (same_instruction cd)
+        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
+           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+           eids.1.(EID.iid) = eids.2.(EID.iid)).
+    Proof.
+      tcclean.
+      destruct eids.
+      unfold same_instruction.
+      set_unfold.
+      hauto q:on.
+    Qed.
 
     (** Symmetry relation referring to events of a same thread *)
+    (** TODO rename to thread_internal *)
     Definition int (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
+
+    #[global] Typeclasses Opaque int.
+    #[global] Instance set_elem_of_int (cd : t) eids:
+      SetUnfoldElemOf eids (int cd)
+        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
+           eids.1.(EID.tid) = eids.2.(EID.tid)).
+    Proof.
+      tcclean.
+      destruct eids.
+      unfold int.
+      set_unfold.
+      hauto q:on.
+    Qed.
 
     (** Inter instruction order *)
     Definition instruction_order (cd : t) := generic_po cd ∖ same_instruction cd.
@@ -567,7 +638,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     End Cand.
   End Candidate.
-  Arguments Candidate.t : clear implicits.
 
 
   (** Non-mixed size well-formedness *)
@@ -575,6 +645,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Import Candidate.
   Section NMSWF.
     Context {nmth : nat}.
+    Notation t := (t NMS nmth).
 
     (** Get 8 bytes values*)
     Definition get_val (event : iEvent) :=
@@ -586,9 +657,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       | _ => None
       end.
 
+
     (** This relation only make sense for 8-bytes non-mixed-size models.
         It relates events with the same values *)
-    Definition val8 (cd : t nmth) : grel EID.t :=
+    Definition val8 (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ _ event, get_val event).
 
     Definition is_not_size8 (event : iEvent) :Prop :=
@@ -602,10 +674,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Global Instance is_not_size8_decision event : Decision (is_not_size8 event).
     Proof. unfold is_not_size8. apply _. Qed.
-      
+
     (** Check that all memory accesses have size 8. Alignment checking need to
         know how pa work and thus need to be architecture specific*)
-    Definition size8_wf (cd : t nmth) : Prop :=
+    Definition size8_wf (cd : t) : Prop :=
       collect_all (λ _ event, is_not_size8 event) cd = ∅.
 
     (* Definition last_reg_access : gmap reg EID.t. *)
@@ -717,7 +789,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Section def.
 
-    Context (cd : Candidate.t nmth).
+    Context (cd : t).
 
     Notation "'generic_po'" := (generic_po cd).
     Notation "'generic_co'" := (generic_co cd).
@@ -807,14 +879,16 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Arguments behavior : clear implicits.
 
     (** An axiomatic model is just a candidate classifier. *)
-    Definition t unspec := ∀ n, cand n → result string (behavior unspec).
+    Definition t et unspec := ∀ n, cand et n → result string (behavior unspec).
 
     Module Res.
       Section Res.
+        Context {et : exec_type}.
         Context {unspec : Type}.
         Notation axres := (result string (behavior unspec)).
         Notation mres := (Model.Res.t unspec).
         Notation model := (Model.nc unspec).
+        Notation cand := (cand et).
 
       Definition to_ModelResult (axr : axres) {n} (cd : cand n)
         (term : terminationCondition n) : option (mres n) :=
@@ -870,11 +944,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     End Res.
 
     Section Ax.
+      Context {et : exec_type}.
       Context {unspec : Type}.
       Notation axres := (result string (behavior unspec)).
       Notation mres := (Model.Res.t unspec).
       Notation model := (Model.nc unspec).
-      Notation t := (t unspec).
+      Notation t := (t et unspec).
+        Notation cand := (cand et).
 
       (** Lifting Res definition to Ax *)
       Definition wider (ax ax' : t) := ∀ n cd, Res.wider (ax n cd) (ax' n cd).

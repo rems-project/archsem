@@ -27,14 +27,14 @@ Module Thm2.
                                           (va -> pa) -> Prop.
 
   (* This predicate is an substitution of the translate function in the paper proof *)
-  Axiom translate_read_chain_agree_with_translate : ∀ nmth, Candidate.t nmth -> (va -> pa) -> Prop.
+  Axiom translate_read_chain_agree_with_translate : ∀ nmth, Candidate.t NMS nmth -> (va -> pa) -> Prop.
 
   Context (nmth : nat).
-  Context (cd : Candidate.t nmth).
+  Context (cd : Candidate.t NMS nmth).
   Context (init_mem : memoryMap).
 
   (* The candidate is wellformed *)
-  Context (Hwf : GenArm.wellformed cd).
+  Context (Hwf : GenArmNMS.wellformed cd).
   (* this is the mathematical characterisation of the page table *)
   Context (translate : va -> pa).
   Context (translate_is_inj : FinFun.Injective translate).
@@ -58,7 +58,7 @@ Module Thm2.
      that if the program has no such page table affecting instructions then
      so do its candidates need to be proved. But again, that is not the goal
      of this exercise *)
-  Definition no_page_table_affecting_events {n} (cd : Candidate.t n) :=
+  Definition no_page_table_affecting_events {n} (cd : Candidate.t NMS n) :=
     (TLBI cd) ∪ (VMSA.ContextChange cd) = ∅.
 
   (* Check if the page table is static by checking the existence of page table
@@ -77,11 +77,11 @@ Module Thm2.
   (* NOTE: this definition might be not very useful in the proof. We might want
    to first use another def stating that all Ts read from inital memory and later
    show this def implies that *)
-  Definition page_table_is_static {n} (cd : Candidate.t n) :=
+  Definition page_table_is_static {n} (cd : Candidate.t NMS n) :=
     collect_all (λ _ event, is_page_table_write event) cd = ∅.
 
   (** Definition 2 VA abstraction condition *)
-  Definition page_table_is_injective_static {n} (cd : Candidate.t n) :=
+  Definition page_table_is_injective_static {n} (cd : Candidate.t NMS n) :=
     (* subcondition *)
     no_page_table_affecting_events cd ∧
     (* translation function is [translate] which is injective *)
@@ -250,11 +250,11 @@ Module Thm2.
   (* Point 1: Instead of adding initial writes, we assume all page table writes
      are initial writes, namely no page table writes except for initial writes,
      or page table is static *)
-  Definition translation_extension_initial_writes {n} (cd : Candidate.t n) :=
+  Definition translation_extension_initial_writes {n} (cd : Candidate.t NMS n) :=
     page_table_is_static cd.
 
   (* Immediate iio *)
-  Definition iio_imm {n} (cd : Candidate.t n) := iio cd ∖ (iio cd ⨾ iio cd).
+  Definition iio_imm {n} (cd : Candidate.t NMS n) := iio cd ∖ (iio cd ⨾ iio cd).
 
   (* Point 2,3, and 5: Instead of adding translation reads, we assume all translate
      reads read from initial page table writes (which is derivable from WF), whose
@@ -262,7 +262,7 @@ Module Thm2.
      reads, we assume each memory access is immediately iio ordered-before the
      chain of proper translate reads *)
   (* NOTE the translate function is not the one in the paper proof *)
-  Record translation_extension_translate_reads {n} (cd : Candidate.t n) := {
+  Record translation_extension_translate_reads {n} (cd : Candidate.t NMS n) := {
       (* the trf is empty, this means Ts only read from initial writes (given WF) *)
       trf_empty: grel_rng (VMSA.trf cd) = ∅;
       (* all Ts read from page table address space *)
@@ -295,7 +295,7 @@ Module Thm2.
 
   (* Definition 5: VA anti anstraction condition *)
   (* NOTE: just a conjunction *)
-  Definition translation_events_and_relations_are_simple_and_nice {n} (cd : Candidate.t n) :=
+  Definition translation_events_and_relations_are_simple_and_nice {n} (cd : Candidate.t NMS n) :=
     translation_extension_initial_writes cd
     ∧ translation_extension_translate_reads cd
     ∧ no_page_table_affecting_events cd
@@ -315,7 +315,7 @@ Module Thm2.
 
   Section obtlbi_empty.
 
-  Lemma obtlbi_empty n (cd : Candidate.t n) :
+  Lemma obtlbi_empty n (cd : Candidate.t NMS n) :
     translation_events_and_relations_are_simple_and_nice cd ->
     VMSA.obtlbi cd = ∅.
   Proof.
@@ -364,8 +364,8 @@ Module Thm2.
 
     (* Lemma 3 the proof is easier than paper version, due to our treatment of
      initial writes *)
-  Lemma po_pa_W_trf_empty {n} (cd : Candidate.t n) :
-    GenArm.wellformed cd ->
+  Lemma po_pa_W_trf_empty {n} (cd : Candidate.t NMS n) :
+    GenArmNMS.wellformed cd ->
     translation_events_and_relations_are_simple_and_nice cd ->
     grel_acyclic (VMSA.po_pa cd ∪ VMSA.trfi cd).
   Proof.
@@ -386,8 +386,7 @@ Module Thm2.
     intros ? Hin.
     assert ((instruction_order cd ∪ iio cd) ∩ loc cd ⊆ generic_po cd) as Hsub.
     {
-      clear. unfold iio, instruction_order.
-      set_unfold. sauto.
+      clear. unfold iio, instruction_order. set_solver.
     }
     apply grel_plus_subseteq in Hsub.
     rewrite union_empty_r_L in Hin.
@@ -399,7 +398,7 @@ Module Thm2.
 
   Section ob_to_T.
     (* TODO: it is unclear how to state it properly at this moment, so skip *)
-    Lemma ob_to_T {n} (cd : Candidate.t n):
+    Lemma ob_to_T {n} (cd : Candidate.t NMS n):
       translation_events_and_relations_are_simple_and_nice cd ->
       VMSA.ob cd ⨾⦗T cd⦘
       = iio cd.
@@ -435,14 +434,14 @@ Module Thm2.
 
   Section ob_from_T.
 
-    Definition M {n} (cd : Candidate.t n) :=
+    Definition M {n} (cd : Candidate.t NMS n) :=
       collect_all (λ _ event, is_mem_event event) cd.
 
     (* NOTE: the paper version of this lemma is wrong:
        it doesn't have the last case ([T];instruction-order;[ISB]) on the RHS *)
-    Lemma ob_from_T {n} (cd : Candidate.t n) :
+    Lemma ob_from_T {n} (cd : Candidate.t NMS n) :
       translation_events_and_relations_are_simple_and_nice cd ->
-      GenArm.wellformed cd ->
+      GenArmNMS.wellformed cd ->
       (* We simply assume the extended candidate is wf wrt VMSA, but this is a
        property about the extension that we want to show *)
       VMSA.wf cd init_mem ->

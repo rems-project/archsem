@@ -40,7 +40,7 @@ Section common_def.
     | _ => False
     end.
 
-  Definition isb {n} (cd : Candidate.t n) :=
+  Definition isb {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_isb event) cd.
 
   Definition has_dsb_P P `{forall dxb, Decision (P dxb)} (barrier : barrier) :=
@@ -70,7 +70,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L112 *)
-  Definition dsbsy {n} (cd : Candidate.t n) :=
+  Definition dsbsy {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dsbsy event) cd.
 
   Definition is_dsbst b := is_dsbsy b
@@ -90,7 +90,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L115 *)
-  Definition dsbst {n} (cd : Candidate.t n) :=
+  Definition dsbst {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dsbst event) cd.
 
   Definition is_dsbld b := is_dsbsy b
@@ -110,7 +110,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L115 *)
-  Definition dsbld {n} (cd : Candidate.t n) :=
+  Definition dsbld {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dsbld event) cd.
 
   Definition is_dsbnsh := has_dsb_P
@@ -123,7 +123,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L121 *)
-  Definition dsbnsh {n} (cd : Candidate.t n) :=
+  Definition dsbnsh {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dsbnsh event) cd.
 
 
@@ -155,7 +155,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L124 *)
-  Definition dmbsy {n} (cd : Candidate.t n) :=
+  Definition dmbsy {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dmbsy event) cd.
 
   Definition is_dmbst b := is_dmbsy b ∨ is_dsbst b
@@ -176,7 +176,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L127 *)
-  Definition dmbst {n} (cd : Candidate.t n) :=
+  Definition dmbst {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dmbst event) cd.
 
   Definition is_dmbld b := is_dmbsy b ∨ is_dsbld b
@@ -197,7 +197,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L130 *)
-  Definition dmbld {n} (cd : Candidate.t n) :=
+  Definition dmbld {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dmbld event) cd.
 
   Definition is_dmb b := is_dmbsy b ∨ is_dmbst b ∨ is_dmbld b.
@@ -206,7 +206,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L133 *)
-  Definition dmb {n} (cd : Candidate.t n) :=
+  Definition dmb {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dmb event) cd.
 
   Definition is_dsb b := is_dsbsy b ∨ is_dsbst b ∨ is_dsbld b.
@@ -215,7 +215,7 @@ Section common_def.
   Proof. apply _. Qed.
 
   (* armv9-interface/barriers.cat#L136 *)
-  Definition dsb {n} (cd : Candidate.t n) :=
+  Definition dsb {et n} (cd : Candidate.t et n) :=
     collect_all (λ _ event, is_barrier_P is_dsb event) cd.
 
 
@@ -232,8 +232,8 @@ Section common_def.
     | _ => False
     end.
 
-  Context {nmth : nat}.
-  Context `(cd : t nmth).
+  Context {et : exec_type} {nmth : nat}.
+  Context `(cd : t et nmth).
 
   (*** interface-common *)
 
@@ -396,12 +396,11 @@ Section common_def.
 
 End common_def.
 
-Module GenArm.
+Module GenArmNMS.
   Import Candidate.
   Section def.
     Context {nmth : nat}.
-    Context (cd : Candidate.t nmth).
-
+    Context (cd : Candidate.t NMS nmth).
   Notation "'amo'" := (amo cd).
   Notation "'lxsx'" := (lxsx cd).
   Notation "'iio'" := (iio cd).
@@ -513,4 +512,4 @@ Module GenArm.
 
   End def.
 
-End GenArm.
+End GenArmNMS.

@@ -90,6 +90,11 @@ Global Instance set_unfold_elem_of_filter_list A
   SetUnfoldElemOf x (filter P a) (P x ∧ Q).
 Proof. tcclean. apply elem_of_list_filter. Qed.
 
+Global Instance set_unfold_elem_of_singleton_list {A : Type} (x a : A) :
+  SetUnfoldElemOf x [a] (x = a).
+Proof. tcclean. set_solver. Qed.
+
+
 (*** List lookup with different keys ***)
 
 Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
@@ -168,6 +173,11 @@ Proof.
   generalize dependent n.
   induction l; sauto db:list.
 Qed.
+
+Global Instance set_elem_of_seq x n l:
+  SetUnfoldElemOf x (seq n l) (n ≤ x < n + l).
+Proof. tcclean. apply elem_of_seq. Qed.
+
 
 Lemma list_from_func_map {A} (f : nat -> A) n :
   list_from_func n f = map f (seq 0 n).
@@ -256,6 +266,7 @@ Section FilterMap.
   Proof using. induction l; hauto lq:on. Qed.
 End FilterMap.
 
+
 (*** List lemmas ***)
 
 Lemma length_one_iff_singleton A (l : list A) :
@@ -342,13 +353,14 @@ Global Instance fmap_unfold_let_pair {A B C D} (f : C → D) x
 Proof. tcclean. destruct x. done. Qed.
 
 
+
 (*** NoDup management ***)
 
 Global Hint Resolve NoDup_nil_2 : nodup.
 Global Hint Resolve NoDup_cons_2 : nodup.
 Global Hint Rewrite @list.NoDup_cons : nodup.
 Global Hint Resolve NoDup_singleton : nodup.
-
+Global Hint Resolve NoDup_seq : nodup.
 
 Lemma NoDup_zip_with_l {A B C} (f : A → B → C) l l':
   (∀ x y x' y', f x x' = f y y' → x = y) → NoDup l →

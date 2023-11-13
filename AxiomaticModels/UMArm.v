@@ -18,7 +18,7 @@ Require Import GenAxiomaticArm.
 Import Candidate.
 Section rel.
   Context {nmth : nat}.
-  Context (cd : Candidate.t nmth).
+  Context (cd : Candidate.t NMS nmth).
 
   Notation "'rmw'" := (rmw cd).
   Notation "'addr'" := (addr cd).
@@ -110,7 +110,7 @@ End rel.
 
 Section wf.
   Context {nmth : nat}.
-  Context `(cd : Candidate.t nmth).
+  Context `(cd : Candidate.t NMS nmth).
   Context `(init_mem : memoryMap).
   Notation "'rf'" := (rf cd).
   Notation "'co'" := (co cd).
@@ -134,7 +134,7 @@ Section wf.
       initial_rf : R ∖ (grel_rng rf)
                    = Candidate.collect_all
                        (λ eid event, eid ∈ R ∖ (grel_rng rf)
-                                     ∧ GenArm.is_initial event init_mem) cd;
+                                     ∧ GenArmNMS.is_initial event init_mem) cd;
     }.
 
   Record co_wf' :=

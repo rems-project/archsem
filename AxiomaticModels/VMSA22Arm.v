@@ -13,7 +13,7 @@ Import Candidate.
 
 Section rel.
   Context {nmth : nat}.
-  Context `(cd : Candidate.t nmth).
+  Context `(cd : Candidate.t NMS nmth).
 
   Import Candidate.
 
@@ -543,7 +543,7 @@ End rel.
 
 Section wf.
   Context {nmth : nat}.
-  Context `(cd : Candidate.t nmth).
+  Context `(cd : Candidate.t NMS nmth).
   Context `(init_mem : memoryMap).
   Notation "'rf'" := (rf cd).
   Notation "'trf'" := (trf cd).
@@ -577,7 +577,7 @@ Section wf.
       initial_rf : (R ∪ T) ∖ ((grel_rng rf) ∪ (grel_rng trf))
                     = Candidate.collect_all
                         (λ eid event, eid ∈ (R ∪ T) ∖ (grel_rng rf)
-                                      ∧ GenArm.is_initial event init_mem) cd;
+                                      ∧ GenArmNMS.is_initial event init_mem) cd;
     }.
 
   (* armv9-interface/wco.cat *)
