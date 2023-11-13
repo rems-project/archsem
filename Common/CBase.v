@@ -142,24 +142,42 @@ Tactic Notation (at level 4) tactic4(tac) "use" constr(p) :=
 Ltac block t := change t with (block t) in *.
 Ltac unblock := unfold block in *.
 
-(* useful for debugging *)
+(** ** Hypothesis management *)
+
+(** Introduces a variable or hypothesis with its default name and returns that
+    name *)
+Ltac intro_get_name :=
+  let _ := match goal with |- _ => intro end in
+  match goal with H : _ |- _ => H end.
+
+(** Reverts the last hypothesis *)
 Ltac deintro :=
   match goal with
   | H : _ |- _ => revert H
   end.
+
+(** Reverts all hypotheses *)
 Ltac deintros := repeat deintro.
+
+(** Reverts all hypotheses, print the goal and then undo everything.
+    This is a debugging no-op tactic. *)
 Ltac print_full_goal := try(deintros; match goal with |- ?G => idtac G end; fail).
 
-(* Take an evar and puts it in a pattern shape. Use as (do n pattern_evar) if you have n evars in your goal. This is needed for typeclass-based rewriting tactics *)
-(* TODO detect the number of evar automatically *)
-Ltac pattern_evar :=
-  match goal with | |- context G [?x] => is_evar x; pattern x end.
-
-(* run tac on all hypotheses in first-to-last order *)
+(** Run [tac] on all hypotheses in first-to-last order. Later hypotheses are
+    moved into the goal when [tac] is ran*)
 Ltac forall_hyps tac :=
   lazymatch goal with
   | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
   end.
+
+(** ** Rewriting *)
+
+(** Takes an evar and puts it in a pattern shape. Use as (do n pattern_evar) if
+    you have [n] evars in your goal. This is might be needed for typeclass-based
+    rewriting tactics that use "+" and not "!" as Hint Mode *)
+(* TODO detect the number of evar automatically *)
+Ltac pattern_evar :=
+  match goal with | |- context G [?x] => is_evar x; pattern x end.
 
 Tactic Notation "orewrite" uconstr(p) :=
   opose_core p ltac: (fun p => rewrite p).
@@ -181,7 +199,16 @@ Tactic Notation "drewrite" "<-" constr(H) :=
 Tactic Notation "drewrite" "->" constr(H) := symmetry in H; drewrite <- H.
 Tactic Notation "drewrite" constr(H) := drewrite -> H.
 
-(** Typeclass clean to help prove typeclasss lemmas *)
+(** ** Typeclass clean
+
+Typeclass clean to help prove typeclasses lemmas.
+
+Call this when the goal is rewriting typeclass (generally with [Unfold] in its
+name), with other rewriting typeclasses in the context. This unfold all the
+typeclasses, apply the rewrites and leave with the actual rewriting goal to
+prove. *)
+
+(** Cleanup a single hypothesis *)
 Ltac tcclean_hyp H :=
   lazymatch type of H with
   | forall x y, @?P x y =>
@@ -210,8 +237,12 @@ Ltac tcclean_hyp H :=
   | _ => destruct H as [H]; try(repeat (setoid_rewrite <- H || rewrite <- H))
   end.
 
+(** Introduce and cleans up all typeclass hypothesis and then cleans up the goal
+    typeclass *)
 Ltac tcclean :=
   (let H := fresh "H" in intro H; tcclean; try(tcclean_hyp H)) || constructor.
+
+(** ** Destruct decide *)
 
 (** Convenient notation for deciding a proposition in a proof *)
 Tactic Notation "destruct" "decide" constr(P) := destruct (decide P).
@@ -221,7 +252,6 @@ Tactic Notation "destruct" "decide" constr(P) "as" simple_intropattern(pat) :=
 (** Check if x = y. If yes, replace all y by x in the goal *)
 Tactic Notation "destruct" "decide" "subst" constr(x) constr (y) :=
   destruct decide (x = y);[subst y |].
-
 Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
     "as" simple_intropattern(pat) :=
   destruct decide (x = y) as [? | pat]; [subst y |].
