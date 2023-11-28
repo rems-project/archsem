@@ -1,6 +1,6 @@
 # This Makefile is provided for people that prefer to type
 # "make" instead of "dune build"
-.PHONY : all clean
+.PHONY : all clean doc
 all:
 	dune build
 
@@ -16,3 +16,6 @@ install-deliverable-2022-12: $(TARBALL)
 clean:
 	dune clean
 	rm -f $(TARBALL)
+
+doc:
+	dune build @doc
