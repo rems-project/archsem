@@ -1,17 +1,10 @@
 # This Makefile is provided for people that prefer to type
 # "make" instead of "dune build"
-.PHONY : all clean doc
+.PHONY : all clean doc archive
 all:
 	dune build
 
-
-TARBALL=d4b_ISA_interface_and_Promising-Arm_model_in_Coq.tar.gz
-
-$(TARBALL):
-	tar -czf $(TARBALL) dune dune-project INSTALL.md README.md Makefile coq-system-semantics.opam LICENSE Common ISASem armv9-instantiation-types GenModels promising-arm
-
-install-deliverable-2022-12: $(TARBALL)
-	cp $(TARBALL) ~/repos/deliverables-pkvm-verif-2022/2022-12
+TARBALL=SSC.tar.gz
 
 clean:
 	dune clean
@@ -19,3 +12,20 @@ clean:
 
 doc:
 	dune build @doc
+
+
+
+TARFILES=dune-project Makefile LICENSE
+TARFILES+=$(wildcard ./*.md)
+TARFILES+=$(wildcard ./*.opam)
+TARFILES+=$(wildcard armv9-instantiation-types/*)
+TARFILES+=$(wildcard Common/*)
+TARFILES+=$(wildcard ISASem/*)
+TARFILES+=$(wildcard GenModels/*)
+TARFILES+=$(wildcard AxiomaticModels/*)
+TARFILES+=$(wildcard promising-arm/*)
+
+$(TARBALL): $(TARFILES)
+	tar -czf $(TARBALL) $(TARFILES)
+
+archive: $(TARBALL)
