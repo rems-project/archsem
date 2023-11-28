@@ -129,10 +129,16 @@ End Arch.
 Module Interface (A : Arch).
   Import A.
 
+  (** Virtual address are tag-less bitvectors *)
   Definition va := bv va_size.
+
+  (** Memory access kind *)
   Definition accessKind := Access_kind arch_ak.
 
+  (** The list of all physical addresses accessed when accessing [pa] with size
+      [n] *)
   Definition pa_range pa n := seq 0 n |> map (λ n, pa_addZ pa (Z.of_nat n)).
+
   Lemma pa_range_length pa n : length (pa_range pa n) = n.
   Proof. unfold pa_range. by autorewrite with list. Qed.
 
@@ -214,102 +220,129 @@ Module Interface (A : Arch).
     Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End WriteReq.
 
-  Section T.
+  Section Interface.
+    (** The Interface is parametric over the type use to represent dependencies.
+        In particular this type can be unit for an ISA model that does not
+        contain any dependency information *)
     Context {deps : Type}.
 
-  Inductive outcome : eff :=
-    (** reg_acc kind *)
-  | RegRead (reg : reg) (racc : reg_acc) : outcome reg_type
+    (** The effect type used by ISA models *)
+    Inductive outcome : eff :=
+      (** Reads a register [reg] with provided access type [racc]. It is up to
+          concurrency model to interpret [racc] properly *)
+    | RegRead (reg : reg) (racc : reg_acc) : outcome reg_type
 
-    (** The direct or indirect flag is to specify how much coherence is required
-        for relaxed registers.
+      (** Write a register [reg] with value [reg_val] and access type [racc].
+          The dependencies [deps] should describe the data flow into that
+          register value. *)
+    | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
+        (regval: reg_type) : outcome unit
+      (** Read [n] bytes of memory in a single access (Single Copy Atomic in Arm
+          terminology). See [ReadReq.t] for the various required fields.
 
-        The dep_on would be the dependency of the register write.
+          The result is either a success (value read and optional tag) or a
+          error (intended for physical memory errors, not translation, access
+          control, or segmentation faults *)
+    | MemRead (n : N) : ReadReq.t deps n →
+                        outcome (bv (8 * n) * option bool + abort)%type
+      (** Write [n] bytes of memory in a single access (Single Copy Atomic in
+          Arm terminology). See [WriteReq.t] for the various required fields.
 
-        Generally, writing the PC introduces no dependency because control
-        dependencies are specified by the branch announce *)
-  | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
-             (regval: reg_type) : outcome unit
-  | MemRead (n : N) : ReadReq.t deps n →
-                      outcome (bv (8 * n) * option bool + abort)%type
-  | MemWrite (n : N) : WriteReq.t deps n → outcome (option bool + abort)%type
-    (** Declare the opcode of the current instruction when known. Used for
-        dependency computation *)
-  | InstrAnnounce (opcode : bvn) : outcome unit
-    (** The deps here specify the control dependency *)
-  | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
-  | Barrier : barrier -> outcome unit
-  | CacheOp (deps : deps) : cache_op → outcome unit
-  | TlbOp (deps : deps) : tlb_op → outcome unit
-  | TakeException : fault deps → outcome unit
-  | ReturnException (pa : pa) : outcome unit
+          The result is either a success with an optional exclusive result or a
+          physical memory error *)
+    | MemWrite (n : N) : WriteReq.t deps n → outcome (option bool + abort)%type
+      (** Declare the opcode of the current instruction when known. Used for
+          dependency computations, and some other cases *)
+    | InstrAnnounce (opcode : bvn) : outcome unit
+      (** Declare a conditional branch to a new physical address [pa]. [deps]
+          represent the data-flow into the conditional decision to take that
+          branch. Unconditional branched do not need to be announced *)
+    | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
+      (** Issues a barrier such as DMB (for Arm), fence.XX (for RISC-V), ... *)
+    | Barrier : barrier -> outcome unit
+      (** Issues a cache operation such as DC or IC (for Arm) *)
+    | CacheOp (deps : deps) : cache_op → outcome unit
+      (** Issues a TLB maintenance operation, such as TLBI (for Arm) *)
+    | TlbOp (deps : deps) : tlb_op → outcome unit
+      (** Take an exception. The [fault] type constructor make depend on a value
+          whose data-flow can be encoded in the deps type *)
+    | TakeException : fault deps → outcome unit
+      (** Return from an exception to this address e.g. ERET (for Arm) or
+          IRET (for x86) *)
+    | ReturnException (pa : pa) : outcome unit
 
-  (** Bail out when something went wrong; this may be refined in the future.
-      This is an ISA model triggered failure *)
-  | GenericFail (msg : string) : outcome noreturn.
-  Arguments outcome _%type.
+      (** Bail out when something went wrong. This is to represent ISA model
+          incompleteness: When getting out of the range of supported
+          instructions or behaviors of the ISA model. The string is for
+          debugging but otherwise irrelevant *)
+    | GenericFail (msg : string) : outcome noreturn.
+    Arguments outcome _%type.
 
-  #[global] Instance outcome_wf : Eff.Wf outcome.
-  Proof using. intros T []; apply _. Qed.
+    #[global] Instance outcome_wf : Eff.Wf outcome.
+    Proof using. intros T []; apply _. Qed.
 
-  (* Automatically implies EqDecision (outcome T) on any T *)
-  #[global] Instance outcome_eff_dec `{EqDecision deps} : Eff.Decision outcome.
-  Proof using. intros ? ? [] []; decide_eff_eq. Qed.
+    (* Automatically implies EqDecision (outcome T) on any T *)
+    #[global] Instance outcome_eff_dec `{EqDecision deps} : Eff.Decision outcome.
+    Proof using. intros ? ? [] []; decide_eff_eq. Qed.
 
 
-  #[global] Program Instance outcome_exc : Eff.Exc outcome :=
-    { exc := string;
-      exc2eff := λ s, existT _ (GenericFail s);
-      eff2exc := λ _ x,
+    #[global] Program Instance outcome_exc : Eff.Exc outcome :=
+      { exc := string;
+        exc2eff := λ s, existT _ (GenericFail s);
+        eff2exc := λ _ x,
           match x return option string with
           | GenericFail s => Some s
           | _ => None
           end
-    }.
-  Next Obligation. hauto qb:on. Qed.
-  Next Obligation.
-    intros. cbn.
-    case_split; try (apply Eff.exc_empty_helper); sfirstorder.
-  Qed.
+      }.
+    Next Obligation. hauto qb:on. Qed.
+    Next Obligation.
+      intros. cbn.
+      case_split; try (apply Eff.exc_empty_helper); sfirstorder.
+    Qed.
 
 
 
-  (** An instruction semantic is a non-deterministic program using the
-      uninterpreted effect familly [outcome] *)
-  Definition iMon := cMon outcome.
+    (** An instruction semantic is a non-deterministic program using the
+        uninterpreted effect type [outcome] *)
+    Definition iMon := cMon outcome.
 
-  (** The semantics of an complete instruction. A full definition of instruction
-      semantics is allowed to have an internal state that gets passed from one
-      instruction to the next. This is useful to handle pre-computed instruction
-      semantics (e.g. Isla). For complete instruction semantics, we expect that
-      A will be unit.*)
-  Record iSem :=
-    {
-      (** The instruction model internal state *)
-      isa_state : Type;
-      (** The instruction model initial state for a thread with a specific Tid
-          *)
-      init_state : nat -> isa_state;
-      semantic : isa_state -> iMon isa_state
-    }.
+    (** The semantics of an complete instruction. A full definition of
+        instruction semantics is allowed to have an internal state that gets
+        passed from one instruction to the next. This is useful to handle
+        pre-computed instruction semantics (e.g. Isla). For complete instruction
+        semantics, we expect that A will be unit.
 
-  (** A single event in an instruction execution. Events cannot contain
-      termination outcome (outcomes of type `outcome False`)
+        This is planned to disappear and be replaced by a plain [iMon ()], so
+        some modules (like CandidateExecutions) will already assume [iMon ()].
+        *)
+    Record iSem :=
+      {
+        (** The instruction model internal state *)
+        isa_state : Type;
+        (** The instruction model initial state for a thread with a specific Tid
+            *)
+        init_state : nat -> isa_state;
+        semantic : isa_state -> iMon isa_state
+      }.
 
-      IEvent cannot be used a pattern in a match anymore, sorry, use FEvent
-      instead *)
-  Definition iEvent := fEvent outcome.
-  Definition IEvent {T} : outcome T → T → iEvent := @FEvent outcome T.
+    (** A single event in an instruction execution. Events cannot contain
+        termination outcome (outcomes of type `outcome False`)
 
-  (** An execution trace for a single instruction.
-      If the result is an A, it means a successful execution that returned A
-      If the result is a string, it means a GenericFail *)
-  Definition iTrace (A : Type) : Type := list iEvent * result string A.
+        IEvent cannot be used a pattern in a match anymore, sorry, use FEvent
+        instead *)
+    Definition iEvent := fEvent outcome.
+    Definition IEvent {T} : outcome T → T → iEvent := @FEvent outcome T.
 
-  Definition iTrace_match {A : Type} (f : iMon A) (tr : iTrace A) :=
-    cmatch f (fTrace_list_res_full tr.1 tr.2).
+    (** An execution trace for a single instruction.
+        If the result is an A, it means a successful execution that returned A
+        If the result is a string, it means a GenericFail *)
+    Definition iTrace (A : Type) : Type := list iEvent * result string A.
 
-  End T.
+    Definition iTrace_match {A : Type} (f : iMon A) (tr : iTrace A) :=
+      cmatch f (fTrace_list_res_full tr.1 tr.2).
+
+  End Interface.
 
   Arguments outcome _%type _%type : clear implicits.
   Arguments iMon : clear implicits.
