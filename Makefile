@@ -5,6 +5,8 @@ all:
 	dune build
 
 TARBALL=SSC.tar.gz
+PREFIX=SSC
+GIT_ARCHIVE=git archive
 
 clean:
 	dune clean
@@ -13,19 +15,17 @@ clean:
 doc:
 	dune build @doc
 
-
-
 TARFILES=dune-project Makefile LICENSE
-TARFILES+=$(wildcard ./*.md)
-TARFILES+=$(wildcard ./*.opam)
-TARFILES+=$(wildcard armv9-instantiation-types/*)
-TARFILES+=$(wildcard Common/*)
-TARFILES+=$(wildcard ISASem/*)
-TARFILES+=$(wildcard GenModels/*)
-TARFILES+=$(wildcard AxiomaticModels/*)
-TARFILES+=$(wildcard promising-arm/*)
+TARFILES+=$(wildcard *.md)
+TARFILES+=$(wildcard *.opam)
+TARFILES+=armv9-instantiation-types
+TARFILES+=Common
+TARFILES+=ISASem
+TARFILES+=GenModels
+TARFILES+=AxiomaticModels
+TARFILES+=promising-arm
 
 $(TARBALL): $(TARFILES)
-	tar -czf $(TARBALL) $(TARFILES)
+	$(GIT_ARCHIVE) -o $@ --prefix=$(PREFIX)/ HEAD $^
 
 archive: $(TARBALL)
