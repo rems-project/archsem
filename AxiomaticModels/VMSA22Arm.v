@@ -37,8 +37,8 @@ Section rel.
   Notation "'addr'" := (addr cd).
   Notation "'data'" := (data cd).
   Notation "'ctrl'" := (ctrl cd).
-  Notation "'loc'" := (loc cd).
-  Notation "'int'" := (int cd).
+  Notation "'loc'" := (same_pa cd).
+  Notation "'int'" := (same_thread cd).
   Notation "'iio'" := (iio cd).
 
   Notation "'instruction_order'" := (instruction_order cd).
@@ -184,10 +184,10 @@ Section rel.
   (* armv9-interface/tlbi.cat#L142 *)
   (* This relation is supposed to group [T]s with in the same TTW together,
     which is not definable with the current outcome interface.
-    We define it as [same_instruction] for now which is only correct if one
+    We define it as [same_instruction_instance] for now which is only correct if one
     instruction invokes at most one TTW.
     *)
-  Definition same_translation : grel EID.t := same_instruction cd.
+  Definition same_translation : grel EID.t := same_instruction_instance cd.
 
   Definition get_vmid (event : iEvent) :=
     match event with

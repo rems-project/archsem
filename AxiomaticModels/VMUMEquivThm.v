@@ -130,9 +130,9 @@ Module Thm2.
     assert (UM.po erased_cd ⊆ VMSA.po cd) as Hpo.
     {
       unfold UM.po, VMSA.po. clear.
-      Local Typeclasses Opaque W R F C loc instruction_order.
+      Local Typeclasses Opaque W R F C same_pa instruction_order.
       set_unfold. hauto lq:on.
-      Local Typeclasses Transparent W R F C loc instruction_order.
+      Local Typeclasses Transparent W R F C same_pa instruction_order.
     }
     Local Typeclasses Opaque UM.po VMSA.po.
     split.
@@ -351,9 +351,9 @@ Module Thm2.
       set_unfold. hauto lq: on.
     }
     assert (⦗R cd ∪ W cd ∪ VMSA.Fault cd⦘ ⨾ (iio cd) ⁻¹
-              ⨾ VMSA.obtlbi_translate cd ∖ int cd ⨾ ⦗TLBI cd⦘ = ∅).
+              ⨾ VMSA.obtlbi_translate cd ∖ same_thread cd ⨾ ⦗TLBI cd⦘ = ∅).
     {
-      Local Typeclasses Opaque VMSA.Fault VMSA.obtlbi_translate R W int.
+      Local Typeclasses Opaque VMSA.Fault VMSA.obtlbi_translate R W same_thread.
       set_unfold. sauto lq:on.
     }
     set_unfold. hauto lq:on.
@@ -379,19 +379,19 @@ Module Thm2.
       set_unfold. hauto.
     }
     clear trf_empty0. unfold VMSA.po_pa.
-    destruct Hwf. destruct generic_po0.
-    apply grel_transitive_rew in generic_po_trans.
-    clear -generic_po_irr generic_po_trans.
+    destruct Hwf. destruct full_instruction_order0.
+    apply grel_transitive_rew in full_instruction_order_trans.
+    clear -full_instruction_order_irr full_instruction_order_trans.
     set_unfold.
     intros ? Hin.
-    assert ((instruction_order cd ∪ iio cd) ∩ loc cd ⊆ generic_po cd) as Hsub.
+    assert ((instruction_order cd ∪ iio cd) ∩ same_pa cd ⊆ full_instruction_order cd) as Hsub.
     {
-      clear. unfold iio, instruction_order. set_solver.
+      clear. set_solver.
     }
     apply grel_plus_subseteq in Hsub.
     rewrite union_empty_r_L in Hin.
-    apply Hsub in Hin. rewrite generic_po_trans in Hin.
-    eapply generic_po_irr. eassumption.
+    apply Hsub in Hin. rewrite full_instruction_order_trans in Hin.
+    eapply full_instruction_order_irr. eassumption.
   Qed.
 
   End po_pa_W_trf_empty.
@@ -669,9 +669,9 @@ Module Thm2.
         assert (VMSA.trfi cd = ∅) as ->.
         {
           unfold VMSA.trfi. clear -trf_empty0.
-          Local Typeclasses Opaque VMSA.trf int.
+          Local Typeclasses Opaque VMSA.trf same_thread.
           set_unfold. hauto lq: on.
-          Local Typeclasses Transparent VMSA.trf int.
+          Local Typeclasses Transparent VMSA.trf same_thread.
         }
         clear.
         Local Typeclasses Opaque T VMSA.tfr VMSA.speculative.
@@ -717,9 +717,9 @@ Module Thm2.
         clear -H1. set_unfold. hauto lq:on.
         }
         clear.
-        Local Typeclasses Opaque T R W VMSA.Fault iio VMSA.obtlbi_translate int.
+        Local Typeclasses Opaque T R W VMSA.Fault iio VMSA.obtlbi_translate same_thread.
         set_unfold. hauto lq: on.
-        Local Typeclasses Transparent T R W VMSA.Fault iio VMSA.obtlbi_translate int.
+        Local Typeclasses Transparent T R W VMSA.Fault iio VMSA.obtlbi_translate same_thread.
       }
       assert (⦗T cd⦘⨾ VMSA.ctxob cd =⦗T cd⦘⨾ instruction_order cd ⨾ ⦗isb cd⦘).
       {

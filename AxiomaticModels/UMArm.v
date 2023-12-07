@@ -31,8 +31,8 @@ Section rel.
   Notation "'Q'" := (Q cd).
   Notation "'L'" := (L cd).
   Notation "'C'" := (C cd).
-  Notation "'int'" := (int cd).
-  Notation "'loc'" := (loc cd).
+  Notation "'int'" := (same_thread cd).
+  Notation "'loc'" := (same_pa cd).
 
   Notation "'iio'" := (iio cd).
   Notation "'instruction_order'" := (instruction_order cd).

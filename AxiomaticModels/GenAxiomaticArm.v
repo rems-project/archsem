@@ -377,7 +377,7 @@ Section common_def.
   Notation "'addr'" := (addr cd).
   Notation "'data'" := (data cd).
   Notation "'ctrl'" := (ctrl cd).
-  Notation "'loc'" := (loc cd).
+  Notation "'loc'" := (same_pa cd).
   (* all mem events (explicit and translation) *)
   Notation "'writes'" := (mem_writes cd).
   (* all mem events (explicit and translation) *)
@@ -404,7 +404,7 @@ Module GenArmNMS.
   Notation "'amo'" := (amo cd).
   Notation "'lxsx'" := (lxsx cd).
   Notation "'iio'" := (iio cd).
-  Notation "'loc'" := (loc cd).
+  Notation "'loc'" := (same_pa cd).
   Notation "'addr'" := (addr cd).
   Notation "'data'" := (data cd).
   Notation "'ctrl'" := (ctrl cd).
@@ -488,7 +488,7 @@ Module GenArmNMS.
   Record wellformed:= {
       amo :> amo_wf;
       lxsx :> lxsx_wf;
-      generic_po :> NMSWF.generic_po_wf' cd;
+      full_instruction_order :> NMSWF.full_instruction_order_wf' cd;
       addr :> addr_wf;
       data :> data_wf;
       ctrl :> ctrl_wf;

@@ -20,6 +20,7 @@ Require Import SSCCommon.Common.
 Require Import SSCCommon.Exec.
 Require Import SSCCommon.GRel.
 Require Import SSCCommon.FMon.
+Require Import SSCCommon.StateT.
 
 Require Import ISASem.Interface.
 Require Import ISASem.Deps.
@@ -37,23 +38,26 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
   Notation iSem := (IWD.iSem DepOn.t).
   Notation iEvent := (IWD.iEvent DepOn.t).
   Notation iTrace := (IWD.iTrace DepOn.t).
+  Open Scope nat.
 
-  (* event ID *)
+  (** Relational event ID, this might differ from ISA events in certain
+      execution types *)
   Module EID.
     Record t :=
       make {
-          (* thread ID *)
+          (** Thread ID, zero-indexed *)
           tid : nat;
-          (* Instruction ID *)
+          (** Instruction ID. The index of the instruction in program order  *)
           iid : nat;
-          (* event number *)
-          num : nat;
-          (* byte number for event that are split per byte, None for others *)
+          (** ISA event number in the instruction. Warning: this will stop being
+              a [nat] when the interface monad supports parallel composition *)
+          ieid : nat;
+          (** Byte number for events that are split per byte, None for others *)
           byte : option nat
           }.
 
     #[global] Instance eta : Settable _ :=
-        settable! make <tid; iid; num; byte>.
+        settable! make <tid; iid; ieid; byte>.
 
     #[global] Instance cdestr_rec_inj : CDestrRecInj t make.
     Proof. Qed.
@@ -64,7 +68,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     #[global] Instance countable : Countable t.
     Proof.
-      eapply (inj_countable' (fun eid => (tid eid, iid eid, num eid, byte eid))
+      eapply (inj_countable' (fun eid => (tid eid, iid eid, ieid eid, byte eid))
                         (fun x => make x.1.1.1 x.1.1.2 x.1.2 x.2)).
       sauto.
     Qed.
@@ -93,6 +97,15 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       | NMS => None
       end.
 
+    (** Gives the list of valid EIDs for a event at a specific position in a
+        candidate *)
+    Definition EID_list_from_iEvent (et : exec_type) (tid iid ieid : nat)
+         (event : iEvent) : list EID.t :=
+       match byte_per_event et event with
+       | None => [EID.make tid iid ieid None]
+       | Some n => seq 0 n |$> λ b, EID.make tid iid ieid (Some b)
+       end.
+
 
     Record t {et : exec_type} {nmth : nat} :=
       make {
@@ -102,9 +115,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
               we force the return type to be unit, but it just means we
               forget the actual value *)
           events : vec (list (iTrace ())) nmth;
-          (* TODO po can be deduced by the order of events in the trace *)
-          (** Program order. The per-thread order of all events in the trace *)
-          generic_po : grel EID.t;
           (** Generic memory read from *)
           generic_rf : grel EID.t;
           (** Generic casual order *)
@@ -140,19 +150,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
     Proof using. solve_decision. Qed.
 
-
-    (** Get an event at a given event ID in a candidate *)
-    Global Instance lookup_eid : Lookup EID.t iEvent t :=
-      λ eid cd,
-        traces ← cd.(events) !! eid.(EID.tid);
-        '(trace, result) ← traces !! eid.(EID.iid);
-        ev ← trace !! eid.(EID.num);
-        match byte_per_event et ev, eid.(EID.byte) with
-        | None, None => Some ev
-        | Some n, Some m => guard (m < n)%nat;; Some ev
-        | _, _ => None
-        end.
-
     (** This true if one of the instruction had an ISA model failure like a Sail
         assertion or an Isla assumption that failed. Due to out of order
         effects, an error might not be from the last instruction. *)
@@ -162,18 +159,64 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
     Proof using. solve_decision. Qed.
 
-    Definition event_list (cd : t) : list (EID.t * iEvent) :=
+    Definition lookup_instruction (cd : t) (tid iid : nat) :
+        option (iTrace ()) :=
+      traces ← cd.(events) !! tid;
+      traces !! iid.
+
+    Definition instruction_list (cd : t) : list (nat * nat * iTrace ()) :=
       '(tid, traces) ← enumerate cd.(events);
-      '(iid, (trace, trace_end)) ← enumerate traces;
-       '(num, event) ← enumerate trace;
-       match byte_per_event et event with
-       | None => [(EID.make tid iid num None, event)]
-       | Some n => seq 0 n |$> λ b, (EID.make tid iid num (Some b), event)
-       end.
-    Global Typeclasses Opaque event_list.
+      '(iid, trace) ← enumerate traces;
+      [(tid, iid, (trace : iTrace ()))].
+
 
     (** Allow [set_unfold] to unfold through [match] constructs *)
     #[local] Existing Instance set_unfold_match.
+
+    Lemma instruction_list_match cd tid iid ev :
+      lookup_instruction cd tid iid = Some ev ↔
+        (tid, iid, ev) ∈ instruction_list cd.
+    Proof using.
+      unfold lookup_instruction.
+      unfold instruction_list.
+      cbn.
+      set_unfold.
+      repeat setoid_rewrite bind_Some.
+      repeat setoid_rewrite exists_pair.
+      setoid_rewrite lookup_unfold.
+      hauto lq:on rew:off.
+    Qed.
+    Global Typeclasses Opaque lookup_instruction.
+    Opaque lookup_instruction.
+    Global Typeclasses Opaque instruction_list.
+
+    Definition lookup_iEvent (cd : t) (tid iid ieid : nat) :
+        option iEvent :=
+      '(trace, result) ← lookup_instruction cd tid iid;
+      trace !! ieid.
+
+    Definition EID_list_from_event_ids (cd : t) (tid iid ieid : nat) :
+        list EID.t :=
+      ev ← option_list (lookup_iEvent cd tid iid ieid);
+      EID_list_from_iEvent et tid iid ieid ev.
+
+    (** Get an event at a given event ID in a candidate *)
+    Global Instance lookup_eid : Lookup EID.t iEvent t :=
+      λ eid cd,
+        ev ← lookup_iEvent cd eid.(EID.tid) eid.(EID.iid) eid.(EID.ieid);
+        match byte_per_event et ev, eid.(EID.byte) with
+        | None, None => Some ev
+        | Some n, Some m => guard (m < n)%nat;; Some ev
+        | _, _ => None
+        end.
+
+
+    Definition event_list (cd : t) : list (EID.t * iEvent) :=
+      '(tid, iid, (trace, trace_end)) ← instruction_list cd;
+      '(ieid, event) ← enumerate trace;
+      EID_list_from_iEvent et tid iid ieid event |$> (.,event).
+    Global Typeclasses Opaque event_list.
+
 
     Lemma event_list_match cd eid ev :
       cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
@@ -181,39 +224,29 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       unfold lookup at 1.
       unfold lookup_eid.
       unfold event_list.
-      cbn.
-      set_unfold.
-      repeat setoid_rewrite bind_Some.
-      repeat setoid_rewrite exists_pair.
-      repeat setoid_rewrite bind_Some.
-      setoid_rewrite lookup_unfold.
+      unfold EID_list_from_iEvent.
       destruct eid.
-      split.
-      all: cdestruct_intro # CDestrMatch # CDestrSubst.
-      all: repeat (eassumption || eexists || split_and).
-      all: repeat (case_split || case_guard).
-      all: hauto l:on.
+      repeat setoid_rewrite bind_Some.
+      setoid_rewrite instruction_list_match.
+      set_unfold.
+      repeat setoid_rewrite exists_pair.
+      hauto l:on simp+:eexists simp+:case_guard.
     Qed.
 
     Global Instance set_unfold_elem_of_event_list cd x :
       SetUnfoldElemOf x (event_list cd) (cd !! x.1 = Some x.2).
     Proof using . tcclean. destruct x. symmetry. apply event_list_match. Qed.
 
+
     Lemma event_list_NoDup1 cd : NoDup (event_list cd).*1.
     Proof using.
       unfold event_list.
-      rewrite fmap_unfold.
-      cbn.
-      repeat (
-          apply NoDup_bind;
-          [set_unfold; hauto l:on | .. | solve [apply NoDup_enumerate]];
-          cdestruct_intros).
-      case_split.
-      - try rewrite <- list_fmap_compose.
-        apply NoDup_fmap_2_strong. { set_unfold. hauto l:on. }
-        auto with nodup.
-      - cbn.
-        auto with nodup.
+      unfold instruction_list.
+      unfold EID_list_from_iEvent.
+      rewrite fmap_unfold #FMapUnfoldFmap.
+      solve_NoDup.
+      all: set_unfold.
+      all: qauto l:on || hauto l:on.
     Qed.
 
     Lemma event_list_NoDup cd : NoDup (event_list cd).
@@ -221,7 +254,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Definition event_map (cd : t) : gmap EID.t iEvent :=
       event_list cd |> list_to_map.
-
 
     Lemma event_map_match cd eid : (event_map cd) !! eid = cd !! eid.
     Proof using.
@@ -443,7 +475,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         option (MState.final nmth) :=
       MState.finalize (MState.MakeI (cd_to_MState cd) term).
 
-    (** * Utility relations ***)
+    (** * Utility relations **)
+
+
+    (** ** Relation building helpers *)
 
     (** This helper computes an optional key from each eid and event pair of a
         candidate using [get_key], and gathers all eids with the same key
@@ -559,59 +594,61 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
     #[global] Typeclasses Opaque sym_rel_with_same_key.
 
-    (** get physical address of an event *)
-    Definition get_pa (e : iEvent) : option (Arch.pa):=
-      match e with
-      | MemRead _ rr &→ _ => Some (rr.(ReadReq.pa))
-      | MemWrite n rr &→ _ => Some (rr.(WriteReq.pa))
-      | _ => None
-      end.
 
-    (** Symmetry relation referring to events having the same address.
-        Might need to be updated for mixed-size *)
-    Definition loc (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _ event, get_pa event).
+    (** ** Thread and instruction based orders and relations *)
 
-    (** Symmetry relation referring to events of a same instruction *)
-    Definition same_instruction (cd : t) : grel EID.t :=
+    (** Equivalence relation relating events from the same thread *)
+    Definition same_thread (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
+    #[global] Typeclasses Opaque same_thread.
+    #[global] Instance set_elem_of_same_thread (cd : t) eids:
+      SetUnfoldElemOf eids (same_thread cd)
+        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
+           eids.1.(EID.tid) = eids.2.(EID.tid)).
+    Proof.
+      tcclean.
+      destruct eids.
+      unfold same_thread.
+      set_unfold.
+      hauto q:on.
+    Qed.
+
+
+    (** Equivalence relation relating events from the same instruction instance *)
+    Definition same_instruction_instance (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
-    #[global] Typeclasses Opaque same_instruction.
-    #[global] Instance set_elem_of_same_instruction (cd : t) eids:
-      SetUnfoldElemOf eids (same_instruction cd)
+    #[global] Typeclasses Opaque same_instruction_instance.
+    #[global] Instance set_elem_of_same_instruction_instance (cd : t) eids:
+      SetUnfoldElemOf eids (same_instruction_instance cd)
         (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
            eids.1.(EID.tid) = eids.2.(EID.tid) ∧
            eids.1.(EID.iid) = eids.2.(EID.iid)).
     Proof.
       tcclean.
       destruct eids.
-      unfold same_instruction.
+      unfold same_instruction_instance.
       set_unfold.
       hauto q:on.
     Qed.
 
-    (** Symmetry relation referring to events of a same thread *)
-    (** TODO rename to thread_internal *)
-    Definition int (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
-
-    #[global] Typeclasses Opaque int.
-    #[global] Instance set_elem_of_int (cd : t) eids:
-      SetUnfoldElemOf eids (int cd)
+    (** Equivalence relation relating bytes event from the same memory access *)
+    Definition same_access (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd
+        (λ eid _, Some (eid.(EID.tid), eid.(EID.iid), eid.(EID.ieid))).
+    #[global] Typeclasses Opaque same_access.
+    #[global] Instance set_elem_of_same_access (cd : t) eids:
+      SetUnfoldElemOf eids (same_access cd)
         (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-           eids.1.(EID.tid) = eids.2.(EID.tid)).
+           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+           eids.1.(EID.iid) = eids.2.(EID.iid) ∧
+           eids.1.(EID.ieid) = eids.2.(EID.ieid)).
     Proof.
       tcclean.
       destruct eids.
-      unfold int.
+      unfold same_access.
       set_unfold.
       hauto q:on.
     Qed.
-
-    (** Inter instruction order *)
-    Definition instruction_order (cd : t) := generic_po cd ∖ same_instruction cd.
-
-    (** Intra instruction order *)
-    Definition iio (cd : t) := generic_po cd ∩ same_instruction cd.
 
     (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
     Definition addr (cd : t) :=
@@ -635,6 +672,72 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         ⦗branches cd⦘⨾
         (instruction_order cd ∖ same_instruction cd).
     Global Typeclasses Opaque ctrl.
+    (** Intra Instruction Order: The order in which events ran inside an
+        instruction *)
+    Definition iio (cd : t) :=
+      same_instruction_instance cd
+      |> filter (λ eids, eids.1.(EID.ieid) < eids.2.(EID.ieid)).
+    #[global] Typeclasses Opaque iio.
+    #[global] Instance set_elem_of_iio (cd : t) eids:
+    SetUnfoldElemOf eids (iio cd)
+      (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
+         eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+         eids.1.(EID.iid) = eids.2.(EID.iid) ∧
+         eids.1.(EID.ieid) < eids.2.(EID.ieid)).
+    Proof.
+      tcclean.
+      destruct eids.
+      unfold iio.
+      set_unfold.
+      naive_solver lia.
+    Qed.
+
+    (** Order in which the instructions architecturally ran. This does not mean
+        they micro-architecturally run in that specific order. This is an inter
+        instruction order, it does not order the events inside an instructions
+        (see [iio] for that) *)
+    Definition instruction_order (cd : t) :=
+      same_thread cd
+      |> filter (λ eids, eids.1.(EID.iid) < eids.2.(EID.iid)).
+    #[global] Typeclasses Opaque instruction_order.
+    #[global] Instance set_elem_of_instruction_order (cd : t) eids:
+    SetUnfoldElemOf eids (instruction_order cd)
+      (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
+         eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+         eids.1.(EID.iid) < eids.2.(EID.iid)).
+    Proof.
+      tcclean.
+      destruct eids.
+      unfold instruction_order.
+      set_unfold.
+      naive_solver lia.
+    Qed.
+
+    (** Complete thread order. This is a strict partial order on each thread
+        events denoting event that happened sequentially before other according
+        to the program and instruction semantics. This does NOT means that this
+        order implies any kind of weak memory ordering *)
+    Definition full_instruction_order (cd : t) := instruction_order cd ∪ iio cd.
+
+
+
+
+    (** ** Memory based relations *)
+
+    (** get physical address of an event *)
+    Definition get_pa (e : iEvent) : option (Arch.pa):=
+      match e with
+      | MemRead _ rr &→ _ => Some (rr.(ReadReq.pa))
+      | MemWrite n rr &→ _ => Some (rr.(WriteReq.pa))
+      | _ => None
+      end.
+
+    (** Symmetry relation referring to events having the same physical address.
+        In an [MixedSize] model which split reads but not write, this is incomplete *)
+    Definition same_pa (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ _ event, get_pa event).
+
+
 
     End Cand.
   End Candidate.
@@ -791,10 +894,11 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Context (cd : t).
 
-    Notation "'generic_po'" := (generic_po cd).
+    Notation "'full_instruction_order'" := (full_instruction_order cd).
+    Notation "'instruction_order'" := (instruction_order cd).
     Notation "'generic_co'" := (generic_co cd).
     Notation "'generic_rf'" := (generic_rf cd).
-    Notation "'loc'" := (loc cd).
+    Notation "'loc'" := (same_pa cd).
     Notation "'val8'" := (val8 cd).
     Notation "'addr'" := (addr cd).
     Notation "'data'" := (data cd).
@@ -817,37 +921,37 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         grf_in_loc_val : generic_rf ⊆ loc ∩ val8;
       }.
 
-    Record generic_po_wf' :=
+    Record full_instruction_order_wf' :=
       {
-        generic_po_irr : grel_irreflexive generic_po;
-        generic_po_trans : grel_transitive generic_po;
-        generic_po_total : generic_po ∪ generic_po⁻¹ = int cd;
+        full_instruction_order_irr : grel_irreflexive full_instruction_order;
+        full_instruction_order_trans : grel_transitive full_instruction_order;
+        full_instruction_order_total : full_instruction_order ∪ full_instruction_order⁻¹ = same_thread cd;
       }.
 
     Record addr_wf' :=
       {
         addr_dom : grel_dom addr ⊆ reads;
         addr_rng : grel_rng addr ⊆ mevents;
-        addr_in_instruction_order : addr ⊆ generic_po;
+        addr_in_instruction_order : addr ⊆ instruction_order;
       }.
 
     Record data_wf' :=
       {
         data_dom : grel_dom data ⊆ reads;
         data_rng : grel_rng data ⊆ writes;
-        data_in_instruction_order : data ⊆ generic_po;
+        data_in_instruction_order : data ⊆ full_instruction_order;
       }.
 
     Record ctrl_wf' :=
       {
         ctrl_dom : grel_dom ctrl ⊆ reads;
-        ctrl_in_instruction_order : ctrl ⊆ generic_po;
-        ctrl_instruction_order_in_ctrl : ctrl⨾generic_po ⊆ ctrl;
+        ctrl_in_instruction_order : ctrl ⊆ instruction_order;
+        ctrl_instruction_order_in_ctrl : ctrl⨾full_instruction_order ⊆ ctrl;
       }.
 
     Record wf :=
       {
-        generic_po_wf :> generic_po_wf';
+        full_instruction_order_wf :> full_instruction_order_wf';
         generic_co_wf :> generic_co_wf';
         generic_rf_wf :> generic_rf_wf';
         ctrl_wf :> ctrl_wf';
