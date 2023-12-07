@@ -125,12 +125,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
           amo : grel EID.t;
           (** Register read from (needed because of potentially relaxed register) *)
           rrf : grel EID.t;
-          (** intra-instruction address dependencies (to memory events) *)
-          iio_addr : grel EID.t;
-          (** intra-instruction data dependencies (to memory and register writes) *)
-          iio_data : grel EID.t;
-          (** intra-instruction control dependencies (to branches) *)
-          iio_ctrl : grel EID.t;
         }.
     Arguments t : clear implicits.
     Arguments make _ {_}.
@@ -650,28 +644,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       hauto q:on.
     Qed.
 
-    (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
-    Definition addr (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_addr cd⨾
-        ⦗mem_events cd⦘.
-    Global Typeclasses Opaque addr.
-
-    Definition data (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_data cd⨾
-        ⦗mem_events cd⦘.
-    Global Typeclasses Opaque data.
-
-    Definition ctrl (cd : t) :=
-      ⦗mem_reads cd⦘⨾
-        (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd ∪ ⦗reg_writes cd⦘))⁺)⨾
-        iio_ctrl cd⨾
-        ⦗branches cd⦘⨾
-        (instruction_order cd ∖ same_instruction cd).
-    Global Typeclasses Opaque ctrl.
     (** Intra Instruction Order: The order in which events ran inside an
         instruction *)
     Definition iio (cd : t) :=
@@ -740,6 +712,106 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
     End Cand.
+
+    (** ** Dependency relations *)
+
+    Module IIO.
+
+      Record t := make {
+          regs : gmap reg nat;
+          mem_reads : list nat;
+        }.
+
+      #[global] Instance eta : Settable _ :=
+        settable! make <regs; mem_reads>.
+
+      Definition init := make ∅ [].
+
+      Definition get_deps (deps : DepOn.t) (s : t) : gset nat :=
+          let list_deps :=
+            list_filter_map (λ reg, s.(regs) !! reg) deps.(DepOn.regs) ++
+              list_filter_map (λ memnum, s.(mem_reads) !! memnum)
+                deps.(DepOn.mem_reads) in
+          list_to_set list_deps.
+
+      Definition instr_deps (instr : iTrace ()) : grel nat * grel nat :=
+        for@{stateM t} (ieid, ev) in enumerate instr.1 do
+          match fcall ev with
+          | RegRead reg _ =>
+              mset regs (insert reg ieid);;
+              mret (∅, ∅)
+          | RegWrite _ _ deps _ =>
+              wdeps ← mget (get_deps deps);
+              mret (wdeps × {[ieid]}, ∅)
+          | MemRead _ rr =>
+              adeps ← mget (get_deps rr.(ReadReq.addr_deps));
+              mset mem_reads (.++[ieid]);;
+              mret (∅, adeps × {[ieid]})
+          | MemWrite _ wr =>
+              adeps ← mget (get_deps wr.(WriteReq.addr_deps));
+              ddeps ← mget (get_deps wr.(WriteReq.data_deps));
+              mret (ddeps × {[ieid]}, adeps × {[ieid]})
+          | BranchAnnounce _ deps =>
+              cdeps ← mget (get_deps deps);
+              (* Control deps are data deps to a BranchAnnounce *)
+              mret (cdeps × {[ieid]}, ∅)
+
+              (* TODO Need fault deps *)
+          | _ => mret (∅, ∅)
+          end
+        end init |>
+          (λ '(_, l), foldl (λ '(d, a) '(d', a'), (d ∪ d', a ∪ a')) (∅, ∅) l).
+
+      Definition convert_to_EID_rel (et : exec_type) (tid iid : nat)
+          (rel : grel nat) (instr : iTrace ()) : grel EID.t :=
+        list_to_set $
+          '(ieid1, ieid2) ← elements rel;
+          iev1 ← option_list (instr.1 !! ieid1);
+          iev2 ← option_list (instr.1 !! ieid2);
+          list_prod (EID_list_from_iEvent et tid iid ieid1 iev1)
+            (EID_list_from_iEvent et tid iid ieid2 iev2).
+
+      Definition eid_deps {et n} (cd : Candidate.t et n) : grel EID.t * grel EID.t :=
+        foldl (λ '(d, a) '(tid, iid, instr),
+            let '(base_data, base_addr) := instr_deps instr in
+            (d ∪ convert_to_EID_rel et tid iid base_data instr,
+              a ∪ convert_to_EID_rel et tid iid base_addr instr))
+          (∅, ∅) (instruction_list cd).
+
+      Definition data {et n} (cd : Candidate.t et n) : grel EID.t := (eid_deps cd).1.
+      Definition addr {et n} (cd : Candidate.t et n) : grel EID.t := (eid_deps cd).2.
+    End IIO.
+
+    Notation iio_data cd := (IIO.data cd).
+    Notation iio_addr cd := (IIO.addr cd).
+
+    Section Deps.
+      Context {et n} (cd : t et n).
+
+      (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
+      (* TODO prove all of the wellformedness properties directly from the definition *)
+      Definition addr :=
+        ⦗mem_reads cd⦘⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ rrf cd)⁺)⨾
+          iio_addr cd⨾
+          ⦗mem_events cd⦘.
+      Global Typeclasses Opaque addr.
+
+      Definition data :=
+        ⦗mem_reads cd⦘⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd))⁺)⨾
+          iio_data cd⨾
+          ⦗mem_writes cd⦘.
+      Global Typeclasses Opaque data.
+
+      Definition ctrl :=
+        ⦗mem_reads cd⦘⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd))⁺)⨾
+          iio_data cd⨾
+          ⦗branches cd⦘⨾
+          (instruction_order cd).
+      Global Typeclasses Opaque ctrl.
+    End Deps.
   End Candidate.
 
 
@@ -783,112 +855,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition size8_wf (cd : t) : Prop :=
       collect_all (λ _ event, is_not_size8 event) cd = ∅.
 
-    (* Definition last_reg_access : gmap reg EID.t. *)
-
-    (* Module IIO. *)
-    (*   Record t := *)
-    (*     make { *)
-    (*         last_reg_access : gmap reg EID.t; *)
-    (*         last_reg_read : list EID.t; *)
-    (*         last_mem_reads : list EID.t; *)
-    (*         iio_data : grel EID.t; *)
-    (*         iio_addr : grel EID.t; *)
-    (*         iio_ctrl : grel EID.t; *)
-    (*       }. *)
-
-    (*   #[global] Instance eta : Settable _ := *)
-    (*     settable! make *)
-    (*     <last_reg_access; last_reg_read; last_mem_reads; iio_data; iio_addr; iio_ctrl>. *)
-
-    (*   Definition init := make ∅ ∅ ∅ ∅. *)
-
-    (*   Definition reset_thread := setv last_reg_access ∅. *)
-
-      (* WIP *)
-
-      (* Notation "'for' x 'in' l 'with' a 'do' E 'on' i 'end'" := *)
-      (*   (fold_left (fun a x => E) l i) *)
-      (*     (at level 200, i at level 100, x binder, right associativity, only parsing). *)
-
-
-      (* Definition eval_DepOn (iio : t) (deps : DepOn.t) : gset EID.t := *)
-      (*   match deps with *)
-      (*   | None => list_to_set iio.(last_reg_read) ∪ *)
-      (*              list_to_set iio.(last_mem_reads) *)
-
-
-      (*   for reg in deps.(DepOn.regs) with res do *)
-      (*     (option_to_set $ iio.(last_reg_access) !! reg) ∪ res *)
-      (*   on *)
-      (*     for read_num in deps.(DepOn.mem_reads) with res do *)
-      (*       (option_to_set $ iio.(last_mem_reads) !! read_num) ∪ res *)
-      (*     on ∅ end *)
-      (*   end. *)
-
-      (* Definition iio_recompute (cd : t) := *)
-      (*   for '(tid, traces) in enumerate cd.(events) with iio do *)
-      (*     for '(iid, (trace, trace_end)) in traces with iio do *)
-      (*       for '(num, event) in trace with iio do *)
-      (*         let eid := EID.make tid iid num in *)
-      (*         match event with *)
-      (*         | IEvent (RegRead reg _) _ => *)
-      (*             set last_reg_access <[reg := num]> iio *)
-      (*         | IEvent (RegWrite reg _ deps _) _ => *)
-      (*             iio *)
-      (*               |> set last_reg_access <[reg := num]> *)
-      (*               |> set iio_data (.∪ eval_DepOn iio deps) *)
-      (*         | IEvent (MemRead n rr) _ => *)
-      (*             iio *)
-      (*               |> set iio_addr (.∪ eval_DepOn iio rr.(ReadReq.addr_dep_on)) *)
-      (*         end *)
-      (*       on iio done *)
-      (*     on iio done *)
-      (*   on iio done. *)
-
-
-      (*         let *)
-
-
-      (*   fold_left (fun '(tid, traces) => *)
-      (*     fold_left (fun '(iid, (trace, trace_end)) => *)
-      (*       fold_left (fun '(num, event) iio => *)
-      (*         let eid := EID.make tid iid num in *)
-      (*         match event with *)
-      (*         | IEvent (RegRead reg _) _ => *)
-      (*             set last_reg_access <[reg := num]> iio *)
-      (*         | IEvent (RegWrite reg _ deps) _ => *)
-      (*             iio *)
-      (*               |> set last_reg_access <[reg := num]> *)
-      (*               |> set iio_data (.∪ eval_DepOn iio deps) *)
-      (*         | IEvent (MemRead n rr) _ => *)
-      (*             iio *)
-      (*               |> set iio_addr (.∪ eval_DepOn iio rr.(ReadReq.addr_dep_on)) *)
-
-
-
-      (*                       (<[reg:= num]> last_reg_access, iio_addr, iio_data, iio_ctrl) *)
-
-
-      (*               ) trace *)
-      (*          ) traces ∘ reset_thread *)
-      (*     ) enumerate cd.(events) init *)
-
-
-
-      (*     for '(num, event) in enumerate trace *)
-      (*         with '(last_reg_access, iio_addr, iio_data, iio_ctrl) do *)
-
-
-
-
-
-
-
-
-    (* Check that a candidate is self consistent *)
-    (* Definition wf (cd : t) : bool := *)
-
-    (* End IIO. *)
 
     Section def.
 

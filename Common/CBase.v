@@ -36,6 +36,20 @@ Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
 Notation dec_if D := (match D with | left _ => left _ | right _ => right _ end).
 Notation dec_swap D := (match D with | left _ => right _ | right _ => left _ end).
 
+(** Imperative loop in a monad ([M]). If [l] is a [list A] and the body [E] has
+    type [M B] (with [x : A] in context), then the whole loop evaluate to a
+    value [M (list B)] that yield the list of value of the loop body with monad
+    effects applied in the list order (head first). If you want a truly
+    imperative loop, use a state monad and have [E] evaluate to [unit], you can
+    then ignore the resulting [list unit] e.g. with [;;] *)
+Notation "'for' x 'in' l 'do' E 'end'" :=
+  (mapM (λ x, E) l)
+    (at level 200, x pattern, no associativity).
+Notation "'for' @{ M  } x 'in' l 'do' E 'end'" :=
+  (@mapM M _ _ _ _ (λ x, E) l)
+    (at level 200, x pattern, no associativity).
+
+
 (** * Utility functions ***)
 
 (** Convenient iff destruction *)
