@@ -234,6 +234,7 @@ Ltac tcclean_hyp H :=
     clear Hb;
     try(repeat (setoid_rewrite <- H || rewrite <- H))
   | TCEq _ _ => rewrite TCEq_eq in H; try (setoid_rewrite H)
+  | TCSimpl _ _ => rewrite TCSimpl_eq in H; try (setoid_rewrite H)
   | Unconvertible _ _ _ => clear H
   | TCFastDone _ => apply (@tc_fast_done _) in H
   | _ => destruct H as [H]; try(repeat (setoid_rewrite <- H || rewrite <- H))

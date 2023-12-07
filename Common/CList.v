@@ -327,6 +327,22 @@ Global Instance fmap_unfold_default `{FMap M} {A B} (f : A → B) (l : M A):
   FMapUnfold f l (f <$> l) | 1000.
 Proof. tcclean. reflexivity. Qed.
 
+Global Instance fmap_unfold_list_nil {A B} (f : A → B) :
+  FMapUnfold f [] [].
+Proof. by tcclean. Qed.
+
+Global Instance fmap_unfold_list_cons {A B} (f : A → B) h t t2:
+  FMapUnfold f t t2 → FMapUnfold f (h :: t) (f h :: t2).
+Proof. by tcclean. Qed.
+
+Global Instance fmap_unfold_list_id {A} (l : list A):
+  FMapUnfold id l l | 10.
+Proof. tcclean. apply list_fmap_id. Qed.
+
+Global Instance fmap_unfold_list_id_simpl {A} (f : A → A) (l : list A):
+  TCSimpl f (λ x, x) → FMapUnfold f l l | 20.
+Proof. tcclean. apply list_fmap_id. Qed.
+
 Global Instance fmap_unfold_list_app {A B} (f : A → B) l l' l2 l2':
   FMapUnfold f l l2 → FMapUnfold f l' l2' →
   FMapUnfold f (app l l') (app l2 l2').
@@ -346,12 +362,26 @@ Global Instance fmap_unfold_list_mbind {A B C} (f : B → C) (g : A → list B) 
   FMapUnfold f (x ← l; g x) (x ← l; l2 x).
 Proof. tcclean. apply list_bind_fmap. Qed.
 
+(* TODO do a generic unfolding over match like set unfold *)
 Global Instance fmap_unfold_let_pair {A B C D} (f : C → D) x
   (l : A → B → list C) l2:
   (∀ a b, FMapUnfold f (l a b) (l2 a b)) →
   FMapUnfold f (let '(a, b) := x in l a b) (let '(a, b) := x in l2 a b).
-Proof. tcclean. destruct x. done. Qed.
+Proof. tcclean. by destruct x. Qed.
 
+(** Option to enable unfolding a fmap into a fmap *)
+Class FMapUnfoldFmap := {}.
+
+Global Instance fmap_unfold_list_fmap_id_simpl `{FMapUnfoldFmap} {A B}
+    (f : B → A) (g : A → B) (l : list A):
+  TCSimpl (λ x, f (g x)) (λ x, x) →
+  FMapUnfold f (g <$> l) l | 10 .
+Proof. tcclean. rewrite <- list_fmap_compose. hauto l:on use:list_fmap_id. Qed.
+
+Global Instance fmap_unfold_list_fmap `{FMapUnfoldFmap} {A B C}
+    (f : B → C) (g : A → B) (l : list A):
+  FMapUnfold f (g <$> l) ((λ x, f (g x)) <$> l) | 20.
+Proof. tcclean. by rewrite <- list_fmap_compose. Qed.
 
 
 (*** NoDup management ***)
