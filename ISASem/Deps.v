@@ -196,31 +196,31 @@ Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
     end.
 
   Definition add_dependency_handler (fmod : footprint_model) :
-      fHandler (outcome unit) (ST.t (nat * option Footprint.t) (iMon DepOn.t)) :=
+      fHandler (outcome unit) (stateT (nat * option Footprint.t) (iMon DepOn.t)) :=
     λ T out,
-      '(num_read, fprt) ← ST.geta;
+      '(num_read, fprt) ← mGet;
       match fprt with
       | Some fprt =>
           let '(num_read, out) :=
             add_fine_grained_dependency_fprt_outcome out fprt num_read
           in
-          ST.setv fst num_read;;
+          msetv fst num_read;;
           mcall out
       | _ =>
           match out in outcome _ T'
-                return ST.t (nat * option Footprint.t) (iMon DepOn.t) T' with
+                return stateT (nat * option Footprint.t) (iMon DepOn.t) T' with
           | InstrAnnounce opcode =>
-              ctxt ← ST.lift get_footprint_context;
+              ctxt ← st_lift get_footprint_context;
               let fprt' : Footprint.t := fmod opcode ctxt in
-              ST.setv snd (Some fprt')
+              msetv snd (Some fprt')
           | out =>
               let '(num_read, out) :=
                 add_empty_dependency_outcome out num_read
               in
-              ST.setv fst num_read;;
+              msetv fst num_read;;
               (* No idea why this doesn't type better *)
               (@mcall (outcome DepOn.t) _ _ _ (out : outcome DepOn.t _)
-                : ST.t _ (iMon DepOn.t) _)
+                : stateT _ (iMon DepOn.t) _)
           end
       end.
 

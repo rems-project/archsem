@@ -405,8 +405,8 @@ Proof. inversion 1. Qed.
     n can be 0 in which case this correspond to a no-behavior execution *)
 Inductive MChoice : eff := ChooseFin (n : nat) : MChoice (fin n).
 
-#[global] Instance MChoice_EffWd : Eff.Wf MChoice.
-Proof. intros T [[]]; apply _. Qed.
+#[global] Instance MChoice_EffWf : Eff.Wf MChoice.
+Proof. intros T [[]]; tc_solve. Qed.
 
 Equations MChoice_EffDec : Eff.Decision MChoice :=
   MChoice_EffDec _ _ (ChooseFin n) (ChooseFin n') := dec_if (decide (n = n')).
@@ -439,4 +439,33 @@ Definition mchoosel `{MChoose M} `{FMap M} {A} (l : list A) : M A :=
   mchoose (length l) |$> ((list_to_vec l) !!!.).
 
 
-(* TODO add state effects *)
+(** * State effect *)
+Inductive MState {St : Type} : eff :=
+| MSet (val : St) : MState unit
+| MGet : MState St.
+Arguments MState : clear implicits.
+
+#[global] Instance MState_EffWf `{Inhabited St} : Eff.Wf (MState St).
+Proof. intros _ []; tc_solve. Qed.
+
+Equations MState_EffDec `{EqDecision St} : Eff.Decision (MState St) :=
+  MState_EffDec _ _ (MSet s) (MSet s') := dec_if (decide (s = s'));
+  MState_EffDec _ _ MGet MGet := left _;
+  MState_EffDec _ _ _ _ := right _.
+Solve All Obligations with hauto lq:on.
+#[global] Existing Instance MState_EffDec.
+
+Notation mGet := (mcall MGet).
+Definition mget `{MCall (MState St) M, FMap M} {T} (proj : St → T) : M T :=
+  mGet |$> proj.
+
+Notation mSetv s := (mcall (MSet s)).
+Definition mSet `{MCall (MState St) M, MBind M} (upd : St → St) : M unit :=
+  s ← mGet;
+  mSetv (upd s).
+Definition mset `{MCall (MState St) M, MBind M} {T} (proj : St → T)
+  `{Setter St T proj} (upd : T → T) : M unit :=
+  mSet (set proj upd).
+Definition msetv `{MCall (MState St) M, MBind M} {T} (proj : St → T)
+  `{Setter St T proj} (val : T) : M unit :=
+  mset proj (λ _, val).

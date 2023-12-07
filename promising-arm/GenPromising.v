@@ -106,7 +106,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
       mEvent : Type;
       handler : (* tid *) nat → memoryMap →
                 fHandler outcome
-                  (ST.t (tState * PromMemory.t mEvent * iis) (Exec.t string));
+                  (stateT (tState * PromMemory.t mEvent * iis) (Exec.t string));
       allowed_promises : (* tid *) nat → memoryMap → tState →
                          PromMemory.t mEvent → propset mEvent;
       (** I'm not considering that emit_promise can fail or have a

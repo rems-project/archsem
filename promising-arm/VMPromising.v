@@ -1243,7 +1243,7 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
 
 (** Runs an outcome. *)
 Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
-   ST.t (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
+   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
   let initmem := Memory.initial_from_memMap initmem in
   let deps_to_view :=
     fun deps => IIS.from_DepOn deps ts iis in

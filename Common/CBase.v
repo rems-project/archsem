@@ -439,3 +439,19 @@ Proof. sfirstorder. Qed.
 
 Global Instance DecisionT_sum  `{DecisionT A} `{DecisionT B} : DecisionT (A + B).
 Proof. sfirstorder. Qed.
+
+(** * Identity Monad
+
+This is useful to apply transformers on, or in contexts that really expect a
+monad. *)
+
+(** The identity monad. We are not using a regular [id] to help type inference
+    and avoid universes constraints *)
+Definition idM (T : Type) := T.
+(* This is necessary otherwise typeclass search would find monads everywhere. *)
+#[global] Typeclasses Opaque idM.
+
+#[global] Instance idM_ret : MRet idM := λ _ x, x.
+#[global] Instance idM_bind : MBind idM := λ _ _ f ma, f ma.
+#[global] Instance idM_join : MJoin idM := λ _ mma, mma.
+#[global] Instance idM_fmap : FMap idM := λ _ _ f ma, f ma.
