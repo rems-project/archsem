@@ -387,10 +387,21 @@ Proof. tcclean. by rewrite <- list_fmap_compose. Qed.
 (*** NoDup management ***)
 
 Global Hint Resolve NoDup_nil_2 : nodup.
-Global Hint Resolve NoDup_cons_2 : nodup.
-Global Hint Rewrite @list.NoDup_cons : nodup.
 Global Hint Resolve NoDup_singleton : nodup.
 Global Hint Resolve NoDup_seq : nodup.
+
+#[global] Hint Extern 10 (NoDup (_ :: _)) =>
+  apply NoDup_cons_2; [shelve | ..] : nodup.
+#[global] Hint Extern 10 (NoDup (_ ≫= _)) =>
+  apply NoDup_bind; [shelve | ..] : nodup.
+#[global] Hint Extern 10 (NoDup (fmap _ _)) => apply NoDup_fmap_2 : nodup.
+#[global] Hint Extern 20 (NoDup (fmap _ _)) =>
+  apply NoDup_fmap_2_strong; [shelve | ..] : nodup.
+#[global] Hint Extern 20 (NoDup (match ?x with _ => _ end)) =>
+  destruct x : nodup.
+#[global] Hint Extern 1000 (NoDup _) => shelve : nodup.
+
+Ltac solve_NoDup := unshelve (typeclasses eauto with nodup).
 
 Lemma NoDup_zip_with_l {A B C} (f : A → B → C) l l':
   (∀ x y x' y', f x x' = f y y' → x = y) → NoDup l →
@@ -398,9 +409,10 @@ Lemma NoDup_zip_with_l {A B C} (f : A → B → C) l l':
 Proof.
   intros Hinj HND.
   generalize dependent l'.
-  induction l;
-    destruct l';
-    hauto l:on db:nodup simp+:list_saturate simp+:set_unfold.
+  induction l.
+  all: destruct l'.
+  all: try rewrite NoDup_cons in *.
+  all: hauto l:on simp+:solve_NoDup simp+:list_saturate simp+:set_unfold.
 Qed.
 
 Lemma NoDup_zip_with_r {A B C} (f : A → B → C) l l':
@@ -409,9 +421,10 @@ Lemma NoDup_zip_with_r {A B C} (f : A → B → C) l l':
 Proof.
   intros Hinj HND.
   generalize dependent l.
-  induction l';
-    destruct l;
-    hauto l:on db:nodup simp+:list_saturate simp+:set_unfold.
+  induction l'.
+  all: destruct l.
+  all: try rewrite NoDup_cons in *.
+  all: hauto l:on simp+:solve_NoDup simp+:list_saturate simp+:set_unfold.
 Qed.
 
 Lemma NoDup_zip_l {A B} (l : list A) (l' : list B):
@@ -426,9 +439,11 @@ Lemma NoDup_enumerate A (l : list A) : NoDup (enumerate l).
 Proof.
   unfold enumerate.
   apply NoDup_zip_l.
-  apply NoDup_seq.
+  solve_NoDup.
 Qed.
 Global Hint Resolve NoDup_enumerate : nodup.
+
+
 
 
 (** * InT
