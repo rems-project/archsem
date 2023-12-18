@@ -62,15 +62,6 @@ Definition Prop_for_rewrite {P : Prop} (H : P) : P <-> True.
   firstorder.
 Defined.
 
-(** Unpack an exception *)
-Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
-  match v with
-  | None => mthrow err
-  | Some x => mret x
-  end.
-
-Notation ofail := (othrow ()).
-
 (** This is useful for keeping the equality in a match for dependent typing
     purposes *)
 Definition inspect {A} (a : A) : {b | a = b} :=

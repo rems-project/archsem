@@ -5,6 +5,7 @@ From stdpp Require Export finite.
 Require Import CBase.
 Require Import Options.
 Require Import CBool.
+Require Import COption.
 Require Import CList.
 Require Import CInduction.
 

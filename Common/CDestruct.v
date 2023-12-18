@@ -45,16 +45,22 @@ things. *)
 Class CDestrCase (T : Type) := {}.
 
 (** [cdestruct] will apply all simplification provided by [CDestrSimpl] *)
-Class CDestrSimpl (P Q : Prop) := {cdestruct_simpl : P ↔ Q}.
+Class CDestrSimpl (P Q : Prop) := cdestr_simpl {cdestruct_simpl : P ↔ Q}.
 Global Hint Mode CDestrSimpl + - : typeclass_instances.
+Arguments cdestr_simpl {_ _} .
 
-(** If [CDestrSubst] is enabled, [cdestruct] will try to apply [subst] on every equalities
-it sees. *)
+(** If [CDestrSubst] is enabled, [cdestruct] will try to apply [subst] on every
+    equality it sees. *)
 Class CDestrSubst := {}.
 
 (** If [CDestrCbn] is enabled, then [cdestruct] will apply [cbn] on all the
-    goals it sees. *)
+    hypotheses it sees. (Including types not in [Prop] *)
 Class CDestrCbn := {}.
+
+(** Convenience option to enable the previous 2 options in a single option *)
+Class CDestrCbnSubst := {}.
+#[global] Instance cdestr_cbnsubst_cbn `{CDestrCbnSubst} : CDestrCbn. Qed.
+#[global] Instance cdestr_cbnsubst_subst `{CDestrCbnSubst} : CDestrSubst. Qed.
 
 (** If [CDestrMatchT] is enabled for a type, then [cdestruct] will process match
     cases of that type by calling [destruct] on the match discriminee. The value

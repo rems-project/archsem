@@ -8,6 +8,7 @@
    CDestruct
    CArith
    CList
+   COption
    CBool
    CBitvector
    CInduction

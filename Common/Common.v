@@ -13,11 +13,13 @@ From stdpp Require Export relations.
 From stdpp Require Export propset.
 Require Export Ensembles.
 
+Require Import Options.
 Require Export CBase.
 Require Export CDestruct.
 Require Export CArith.
 Require Export CBool.
 Require Export CList.
+Require Export COption.
 Require Export CResult.
 Require Export CBitvector.
 Require Export CSets.
