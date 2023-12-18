@@ -47,8 +47,10 @@ Notation "'for' x 'in' l 'do' E 'end'" :=
     (at level 200, x pattern, no associativity).
 Notation "'for' @{ M  } x 'in' l 'do' E 'end'" :=
   (@mapM M _ _ _ _ (λ x, E) l)
-    (at level 200, x pattern, no associativity).
+    (at level 200, x pattern, no associativity, only parsing).
 
+Notation "x .T1" := (projT1 x) (at level 1, left associativity, format "x .T1").
+Notation "x .T2" := (projT2 x) (at level 1, left associativity, format "x .T2").
 
 (** * Utility functions ***)
 

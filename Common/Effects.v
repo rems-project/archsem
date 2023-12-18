@@ -65,8 +65,6 @@ Delimit Scope effect_scope with eff.
 Bind Scope effect_scope with eff.
 Open Scope effect_scope.
 
-Notation "x .T1" := (projT1 x) (at level 1, left associativity, format "x .T1").
-Notation "x .T2" := (projT2 x) (at level 1, left associativity, format "x .T2").
 
 (** For any effect value, either a value to be returned exists, or the effect is
     an exception and can be converted to the associated exception type *)
@@ -320,7 +318,7 @@ Infix "=ₑ" := Eff.eq (at level 70, no associativity) : effect_scope.
 
 
 Infix "=ₑ" := Eff.eq (at level 70, no associativity) : effect_scope.
-Infix "=ₑ@{ A }" := (@Eff.eq A _)
+Infix "=ₑ@{ A }" := (@Eff.eq A _ _)
   (at level 70, only parsing, no associativity) : effect_scope.
 
 

@@ -404,7 +404,8 @@ Infix "≡ₑ" := fequiv (at level 70, no associativity).
 Infix "≡ₑ@{ A }" := (@fequiv A _)
                       (at level 70, only parsing, no associativity).
 Infix "&→" := FEvent (at level 45, no associativity).
-Infix "&→@{ Eff }" := (@FEvent (Eff _) _) (at level 45, no associativity).
+Infix "&→@{ Eff }" := (@FEvent (Eff _) _)
+                        (at level 45, only parsing, no associativity).
 
 Definition fHandler_plus {Effl Effr : eff} `{MRet M, MBind M}
     (fl : fHandler Effl M) (fr : fHandler Effr M) : fHandler (Effl +ₑ Effr) M :=
