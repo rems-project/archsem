@@ -44,6 +44,8 @@ Module Type Arch.
   Parameter reg_type : Type.
   Parameter reg_type_eq : EqDecision reg_type.
   #[export] Existing Instance reg_type_eq.
+  Parameter reg_type_countable : @Countable reg_type reg_type_eq.
+  #[export] Existing Instance reg_type_countable.
   Parameter reg_type_inhabited : Inhabited reg_type.
   #[export] Existing Instance reg_type_inhabited.
 

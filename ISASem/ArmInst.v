@@ -11,7 +11,7 @@ Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
-From SSCCommon Require Import CBase CList CBitvector Effects.
+From SSCCommon Require Import CBase COption CList CBitvector Effects CDestruct.
 
 
 From Equations Require Import Equations.
@@ -39,7 +39,7 @@ Section regval_rect_gen. (* Most boring code ever *)
   Variable Tl : list regval → Type.
   Hypothesis T_nil : Tl [].
   Hypothesis T_cons : ∀ {t l}, T t → Tl l → Tl (t :: l).
-  Hypothesis T_unknown : T (Regval_unknown).
+  Hypothesis T_unknown : T Regval_unknown.
   Hypothesis T_vector : ∀ {l}, Tl l → T (Regval_vector l).
   Hypothesis T_list : ∀ {l}, Tl l → T (Regval_list l).
   Hypothesis T_None : T (Regval_option None).
@@ -84,7 +84,7 @@ Section regval_rect.
   Proof using. sauto lq:on. Defined.
   Lemma T_cons : ∀ t l, T t → Tl l → Tl (t :: l).
   Proof using. sauto lq:on. Defined.
-  Hypothesis T_unknown : T (Regval_unknown).
+  Hypothesis T_unknown : T Regval_unknown.
   Hypothesis T_vector : ∀ l, Tl l → T (Regval_vector l).
   Hypothesis T_list : ∀ l, Tl l → T (Regval_list l).
   Hypothesis T_None : T (Regval_option None).
@@ -150,6 +150,71 @@ End regval_ind.
 #[global] Instance regval_eq_dec : EqDecision regval.
 Proof. intro x; induction x; intro y; destruct y; typeclasses eauto with eqdec.
 Defined.
+
+#[derive(eliminator=no)]
+Equations regval_to_gen_tree : regval → gen_tree (Z + string) :=
+  regval_to_gen_tree Regval_unknown := GenNode 0 [];
+  regval_to_gen_tree (Regval_vector v) := GenNode 1 (map regval_to_gen_tree v);
+  regval_to_gen_tree (Regval_list l) := GenNode 2 (map regval_to_gen_tree l);
+  regval_to_gen_tree (Regval_option None) := GenNode 3 [];
+  regval_to_gen_tree (Regval_option (Some rv)) := GenNode 3 [regval_to_gen_tree rv];
+  regval_to_gen_tree (Regval_bool true) := (GenNode 4 []);
+  regval_to_gen_tree (Regval_bool false) := (GenNode 5 []);
+  regval_to_gen_tree (Regval_int z) := (GenLeaf (inl z));
+  regval_to_gen_tree (Regval_string s) := (GenLeaf (inr s));
+  regval_to_gen_tree (@Regval_bitvector n bv) :=
+    GenNode 6 [GenLeaf (inl (Z.of_N n)); GenLeaf (inl (bv_unsigned bv))];
+  regval_to_gen_tree (Regval_struct l) :=
+    GenNode 7 (map (λ '(s, rv), GenNode 8 [GenLeaf (inr s); regval_to_gen_tree rv]) l).
+
+#[derive(eliminator=no)]
+Equations regval_of_gen_tree : gen_tree (Z + string) → option regval := {
+    regval_of_gen_tree (GenNode 0 []) := Some (Regval_unknown);
+    regval_of_gen_tree (GenNode 1 l) :=
+      for x in l do regval_of_gen_tree x end |$> Regval_vector;
+    regval_of_gen_tree (GenNode 2 l) :=
+      for x in l do regval_of_gen_tree x end |$> Regval_list;
+    regval_of_gen_tree (GenNode 3 []) := Some (Regval_option None);
+    regval_of_gen_tree (GenNode 3 [t]) :=
+      regval_of_gen_tree t |$> Some |$> Regval_option;
+    regval_of_gen_tree (GenNode 4 []) := Some (Regval_bool true);
+    regval_of_gen_tree (GenNode 5 []) := Some (Regval_bool false);
+    regval_of_gen_tree (GenLeaf (inl z)) := Some (Regval_int z);
+    regval_of_gen_tree (GenLeaf (inr s)) := Some (Regval_string s);
+    regval_of_gen_tree (GenNode 6 [GenLeaf (inl n); GenLeaf (inl v)]) :=
+        Some (Regval_bitvector (Z_to_bv (Z.to_N n) v));
+    regval_of_gen_tree (GenNode 7 l) :=
+      for x in l do regval_field_of_gen_tree x end |$> Regval_struct;
+    regval_of_gen_tree _ := None
+  }
+where regval_field_of_gen_tree : gen_tree (Z + string) → option (string * regval) := {
+    regval_field_of_gen_tree (GenNode 8 [GenLeaf (inr st); t]) :=
+    regval_of_gen_tree t |$> (st,.);
+    regval_field_of_gen_tree a := None
+  }.
+
+Lemma regval_to_gen_tree_inj rv :
+  regval_of_gen_tree (regval_to_gen_tree rv) = Some rv.
+  induction rv.
+  (* Bool encoding are defined separately for true and false *)
+  all: try match goal with b : bool |- _ => destruct b end.
+  all: simp regval_to_gen_tree regval_of_gen_tree.
+  all: try hauto lq:on use:N2Z.id,Z_to_bv_bv_unsigned.
+  (* Only list constructors remains *)
+  all: apply fmap_Some_2.
+  all: apply mapM_Some_2.
+  all: apply Forall2_map_l.
+  all: apply Forall2_diag.
+  all: try assumption.
+  (* Only struct case remains *)
+  cdestruct_intros.
+  apply fmap_Some_2.
+  set_unfold.
+  sfirstorder.
+Qed.
+
+#[global] Instance regval_countable : Countable regval :=
+  inj_countable regval_to_gen_tree regval_of_gen_tree regval_to_gen_tree_inj.
 
 #[global] Instance regval_inhabited : Inhabited regval :=
   populate Regval_unknown.
@@ -262,6 +327,7 @@ Module Arm.
     Definition reg_countable : Countable reg := _.
     Definition reg_type := regval.
     Definition reg_type_eq : EqDecision reg_type := _.
+    Definition reg_type_countable : Countable reg_type := _.
     Definition reg_type_inhabited : Inhabited reg_type := _.
 
     (** None means default access (strict or relaxed is up to the concurrency model).

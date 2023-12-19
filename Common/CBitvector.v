@@ -3,6 +3,7 @@
 
 Require Import Lia.
 Require Import stdpp.decidable.
+Require Import stdpp.countable.
 Require Export stdpp.unstable.bitvector.
 Require Export stdpp.unstable.bitvector_tactics.
 Require Import CBase.
@@ -190,6 +191,10 @@ Definition bv_xnor {n : N} (bv1 bv2 : bv n) : bv n := bv_xor bv1 bv2 |> bv_not.
 
 Definition BVN (n : N) (val : Z) {wf: BvWf n val} : bvn := BV n val.
 
+Notation bvn_unsigned bv := (bv_unsigned (bvn_val bv)).
+Notation bvn_signed bv := (bv_signed (bvn_val bv)).
+Notation Z_to_bvn n z := (bv_to_bvn (Z_to_bv n z)).
+
 #[global] Instance bvn_empty : Empty bvn := BVN 0 0.
 
 Definition bvn_eqb (bv1 bv2 : bvn) : bool := bool_decide (bv1 = bv2).
@@ -242,3 +247,9 @@ Definition bvn_xor := bvn_binop (@bv_xor).
 
 Definition bvn_concat (b1 b2 : bvn) : bvn :=
   bv_concat (bvn_n b1 + bvn_n b2) (bvn_val b1) (bvn_val b2).
+
+#[global] Instance bvn_countable : Countable bvn.
+Proof.
+  refine (inj_countable (λ bv : bvn, (bvn_n bv, bvn_unsigned bv)) (λ '(n, val), Some (Z_to_bvn n val)) _).
+  intros [n bv]. cbn. by rewrite Z_to_bv_bv_unsigned.
+Defined.

@@ -15,7 +15,7 @@ Proof.
 Qed.
 
 
-(*** List simplification ***)
+(** * List simplification *)
 
 (* TODO all list simplification about x ∈ l should be superseded by set_unfold *)
 
@@ -95,7 +95,7 @@ Global Instance set_unfold_elem_of_singleton_list {A : Type} (x a : A) :
 Proof. tcclean. set_solver. Qed.
 
 
-(*** List lookup with different keys ***)
+(** * List lookup with different keys *)
 
 Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
   fun p l => l !! (Pos.to_nat p).
@@ -111,7 +111,7 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
     | Zneg _ => None
     end.
 
-(*** List boolean unfolding ***)
+(** * List boolean unfolding *)
 
 Global Instance bool_unfold_existsb A (f : A -> bool) (l : list A) (P : A -> Prop) :
   (forall a, BoolUnfold (f a) (P a)) ->
@@ -137,7 +137,7 @@ Proof.
   reflexivity.
 Qed.
 
-(*** Decisions ***)
+(** * Decisions *)
 
 Global Instance forall_list_decision A P (l : list A):
   (∀ x : A, Decision (P x)) → Decision (∀'x ∈ l, P x).
@@ -148,7 +148,7 @@ Global Instance exist_list_decision A P (l : list A):
 Proof. intro. rewrite <- Exists_exists. solve_decision. Defined.
 
 
-(*** List utility functions ***)
+(** * List utility functions *)
 
 Fixpoint list_from_func_aux {A} (f : nat -> A) (len : nat) (acc : list A) :=
   match len with
@@ -267,11 +267,27 @@ Section FilterMap.
 End FilterMap.
 
 
-(*** List lemmas ***)
+(** * List lemmas *)
 
 Lemma length_one_iff_singleton A (l : list A) :
   length l = 1 <-> exists a, l = [a].
 Proof. sauto lq: on rew:off. Qed.
+
+(** ** Forall2 Lemmas *)
+
+Lemma Forall2_map_l {A B C} (f : A → B) (P : B → C → Prop) l l' :
+  Forall2 P (map f l) l' ↔ Forall2 (λ x y, P (f x) y) l l'.
+Proof. revert l'; induction l; intro l'; sauto lq:on. Qed.
+
+Lemma Forall2_map_r {A B C} (f : B → C) (P : A → C → Prop) l l' :
+  Forall2 P l (map f l') ↔ Forall2 (λ x y, P x (f y)) l l'.
+Proof. revert l; induction l'; intro l; sauto lq:on. Qed.
+
+Lemma Forall2_diag A (P : A → A → Prop) l:
+  Forall2 P l l ↔ ∀'x ∈ l, P x x.
+Proof. induction l; sauto lq:on. Qed.
+
+(** ** fold_left invariant proofs *)
 
 (** Proofs along fold_left using an invariant.
     The invariant takes as a parameter the value produced so far and the
@@ -318,7 +334,10 @@ Tactic Notation "fold_left_inv_ND_pose" uconstr(I) :=
   let H := fresh "H" in fold_left_inv_ND_pose I as H.
 
 
-(*** Fmap Unfold ***)
+(** * Fmap Unfold *)
+
+(** Typeclass for pushing an fmapped function into the structure. For now only
+    on lists *)
 Class FMapUnfold {M : Type → Type} {fm : FMap M}
   {A B} (f : A → B) (ma : M A) (mb : M B) := {fmap_unfold : f <$> ma = mb }.
 Global Hint Mode FMapUnfold + + + + + + - : typeclass_instances.
@@ -384,7 +403,7 @@ Global Instance fmap_unfold_list_fmap `{FMapUnfoldFmap} {A B C}
 Proof. tcclean. by rewrite <- list_fmap_compose. Qed.
 
 
-(*** NoDup management ***)
+(** * NoDup management *)
 
 Global Hint Resolve NoDup_nil_2 : nodup.
 Global Hint Resolve NoDup_singleton : nodup.
