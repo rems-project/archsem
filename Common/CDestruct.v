@@ -30,10 +30,11 @@ safe and should never do unsafe (irreversible) operations. Here is an hopefully
 exhaustive list of what [cdestruct] does.
 
 - Destruct any type for which [CDestructCase] is implemented ([∧], [∃], [True]
-  and pairs by default) - Apply simplification rule given by [CDestructSimpl]
-  which include - Simplify equalities according to [Inj] and [Inj2] like [Some x
-  = Some y] or [(a, b) = (c, d)] - Solve the goal if any of the introduced
-  hypothesis is obviously false ([ObvFalse])
+  and pairs by default)
+- Apply simplification rule given by [CDestructSimpl] which include
+  - Simplify equalities according to [Inj] and [Inj2] like [Some x = Some y]
+    or [(a, b) = (c, d)] - Solve the goal if any of the introduced hypothesis
+    is obviously false ([ObvFalse])
 
 Additionally [cdestruct] can be configured with typeclass options to do more
 things. *)
@@ -72,16 +73,20 @@ Class CDestrMatchT (T : Type) := {}.
 Class CDestrMatch := {}.
 Global Instance cdestr_matchT `{CDestrMatch} T : CDestrMatchT T. Qed.
 
-(** [CDestrRecInj] allow [cdestruct] to blow up record equalities of the form [{|
-    ... |} = {| ... |}] in a group of field-wise equality. One must specify the
-    constructor term for internal reasons (it's hard to guess). The record must
-    implement [Settable] *)
+(** [CDestrRecInj] allow [cdestruct] to blow up record equalities of the form
+    [{| ... |} = {| ... |}] in a group of field-wise equality. One must specify
+    the constructor term for internal reasons (it's hard to guess). The record
+    must implement [Settable] *)
 Class CDestrRecInj (rec_type : Type) {constr_type : Type}
   (constr : constr_type) := {}.
 
-(* Assumes already blocked goal, H must be valid hyp *)
+(* Assumes already blocked goal, H must be a valid hyp from which no other hyp
+   depends on*)
 Ltac cdestruct_core H :=
+  (* Check that no other hypothesis depends on H *)
   assert_succeeds (revert H);
+  (* Continues running by introducing the next hypothesis, The a is unit
+     argument for lazyness *)
   let cont a :=
       match goal with
       | |- block _ => idtac
@@ -146,9 +151,9 @@ Tactic Notation "cdestruct_intros" "as" simple_intropattern_list(pats) :=
 
 (** ** Default Instanciation of the CDestruct typeclasses *)
 
-(** CDestruct destroys [∧], [∃], pairs, [True] and [False] by default. It
-    purposefully does NOT destroy [∨] by default. This behavior can be added
-    locally with [#[local] Existing Instance cdestruct_or] or with
+(** CDestruct destroys [∧], [∃], pairs, [True], [False],[unit] and [Empty_set]
+    by default. It purposefully does NOT destroy [∨] by default. This behavior
+    can be added locally with [#[local] Existing Instance cdestruct_or] or with
     [cdestruct use cdestruct_or] *)
 Global Instance cdestruct_and A B : CDestrCase (A ∧ B) := ltac:(constructor).
 #[global] Instance cdestruct_ex T P : CDestrCase (∃ x : T, P x) := ltac:(constructor).
@@ -157,6 +162,8 @@ Global Instance cdestruct_and A B : CDestrCase (A ∧ B) := ltac:(constructor).
 Global Instance cdestruct_True : CDestrCase True := ltac:(constructor).
 Global Instance cdestruct_False : CDestrCase False := ltac:(constructor).
 Definition cdestruct_or A B : CDestrCase (A ∨ B) := ltac:(constructor).
+#[global] Instance cdestruct_unit : CDestrCase unit := ltac:(constructor).
+#[global] Instance cdestruct_Empty_set : CDestrCase Empty_set := ltac:(constructor).
 
 (** Injective equalities are simplified by default *)
 Global Instance cdestruct_inj `{Inj A B RA RB f} {HP: Proper (RA ==> RB) f} x y :
