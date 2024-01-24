@@ -1,7 +1,61 @@
 Require Import Options.
 Require Import CBase.
+Require Import Program Equality.
 
 
+(** * Injectivity
+
+    This is a is done with a bunch of injectivity typeclasses, that can be used
+    elsewhere. This enforce that any injection done by [cdestruct] respects
+    typeclass opaqueness (unlike the regular [injection]) *)
+
+(** Deduce Inj instance from dependent injection. This might use UIP *)
+#[export] Hint Extern 20 (Inj ?A eq ?Constr) =>
+  eunify A eq;
+  unfold Inj;
+  by simplify_dep_elim
+  : typeclass_instances.
+
+(** Deduce Inj2 instance from dependent injection. This might use UIP *)
+#[export] Hint Extern 20 (Inj2 ?A ?B eq ?Constr) =>
+  eunify A eq;
+  eunify B eq;
+  unfold Inj2;
+  by simplify_dep_elim
+  : typeclass_instances.
+
+
+Class Inj3 {A B C D} (R1 : relation A) (R2 : relation B) (R3 : relation C)
+    (S : relation D) (f : A → B → C → D) : Prop := inj3 x1 x2 x3 y1 y2 y3 :
+    S (f x1 x2 x3) (f y1 y2 y3) → R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3.
+Global Arguments inj3 {_ _ _ _ _ _ _ _} _ {_} _ _ _ _ _ _ _: assert.
+
+(** Deduce Inj3 instance from dependent injection. This might use UIP *)
+#[export] Hint Extern 20 (Inj3 ?A ?B ?C eq ?Constr) =>
+  eunify A eq;
+  eunify B eq;
+  eunify C eq;
+  unfold Inj3;
+  by simplify_dep_elim
+  : typeclass_instances.
+
+
+Class Inj4 {A B C D E} (R1 : relation A) (R2 : relation B) (R3 : relation C)
+  (R4 : relation D) (S : relation E) (f : A → B → C → D → E) : Prop :=
+  inj4 x1 x2 x3 x4 y1 y2 y3 y4 :
+    S (f x1 x2 x3 x4) (f y1 y2 y3 y4) →
+    R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4.
+Global Arguments inj4 {_ _ _ _ _ _ _ _ _ _} _ {_} _ _ _ _ _ _ _ _ _: assert.
+
+(** Deduce Inj4 instance from dependent injection. This might use UIP *)
+#[export] Hint Extern 20 (Inj4 ?A ?B ?C ?D eq ?Constr) =>
+  eunify A eq;
+  eunify B eq;
+  eunify C eq;
+  eunify D eq;
+  unfold Inj4;
+  by simplify_dep_elim
+  : typeclass_instances.
 
 (** * ObvFalse
 
@@ -63,6 +117,16 @@ Class CDestrCbnSubst := {}.
 #[global] Instance cdestr_cbnsubst_cbn `{CDestrCbnSubst} : CDestrCbn. Qed.
 #[global] Instance cdestr_cbnsubst_subst `{CDestrCbnSubst} : CDestrSubst. Qed.
 
+(** This is used to deal with dependent equality. When having a dependent
+    equality implies simpler equalities. [cdestruct] will try to use the simpler
+    equality to do substitution and therefore make the dependent equality
+    simpler. For example when you have [existT a b = existT c d], one can deduce
+    [a = c]. Then if either [a] or [c] is a variable, we can do a substitution
+    and simplify the existT equality *)
+(* TODO *)
+Class CDestrSuperSubst (P : Prop) (T : Type) (a b : T) :=
+  mk_cdestr_supersubst { cdestr_supersubst : P → a = b}.
+
 (** If [CDestrMatchT] is enabled for a type, then [cdestruct] will process match
     cases of that type by calling [destruct] on the match discriminee. The value
     will therefore be destructed even if not directly processed by [cdestruct]
@@ -109,10 +173,22 @@ Ltac cdestruct_core H :=
   | _ =>
       once rewrite cdestruct_simpl in H;
       once cdestruct_core H
+  | ?t = ?t =>
+      (clear H || (revert H; refine (simplification_K _ t _ _)));
+      cont ()
   | ?x = ?y =>
       has_option CDestrSubst;
       once first [subst x | subst y];
       cont ()
+  | ?P =>
+      has_option CDestrSubst;
+      let H' := fresh in
+      pose proof H as H';
+      apply cdestr_supersubst in H';
+      match type of H' with
+      | ?x = ?y => once first [subst x | subst y]
+      end;
+      once cdestruct_core H
   | match ?b with _ => _ end =>
       let T := type of b in
       has_option (CDestrMatchT T);
@@ -167,7 +243,7 @@ Definition cdestruct_or A B : CDestrCase (A ∨ B) := ltac:(constructor).
 #[global] Instance cdestruct_unit : CDestrCase unit := ltac:(constructor).
 #[global] Instance cdestruct_Empty_set : CDestrCase Empty_set := ltac:(constructor).
 
-(** Injective equalities are simplified by default *)
+(** Injective equalities are simplified by default, up to 4 arguments *)
 Global Instance cdestruct_inj `{Inj A B RA RB f} {HP: Proper (RA ==> RB) f} x y :
   CDestrSimpl (RB (f x) (f y)) (RA x y).
 Proof. constructor. use (inj f). naive_solver. Qed.
@@ -176,6 +252,21 @@ Global Instance cdestruct_inj2 `{Inj2 A B C RA RB RC f}
     {HP : Proper (RA ==> RB ==> RC) f} x1 x2 y1 y2 :
   CDestrSimpl (RC (f x1 x2) (f y1 y2)) (RA x1 y1 ∧ RB x2 y2).
 Proof. constructor. use (inj2 f). sfirstorder. Qed.
+
+Global Instance cdestruct_inj3 `{Inj3 A B C D R1 R2 R3 RS f}
+    {HP : Proper (R1 ==> R2 ==> R3 ==> RS) f} x1 x2 x3 y1 y2 y3 :
+  CDestrSimpl (RS (f x1 x2 x3) (f y1 y2 y3)) (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3).
+Proof. constructor.
+       split; intro H';[by apply (inj3 f) in H' | apply HP; naive_solver].
+Qed.
+
+Global Instance cdestruct_inj4 `{Inj4 A B C D E R1 R2 R3 R4 RS f}
+    {HP : Proper (R1 ==> R2 ==> R3 ==> R4 ==> RS) f} x1 x2 x3 x4 y1 y2 y3 y4 :
+  CDestrSimpl (RS (f x1 x2 x3 x4) (f y1 y2 y3 y4))
+    (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4).
+Proof. constructor.
+       split; intro H';[by apply (inj4 f) in H' | apply HP; naive_solver].
+Qed.
 
 (** Implementation of [CDestrRecInj], see the typeclass definition for an
     explanation *)
@@ -188,3 +279,7 @@ Proof. constructor. use (inj2 f). sfirstorder. Qed.
   rewrite record_eq_unfold;
   cbn;
   reflexivity : typeclass_instances.
+
+#[global] Instance cdestr_supersubst_sigT (T : Type) (P : T → Type) a b c d :
+  CDestrSuperSubst (existT a b =@{sigT P} existT c d) T a c.
+Proof. tcclean. by simplify_dep_elim. Qed.
