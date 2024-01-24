@@ -80,6 +80,8 @@ Global Instance cdestr_matchT `{CDestrMatch} T : CDestrMatchT T. Qed.
 Class CDestrRecInj (rec_type : Type) {constr_type : Type}
   (constr : constr_type) := {}.
 
+(* TODO switch to hyp_block hyp management *)
+
 (* Assumes already blocked goal, H must be a valid hyp from which no other hyp
    depends on*)
 Ltac cdestruct_core H :=

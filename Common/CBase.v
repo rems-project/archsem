@@ -179,6 +179,16 @@ Ltac forall_hyps tac :=
   | H : _ |- _ => revert H; try (forall_hyps tac); intro H; try(tac H)
   end.
 
+Inductive hyp_block := HypBlock.
+
+Ltac hyp_start_block := pose proof HypBlock.
+Ltac hyp_revert_until_block :=
+  lazymatch goal with
+  | H : ?T |- _ => tryif unify T hyp_block then clear H else (revert H;hyp_revert_until_block)
+  end.
+
+Ltac revert_generated_hyps tac := hyp_start_block; tac; hyp_revert_until_block.
+
 (** ** Rewriting *)
 
 (** Takes an evar and puts it in a pattern shape. Use as (do n pattern_evar) if
