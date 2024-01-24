@@ -93,7 +93,7 @@ Section VecLookup.
   Global Instance vec_lookup_nat : Lookup nat T (vec T n) :=
     fun m v =>
       match decide (m < n) with
-      | left H => Some (v !!! Fin.of_nat_lt H)
+      | left H => Some (v !!! nat_to_fin H)
       | right _ => None
       end.
 
@@ -114,9 +114,23 @@ Section VecLookup.
     LookupUnfold m (vec_to_list v) r.
   Proof using. tcclean. apply vec_to_list_lookup. Qed.
 
+  #[global] Instance vec_lookup_nat_eq_some_unfold m (v : vec T n) x:
+    EqSomeUnfold (v !! m) x (∃ H : m < n, v !!! (nat_to_fin H) = x).
+  Proof.
+    tcclean.
+    unfold lookup, vec_lookup_nat.
+    hauto lq:on use:Fin.of_nat_ext.
+  Qed.
+
+  Lemma vec_lookup_nat_in m (v : vec T n) (H : m < n) :
+    v !! m = Some (v !!! nat_to_fin H).
+  Proof. rewrite eq_some_unfold. naive_solver. Qed.
+
   Global Instance vec_lookup_N : Lookup N T (vec T n) :=
     fun m v => v !! (N.to_nat m).
 End VecLookup.
+
+#[global] Hint Rewrite @vec_lookup_nat_in : vec.
 
 
 (** * Finite decidable quantifiers ***)
