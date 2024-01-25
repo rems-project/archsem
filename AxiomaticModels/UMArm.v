@@ -50,12 +50,13 @@ Section rel.
   (* other shared relations *)
   Definition po_loc := po ∩ loc.
 
-  Definition co := ⦗W⦘⨾(generic_co cd)⨾⦗W⦘.
+  Definition co := ⦗W⦘⨾(coherence cd)⨾⦗W⦘.
+
   Definition coi := co ∩ int.
   Definition coe := co ∖ coi.
 
   (* rf orders explicit writes and reads *)
-  Definition rf := ⦗W⦘⨾(generic_rf cd)⨾⦗R⦘.
+  Definition rf := ⦗W⦘⨾(reads_from cd)⨾⦗R⦘.
   Definition rfi := rf ∩ int.
   Definition rfe := rf ∖ rfi.
 

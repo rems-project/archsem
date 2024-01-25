@@ -66,18 +66,18 @@ Section rel.
   Definition po_loc := po ∩ loc.
 
   (* wco orders tlbi and writes *)
-  Definition wco := (generic_co cd).
+  Definition wco := (coherence cd).
   Definition co := ⦗W⦘⨾wco⨾⦗W⦘.
   Definition coi := co ∩ int.
   Definition coe := co ∖ coi.
 
   (* rf orders explicit writes and reads *)
-  Definition rf := ⦗W⦘⨾(generic_rf cd)⨾⦗R⦘.
+  Definition rf := ⦗W⦘⨾(reads_from cd)⨾⦗R⦘.
   Definition rfi := rf ∩ int.
   Definition rfe := rf ∖ rfi.
 
   (* armv9-interface/translation.cat#L35 *)
-  Definition trf := (generic_rf cd) ∖ rf.
+  Definition trf := (reads_from cd) ∖ rf.
   Definition trfi := trf ∩ int.
   Definition trfe := trf ∖ trfi.
 

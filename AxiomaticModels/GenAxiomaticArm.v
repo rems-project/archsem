@@ -373,7 +373,7 @@ Section common_def.
   Definition T_f := collect_all (λ _ event, is_translation_read_fault event) cd.
 
   Notation "'lxsx'" := (lxsx cd).
-  Notation "'amo'" := (amo cd).
+  Notation "'amo'" := (atomic_update cd).
   Notation "'addr'" := (addr cd).
   Notation "'data'" := (data cd).
   Notation "'ctrl'" := (ctrl cd).
@@ -401,7 +401,7 @@ Module GenArmNMS.
   Section def.
     Context {nmth : nat}.
     Context (cd : Candidate.t NMS nmth).
-  Notation "'amo'" := (amo cd).
+  Notation "'amo'" := (atomic_update cd).
   Notation "'lxsx'" := (lxsx cd).
   Notation "'iio'" := (iio cd).
   Notation "'loc'" := (same_pa cd).

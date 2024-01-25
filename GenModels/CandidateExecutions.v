@@ -72,6 +72,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
                         (fun x => make x.1.1.1 x.1.1.2 x.1.2 x.2)).
       sauto.
     Qed.
+
+
   End EID.
 
   (* Namespace *)
@@ -106,7 +108,26 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
        | Some n => seq 0 n |$> λ b, EID.make tid iid ieid (Some b)
        end.
 
+    (** Converts a intra instruction nat relation over ieid into a relation over
+        EID.t. Also require the trace of the instruction *)
+    Definition convert_to_EID_rel (et : exec_type) (tid iid : nat)
+      (ieid_rel : grel nat) (instr : iTrace ()) : grel EID.t :=
+      ('(ieid1, ieid2) ← elements ieid_rel;
+       iev1 ← option_list (instr.1 !! ieid1);
+       iev2 ← option_list (instr.1 !! ieid2);
+       list_prod (EID_list_from_iEvent et tid iid ieid1 iev1)
+         (EID_list_from_iEvent et tid iid ieid2 iev2))
+      |> list_to_set.
 
+    (** A candidate execution. It consists of a pre-execution defined by init +
+        events, and set of relation describing what happened in the execution.
+        In order to be called an "execution" it must be valid according to three
+        criteria:
+        - It must match with the ISA model (instruction by instruction).
+          See [ISA_match]
+        - It must be well formed (which depends on the [exec_type]).
+          See [TODO]
+        - It must be valid according to some model. See [Ax]. *)
     Record t {et : exec_type} {nmth : nat} :=
       make {
           (** Initial state *)
@@ -115,19 +136,34 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
               we force the return type to be unit, but it just means we
               forget the actual value *)
           events : vec (list (iTrace ())) nmth;
-          (** Generic memory read from *)
-          generic_rf : grel EID.t;
-          (** Generic casual order *)
-          generic_co : grel EID.t;
-          (** Load-reserve/store conditional pair *)
-          lxsx : grel EID.t;
-          (** Atomic modify: relates reads and writes emitted by atomic rmw instructions *)
-          amo : grel EID.t;
-          (** Register read from (needed because of potentially relaxed register) *)
-          rrf : grel EID.t;
+          (** Relate a memory read with the write it gets it's value from *)
+          reads_from : grel EID.t;
+          (** Register read from (needed because of potentially relaxed
+              register). For non-relaxed register, this must link a register
+              read to the nearest po-previous write. *)
+          reg_reads_from : grel EID.t;
+          (** Generic coherence order for all events that affect shared machine
+              state like memory (but not only). For now this includes:
+              - memory writes
+              - Cache and TLB operations
+              In theory this could be a total order but most memory models relax
+              this requirement for writes that don't overlap. Other than that
+              there is a bit of leeway on how strict or lax this relation is,
+              which up for individual models to decide. For reference what
+              should go in this relation is basically the same as what should go
+              a promising model "memory" trace *)
+          coherence : grel EID.t;
+          (** Load-reserve/store conditional pair (exclusives in Arm speak) *)
+          lxsx : grel EID.t
         }.
     Arguments t : clear implicits.
     Arguments make _ {_}.
+
+    #[global] Instance eta {et nmth} : Settable (t et nmth) :=
+        settable! (@make et nmth)
+        <init; events; reads_from; reg_reads_from; coherence; lxsx>.
+
+
 
     Section Cand.
       Context {et : exec_type} {nmth : nat}.
@@ -203,6 +239,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         | Some n, Some m => guard (m < n)%nat;; Some ev
         | _, _ => None
         end.
+    #[global] Typeclasses Opaque lookup_eid.
 
 
     Definition event_list (cd : t) : list (EID.t * iEvent) :=
@@ -445,7 +482,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
                   let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
                   match mmap !! pa with
                   | Some (eid', _) =>
-                      match decide ((eid, eid') ∈ cd.(generic_co)) with
+                      match decide ((eid, eid') ∈ cd.(coherence)) with
                       | left _ => mmap
                       | right _ => <[pa := (eid, byte)]> mmap
                       end
@@ -645,7 +682,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
 
     (** Intra Instruction Order: The order in which events ran inside an
-        instruction *)
+        instruction
+
+        This is intended to disappear in future versions,
+        try not to depend on it *)
     Definition iio (cd : t) :=
       same_instruction_instance cd
       |> filter (λ eids, eids.1.(EID.ieid) < eids.2.(EID.ieid)).
@@ -696,18 +736,33 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** ** Memory based relations *)
 
-    (** get physical address of an event *)
+    (** Get the physical address out of an memory event *)
     Definition get_pa (e : iEvent) : option (Arch.pa):=
       match e with
-      | MemRead _ rr &→ _ => Some (rr.(ReadReq.pa))
-      | MemWrite n rr &→ _ => Some (rr.(WriteReq.pa))
+      | MemRead _ rr &→ _ => Some rr.(ReadReq.pa)
+      | MemWrite _ wr &→ _ => Some wr.(WriteReq.pa)
       | _ => None
       end.
 
-    (** Symmetry relation referring to events having the same physical address.
-        In an [MixedSize] model which split reads but not write, this is incomplete *)
+    (** Symmetry relation relating memory events that have the same physical
+        address. In an [MixedSize] model which splits reads but not write, this
+        is incomplete as it will not mention memory footprint overlaps *)
     Definition same_pa (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _ event, get_pa event).
+      sym_rel_with_same_key cd (λ _, get_pa).
+    Typeclasses Opaque same_pa.
+
+    (** Get the size out of an memory event *)
+    Definition get_size (e : iEvent) : option N :=
+      match e with
+      | MemRead n _ &→ _ => Some n
+      | MemWrite n _ &→ _ => Some n
+      | _ => None
+      end.
+
+    (** Symmetry relation relating memory events that have the same size. *)
+    Definition same_size (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ _, get_size).
+    Typeclasses Opaque same_size.
 
 
 
@@ -762,14 +817,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         end init |>
           (λ '(_, l), foldl (λ '(d, a) '(d', a'), (d ∪ d', a ∪ a')) (∅, ∅) l).
 
-      Definition convert_to_EID_rel (et : exec_type) (tid iid : nat)
-          (rel : grel nat) (instr : iTrace ()) : grel EID.t :=
-        list_to_set $
-          '(ieid1, ieid2) ← elements rel;
-          iev1 ← option_list (instr.1 !! ieid1);
-          iev2 ← option_list (instr.1 !! ieid2);
-          list_prod (EID_list_from_iEvent et tid iid ieid1 iev1)
-            (EID_list_from_iEvent et tid iid ieid2 iev2).
 
       Definition eid_deps {et n} (cd : Candidate.t et n) : grel EID.t * grel EID.t :=
         foldl (λ '(d, a) '(tid, iid, instr),
@@ -792,26 +839,33 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       (* TODO prove all of the wellformedness properties directly from the definition *)
       Definition addr :=
         ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ rrf cd)⁺)⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ reg_reads_from cd)⁺)⨾
           iio_addr cd⨾
           ⦗mem_events cd⦘.
       Global Typeclasses Opaque addr.
 
       Definition data :=
         ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd))⁺)⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (reg_reads_from cd))⁺)⨾
           iio_data cd⨾
           ⦗mem_writes cd⦘.
       Global Typeclasses Opaque data.
 
       Definition ctrl :=
         ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (rrf cd))⁺)⨾
+          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (reg_reads_from cd))⁺)⨾
           iio_data cd⨾
           ⦗branches cd⦘⨾
           (instruction_order cd).
       Global Typeclasses Opaque ctrl.
     End Deps.
+
+    (** Relates a read and a write that form an atomic update *)
+    (* TODO add check on access types *)
+    Definition atomic_update {et n} (cd : t et n) :=
+      same_instruction_instance cd ∩ (mem_reads cd × mem_writes cd) ∩
+        same_pa cd ∩ same_size cd ∩ iio_data cd.
+
   End Candidate.
 
 
@@ -862,8 +916,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Notation "'full_instruction_order'" := (full_instruction_order cd).
     Notation "'instruction_order'" := (instruction_order cd).
-    Notation "'generic_co'" := (generic_co cd).
-    Notation "'generic_rf'" := (generic_rf cd).
+    Notation "'generic_co'" := (coherence cd).
+    Notation "'generic_rf'" := (reads_from cd).
     Notation "'loc'" := (same_pa cd).
     Notation "'val8'" := (val8 cd).
     Notation "'addr'" := (addr cd).
