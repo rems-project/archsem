@@ -330,6 +330,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       | _ => False
       end.
 
+    Definition is_reg_read_spec (ev : iEvent) :
+      is_reg_read ev ↔ ∃ reg reg_acc rv, ev = RegRead reg reg_acc &→ rv.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Definition is_reg_read_cdestr ev := cdestr_simpl (is_reg_read_spec ev).
+    #[global] Existing Instance is_reg_read_cdestr.
+
     Global Instance is_reg_read_decision event : (Decision (is_reg_read event)).
     Proof using. unfold is_reg_read. apply _. Qed.
 
@@ -340,8 +346,17 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition is_reg_write (event : iEvent) : Prop :=
       match event with
       | RegWrite _ _ _ _ &→ _ => True
-      | _ => false
+      | _ => False
       end.
+
+    Definition is_reg_write_spec (ev : iEvent) :
+      is_reg_write ev ↔
+        ∃ reg reg_acc deps rv, ev = RegWrite reg reg_acc deps rv &→ ().
+    Proof.
+      destruct ev as [? [] ?]; split; cdestruct_intro; destruct fret; naive_solver.
+    Qed.
+    Definition is_reg_write_cdestr ev := cdestr_simpl (is_reg_write_spec ev).
+    #[global] Existing Instance is_reg_write_cdestr.
 
     Global Instance is_reg_write_decision event : (Decision (is_reg_write event)).
     Proof using. unfold is_reg_write. apply _. Qed.
@@ -356,6 +371,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       | _ => False
       end.
 
+    Definition is_mem_read_spec (ev : iEvent) :
+      is_mem_read ev ↔ ∃ n rr rres, ev = MemRead n rr &→ rres.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+
     Global Instance is_mem_read_decision event : (Decision (is_mem_read event)).
     Proof using. unfold is_mem_read. apply _. Qed.
 
@@ -368,6 +387,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       | MemWrite _ _ &→ _ => True
       | _ => False
       end.
+
+    Definition is_mem_write_spec (ev : iEvent) :
+      is_mem_write ev ↔ ∃ n rr rres, ev = MemWrite n rr &→ rres.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
 
     Global Instance is_mem_write_decision event : (Decision (is_mem_write event)).
     Proof using. unfold is_mem_write. apply _. Qed.
@@ -766,9 +789,158 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
 
+    (** ** Register based relations *)
+
+    (** Get the register out of a register event *)
+    Definition get_reg (e : iEvent) : option reg :=
+      match e with
+      | RegRead reg _ &→ _ => Some reg
+      | RegWrite reg _ _ _ &→ _ => Some reg
+      | _ => None
+      end.
+
+    (** Symmetry relation relating register events referring to the same
+    register *)
+    Definition same_reg (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ eid ev, get_reg ev |$> (EID.tid eid,.)).
+    Typeclasses Opaque same_reg.
+
+    (** Get a register and its value out of a register event *)
+    Definition get_reg_val (e : iEvent) : option (reg * reg_type) :=
+      match e with
+      | RegRead reg _ &→ regval => Some (reg, regval)
+      | RegWrite reg _ _ regval &→ _ => Some (reg, regval)
+      | _ => None
+      end.
+
+    (** Symmetry relation relating register events refering to the same
+    register with the same value *)
+    Definition same_reg_val (cd : t) : grel EID.t :=
+      sym_rel_with_same_key cd (λ eid ev, get_reg_val ev |$> (EID.tid eid,.)).
+    Typeclasses Opaque same_reg_val.
+
+    Lemma get_reg_val_get_reg ev rrv :
+      get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
+    Proof. destruct ev as [? [] ?]; hauto lq:on. Qed.
+
+    Lemma same_reg_val_same_reg (cd : t) :
+      same_reg_val cd ⊆ same_reg cd.
+    Proof.
+      unfold same_reg,same_reg_val.
+      set_unfold.
+      cdestruct_intros #CDestrCbnSubst #CDestrEqSome.
+      setoid_rewrite eq_some_unfold.
+      hauto lq:on rew:off use:get_reg_val_get_reg.
+    Qed.
+
+    Definition is_possible_initial_reg_read (cd : t) (eid : EID.t) (ev : iEvent) :=
+      match ev with
+      | RegRead reg _ &→ rv =>
+          match cd.(init).(MState.regs) !! eid.(EID.tid) with
+          | Some regmap => rv = regmap reg
+          | None => False
+          end
+      | _ => False
+      end.
+
+    Global Instance is_possible_initial_reg_read_dec cd eid event :
+      (Decision (is_possible_initial_reg_read cd eid event)).
+    Proof using.
+      unfold is_possible_initial_reg_read.
+      repeat case_split; tc_solve.
+    Defined.
+
+    Definition is_possible_initial_reg_read_spec (cd : t) (eid : EID.t) (ev : iEvent):
+      is_possible_initial_reg_read cd eid ev ↔
+        ∃ reg reg_acc rv,
+          (ev = RegRead reg reg_acc &→ rv) ∧
+            ∃ H : eid.(EID.tid) < nmth,
+              (cd.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
+    Proof.
+      unfold is_possible_initial_reg_read.
+      destruct ev as [? [] ?]; split; cdestruct_intros # CDestrSubst.
+      - hauto simp+:rewrite eq_some_unfold in *.
+      - cbn. by erewrite vec_lookup_nat_in.
+    Qed.
+    Definition is_possible_initial_reg_read_cdestr cd eid ev :=
+      cdestr_simpl (is_possible_initial_reg_read_spec cd eid ev).
+    #[global] Existing Instance is_possible_initial_reg_read_cdestr.
+
+    Definition possible_initial_reg_reads cd :=
+      collect_all (is_possible_initial_reg_read cd) cd.
+    #[global] Typeclasses Opaque possible_initial_reg_reads.
+
+    Definition initial_reg_reads cd :=
+      reg_reads cd ∖ grel_rng (reg_reads_from cd).
+    #[global] Typeclasses Opaque initial_reg_reads.
+
+    Lemma possible_initial_reg_reads_ok cd :
+      possible_initial_reg_reads cd ⊆ reg_reads cd.
+    Proof.
+      unfold possible_initial_reg_reads.
+      set_unfold.
+      cdestruct_intros # CDestrCbnSubst.
+      sfirstorder unfold:is_reg_read.
+    Qed.
+
+    (** Orders a register write after a read that read a po-earlier write. This
+        might run against the instruction order for relaxed registers but follow the
+        instruction order for regular register *)
+    Definition reg_from_reads cd :=
+      (⦗reg_reads cd⦘⨾ same_reg_val cd⨾ ⦗reg_writes cd⦘)
+        ∖ (instruction_order cd ∪ ⦗reg_writes cd⦘ ⨾ reg_reads_from cd)⁻¹.
+    #[global] Typeclasses Opaque reg_from_reads.
+
+    (** * Generic wellformedness
+        This section is for wellformedness properties that are not dependent on
+        the execution type [et] *)
+
+    (** Standard wellformedness condition for reg_reads_from (or rrf in short).
+        This does not relate register accesses to thread order. In particular,
+        in this definition, a register read can read from any register write in
+        the same thread either before or after in the thread order. *)
+    Record reg_reads_from_wf (cd : t) :=
+      {
+        rrf_from_writes: grel_dom (reg_reads_from cd) ⊆ (reg_writes cd);
+        rrf_to_reads: grel_rng (reg_reads_from cd) ⊆ (reg_reads cd);
+        rrf_functional: grel_functional (reg_reads_from cd)⁻¹;
+        rrf_same_reg_val: reg_reads_from cd ⊆ same_reg_val cd;
+        rrf_cover_non_initial:
+          initial_reg_reads cd ⊆ possible_initial_reg_reads cd;
+      }.
+
+    Lemma rrf_irreflexive (cd : t) :
+      reg_reads_from_wf cd → grel_irreflexive (reg_reads_from cd).
+    Proof.
+      intros [].
+      unfold grel_irreflexive.
+      intros eid H.
+      assert (eid ∈ reg_writes cd) as Hw by set_solver.
+      assert (eid ∈ reg_reads cd) as Hr by set_solver.
+      clear - Hw Hr.
+      set_unfold.
+      cdestruct Hw as ? Hw ???? ->.
+      cdestruct Hr as ? Hr ??? ->.
+      by rewrite Hw in Hr.
+    Qed.
+
+    Lemma rrf_same_reg (cd : t) :
+      reg_reads_from_wf cd → reg_reads_from cd ⊆ same_reg cd.
+    Proof. intros []. set_solver use same_reg_val_same_reg. Qed.
+
+    Lemma rrf_reg_reads_decomp (cd : t) :
+      reg_reads_from_wf cd →
+      reg_reads cd = initial_reg_reads cd ∪ grel_rng (reg_reads_from cd).
+    Proof.
+      intros [].
+      unfold initial_reg_reads.
+      rewrite difference_union_L.
+      set_solver.
+    Qed.
+
     End Cand.
 
-    (** ** Dependency relations *)
+    (** * Dependency relations *)
 
     Module IIO.
 
