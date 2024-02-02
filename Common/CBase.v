@@ -13,6 +13,7 @@ Require Import Options.
 
 (** * Notations ***)
 
+Notation "∅" := Datatypes.Empty_set : type_scope.
 
 (** Functional pipe notation.
 
@@ -24,7 +25,6 @@ Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
 Notation "v |$> f" := (fmap f v) (at level 69, only parsing, left associativity).
 Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v) (at level 61, only parsing, left associativity).
 Notation "v |$>@{ M } f" := (@fmap M _ _ _ f v) (at level 69, only parsing, left associativity).
-
 
 (** Monadic bind with an explicit monad annotation *)
 Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
@@ -70,7 +70,7 @@ Definition inspect {A} (a : A) : {b | a = b} :=
   exist _ a eq_refl.
 
 (** When matching [inspect p] instead of [p], this notation allows to have the
-    cases be [| pat_for_p ed: Heq => ...] *)
+    cases be [| pat_for_p eq: Heq => ...] *)
 Notation "x 'eq:' p" := (exist _ x p) (only parsing, at level 20).
 
 Definition mapl {A B C} (f : A → B) (x : A + C) : B + C :=
