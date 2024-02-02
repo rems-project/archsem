@@ -15,6 +15,11 @@ Require Import GenModels.ArmInst.
 
 Section common_def.
   Import Candidate.
+  Notation outcome := (IWD.outcome DepOn.t).
+  Notation iMon := (IWD.iMon DepOn.t).
+  Notation iSem := (IWD.iSem DepOn.t).
+  Notation iEvent := (IWD.iEvent DepOn.t).
+  Notation iTrace := (IWD.iTrace DepOn.t).
 
   #[local] Hint Extern 10 (Decision (?x _)) => unfold x : typeclass_instances.
   #[local] Hint Extern 10 (Decision (?x _ _)) => unfold x : typeclass_instances.
@@ -398,6 +403,12 @@ End common_def.
 
 Module GenArmNMS.
   Import Candidate.
+  Notation outcome := (IWD.outcome DepOn.t).
+  Notation iMon := (IWD.iMon DepOn.t).
+  Notation iSem := (IWD.iSem DepOn.t).
+  Notation iEvent := (IWD.iEvent DepOn.t).
+  Notation iTrace := (IWD.iTrace DepOn.t).
+
   Section def.
     Context {nmth : nat}.
     Context (cd : Candidate.t NMS nmth).

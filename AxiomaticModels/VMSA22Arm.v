@@ -17,6 +17,12 @@ Section rel.
 
   Import Candidate.
 
+  Notation outcome := (IWD.outcome DepOn.t).
+  Notation iMon := (IWD.iMon DepOn.t).
+  Notation iSem := (IWD.iSem DepOn.t).
+  Notation iEvent := (IWD.iEvent DepOn.t).
+  Notation iTrace := (IWD.iTrace DepOn.t).
+
   Notation "'W'" := (W cd).
   Notation "'R'" := (R cd).
   Notation "'A'" := (A cd).

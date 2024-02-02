@@ -33,12 +33,12 @@ Open Scope stdpp_scope.
 Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
   Import IWD.
   Import Term.
-  Notation outcome := (IWD.outcome DepOn.t).
-  Notation iMon := (IWD.iMon DepOn.t).
-  Notation iSem := (IWD.iSem DepOn.t).
-  Notation iEvent := (IWD.iEvent DepOn.t).
-  Notation iTrace := (IWD.iTrace DepOn.t).
-  Open Scope nat.
+  #[local] Notation outcome := (IWD.outcome DepOn.t).
+  #[local] Notation iMon := (IWD.iMon DepOn.t).
+  #[local] Notation iSem := (IWD.iSem DepOn.t).
+  #[local] Notation iEvent := (IWD.iEvent DepOn.t).
+  #[local] Notation iTrace := (IWD.iTrace DepOn.t).
+  #[local] Open Scope nat.
 
   (** Relational event ID, this might differ from ISA events in certain
       execution types *)
