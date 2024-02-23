@@ -1,7 +1,7 @@
 (coq.theory
  (name GenModels)
  (package coq-system-semantics)
- (modules TermModels CandidateExecutions ArmInst)
+ (modules TermModels CandidateExecutions ArmInst ArmSeqModel)
  (theories ISASem SSCCommon)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
