@@ -405,6 +405,8 @@ Proof. tcclean. by rewrite <- list_fmap_compose. Qed.
 
 (** * NoDup management *)
 
+Create HintDb nodup discriminated.
+
 Global Hint Resolve NoDup_nil_2 : nodup.
 Global Hint Resolve NoDup_singleton : nodup.
 Global Hint Resolve NoDup_seq : nodup.
@@ -419,6 +421,11 @@ Global Hint Resolve NoDup_seq : nodup.
 #[global] Hint Extern 20 (NoDup (match ?x with _ => _ end)) =>
   destruct x : nodup.
 #[global] Hint Extern 1000 (NoDup _) => shelve : nodup.
+
+#[global] Lemma NoDup_mret {T} (x : T) : NoDup (mret x).
+Proof. apply NoDup_singleton. Qed.
+
+#[global] Hint Resolve NoDup_mret : nodup.
 
 Ltac solve_NoDup := unshelve (typeclasses eauto with nodup).
 
