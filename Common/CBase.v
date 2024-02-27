@@ -101,6 +101,7 @@ Definition is_inr `(x : A + B) : Prop :=
 #[global] Instance is_inr_dec `(x : A + B) : Decision (is_inr x).
 Proof. destruct x; solve_decision. Qed.
 
+Notation guard' P := (guard P;; mret ()).
 
 (** * Constrained quantifiers ***)
 

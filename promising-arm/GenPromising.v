@@ -137,7 +137,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
           ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
       ∀ n tid initMem ts mem,
-        Exec.has_results (promise_select n tid initMem ts mem) →
+        ¬ Exec.has_error (promise_select n tid initMem ts mem) →
         ∀'ev ∈ pModel.(allowed_promises) tid initMem ts mem,
           ev ∈ promise_select n tid initMem ts mem
     }.
@@ -260,7 +260,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
                         PState.nopromises isem prom finPs
          | Model.Res.Error s =>
              ∃ finPs tid, rtc (PState.step isem prom) initPs finPs ∧
-                            PState.run_tid isem prom finPs tid = Exec.Error s
+                            Error s ∈ PState.run_tid isem prom finPs tid
          | _ => False
          end]}.
 
@@ -287,15 +287,15 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
     Definition cpromise_tid (fuel : nat) (st : t) (tid : fin n)
       : Exec.t string t :=
       ev ← promise_select_tid fuel st tid;
-      Exec.ret $ promise_tid isem prom st tid ev.
+      mret $ promise_tid isem prom st tid ev.
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
         no progress is made in the thread (either instruction running or
         promises *)
     Definition run_step (fuel : nat) (st : t) :=
-      tid ← Exec.choose (fin n);
-      if terminated_tid isem prom term st tid then Exec.discard
+      tid ← mchoose n;
+      if terminated_tid isem prom term st tid then mdiscard
       else Exec.merge (run_tid isem prom st tid) (cpromise_tid fuel st tid).
 
     (** The type of final promising state return by run *)
@@ -316,9 +316,9 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
         to the promising model prom starting from st *)
     Program Fixpoint run (fuel : nat) (st : t) : Exec.t string final :=
       match fuel with
-      | 0%nat => Exec.Error "not enough fuel"
+      | 0%nat => mthrow "not enough fuel"
       | S fuel =>
-          if dec $ terminated isem prom term st then Exec.ret (make_final st _)
+          if dec $ terminated isem prom term st then mret (make_final st _)
           else
             nextSt ← run_step fuel st;
             run fuel st
@@ -332,7 +332,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
 
   (** Create a computational model from an ISA model and promising model *)
     Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
-      (fuel : nat) : Model.c False :=
+      (fuel : nat) : Model.c ∅ :=
       fun n (initMs : MState.init n) =>
         let initPs := PState.from_MState isem prom initMs in
         Model.Res.from_exec

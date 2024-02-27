@@ -14,6 +14,7 @@ Proof.
   induction l; hauto q:on.
 Qed.
 
+#[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
 
 (** * List simplification *)
 

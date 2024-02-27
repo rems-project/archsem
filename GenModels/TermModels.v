@@ -133,6 +133,12 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         - The test has an infinite execution (not the fault of the model) *)
       | Error (msg : string).
 
+      Definition from_result (res : result string (MState.final n)) : t :=
+        match res with
+        | Ok fs => FinalState fs
+        | CResult.Error msg => Error msg
+        end.
+
       (** * Sets of model results *)
 
       (** We are only interested in monadsets, so sets that support fmap, bind,
@@ -215,14 +221,13 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         equiv ts ts' → (no_error ts ↔ no_error ts').
       Proof using. firstorder. Qed.
 
+
       End MR.
       Arguments t : clear implicits.
 
-      Definition from_exec {n} (e : Exec.t string (MState.final n)) : listset (t False n) :=
-        match e with
-        | Exec.Error s => Listset [Error s]
-        | Exec.Results l => FinalState <$> (Listset l)
-        end.
+      Definition from_exec {n} (e : Exec.t string (MState.final n)) :
+          listset (t ∅ n) :=
+        e |> Exec.to_result_list |$> from_result |> Listset.
 
     End Res.
 

@@ -429,12 +429,36 @@ Solve All Obligations with sauto.
 (** Special case of MCall for MChoice *)
 Notation MChoose := (MCall MChoice).
 Definition mchoose `{MChoose M} (n : nat) : M (fin n) := mcall (ChooseFin n).
-Definition mdiscard `{MCall MChoice M} `{FMap M} {A} : M A :=
+Definition mdiscard `{MChoose M, FMap M} {A} : M A :=
   mcall (ChooseFin 0) |$> (λ x, match (x : fin 0) with end).
 
 (** Helper to non-deterministically choose in a list *)
-Definition mchoosel `{MChoose M} `{FMap M} {A} (l : list A) : M A :=
+Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
   mchoose (length l) |$> ((list_to_vec l) !!!.).
+
+(** Same as [guard] but discard the execution if the proposition is false  *)
+Definition guard_discard `{MChoose M, FMap M, MRet M} P `{Decision P} : M P :=
+  match decide P with
+  | left x => mret x
+  | right _ => mdiscard
+  end.
+
+Notation guard_discard' P := (guard_discard P;; mret ()).
+
+Tactic Notation "case_guard_discard" "as" ident(Hx) :=
+  match goal with
+  | H : context C [@guard_discard ?M ?C ?F ?R ?P ?dec] |- _ =>
+      change (@guard_discard M C F R P dec) with (
+        match @decide P dec with left H' => @mret M R P H' | _ => @mdiscard M C F P end) in *;
+      destruct_decide (@decide P dec) as Hx
+
+  | |- context C [@guard_discard ?M ?C ?F ?R ?P ?dec] =>
+      change (@guard_discard M C F R P dec) with (
+        match @decide P dec with left H' => @mret M R P H' | _ => @mdiscard M C F P end) in *;
+      destruct_decide (@decide P dec) as Hx
+  end.
+Tactic Notation "case_guard_discard" :=
+  let H := fresh in case_guard_discard as H.
 
 
 (** * State effect *)
