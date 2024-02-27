@@ -54,10 +54,7 @@ Module Loc.
   Qed.
 
   (** Convert a location to a list of covered physical addresses *)
-  Definition to_pas (loc : t) : list FullAddress :=
-   let pa := to_pa loc in
-   list_from_func 8
-     (fun n => pa |> set FullAddress_address (bv_add (Z_to_bv 52 (Z.of_nat n)))).
+  Definition to_pas (loc : t) : list FullAddress := pa_range (to_pa loc) 8.
 
   (** Give the location containing a pa *)
   Definition from_pa_in (pa : FullAddress) : option t :=
@@ -84,14 +81,11 @@ Module Loc.
   Lemma from_pa_in_to_pas loc :
     ∀'pa ∈ to_pas loc, from_pa_in pa = Some loc.
   Proof.
-    unfold to_pas.
-    rewrite list_from_func_map.
-    rewrite forall_elem_of_map.
-    intros y H.
-    rewrite elem_of_seq in H.
+    set_unfold.
+    cdestruct_intros # CDestrCbnSubst.
     cbn.
     f_equal.
-    bv_solve'.
+    bv_solve.
   Qed.
 
   (** Convert a physical address back to a 64 bits "virtual" address *)
