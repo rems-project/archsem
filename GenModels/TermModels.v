@@ -29,6 +29,10 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
   Definition memoryMap := pa → bv 8.
 
+  (** Read a sequence of bytes from  a [memoryMap]:  *)
+  Definition memoryMap_read (mm : memoryMap) (pa : pa) (n : N) : bv (8 * n) :=
+    pa_range pa (N.to_nat n) |$> mm |> bv_of_bytes (8 * n).
+
   Definition registerMap := reg → reg_type.
 
   (** A termination condition that define when each thread should stop.
