@@ -30,6 +30,14 @@ Global Instance eq_some_unfold_None {A} (a : A):
   EqSomeUnfold None a False.
 Proof. tcclean. naive_solver. Qed.
 
+Global Instance eq_some_unfold_mret {A} (a b : A):
+  EqSomeUnfold (mret a) b (a = b).
+Proof. tcclean. unfold mret. unfold option_ret. naive_solver. Qed.
+
+Global Instance eq_some_unfold_mfail {A} (a b : A):
+  EqSomeUnfold mfail b False.
+Proof. tcclean. unfold mfail. unfold option_mfail. naive_solver. Qed.
+
 Global Instance eq_some_unfold_fmap {A B} (f : A → B) ma b P:
   (∀ a, EqSomeUnfold ma a (P a)) →
   EqSomeUnfold (f <$> ma) b (∃ a : A, P a ∧ b = f a).
@@ -38,8 +46,14 @@ Proof. tcclean. apply fmap_Some. Qed.
 Global Instance eq_some_unfold_bind {A B} (f : A → option B) ma b P Q:
   (∀ a, EqSomeUnfold ma a (P a)) →
   (∀ a, EqSomeUnfold (f a) b (Q a)) →
-  EqSomeUnfold (ma ≫= f) b (∃ a : A, P a ∧ Q a).
+  EqSomeUnfold (ma ≫= f) b (∃ a : A, P a ∧ Q a) | 20.
 Proof. tcclean. apply bind_Some. Qed.
+
+Global Instance eq_some_unfold_bind_guard `{Decision P} {A} (oa : option A) a Q:
+  EqSomeUnfold oa a Q →
+  EqSomeUnfold (guard P;; oa) a (P ∧ Q) | 10.
+Proof. tcclean. case_guard; rewrite eq_some_unfold; naive_solver. Qed.
+
 
 (** * CDestrEqSome *)
 
