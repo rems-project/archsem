@@ -110,6 +110,11 @@ Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P :=
   | {| Decidable_witness := false; Decidable_spec := spec |} =>
    right (fun HP => match (iffRL spec HP) with end)
   end.
+#[global] Hint Mode Decidable + : typeclass_instances.
+
+#[global] Instance proof_irrel_eq_decision (P : Prop) (PI : ProofIrrel P):
+  EqDecision P :=
+  λ x y, left (PI x y).
 
 Section ProperDecision.
   Import CMorphisms.
