@@ -14,6 +14,7 @@ Require Import SSCCommon.Effects.
 Require Import SSCCommon.FMon.
 Require Import SSCCommon.CResult.
 Require Import SSCCommon.CBool.
+Require Import SSCCommon.CDestruct.
 
 
 #[global] Instance Explicit_access_kind_dec : EqDecision Explicit_access_kind.
@@ -24,6 +25,8 @@ Proof. solve_decision. Defined.
 
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
+
+(** * The architecture requirements *)
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -82,6 +85,11 @@ Module Type Arch.
   #[export] Hint Rewrite pa_addZ_assoc : arch.
   #[export] Hint Rewrite pa_addZ_zero : arch.
 
+  Parameter pa_diffZ : pa → pa → option Z.
+  Parameter pa_addZ_diffZ:
+    ∀ pa pa' z, pa_diffZ pa' pa = Some z → pa_addZ pa z = pa'.
+
+
   (** Parameter for extra architecture specific access types. Can be an empty
       type if not used *)
   Parameter arch_ak : Type.
@@ -128,6 +136,8 @@ Module Type Arch.
 
 End Arch.
 
+(** * The Interface *)
+
 Module Interface (A : Arch).
   Import A.
 
@@ -144,7 +154,9 @@ Module Interface (A : Arch).
   Lemma pa_range_length pa n : length (pa_range pa n) = n.
   Proof. unfold pa_range. by autorewrite with list. Qed.
 
+  (** ** Memory read request *)
   Module ReadReq.
+    #[local] Open Scope N.
     Record t {deps : Type} {n : N} :=
       make
         { pa : pa;
@@ -176,7 +188,9 @@ Module Interface (A : Arch).
     Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End ReadReq.
 
+  (** ** Memory write request *)
   Module WriteReq.
+    #[local] Open Scope N.
     Record t {deps : Type} {n : N} :=
       make
         { pa : pa;
@@ -222,6 +236,8 @@ Module Interface (A : Arch).
     Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End WriteReq.
 
+
+  (** ** Outcomes*)
   Section Interface.
     (** The Interface is parametric over the type use to represent dependencies.
         In particular this type can be unit for an ISA model that does not
@@ -351,6 +367,277 @@ Module Interface (A : Arch).
   Arguments iSem : clear implicits.
   Arguments iTrace : clear implicits.
   Arguments iEvent : clear implicits.
+
+
+  (** * Event accessors
+
+     A set of accessors over the iEvent type *)
+
+  (** Get the register out of a register event *)
+  Definition get_reg `(ev : iEvent deps) : option reg :=
+    match ev with
+    | RegRead reg _ &→ _ => Some reg
+    | RegWrite reg _ _ _ &→ _ => Some reg
+    | _ => None
+    end.
+
+  (** Get a register and its value out of a register event
+
+      This gives both the register and the value, because later the value might
+      have a type that depend on the register *)
+  Definition get_reg_val `(ev : iEvent deps) : option (reg * reg_type) :=
+    match ev with
+    | RegRead reg _ &→ regval => Some (reg, regval)
+    | RegWrite reg _ _ regval &→ _ => Some (reg, regval)
+    | _ => None
+    end.
+
+  Lemma get_reg_val_get_reg `(ev : iEvent deps) rrv :
+    get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
+  Proof. destruct ev as [? [] ?]; hauto lq:on. Qed.
+
+  (** Get the physical address out of an memory event *)
+  Definition get_pa `(e : iEvent deps) : option pa:=
+    match e with
+    | MemRead _ rr &→ _ => Some rr.(ReadReq.pa)
+    | MemWrite _ wr &→ _ => Some wr.(WriteReq.pa)
+    | _ => None
+    end.
+
+  (** Get the size out of an memory event *)
+  Definition get_size `(ev : iEvent deps) : option N :=
+    match ev with
+    | MemRead n _ &→ _ => Some n
+    | MemWrite n _ &→ _ => Some n
+    | _ => None
+    end.
+
+  (** Get the value out of a memory event *)
+  Definition get_mem_value `(ev : iEvent deps) : option bvn :=
+    match ev with
+    | MemRead n _ &→ inl (bv, _) => Some (bv : bvn)
+    | MemWrite n wr &→ _ => Some (wr.(WriteReq.value) : bvn)
+    | _ => None
+    end.
+
+  Lemma get_mem_value_size `(ev : iEvent deps) bv :
+    get_mem_value ev = Some bv → get_size ev = Some (bvn_n bv / 8)%N.
+  Proof.
+    destruct ev as [? [] ?];
+      cdestruct_intro #CDestrCbnSubst #CDestrMatch; cbn; f_equal; lia.
+  Qed.
+
+  (** Get the content of a barrier, returns none if not a barrier (or is an
+        invalid EID) *)
+  Definition get_branch_pa `(ev : iEvent deps) : option pa:=
+    match ev with
+    | BranchAnnounce pa _ &→ () => Some pa
+    | _ => None
+    end.
+
+  (** Get the content of a barrier, returns none if not a barrier (or is an
+        invalid EID) *)
+  Definition get_barrier `(ev : iEvent deps) : option barrier:=
+    match ev with
+    | Barrier b &→ () => Some b
+    | _ => None
+    end.
+
+  (** Get the content of a cache operation, returns none if not a cache operation
+        (or is an invalid EID) *)
+  Definition get_cacheop `(ev : iEvent deps) : option cache_op :=
+    match ev with
+    | CacheOp _ co &→ () => Some co
+    | _ => None
+    end.
+
+  (** Get the content of a TLB operation, returns none if not a TLB operation
+        (or is an invalid EID) *)
+  Definition get_tlbop `(ev : iEvent deps) : option tlb_op :=
+    match ev with
+    | TlbOp _ to &→ () => Some to
+    | _ => None
+    end.
+
+
+
+  (** * Event manipulation
+
+     This is a set of helper function to manipulate events *)
+
+
+  (** ** Register reads ***)
+
+  Section isReg.
+    Context (P : reg → reg_acc → reg_type → Prop).
+    Context {deps : Type}.
+    Implicit Type ev : iEvent deps.
+
+    Definition is_reg_readP ev : Prop :=
+      match ev with
+      | RegRead reg racc &→ rval => P reg racc rval
+      | _ => False
+      end.
+    #[export] Typeclasses Opaque is_reg_readP.
+    Definition is_reg_readP_spec ev :
+      is_reg_readP ev ↔
+        ∃ reg racc rval, ev = RegRead reg racc &→ rval ∧ P reg racc rval.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro;naive_solver. Qed.
+    Definition is_reg_readP_cdestr ev := cdestr_simpl (is_reg_readP_spec ev).
+    #[global] Existing Instance is_reg_readP_cdestr.
+
+    Context `{Pdec: ∀ reg racc rval, Decision (P reg racc rval)}.
+    #[global] Instance is_reg_readP_dec ev: Decision (is_reg_readP ev).
+    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+
+    (** ** Register writes *)
+    Definition is_reg_writeP ev : Prop :=
+      match ev with
+      | RegWrite reg racc _ rval &→ _ => P reg racc rval
+      | _ => False
+      end.
+
+    Definition is_reg_writeP_spec ev :
+      is_reg_writeP ev ↔
+        ∃ reg racc deps rval,
+          ev = RegWrite reg racc deps rval &→ () ∧ P reg racc rval.
+    Proof.
+      destruct ev as [? [] fret];
+        split; cdestruct_intro; destruct fret; naive_solver.
+    Qed.
+    Definition is_reg_writeP_cdestr ev := cdestr_simpl (is_reg_writeP_spec ev).
+    #[global] Existing Instance is_reg_writeP_cdestr.
+
+    #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
+    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+
+  End isReg.
+  Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
+  Notation is_reg_write := (is_reg_writeP (λ _ _ _, True)).
+
+  (** ** Memory reads *)
+
+  (** *** Memory reads request
+
+      This is the general case for both failed and successful memory reads *)
+  Section isMemReadReq.
+    Context {deps: Type}.
+    Context
+    (P : ∀ n : N, ReadReq.t deps n → (bv (8 * n) * option bool + abort) → Prop).
+    Implicit Type ev : iEvent deps.
+
+    Definition is_mem_read_reqP ev : Prop :=
+      match ev with
+      | MemRead n rr &→ rres => P n rr rres
+      | _ => False
+      end.
+    #[export] Typeclasses Opaque is_mem_read_reqP.
+
+    Definition is_mem_read_reqP_spec ev:
+      is_mem_read_reqP ev ↔ ∃ n rr rres, ev = MemRead n rr &→ rres ∧ P n rr rres.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Definition is_mem_read_reqP_cdestr ev := cdestr_simpl (is_mem_read_reqP_spec ev).
+    #[global] Existing Instance is_mem_read_reqP_cdestr.
+
+    Context `{Pdec : ∀ n rr rres, Decision (P n rr rres)}.
+    #[global] Instance is_mem_read_reqP_dec ev : Decision (is_mem_read_reqP ev).
+    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+  End isMemReadReq.
+  Notation is_mem_read_req := (is_mem_read_reqP (λ _ _ _, True)).
+
+  (** *** Successful memory reads *)
+  Section IsMemRead.
+    Context {deps: Type}.
+    Context (P : ∀ n : N, ReadReq.t deps n → bv (8 * n) → option bool → Prop).
+    Implicit Type ev : iEvent deps.
+
+    (** Filters memory read that are successful (that did not get a physical
+        memory abort *)
+    Definition is_mem_readP ev : Prop :=
+      is_mem_read_reqP (λ n rr rres,
+          match rres with
+          | inl (rval, otag) => P n rr rval otag
+          | _ => False end) ev.
+    Typeclasses Opaque is_mem_readP.
+
+    Definition is_mem_readP_spec ev:
+      is_mem_readP ev ↔
+        ∃ n rr rval otag, ev = MemRead n rr &→ inl (rval, otag) ∧ P n rr rval otag.
+    Proof. unfold is_mem_readP. rewrite is_mem_read_reqP_spec. hauto l:on. Qed.
+    Definition is_mem_readP_cdestr ev := cdestr_simpl (is_mem_readP_spec ev).
+    #[global] Existing Instance is_mem_readP_cdestr.
+
+    Context `{Pdec: ∀ n rr rval otag, Decision (P n rr rval otag)}.
+    #[global] Instance is_mem_readP_dec ev: Decision (is_mem_readP ev).
+    Proof using Pdec. unfold is_mem_readP. solve_decision. Qed.
+  End IsMemRead.
+  Notation is_mem_read := (is_mem_readP (λ _ _ _ _, True)).
+
+  (** ** Memory writes *)
+
+  (** *** Memory write requests
+
+      This is the general case for both failed and successful memory writes. *)
+  Section isMemWriteReq.
+    Context {deps: Type}.
+    Context
+      (P : ∀ n : N, WriteReq.t deps n → (option bool + abort) → Prop).
+    Implicit Type ev : iEvent deps.
+
+    Definition is_mem_write_reqP ev : Prop :=
+      match ev with
+      | MemWrite n wr &→ wres => P n wr wres
+      | _ => False
+      end.
+    Typeclasses Opaque is_mem_write_reqP.
+
+    Definition is_mem_write_reqP_spec ev:
+      is_mem_write_reqP ev ↔ ∃ n wr wres, ev = MemWrite n wr &→ wres ∧ P n wr wres.
+    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Definition is_mem_write_reqP_cdestr ev := cdestr_simpl (is_mem_write_reqP_spec ev).
+    #[global] Existing Instance is_mem_write_reqP_cdestr.
+
+    Context `{Pdec: ∀ n wr wres, Decision (P n wr wres)}.
+    #[global] Instance is_mem_write_reqP_dec ev: Decision (is_mem_write_reqP ev).
+    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+  End isMemWriteReq.
+  Notation is_mem_write_req := (is_mem_write_reqP (λ _ _ _, True)).
+
+  (** *** Successful memory writes *)
+  Section isMemWrite.
+    Context {deps: Type}.
+    Context
+      (P : ∀ n : N, WriteReq.t deps n → option bool → Prop).
+    Implicit Type ev : iEvent deps.
+
+    (** Filters memory writes that are successful (that did not get a physical
+        memory abort). This might still not have written in case of exclusive
+        failure *)
+    Definition is_mem_writeP ev: Prop :=
+      is_mem_write_reqP (λ n wr wres,
+          match wres with
+          | inl oexcl => P n wr oexcl
+          | _ => False end) ev.
+    Typeclasses Opaque is_mem_writeP.
+
+    Definition is_mem_writeP_spec ev:
+      is_mem_writeP ev ↔
+        ∃ n wr oexcl, ev = MemWrite n wr &→ inl oexcl ∧ P n wr oexcl.
+    Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
+
+    Context `{Pdec: ∀ n wr oexcl, Decision (P n wr oexcl)}.
+    #[global] Instance is_mem_writeP_dec ev: Decision (is_mem_writeP ev).
+    Proof using Pdec. unfold is_mem_writeP. solve_decision. Qed.
+  End isMemWrite.
+  Notation is_mem_write := (is_mem_writeP (λ _ _ _, True)).
+
+  Definition is_mem_event `(ev : iEvent deps) :=
+    is_mem_read ev \/ is_mem_write ev.
+
+  Notation is_branch ev := (is_Some (get_branch_pa ev)).
+  Notation is_barrier ev := (is_Some (get_barrier ev)).
+  Notation is_cacheop ev := (is_Some (get_cacheop ev)).
+  Notation is_tlbop ev := (is_Some (get_tlbop ev)).
 
 End Interface.
 

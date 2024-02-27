@@ -11,7 +11,7 @@ Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
-From SSCCommon Require Import CBase COption CList CBitvector Effects CDestruct.
+From SSCCommon Require Import Common Effects CDestruct.
 
 
 From Equations Require Import Equations.
@@ -346,6 +346,19 @@ Module Arm.
     Proof. record_eq; cbn; [reflexivity | bv_solve]. Qed.
     Lemma pa_addZ_zero pa : pa_addZ pa 0 = pa.
     Proof. record_eq; cbn; [reflexivity | bv_solve]. Qed.
+
+    Definition pa_diffZ pa' pa :=
+      if (FullAddress_paspace pa' =? FullAddress_paspace pa) then
+        Some $ bv_signed (FullAddress_address pa' - FullAddress_address pa)
+      else None.
+
+    Lemma pa_addZ_diffZ pa pa' z: pa_diffZ pa' pa = Some z → pa_addZ pa z = pa'.
+    Proof.
+    unfold pa_diffZ, pa_addZ, set.
+    destruct pa. destruct pa'. cbn.
+    cdestruct_intros # CDestrMatch # CDestrSubst.
+    record_eq; cbn; [reflexivity | bv_solve].
+    Qed.
 
     Definition arch_ak := arm_acc_type.
     Definition arch_ak_eq : EqDecision arm_acc_type := _.

@@ -512,7 +512,7 @@ Module GenArmNMS.
       |> map init_mem |> bv_of_bytes 64.
 
   Definition is_initial event init_mem :=
-    (match Candidate.get_pa event, NMSWF.get_val event with
+    (match get_pa event, NMSWF.get_val event with
      | Some pa, Some val => (get_init_val pa init_mem) = val
      | _, _ => False
      end).
