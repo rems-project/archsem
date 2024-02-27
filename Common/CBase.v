@@ -85,6 +85,22 @@ Definition mapr {A B C} (f : B → C) (x : A + B) : A + C :=
   | inr r => inr (f r)
   end.
 
+Definition is_inl `(x : A + B) : Prop :=
+  match x with
+  | inl _ => True
+  | inr _ => False
+  end.
+#[global] Instance is_inl_dec `(x : A + B) : Decision (is_inl x).
+Proof. destruct x; solve_decision. Qed.
+
+Definition is_inr `(x : A + B) : Prop :=
+  match x with
+  | inl _ => False
+  | inr _ => True
+  end.
+#[global] Instance is_inr_dec `(x : A + B) : Decision (is_inr x).
+Proof. destruct x; solve_decision. Qed.
+
 
 (** * Constrained quantifiers ***)
 
