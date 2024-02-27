@@ -828,41 +828,31 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       hauto lq:on rew:off use:get_reg_val_get_reg.
     Qed.
 
-    Definition is_possible_initial_reg_read (cd : t) (eid : EID.t) (ev : iEvent) :=
-      match ev with
-      | RegRead reg _ &→ rv =>
+    Definition is_valid_init_reg_read (cd : t) (eid : EID.t) : iEvent → Prop :=
+      is_reg_readP (λ reg _ rv,
           match cd.(init).(MState.regs) !! eid.(EID.tid) with
           | Some regmap => rv = regmap reg
           | None => False
-          end
-      | _ => False
-      end.
+          end).
 
-    Global Instance is_possible_initial_reg_read_dec cd eid event :
-      (Decision (is_possible_initial_reg_read cd eid event)).
-    Proof using.
-      unfold is_possible_initial_reg_read.
-      repeat case_split; tc_solve.
-    Defined.
-
-    Definition is_possible_initial_reg_read_spec (cd : t) (eid : EID.t) (ev : iEvent):
-      is_possible_initial_reg_read cd eid ev ↔
+    Definition is_valid_init_reg_read_spec (cd : t) (eid : EID.t) (ev : iEvent):
+      is_valid_init_reg_read cd eid ev ↔
         ∃ reg reg_acc rv,
           (ev = RegRead reg reg_acc &→ rv) ∧
             ∃ H : eid.(EID.tid) < nmth,
               (cd.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
     Proof.
-      unfold is_possible_initial_reg_read.
-      destruct ev as [? [] ?]; split; cdestruct_intros # CDestrSubst.
-      - hauto simp+:rewrite eq_some_unfold in *.
+      unfold is_valid_init_reg_read.
+      split; cdestruct_intros #CDestrCbnSubst #CDestrMatch #CDestrEqSome.
+      - naive_solver.
       - cbn. by erewrite vec_lookup_nat_in.
     Qed.
-    Definition is_possible_initial_reg_read_cdestr cd eid ev :=
-      cdestr_simpl (is_possible_initial_reg_read_spec cd eid ev).
-    #[global] Existing Instance is_possible_initial_reg_read_cdestr.
+    Definition is_valid_init_reg_read_cdestr cd eid ev :=
+      cdestr_simpl (is_valid_init_reg_read_spec cd eid ev).
+    #[global] Existing Instance is_valid_init_reg_read_cdestr.
 
     Definition possible_initial_reg_reads cd :=
-      collect_all (is_possible_initial_reg_read cd) cd.
+      collect_all (is_valid_init_reg_read cd) cd.
     #[global] Typeclasses Opaque possible_initial_reg_reads.
 
     Definition initial_reg_reads cd :=
@@ -875,7 +865,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       unfold possible_initial_reg_reads.
       set_unfold.
       cdestruct_intros # CDestrCbnSubst.
-      sfirstorder unfold:is_reg_readP.
+      naive_solver.
     Qed.
 
     (** Orders a register write after a read that read a po-earlier write. This
