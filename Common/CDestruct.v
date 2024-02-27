@@ -171,6 +171,8 @@ Ltac cdestruct_core H :=
       destruct H;
       fail
   | _ =>
+      (* TODO this is slow, there is way to make it faster.
+         It should only run at top level *)
       once rewrite cdestruct_simpl in H;
       once cdestruct_core H
   | ?t = ?t =>
@@ -189,17 +191,17 @@ Ltac cdestruct_core H :=
       | ?x = ?y => once first [subst x | subst y]
       end;
       once cdestruct_core H
-  | match ?b with _ => _ end =>
+  | _ =>
+      has_option CDestrCbn;
+      progress (cbn in H);
+      once cdestruct_core H
+  | context [match ?b with _ => _ end] =>
       let T := type of b in
       has_option (CDestrMatchT T);
       let Heqn := fresh in
       destruct b eqn:Heqn;
       revert H;
       once cdestruct_core Heqn
-  | _ =>
-      has_option CDestrCbn;
-      progress (cbn in H);
-      once cdestruct_core H
   | ?T =>
       cont ();
       try revert H
@@ -240,6 +242,7 @@ Global Instance cdestruct_and A B : CDestrCase (A ∧ B) := ltac:(constructor).
 Global Instance cdestruct_True : CDestrCase True := ltac:(constructor).
 Global Instance cdestruct_False : CDestrCase False := ltac:(constructor).
 Definition cdestruct_or A B : CDestrCase (A ∨ B) := ltac:(constructor).
+Definition cdestruct_sum A B : CDestrCase (A + B) := ltac:(constructor).
 #[global] Instance cdestruct_unit : CDestrCase unit := ltac:(constructor).
 #[global] Instance cdestruct_Empty_set : CDestrCase Empty_set := ltac:(constructor).
 
@@ -283,3 +286,16 @@ Qed.
 #[global] Instance cdestr_supersubst_sigT (T : Type) (P : T → Type) a b c d :
   CDestrSuperSubst (existT a b =@{sigT P} existT c d) T a c.
 Proof. tcclean. by simplify_dep_elim. Qed.
+
+#[global] Instance cdestruct_bool_decide_true `{Decision P} :
+  CDestrSimpl (bool_decide P = true) P.
+Proof. tcclean. apply bool_decide_eq_true. Qed.
+
+#[global] Instance cdestruct_bool_decide_false `{Decision P} :
+  CDestrSimpl (bool_decide P = false) (¬ P).
+Proof. tcclean. apply bool_decide_eq_false. Qed.
+
+(* TODO give up and use classical ? *)
+#[global] Instance cdestruct_not_not `{Decision P} :
+  CDestrSimpl (¬ ¬ P) P.
+Proof. tcclean. sfirstorder use:dec_stable. Qed.
