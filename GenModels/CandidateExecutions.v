@@ -724,8 +724,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
 
-
-
     (** ** Memory based relations *)
 
     Implicit Type ev : iEvent.
@@ -742,6 +740,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       sym_rel_with_same_key cd (λ _, get_size).
     Typeclasses Opaque same_size.
 
+    (** Symmetry relation relating memory event that have the same size and value *)
     Definition same_mem_value (cd : t) : grel EID.t :=
       sym_rel_with_same_key cd (λ _, get_mem_value).
     Typeclasses Opaque same_mem_value.
@@ -754,52 +753,10 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       hauto lq:on rew:off use:get_mem_value_size.
     Qed.
 
-    Definition is_valid_rf (cd : t) (weid reid : EID.t) : Prop :=
-      is_Some $
-      write ← cd !! weid;
-      wpa ← get_pa write;
-      wval ← get_mem_value write;
-      read ← cd !! reid;
-      rpa ← get_pa read;
-      rval ← get_mem_value read;
-      match reid.(EID.byte) with
-      | Some n =>
-          let rpa' := pa_addZ rpa (Z.of_nat n) in
-          rbyte ← (bv_to_bytes 8 (bvn_val rval)) !! n;
-          offset ← pa_diffZ rpa' wpa;
-          wbyte ← (bv_to_bytes 8 (bvn_val wval)) !! offset;
-          guard (rbyte = wbyte);;
-          mret ()
-      | None =>
-          guard (rpa = wpa ∧ wval = rval);;
-          (* wval and rval are dynamic sized bitvector, so this also checks
-             that both accesses are the same size *)
-          mret ()
-      end.
-
+    (** The set of initial memory reads *)
     Definition init_mem_reads cd :=
       mem_reads cd ∖ grel_rng (reads_from cd).
     #[global] Typeclasses Opaque init_mem_reads.
-
-    Definition is_valid_init_mem_read (cd : t) (eid : EID.t) :=
-      is_Some $
-      read ← cd !! eid;
-      guard (is_mem_read read);;
-      pa ← get_pa read;
-      val ← get_mem_value read;
-      guard (val = memoryMap_read cd.(init).(MState.memory) pa (bvn_n val / 8));;
-      mret ().
-
-    Record reads_from_wf (cd : t) :=
-      {
-        rf_from_writes: grel_dom (reads_from cd) ⊆ (mem_writes cd);
-        rf_to_reads: grel_rng (reads_from cd) ⊆ (mem_reads cd);
-        rf_functional: grel_functional (reads_from cd)⁻¹;
-        rf_valid: ∀''(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid;
-        rf_valid_initial:
-        ∀' reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
-      }.
-
 
 
     (** ** Register based relations *)
@@ -828,6 +785,21 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       hauto lq:on rew:off use:get_reg_val_get_reg.
     Qed.
 
+    (** The set of initial register reads *)
+    Definition initial_reg_reads cd :=
+      reg_reads cd ∖ grel_rng (reg_reads_from cd).
+    #[global] Typeclasses Opaque initial_reg_reads.
+
+    (** Orders a register write after a read that read a po-earlier write. This
+        might run against the instruction order for relaxed registers but follow the
+        instruction order for regular register *)
+    Definition reg_from_reads cd :=
+      (⦗reg_reads cd⦘⨾ same_reg_val cd⨾ ⦗reg_writes cd⦘)
+        ∖ (instruction_order cd ∪ ⦗reg_writes cd⦘ ⨾ reg_reads_from cd)⁻¹.
+    #[global] Typeclasses Opaque reg_from_reads.
+
+
+
     Definition is_valid_init_reg_read (cd : t) (eid : EID.t) : iEvent → Prop :=
       is_reg_readP (λ reg _ rv,
           match cd.(init).(MState.regs) !! eid.(EID.tid) with
@@ -855,10 +827,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       collect_all (is_valid_init_reg_read cd) cd.
     #[global] Typeclasses Opaque possible_initial_reg_reads.
 
-    Definition initial_reg_reads cd :=
-      reg_reads cd ∖ grel_rng (reg_reads_from cd).
-    #[global] Typeclasses Opaque initial_reg_reads.
-
     Lemma possible_initial_reg_reads_ok cd :
       possible_initial_reg_reads cd ⊆ reg_reads cd.
     Proof.
@@ -868,19 +836,56 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       naive_solver.
     Qed.
 
-    (** Orders a register write after a read that read a po-earlier write. This
-        might run against the instruction order for relaxed registers but follow the
-        instruction order for regular register *)
-    Definition reg_from_reads cd :=
-      (⦗reg_reads cd⦘⨾ same_reg_val cd⨾ ⦗reg_writes cd⦘)
-        ∖ (instruction_order cd ∪ ⦗reg_writes cd⦘ ⨾ reg_reads_from cd)⁻¹.
-    #[global] Typeclasses Opaque reg_from_reads.
 
     (** * Generic wellformedness
         This section is for wellformedness properties that are not dependent on
         the execution type [et] *)
 
-    (** Standard wellformedness condition for reg_reads_from (or rrf in short).
+    (** *** Reads from wellformedness *)
+
+    Definition is_valid_rf (cd : t) (weid reid : EID.t) : Prop :=
+      is_Some $
+      write ← cd !! weid;
+      wpa ← get_pa write;
+      wval ← get_mem_value write;
+      read ← cd !! reid;
+      rpa ← get_pa read;
+      rval ← get_mem_value read;
+      match reid.(EID.byte) with
+      | Some n =>
+          let rpa' := pa_addZ rpa (Z.of_nat n) in
+          rbyte ← (bv_to_bytes 8 (bvn_val rval)) !! n;
+          offset ← pa_diffZ rpa' wpa;
+          wbyte ← (bv_to_bytes 8 (bvn_val wval)) !! offset;
+          guard' (rbyte = wbyte)
+      | None =>
+          guard' (rpa = wpa ∧ wval = rval)
+          (* wval and rval are dynamic sized bitvector, so this also checks
+             that both accesses are the same size *)
+      end.
+
+    Definition is_valid_init_mem_read (cd : t) (eid : EID.t) :=
+      is_Some $
+      read ← cd !! eid;
+      guard (is_mem_read read);;
+      pa ← get_pa read;
+      val ← get_mem_value read;
+      guard' (val = memoryMap_read cd.(init).(MState.memory) pa (bvn_n val / 8)).
+
+    Record reads_from_wf (cd : t) :=
+      {
+        rf_from_writes: grel_dom (reads_from cd) ⊆ (mem_writes cd);
+        rf_to_reads: grel_rng (reads_from cd) ⊆ (mem_reads cd);
+        rf_functional: grel_functional (reads_from cd)⁻¹;
+        rf_valid: ∀''(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid;
+        rf_valid_initial:
+        ∀' reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
+      }.
+
+
+    (** *** Reg reads from wellformedness
+
+        Standard wellformedness condition for reg_reads_from (or rrf in short).
         This does not relate register accesses to thread order. In particular,
         in this definition, a register read can read from any register write in
         the same thread either before or after in the thread order. *)
