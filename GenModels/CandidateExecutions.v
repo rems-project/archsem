@@ -421,12 +421,12 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** * Supported events
 
-       This framework does not support all kind of events yet.
-       In particular it does not support memory tags. *)
-
+       This framework does not support all kind of events yet. It does not support:
+       - memory tags
+       - Rejecting exclusive memory writes *)
     Definition unsupported_event (ev : iEvent) : Prop :=
       is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
-      is_mem_write_reqP (λ n wr _, wr.(WriteReq.tag)) ev.
+      is_mem_write_reqP (λ n wr r, wr.(WriteReq.tag)) ev.
 
     Definition has_only_supported_events (cd : t) : Prop :=
       iEvent_list cd |> filter (λ '(_,ev), unsupported_event ev) = [].
@@ -881,6 +881,28 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         rf_valid: ∀''(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid;
         rf_valid_initial:
         ∀' reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
+      }.
+
+
+    (** *** Coherence wellformedness *)
+
+    Definition is_overlapping (cd : t) (eid1 eid2 : EID.t) : Prop :=
+      is_Some $
+      w1 ← cd !! eid1;
+      pa1 ← get_pa w1;
+      size1 ← get_size w1;
+      w2 ← cd !! eid2;
+      pa2 ← get_pa w2;
+      size2 ← get_size w2;
+      diff ← pa_diffZ pa2 pa1;
+      guard' (- (Z.of_N size2) < diff < (Z.of_N size1))%Z.
+
+    Record coherence_wf (cd : t) :=
+      {
+        co_transitive : grel_transitive (coherence cd);
+        co_irreflexive: grel_irreflexive (coherence cd);
+        co_contains_overlapping_writes:
+        ⦗mem_writes cd⦘ |> filter (uncurry (is_overlapping cd)) ⊆ coherence cd
       }.
 
 
