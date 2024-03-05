@@ -24,11 +24,24 @@ Require Import Program Equality.
   by simplify_dep_elim
   : typeclass_instances.
 
+Lemma inj2_iff `{Inj2 A B C RA RB RC f} {HP : Proper (RA ==> RB ==> RC) f}
+  x1 x2 y1 y2 :
+  RC (f x1 x2) (f y1 y2) ↔ RA x1 y1 ∧ RB x2 y2.
+Proof. split; intro; [by apply (inj2 f) | apply HP; naive_solver]. Qed.
+Arguments inj2_iff {_ _ _ _ _ _} _ {_ _}.
+
+
 
 Class Inj3 {A B C D} (R1 : relation A) (R2 : relation B) (R3 : relation C)
     (S : relation D) (f : A → B → C → D) : Prop := inj3 x1 x2 x3 y1 y2 y3 :
     S (f x1 x2 x3) (f y1 y2 y3) → R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3.
 Global Arguments inj3 {_ _ _ _ _ _ _ _} _ {_} _ _ _ _ _ _ _: assert.
+
+Lemma inj3_iff `{Inj3 A B C D R1 R2 R3 RS f}
+  {HP : Proper (R1 ==> R2 ==> R3 ==> RS) f} x1 x2 x3 y1 y2 y3 :
+  RS (f x1 x2 x3) (f y1 y2 y3) ↔ R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3.
+Proof. split; intro; [by apply (inj3 f) | apply HP; naive_solver]. Qed.
+Arguments inj3_iff {_ _ _ _ _ _ _ _} _ {_ _}.
 
 (** Deduce Inj3 instance from dependent injection. This might use UIP *)
 #[export] Hint Extern 20 (Inj3 ?A ?B ?C eq ?Constr) =>
@@ -46,6 +59,17 @@ Class Inj4 {A B C D E} (R1 : relation A) (R2 : relation B) (R3 : relation C)
     S (f x1 x2 x3 x4) (f y1 y2 y3 y4) →
     R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4.
 Global Arguments inj4 {_ _ _ _ _ _ _ _ _ _} _ {_} _ _ _ _ _ _ _ _ _: assert.
+
+Lemma inj4_iff `{Inj4 A B C D E R1 R2 R3 R4 RS f}
+  {HP : Proper (R1 ==> R2 ==> R3 ==> R4 ==> RS) f} x1 x2 x3 x4 y1 y2 y3 y4 :
+  RS (f x1 x2 x3 x4) (f y1 y2 y3 y4) ↔ R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4.
+Proof. split; intro; [by apply (inj4 f) | apply HP; naive_solver]. Qed.
+Arguments inj4_iff {_ _ _ _ _ _ _ _ _ _} _ {_ _}.
+
+#[export] Hint Rewrite @inj_iff using tc_solve : inj.
+#[export] Hint Rewrite @inj2_iff using tc_solve : inj.
+#[export] Hint Rewrite @inj3_iff using tc_solve : inj.
+#[export] Hint Rewrite @inj4_iff using tc_solve : inj.
 
 (** Deduce Inj4 instance from dependent injection. This might use UIP *)
 #[export] Hint Extern 20 (Inj4 ?A ?B ?C ?D eq ?Constr) =>
@@ -249,27 +273,23 @@ Definition cdestruct_sum A B : CDestrCase (A + B) := ltac:(constructor).
 (** Injective equalities are simplified by default, up to 4 arguments *)
 Global Instance cdestruct_inj `{Inj A B RA RB f} {HP: Proper (RA ==> RB) f} x y :
   CDestrSimpl (RB (f x) (f y)) (RA x y).
-Proof. constructor. use (inj f). naive_solver. Qed.
+Proof. constructor. apply (inj_iff f). Qed.
 
 Global Instance cdestruct_inj2 `{Inj2 A B C RA RB RC f}
-    {HP : Proper (RA ==> RB ==> RC) f} x1 x2 y1 y2 :
+  `{!Proper (RA ==> RB ==> RC) f} x1 x2 y1 y2 :
   CDestrSimpl (RC (f x1 x2) (f y1 y2)) (RA x1 y1 ∧ RB x2 y2).
-Proof. constructor. use (inj2 f). sfirstorder. Qed.
+Proof. constructor. apply (inj2_iff f). Qed.
 
 Global Instance cdestruct_inj3 `{Inj3 A B C D R1 R2 R3 RS f}
     {HP : Proper (R1 ==> R2 ==> R3 ==> RS) f} x1 x2 x3 y1 y2 y3 :
   CDestrSimpl (RS (f x1 x2 x3) (f y1 y2 y3)) (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3).
-Proof. constructor.
-       split; intro H';[by apply (inj3 f) in H' | apply HP; naive_solver].
-Qed.
+Proof. constructor. apply (inj3_iff f). Qed.
 
 Global Instance cdestruct_inj4 `{Inj4 A B C D E R1 R2 R3 R4 RS f}
     {HP : Proper (R1 ==> R2 ==> R3 ==> R4 ==> RS) f} x1 x2 x3 x4 y1 y2 y3 y4 :
   CDestrSimpl (RS (f x1 x2 x3 x4) (f y1 y2 y3 y4))
     (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4).
-Proof. constructor.
-       split; intro H';[by apply (inj4 f) in H' | apply HP; naive_solver].
-Qed.
+Proof. constructor. apply (inj4_iff f). Qed.
 
 (** Implementation of [CDestrRecInj], see the typeclass definition for an
     explanation *)

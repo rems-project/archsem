@@ -1279,7 +1279,7 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           '(ts, mem) ← write_mem_xcl tid addr vaddr vdata viio eak ts mem data;
-          mret (ts, mem, iis, inl None)
+          mret (ts, mem, iis, inl true)
       | AK_ifetch () => mthrow "Write of type ifetch ???"
       | AK_ttw () => mthrow "Write of type TTW ???"
       | _ => mthrow "Unsupported non-explicit write"

@@ -427,23 +427,9 @@ Module GenArmNMS.
     Decision (is_explicit_access_kind_P P event).
   Proof. unfold is_explicit_access_kind_P. apply _. Qed.
 
-  Definition is_successful (event : iEvent) :=
-    match event with
-    | MemWrite _ _ &→ wresp =>
-        match wresp with (inl (Some true)) | (inl None) => True | _ => False end
-    | _ => False
-    end.
-
-  Global Instance is_successful_dec event : Decision (is_successful event).
-  Proof.
-    unfold is_successful.
-    destruct event as [T call ret].
-    destruct call; apply _.
-  Qed.
-
   Definition Wx :=
     collect_all
-      (λ _ event, is_mem_write event ∧ is_successful event
+      (λ _ event, is_mem_write event
                   ∧ is_explicit_access_kind_P
                       (λ ak, ak.(Explicit_access_kind_variety) = AV_exclusive)
                       event) cd.

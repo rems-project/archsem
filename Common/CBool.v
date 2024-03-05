@@ -11,6 +11,7 @@ Require Import DecidableClass.
 
 Require Import CBase.
 Require Import Options.
+Require Import CDestruct.
 
 From Hammer Require Reflect.
 
@@ -98,12 +99,14 @@ Proof. by destruct c. Qed.
 Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity)
     : stdpp_scope.
 
+
+
 (** Convert automatical a Decidable instance (Coq standard library) to
     a Decision instance (stdpp)
 
     TODO: Decide (no pun intended) if we actually want to use Decidable or
     Decision in this development. *)
-Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P :=
+Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P | 1000 :=
   match dec with
   | {| Decidable_witness := true; Decidable_spec := spec |} =>
    left ((iffLR spec) eq_refl)
@@ -240,3 +243,17 @@ Defined.
   destruct x : typeclass_instances.
 
 #[export] Hint Extern 3 (Decision _) => progress cbn : typeclass_instances.
+
+#[export] Hint Extern 1 (Decision (?a = ?b)) => eunify a b; left;reflexivity : typeclass_instances.
+
+(** Equality with pattern. Decide equation of the form [a = Constr b c d] where
+    the entire type might not have EqDecision Such as [x =@{bool + R) inl true] *)
+#[export] Hint Extern 15 (Decision (?a = ?b)) =>
+  (let h := get_head b in
+   is_constructor h;
+   destruct a
+   ||
+   let h := get_head a in
+   is_constructor h;
+   destruct b);
+  try (right; discriminate); try (left; reflexivity); autorewrite with inj : typeclass_instances.

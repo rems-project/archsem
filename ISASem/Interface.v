@@ -266,9 +266,13 @@ Module Interface (A : Arch).
       (** Write [n] bytes of memory in a single access (Single Copy Atomic in
           Arm terminology). See [WriteReq.t] for the various required fields.
 
-          The result is either a success with an optional exclusive result or a
-          physical memory error *)
-    | MemWrite (n : N) : WriteReq.t deps n → outcome (option bool + abort)%type
+          If the result is:
+          - inl true: The write happened
+          - inl false: The write didn't happened because the required strength
+            could not be achieved (e.g. exclusive failure)
+          - inr abort: The write was attempted, but a physical abort happened
+           *)
+    | MemWrite (n : N) : WriteReq.t deps n → outcome (bool + abort)%type
       (** Declare the opcode of the current instruction when known. Used for
           dependency computations, and some other cases *)
     | InstrAnnounce (opcode : bvn) : outcome unit
@@ -581,7 +585,7 @@ Module Interface (A : Arch).
   Section isMemWriteReq.
     Context {deps: Type}.
     Context
-      (P : ∀ n : N, WriteReq.t deps n → (option bool + abort) → Prop).
+      (P : ∀ n : N, WriteReq.t deps n → (bool + abort) → Prop).
     Implicit Type ev : iEvent deps.
 
     Definition is_mem_write_reqP ev : Prop :=
@@ -607,7 +611,7 @@ Module Interface (A : Arch).
   Section isMemWrite.
     Context {deps: Type}.
     Context
-      (P : ∀ n : N, WriteReq.t deps n → option bool → Prop).
+      (P : ∀ n : N, WriteReq.t deps n → Prop).
     Implicit Type ev : iEvent deps.
 
     (** Filters memory writes that are successful (that did not get a physical
@@ -616,20 +620,20 @@ Module Interface (A : Arch).
     Definition is_mem_writeP ev: Prop :=
       is_mem_write_reqP (λ n wr wres,
           match wres with
-          | inl oexcl => P n wr oexcl
+          | inl true => P n wr
           | _ => False end) ev.
     Typeclasses Opaque is_mem_writeP.
 
     Definition is_mem_writeP_spec ev:
       is_mem_writeP ev ↔
-        ∃ n wr oexcl, ev = MemWrite n wr &→ inl oexcl ∧ P n wr oexcl.
+        ∃ n wr, ev = MemWrite n wr &→ inl true ∧ P n wr.
     Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
 
-    Context `{Pdec: ∀ n wr oexcl, Decision (P n wr oexcl)}.
+    Context `{Pdec: ∀ n wr, Decision (P n wr)}.
     #[global] Instance is_mem_writeP_dec ev: Decision (is_mem_writeP ev).
     Proof using Pdec. unfold is_mem_writeP. solve_decision. Qed.
   End isMemWrite.
-  Notation is_mem_write := (is_mem_writeP (λ _ _ _, True)).
+  Notation is_mem_write := (is_mem_writeP (λ _ _, True)).
 
   Definition is_mem_event `(ev : iEvent deps) :=
     is_mem_read ev \/ is_mem_write ev.

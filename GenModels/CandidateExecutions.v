@@ -378,7 +378,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition mem_write_reqs := collect_all (λ _, is_mem_write_req).
     Typeclasses Opaque mem_write_reqs.
     Definition mem_write_aborts :=
-      collect_all (λ _, is_mem_write_reqP (λ _ _, is_inr)).
+      collect_all (λ _, is_mem_write_reqP (λ _ _ res, res ≠ inl true)).
     Typeclasses Opaque mem_write_aborts.
 
     Lemma mem_write_reqs_union cd :
@@ -387,7 +387,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
       unfold mem_writes, mem_write_reqs, mem_write_aborts.
       set_unfold.
       split;
-        cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum;
+        cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum
+          # (CDestrCase bool);
         naive_solver.
     Qed.
 

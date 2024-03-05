@@ -52,6 +52,10 @@ Notation "'for' @{ M  } x 'in' l 'do' E 'end'" :=
 Notation "x .T1" := (projT1 x) (at level 1, left associativity, format "x .T1").
 Notation "x .T2" := (projT2 x) (at level 1, left associativity, format "x .T2").
 
+Notation "'is_patP' pat pred" := (λ x, match x with pat => pred | _ => False end) (pat pattern, at level 10).
+Notation "'is_pat' pat" := (λ x, match x with pat => True | _ => False end) (pat pattern, at level 10).
+
+
 (** * Utility functions ***)
 
 (** Convenient iff destruction *)
