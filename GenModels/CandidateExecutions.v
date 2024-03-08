@@ -987,7 +987,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       val ← get_mem_value read;
       guard' (val = memoryMap_read cd.(init).(MState.memory) pa (bvn_n val / 8)).
 
-    Record reads_from_wf (cd : t) :=
+    Record reads_from_wf {cd : t} :=
       {
         rf_from_writes: grel_dom (reads_from cd) ⊆ (mem_writes cd);
         rf_to_reads: grel_rng (reads_from cd) ⊆ (mem_reads cd);
@@ -996,12 +996,13 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         rf_valid_initial:
         ∀ reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
       }.
+    Arguments reads_from_wf : clear implicits.
 
 
     (** *** Coherence wellformedness *)
 
 
-    Record coherence_wf (cd : t) :=
+    Record coherence_wf {cd : t} :=
       {
         co_transitive : grel_transitive (coherence cd);
         co_irreflexive: grel_irreflexive (coherence cd);
@@ -1010,16 +1011,18 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           is_overlapping cd weid1 weid2 →
           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
+    Arguments coherence_wf : clear implicits.
 
     (** *** lxsx wellformedness *)
 
-    Record lxsx_wf (cd : t) :=
+    Record lxsx_wf {cd : t} :=
       {
         lxsx_from_reads : grel_dom (lxsx cd) ⊆ mem_reads cd ∩ mem_exclusive cd;
         lxsx_to_writes : grel_rng (lxsx cd) ⊆ mem_writes cd ∩ mem_exclusive cd;
         lxsx_instruction_order : lxsx cd ⊆ instruction_order cd;
         lxsx_same_pa : lxsx cd ⊆ same_pa cd
       }.
+    Arguments lxsx_wf : clear implicits.
 
 
     (** *** Reg reads from wellformedness
@@ -1028,7 +1031,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         This does not relate register accesses to thread order. In particular,
         in this definition, a register read can read from any register write in
         the same thread either before or after in the thread order. *)
-    Record reg_reads_from_wf (cd : t) :=
+    Record reg_reads_from_wf {cd : t} :=
       {
         rrf_from_writes: grel_dom (reg_reads_from cd) ⊆ (reg_writes cd);
         rrf_to_reads: grel_rng (reg_reads_from cd) ⊆ (reg_reads cd);
@@ -1037,6 +1040,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         rrf_initial_valid:
           initial_reg_reads cd ⊆ possible_initial_reg_reads cd;
       }.
+    Arguments reg_reads_from_wf : clear implicits.
 
     Lemma rrf_irreflexive (cd : t) :
       reg_reads_from_wf cd → grel_irreflexive (reg_reads_from cd).
@@ -1067,8 +1071,16 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       set_solver.
     Qed.
 
+    (** ** Full wellformedness *)
 
-
+    Record wf (cd : t) :=
+      {
+        has_only_supported_events' :> has_only_supported_events cd;
+        reads_from_wf' :> reads_from_wf cd;
+        coherence_wf' :> coherence_wf cd;
+        lxsx_wf' :> lxsx_wf cd;
+        reg_reads_from_wf' :> reg_reads_from_wf cd;
+      }.
     End Cand.
 
     (** * Dependency relations *)
@@ -1363,6 +1375,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           {[ mr |
              ∃ cd : cand n,
                cd.(init) = initSt
+               ∧ wf cd
                ∧ ISA_match cd isem
                ∧ to_ModelResult ax cd initSt.(MState.termCond) = Some mr
           ]}.
