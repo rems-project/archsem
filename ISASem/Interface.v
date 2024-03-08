@@ -5,9 +5,6 @@ Require Import stdpp.countable.
 Require Import stdpp.finite.
 Require Import stdpp.gmap.
 
-(* This is needed because sail cannot export into multiple Coq files *)
-Require Import SailArmInstTypes.
-
 Require Import SSCCommon.Options.
 Require Import SSCCommon.CBase.
 Require Import SSCCommon.Effects.
@@ -15,16 +12,6 @@ Require Import SSCCommon.FMon.
 Require Import SSCCommon.CResult.
 Require Import SSCCommon.CBool.
 Require Import SSCCommon.CDestruct.
-
-
-#[global] Instance Explicit_access_kind_dec : EqDecision Explicit_access_kind.
-Proof. solve_decision. Defined.
-
-#[global] Instance Access_kind_dec `{EqDecision arch_ak} : EqDecision (Access_kind arch_ak).
-Proof. solve_decision. Defined.
-
-Local Open Scope stdpp_scope.
-Local Open Scope Z_scope.
 
 (** * The architecture requirements *)
 
@@ -90,11 +77,36 @@ Module Type Arch.
     ∀ pa pa' z, pa_diffZ pa' pa = Some z → pa_addZ pa z = pa'.
 
 
-  (** Parameter for extra architecture specific access types. Can be an empty
-      type if not used *)
-  Parameter arch_ak : Type.
-  Parameter arch_ak_eq : EqDecision arch_ak.
-  #[export] Existing Instance arch_ak_eq.
+  (** Memory access kind (architecture specific) *)
+  Parameter mem_acc : Type.
+
+  Parameter mem_acc_eq : EqDecision mem_acc.
+  #[export] Existing Instance mem_acc_eq.
+
+  (** Is this access an explicit access, e.g. whose access was explicitely
+      required by the instruction. As minimima, this must be not an IFetch or a TTW
+      access *)
+  Parameter is_explicit : mem_acc → bool.
+  (** Is this access an instruction fetch read *)
+  Parameter is_ifetch : mem_acc → bool.
+  (** Is this access a translation table walk *)
+  Parameter is_ttw : mem_acc → bool.
+  (** Is this access relaxed, aka. no acquire or release strength *)
+  Parameter is_relaxed : mem_acc → bool.
+  (** Is this an acquire or a release access (Depending on whether this is a
+      read or write *)
+  Parameter is_rel_acq : mem_acc → bool.
+  (** Is this a weak PC acquire (not ordered after write release *)
+  Parameter is_acq_rcpc : mem_acc → bool.
+  (** Is this a standalone access, aka. not part of an exclusive or RMW pair.
+      This is based on the access type, so an unmatched exclusive load would not be
+      "standalone" *)
+  Parameter is_standalone : mem_acc → bool.
+  (** Is this an exclusive access *)
+  Parameter is_exclusive : mem_acc → bool.
+  (** Is this part of an RMW instruction. Another RMW access to the same address
+      in the same instruction is expected *)
+  Parameter is_atomic_rmw : mem_acc → bool.
 
 
   (** Translation summary *)
@@ -145,7 +157,7 @@ Module Interface (A : Arch).
   Definition va := bv va_size.
 
   (** Memory access kind *)
-  Definition accessKind := Access_kind arch_ak.
+  Notation accessKind := mem_acc.
 
   (** The list of all physical addresses accessed when accessing [pa] with size
       [n] *)

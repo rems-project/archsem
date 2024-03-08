@@ -270,6 +270,12 @@ Proof.
   intro x. by destruct x.
 Defined.
 
+#[global] Instance Explicit_access_kind_dec : EqDecision Explicit_access_kind.
+Proof. solve_decision. Defined.
+
+#[global] Instance Access_kind_dec `{EqDecision arch_ak} : EqDecision (Access_kind arch_ak).
+Proof. solve_decision. Defined.
+
 #[global] Instance arm_acc_type_eq_dec : EqDecision arm_acc_type.
 Proof. solve_decision. Defined.
 
@@ -360,8 +366,34 @@ Module Arm.
     record_eq; cbn; [reflexivity | bv_solve].
     Qed.
 
-    Definition arch_ak := arm_acc_type.
-    Definition arch_ak_eq : EqDecision arm_acc_type := _.
+    Definition mem_acc := Access_kind arm_acc_type.
+    Definition mem_acc_eq : EqDecision mem_acc := _.
+    Definition is_explicit (acc : mem_acc) :=
+      if acc is AK_explicit _ then true else false.
+    Definition is_ifetch (acc : mem_acc) :=
+      if acc is AK_ifetch _ then true else false.
+    Definition is_ttw (acc : mem_acc) :=
+      if acc is AK_ttw _ then true else false.
+    Definition is_relaxed (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_strength) =? AS_normal else false.
+    Definition is_rel_acq (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_strength) =? AS_rel_or_acq else false.
+    Definition is_acq_rcpc (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_strength) =? AS_acq_rcpc else false.
+    Definition is_standalone (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_variety) =? AV_plain else false.
+    Definition is_exclusive (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_variety) =? AV_exclusive else false.
+    Definition is_atomic_rmw (acc : mem_acc) :=
+      if acc is AK_explicit eak then
+        eak.(Explicit_access_kind_variety) =? AV_atomic_rmw else false.
+
+
     Definition translation := TranslationInfo.
     Definition translation_eq : EqDecision TranslationInfo := _.
     Definition abort := PhysMemRetStatus.

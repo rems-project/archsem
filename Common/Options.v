@@ -22,6 +22,9 @@ but not transitively. *)
     making rewriting a bit slower *)
 #[export] Set Keyed Unification.
 
+(** Use the if _ is _ notation in this project, but do not force users to use it *)
+Export IfNotations.
+
 (* TODO automatically check that all file in the project import this file.
    This might be done with a text checker that there exists a
    [Require Import Options.] or [Require Import SSCCommon.Options] *)
