@@ -365,6 +365,13 @@ Module Interface (A : Arch).
     get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
   Proof. destruct ev as [[] ?]; hauto lq:on. Qed.
 
+  Definition get_rec_acc (ev : iEvent) : option reg_acc :=
+    match ev with
+    | RegRead _ racc &→ _ => Some racc
+    | RegWrite _ racc _ &→ _ => Some racc
+    | _ => None
+    end.
+
   (** Get the physical address out of an memory event *)
   Definition get_pa (e : iEvent) : option pa:=
     match e with
@@ -397,6 +404,13 @@ Module Interface (A : Arch).
     destruct ev as [[] ?];
       cdestruct_intro #CDestrCbnSubst #CDestrMatch; cbn; f_equal; lia.
   Qed.
+
+  Definition get_access_kind (ev : iEvent) : option mem_acc :=
+    match ev with
+    | MemRead _ rr &→ _ => Some rr.(ReadReq.access_kind)
+    | MemWrite _ wr &→ _ => Some wr.(WriteReq.access_kind)
+    | _ => None
+    end.
 
   (** Get the content of a barrier, returns none if not a barrier (or is an
         invalid EID) *)
@@ -568,6 +582,7 @@ Module Interface (A : Arch).
   Notation is_mem_write_addr_announce :=
     (is_mem_write_addr_announceP (λ _ _ _ _, True)).
 
+
   (** *** Memory write requests
 
       This is the general case for both failed and successful memory writes. *)
@@ -594,6 +609,7 @@ Module Interface (A : Arch).
     Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
   End isMemWriteReq.
   Notation is_mem_write_req := (is_mem_write_reqP (λ _ _ _, True)).
+
 
   (** *** Successful memory writes *)
   Section isMemWrite.
@@ -624,6 +640,26 @@ Module Interface (A : Arch).
 
   Definition is_mem_event (ev : iEvent) :=
     is_mem_read ev \/ is_mem_write ev.
+
+  (** * Allow filtering memory events by kind more easily *)
+  Section MemEventByKind.
+    Context (P : accessKind → Prop).
+    Context {Pdec : ∀ acc, Decision (P acc)}.
+    Implicit Type ev : iEvent.
+
+    Definition is_mem_read_kindP :=
+      is_mem_readP (λ _ rr _ _, P rr.(ReadReq.access_kind)).
+    Definition is_mem_write_kindP :=
+      is_mem_writeP (λ _ wr, P wr.(WriteReq.access_kind)).
+
+    Definition is_mem_event_kindP (ev : iEvent) :=
+      if get_access_kind ev is Some acc then P acc else False.
+    #[global] Instance is_mem_event_kindP_dec ev:
+      Decision (is_mem_event_kindP ev).
+    Proof using Pdec. unfold is_mem_event_kindP. tc_solve. Defined.
+  End MemEventByKind.
+
+
 
   Notation is_barrier ev := (is_Some (get_barrier ev)).
   Notation is_cacheop ev := (is_Some (get_cacheop ev)).

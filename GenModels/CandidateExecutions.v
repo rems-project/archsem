@@ -409,6 +409,45 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Lemma mem_events_union cd : mem_events cd = mem_reads cd ∪ mem_writes cd.
     Proof. unfold mem_events, mem_reads, mem_writes, is_mem_event. set_solver. Qed.
 
+    (* WARNING: intense boilerplate *)
+    Section ByKind.
+      Context (P : accessKind → Prop).
+      Context {Pdec : ∀ acc, Decision (P acc)}.
+      Definition mem_by_kind := collect_all (λ _, is_mem_event_kindP P).
+      #[global] Typeclasses Opaque mem_by_kind.
+      Definition reads_by_kind := collect_all (λ _, is_mem_read_kindP P).
+      #[global] Typeclasses Opaque reads_by_kind.
+      Definition writes_by_kind := collect_all (λ _, is_mem_write_kindP P).
+      #[global] Typeclasses Opaque writes_by_kind.
+    End ByKind.
+    Definition mem_explicit := (mem_by_kind is_explicit).
+    Definition explicit_reads := (reads_by_kind is_explicit).
+    Definition explicit_writes := (writes_by_kind is_explicit).
+    Definition mem_ifetch := (mem_by_kind is_ifetch).
+    Definition ifetch_reads := (reads_by_kind is_ifetch).
+    Definition ifetch_writes := (writes_by_kind is_ifetch). (* empty *)
+    Definition mem_ttw := (mem_by_kind is_ttw).
+    Definition ttw_reads := (reads_by_kind is_ttw).
+    Definition ttw_writes := (writes_by_kind is_ttw).
+    Definition mem_relaxed := (mem_by_kind is_relaxed).
+    Definition relaxed_reads := (reads_by_kind is_relaxed).
+    Definition relaxed_writes := (writes_by_kind is_relaxed).
+    Definition mem_rel_acq := (mem_by_kind is_rel_acq).
+    Definition rel_acq_reads := (reads_by_kind is_rel_acq).
+    Definition rel_acq_writes := (writes_by_kind is_rel_acq).
+    Definition mem_acq_rcpc := (mem_by_kind is_acq_rcpc).
+    Definition acq_rcpc_reads := (reads_by_kind is_acq_rcpc).
+    Definition acq_rcpc_writes := (writes_by_kind is_acq_rcpc).
+    Definition mem_standalone := (mem_by_kind is_standalone).
+    Definition standalone_reads := (reads_by_kind is_standalone).
+    Definition standalone_writes := (writes_by_kind is_standalone).
+    Definition mem_exclusive := (mem_by_kind is_exclusive).
+    Definition exclusive_reads := (reads_by_kind is_exclusive).
+    Definition exclusive_writes := (writes_by_kind is_exclusive).
+    Definition mem_atomic_rmw := (mem_by_kind is_atomic_rmw).
+    Definition atomic_rmw_reads := (reads_by_kind is_atomic_rmw).
+    Definition atomic_rmw_writes := (writes_by_kind is_atomic_rmw).
+
     (** Get the set of all barriers *)
     Definition barriers (cd : t) :=
       collect_all (λ _ event, is_Some (get_barrier event)) cd.
