@@ -1011,6 +1011,16 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
 
+    (** *** lxsx wellformedness *)
+
+    Record lxsx_wf (cd : t) :=
+      {
+        lxsx_from_reads : grel_dom (lxsx cd) ⊆ mem_reads cd ∩ mem_exclusive cd;
+        lxsx_to_writes : grel_rng (lxsx cd) ⊆ mem_writes cd ∩ mem_exclusive cd;
+        lxsx_instruction_order : lxsx cd ⊆ instruction_order cd;
+        lxsx_same_pa : lxsx cd ⊆ same_pa cd
+      }.
+
 
     (** *** Reg reads from wellformedness
 
