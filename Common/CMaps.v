@@ -265,3 +265,22 @@ Proof.
       * sfirstorder.
     + hauto lq:on rew:off simp+:rewrite lookup_unfold in *.
 Qed.
+
+
+(** * FinMap setter *)
+
+#[global] Instance Setter_finmap `{FinMap K M} {A} (k : K) :
+    @Setter (M A) _ (lookup k) := λ f, partial_alter f k.
+
+#[global] Program Instance Setter_finmap_wf `{FinMap K M} {A} (k : K) :
+  @SetterWf (M A) _ (lookup k) :=
+  { set_wf := Setter_finmap k }.
+Next Obligation.
+  sauto lq:on rew:off.
+Qed.
+Next Obligation.
+  intros.
+  apply map_eq.
+  intro i.
+  destruct decide subst i k; sauto.
+Qed.
