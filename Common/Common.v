@@ -54,10 +54,12 @@ Section VAlter.
     apply vlookup_insert_self.
   Qed.
 
+  #[global] Instance Setter_valter (k : fin n) :
+    @Setter (vec A n) A (lookup_total k) := λ f, alter f k.
 
   #[global] Instance Setter_valter_wf (k : fin n) :
     @SetterWf (vec A n) A (lookup_total k) :=
-    { set_wf := Setter_alter k;
+    { set_wf := Setter_valter k;
       set_get := vlookup_alter k;
       set_eq := valter_eq k
     }.

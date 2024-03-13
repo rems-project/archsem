@@ -367,9 +367,6 @@ Global Program Instance Setter_compose_wf `{SRT : SetterWf R T proj}
   { set_wf := Setter_compose }.
 Solve All Obligations with sauto lq:on.
 
-(* SetterWF can only be proven for particular Ms *)
-#[global] Instance Setter_alter `{LookupTotal K A M, Alter K A M} k :
-  @Setter M A (lookup_total k) := λ f, alter f k.
 
 (** For a record type A, this typeclass provides an output predicate Q that is a
     conjunction of field_wise equality that is equivalent to the record
