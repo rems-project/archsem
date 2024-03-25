@@ -364,6 +364,12 @@ Proof. solve_proper2_tc. Qed.
 
 (** * Record management ***)
 
+(** Remove the [set_wf] instance because it make the search for a Setter much
+    slower in the general case. Keep it as an immediate instance for parametric
+    [SetterWf] instance such as [Setter_compose_wf] *)
+#[export] Remove Hints RecordSet.set_wf : typeclass_instances.
+Hint Immediate set_wf : typeclass_instances.
+
 Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
   set proj (fun _ => v).
 
