@@ -343,7 +343,7 @@ Section GRel.
   (** Equivalent definition of exists_path using is_path, and in Prop *)
   Definition exists_path' (r : grel) (l : list A) (x y : A) :=
     exists path : list A,
-      is_path r x y path /\ NoDup path /\ ∀' p ∈ path, p ∈ l.
+      is_path r x y path /\ NoDup path /\ ∀ p ∈ path, p ∈ l.
 
   (* If a list contains an element it can be splitted on that element *)
   Lemma list_split (l : list A) x :
@@ -685,7 +685,7 @@ Section GRel.
   Definition grel_irreflexive (r : grel) := ∀ x, (x, x) ∉ r.
 
   Lemma grel_irreflexive_spec (r : grel) :
-    grel_irreflexive r ↔ ∀''(x, y) ∈ r, x ≠ y.
+    grel_irreflexive r ↔ ∀'(x, y) ∈ r, x ≠ y.
   Proof using. unfold grel_irreflexive. hauto q:on db:pair. Qed.
 
   Global Instance grel_irreflexive_decision r : Decision (grel_irreflexive r).
@@ -742,7 +742,7 @@ Section GRel.
 
   Definition grel_functional_set_size_list r:
     grel_functional r ↔
-      ∀'s ∈ (map_to_list (grel_to_map r)).*2, set_size s ≤ 1 .
+      ∀ s ∈ (map_to_list (grel_to_map r)).*2, set_size s ≤ 1 .
   Proof using.
     rewrite grel_functional_set_size.
     set_unfold.

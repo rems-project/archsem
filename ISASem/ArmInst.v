@@ -114,7 +114,7 @@ Definition regval_rec := regval_rect.
 
 Section regval_ind.
   Variable P : regval → Prop.
-  Let Pl (l : list regval) := ∀'x ∈ l, P x.
+  Let Pl (l : list regval) := ∀ x ∈ l, P x.
   Lemma P_nil : Pl []. Proof using. sauto lq:on. Qed.
   Lemma P_cons : ∀ t l, P t → Pl l → Pl (t :: l).
   Proof using. induction l; sauto lq:on. Qed.

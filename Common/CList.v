@@ -52,7 +52,7 @@ Proof. setoid_rewrite elem_of_list_In. apply in_map. Qed.
 #[global] Hint Resolve elem_of_map : list.
 
 Lemma elem_of_map_iff {A B} (f : A -> B) (l : list A) (x : B):
-  x ∈ map f l <-> ∃'y ∈ l, x = f y.
+  x ∈ map f l <-> ∃ y ∈ l, x = f y.
 Proof.
   setoid_rewrite elem_of_list_In.
   rewrite in_map_iff.
@@ -61,7 +61,7 @@ Qed.
 (* #[global] Hint Rewrite @elem_of_map_iff : list. *)
 
 Lemma forall_elem_of_map {A B} (f : A -> B) (l : list A) (P : B -> Prop) :
-  (∀'x ∈ map f l, P x) <-> ∀'y ∈ l, P (f y).
+  (∀ x ∈ map f l, P x) <-> ∀ y ∈ l, P (f y).
 Proof.
   setoid_rewrite elem_of_map_iff.
   hauto lq:on.
@@ -116,7 +116,7 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
 
 Global Instance bool_unfold_existsb A (f : A -> bool) (l : list A) (P : A -> Prop) :
   (forall a, BoolUnfold (f a) (P a)) ->
-  BoolUnfold (existsb f l) (∃'x ∈ l, P x).
+  BoolUnfold (existsb f l) (∃ x ∈ l, P x).
 Proof.
   tcclean.
   setoid_rewrite true_is_true.
@@ -128,7 +128,7 @@ Qed.
 
 Global Instance bool_unfold_forallb A (f : A -> bool) (l : list A) (P : A -> Prop) :
   (forall a, BoolUnfold (f a) (P a)) ->
-  BoolUnfold (forallb f l) (∀'x ∈ l, P x).
+  BoolUnfold (forallb f l) (∀ x ∈ l, P x).
 Proof.
   tcclean.
   setoid_rewrite true_is_true.
@@ -141,11 +141,11 @@ Qed.
 (** * Decisions *)
 
 Global Instance forall_list_decision A P (l : list A):
-  (∀ x : A, Decision (P x)) → Decision (∀'x ∈ l, P x).
+  (∀ x : A, Decision (P x)) → Decision (∀ x ∈ l, P x).
 Proof. intro. rewrite <- Forall_forall. solve_decision. Defined.
 
 Global Instance exist_list_decision A P (l : list A):
-  (∀ x : A, Decision (P x)) → Decision (∃'x ∈ l, P x).
+  (∀ x : A, Decision (P x)) → Decision (∃ x ∈ l, P x).
 Proof. intro. rewrite <- Exists_exists. solve_decision. Defined.
 
 
@@ -285,7 +285,7 @@ Lemma Forall2_map_r {A B C} (f : B → C) (P : A → C → Prop) l l' :
 Proof. revert l; induction l'; intro l; sauto lq:on. Qed.
 
 Lemma Forall2_diag A (P : A → A → Prop) l:
-  Forall2 P l l ↔ ∀'x ∈ l, P x x.
+  Forall2 P l l ↔ ∀ x ∈ l, P x x.
 Proof. induction l; sauto lq:on. Qed.
 
 (** ** fold_left invariant proofs *)

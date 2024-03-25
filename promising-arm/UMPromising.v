@@ -79,7 +79,7 @@ Module Loc.
     Proof. unfold from_pa,from_pa_in. hauto. Qed.
 
   Lemma from_pa_in_to_pas loc :
-    ∀'pa ∈ to_pas loc, from_pa_in pa = Some loc.
+    ∀ pa ∈ to_pas loc, from_pa_in pa = Some loc.
   Proof.
     set_unfold.
     cdestruct_intros # CDestrCbnSubst.

@@ -133,12 +133,12 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
 
       promise_select_sound :
       ∀ n tid initMem ts mem,
-        ∀'ev ∈ (promise_select n tid initMem ts mem),
+        ∀ ev ∈ (promise_select n tid initMem ts mem),
           ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
       ∀ n tid initMem ts mem,
         ¬ Exec.has_error (promise_select n tid initMem ts mem) →
-        ∀'ev ∈ pModel.(allowed_promises) tid initMem ts mem,
+        ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem,
           ev ∈ promise_select n tid initMem ts mem
     }.
   Arguments BasicExecutablePM : clear implicits.

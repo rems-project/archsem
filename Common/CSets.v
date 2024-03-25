@@ -81,7 +81,7 @@ Global Instance set_unfold_option_to_set `{SemiSet A C} (o : option A) x:
 Proof. tcclean. unfold option_to_set. sauto lq:on. Qed.
 
 Global Instance forall_gset_decision `{Countable A} P (S : gset A):
-  (∀ x : A, Decision (P x)) → Decision (∀'x ∈ S, P x).
+  (∀ x : A, Decision (P x)) → Decision (∀ x ∈ S, P x).
 Proof.
   intro.
   (* setoid_rewrite should do that in one go *)

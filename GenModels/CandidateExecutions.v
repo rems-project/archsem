@@ -182,7 +182,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         We'll see later if such state is required *)
     Definition ISA_match (cd : t) (isem : iMon ()) :=
       ∀ tid : fin nmth,
-      ∀'trc ∈ cd.(events) !!! tid,
+      ∀ trc ∈ cd.(events) !!! tid,
       iTrace_match isem trc.
 
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
@@ -192,7 +192,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         assertion or an Isla assumption that failed. Due to out of order
         effects, an error might not be from the last instruction. *)
     Definition ISA_failed (cd : t) :=
-      ∃'thread ∈ (vec_to_list cd.(events)), ∃'instr ∈ thread, is_Error instr.2.
+      ∃ thread ∈ (vec_to_list cd.(events)), ∃ instr ∈ thread, is_Error instr.2.
 
     #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
     Proof using. solve_decision. Qed.
@@ -878,9 +878,9 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         rf_from_writes: grel_dom (reads_from cd) ⊆ (mem_writes cd);
         rf_to_reads: grel_rng (reads_from cd) ⊆ (mem_reads cd);
         rf_functional: grel_functional (reads_from cd)⁻¹;
-        rf_valid: ∀''(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid;
+        rf_valid: ∀'(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid;
         rf_valid_initial:
-        ∀' reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
+        ∀ reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
       }.
 
 
