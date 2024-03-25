@@ -902,7 +902,9 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         co_transitive : grel_transitive (coherence cd);
         co_irreflexive: grel_irreflexive (coherence cd);
         co_contains_overlapping_writes:
-        ⦗mem_writes cd⦘ |> filter (uncurry (is_overlapping cd)) ⊆ coherence cd
+        ∀ weid1 weid2 ∈ mem_writes cd,
+          is_overlapping cd weid1 weid2 →
+          (weid1, weid2) ∈ coherence cd ∨ (weid2, weid2) ∈ coherence cd
       }.
 
 
