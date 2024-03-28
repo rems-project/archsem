@@ -315,7 +315,11 @@ Proof. tcclean. apply bool_decide_eq_true. Qed.
   CDestrSimpl (bool_decide P = false) (¬ P).
 Proof. tcclean. apply bool_decide_eq_false. Qed.
 
-(* TODO give up and use classical ? *)
-#[global] Instance cdestruct_not_not `{Decision P} :
-  CDestrSimpl (¬ ¬ P) P.
+(** Try to do the axiom-free version first *)
+Instance cdestruct_not_not_dec `{Decision P} :
+  CDestrSimpl (¬ ¬ P) P | 10.
 Proof. tcclean. sfirstorder use:dec_stable. Qed.
+
+Instance cdestruct_not_not P :
+  CDestrSimpl (¬ ¬ P) P | 20.
+Proof. tcclean. use NNPP. naive_solver. Qed.

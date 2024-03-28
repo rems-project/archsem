@@ -7,8 +7,6 @@ From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.
 
-(** UIP is need for this theory to be usable *)
-Require Export Eqdep.
 Require Export Program.Equality.
 
 From Equations Require Import Equations.

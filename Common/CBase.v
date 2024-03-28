@@ -11,6 +11,21 @@ Require Import ZArith.
 Require Import Options.
 
 
+(** * Axioms
+
+   We want to work in classical logic with extensional equality.
+
+   Doing this in [Prop] and not [SProp] risks blocking reduction of recursive
+   function using a generic [Acc] predicate. But it's fine for function whose
+   termination is derived from a measure *)
+
+Require Export FunctionalExtensionality PropExtensionality Classical.
+
+(** Axiomatic proof irrelevance has low priority so that search for proof
+    irrelevance try to find axiom-free instances first *)
+Instance proof_irrelevance_pi (P : Prop) : ProofIrrel P | 1000 :=
+  proof_irrelevance P.
+
 (** * Notations ***)
 
 Notation "∅" := Datatypes.Empty_set : type_scope.
