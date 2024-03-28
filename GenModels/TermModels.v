@@ -70,29 +70,35 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         }.
 
     Definition is_terminated (s : init) :=
-      fforallb (fun tid => s.(termCond) tid (s.(regs) !!! tid)).
+      ∀ tid, s.(termCond) tid (s.(regs) !!! tid).
 
     (** A final state for a machine model test. This means that the machine has
         stopped at the required termination condition *)
     Record final :=
       MakeF {
           istate :> init;
-          terminated : (is_terminated istate : Prop)
+          terminated' : bool_decide (is_terminated istate)
         }.
+
+    Definition terminated (f : final) : is_terminated f :=
+      bool_decide_unpack (terminated' f).
 
     Definition finalize (s : init) : option final :=
       match decide (is_terminated s) with
-      | left yes => Some (MakeF s yes)
+      | left yes => Some $ MakeF s $ bool_decide_pack yes
       | right _ => None
       end.
+
 
     Lemma finalize_same (s : init) (f : final) : finalize s = Some f → s = f.
     Proof. unfold finalize. hauto lq:on. Qed.
 
     Lemma finalize_final (s : final) : finalize s = Some s.
     Proof.
-      unfold finalize.
-      sauto lq:off simp+:f_equal simp+:(apply proof_irrel).
+      unfold finalize. destruct s.
+      case_decide.
+      - repeat f_equal;apply proof_irrel.
+      - hauto lqb:on.
     Qed.
     End MS.
     Arguments t : clear implicits.

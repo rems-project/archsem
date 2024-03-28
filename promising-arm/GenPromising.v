@@ -308,7 +308,7 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
       {|MState.istate :=
           {|MState.state := to_MState isem prom f;
             MState.termCond := term|};
-        MState.terminated := _ |}.
+        MState.terminated' := _ |}.
     Solve All Obligations with
       hauto unfold:terminated unfold:MState.is_terminated l:on db:vec, brefl.
 

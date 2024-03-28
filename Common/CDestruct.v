@@ -307,11 +307,15 @@ Proof. constructor. apply (inj4_iff f). Qed.
   CDestrSuperSubst (existT a b =@{sigT P} existT c d) T a c.
 Proof. tcclean. by simplify_dep_elim. Qed.
 
-#[global] Instance cdestruct_bool_decide_true `{Decision P} :
+Instance cdestruct_bool_decide_true `{Decision P} :
   CDestrSimpl (bool_decide P = true) P.
 Proof. tcclean. apply bool_decide_eq_true. Qed.
 
-#[global] Instance cdestruct_bool_decide_false `{Decision P} :
+Instance cdestruct_bool_decide `{Decision P} :
+  CDestrSimpl (bool_decide P) P.
+Proof. tcclean. apply bool_decide_spec. Qed.
+
+Instance cdestruct_bool_decide_false `{Decision P} :
   CDestrSimpl (bool_decide P = false) (¬ P).
 Proof. tcclean. apply bool_decide_eq_false. Qed.
 

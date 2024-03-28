@@ -73,6 +73,9 @@ Notation "'is_pat' pat" := (λ x, match x with pat => True | _ => False end) (pa
 
 (** * Utility functions ***)
 
+Arguments bool_decide_pack {_ _} _.
+Arguments bool_decide_unpack {_ _} _.
+
 (** Convenient iff destruction *)
 Definition iffLR {A B : Prop} (i : A <-> B) : A -> B := proj1 i.
 Definition iffRL {A B : Prop} (i : A <-> B) : B -> A := proj2 i.
