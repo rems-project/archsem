@@ -426,7 +426,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
        - Rejecting exclusive memory writes *)
     Definition unsupported_event (ev : iEvent) : Prop :=
       is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
-      is_mem_write_reqP (λ n wr r, wr.(WriteReq.tag)) ev.
+      is_mem_write_reqP (λ n wr r, is_Some (wr.(WriteReq.tag))) ev.
 
     Definition has_only_supported_events (cd : t) : Prop :=
       iEvent_list cd |> filter (λ '(_,ev), unsupported_event ev) = [].

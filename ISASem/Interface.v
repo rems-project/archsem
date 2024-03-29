@@ -210,7 +210,7 @@ Module Interface (A : Arch).
           value : bv (8 * n);
           va : option va;
           translation : A.translation;
-          tag : bool;
+          tag : option bool;
           addr_deps : deps;
           data_deps : deps;
         }.
