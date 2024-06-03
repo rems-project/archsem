@@ -3,17 +3,21 @@
 
     In particular it will cover boolean reflection and decidable generic
     operations like equality. *)
+Require Import DecidableClass.
+Require Import JMeq.
+
+Require Import Equations.Prop.Equations.
+
 From stdpp Require Import base.
 From stdpp Require Export decidable.
 From stdpp Require Export sets.
 From Hammer Require Import Tactics.
-Require Import DecidableClass.
+From Hammer Require Reflect.
 
 Require Import CBase.
 Require Import Options.
 Require Import CDestruct.
 
-From Hammer Require Reflect.
 
 
 (** * Bool unfold ***)
@@ -95,26 +99,9 @@ Proof. by destruct c. Qed.
 
 (** * Decidable propositions ***)
 
-(** Decidable equality notation that use the Decision type class from stdpp*)
-Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity)
-    : stdpp_scope.
+(** Mark decidable Proposition a Irrelevant
 
-
-
-(** Convert automatical a Decidable instance (Coq standard library) to
-    a Decision instance (stdpp)
-
-    TODO: Decide (no pun intended) if we actually want to use Decidable or
-    Decision in this development. *)
-Global Instance Decidable_to_Decision P `{dec : Decidable P} : Decision P | 1000 :=
-  match dec with
-  | {| Decidable_witness := true; Decidable_spec := spec |} =>
-   left ((iffLR spec) eq_refl)
-  | {| Decidable_witness := false; Decidable_spec := spec |} =>
-   right (fun HP => match (iffRL spec HP) with end)
-  end.
-#[global] Hint Mode Decidable + : typeclass_instances.
-
+TODO: Mark all proposition as irrelevant? *)
 #[global] Instance proof_irrel_eq_decision (P : Prop) (PI : ProofIrrel P):
   EqDecision P :=
   λ x y, left (PI x y).
@@ -123,12 +110,11 @@ Section ProperDecision.
   Import CMorphisms.
 
   (** Magic that allow rewriting in decision instances using ↔
-      Might be slow, so you might need to use it by hand
-   *)
+      Might be slow, so you might need to use it by hand *)
   Global Instance Proper_Decision :
     Proper (iff ==> (flip arrow)) Decision.
   Proof using.
-    intros x y H []; [left | right]; naive_solver.
+    intros x y H []; [left | right]; abstract naive_solver.
   Defined.
 End ProperDecision.
 
@@ -142,61 +128,91 @@ Ltac pair_let_clean_Decision :=
 #[export] Hint Extern 10 (Decision _) =>
   pair_let_clean_Decision : typeclass_instances.
 
-Tactic Notation "decide_field" constr(a) constr(b) :=
+
+(** * Equality decision *)
+
+(** Decidable equality notation that use [Decision] *)
+Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity)
+    : stdpp_scope.
+
+(** JMeq simplification lemma *)
+Lemma JMeq_simpl A (a b : A) : a =ⱼ b ↔ a = b.
+Proof. use JMeq_eq. naive_solver. Qed.
+
+(** Finds a equality but searches a bit more than [TCEq] *)
+Class TCFindEq {A} (x : A) (y : A) : Prop := tc_find_eq : x = y.
+Global Hint Mode TCFindEq + + + : typeclass_instances.
+#[global] Instance TCFindEq_refl A (x : A) : TCFindEq x x.
+Proof. done. Qed.
+Global Hint Extern 1 (TCFindEq ?x ?y) => (unfold TCFindEq in *; fast_done) : typeclass_instances.
+Global Hint Extern 2 (TCFindEq ?x ?y) => (unfold TCFindEq in *; congruence) : typeclass_instances.
+
+(** Decidable heterogeneous equality in the case the dependencies are equal.
+    This is base building block for equality decision procedure of dependent
+ types *)
+Class EqDepDecision {A} (P : A → Type) :=
+  eqdep_decide : ∀ {a b : A} (H : a = b) (x : P a) (y : P b), Decision (x =ⱼ y).
+
+#[global] Instance eq_dep_decision_f_equal A `{EqDepDecision B P} (f : A → B) :
+  `{EqDepDecision (P ∘ f)} := λ a b H x y, eqdep_decide (f_equal f H) x y.
+
+#[global] Instance eq_dep_decision_dec `{EqDepDecision A P}
+  (a b : A) {H : TCFindEq a b} (x : P a) (y : P b) : Decision (x =ⱼ y) :=
+  eqdep_decide H x y.
+
+Equations fin_eqdep_dec : EqDepDecision fin :=
+  fin_eqdep_dec _ _ _ 0%fin 0%fin := left _;
+  fin_eqdep_dec _ _ _ (FS _) 0%fin := right _;
+  fin_eqdep_dec _ _ _ 0%fin (FS _) := right _;
+  fin_eqdep_dec _ _ H (FS a) (FS b) := dec_if (fin_eqdep_dec _ _ (Nat.succ_inj _ _ H) a b).
+Solve All Obligations with
+  (intros;
+   unfold TCFindEq in *;
+   simplify_eq /=;
+     rewrite JMeq_simpl in *;
+   naive_solver).
+#[export] Existing Instance fin_eqdep_dec.
+
+
+
+Ltac decide_field a b tac :=
   tryif unify a b then idtac else
-  (odestruct (@decide (a = b));
-  [ try (apply _) |
-    subst |
-    let H := fresh "H" in
-    right; intro H; inversion H; naive_solver
-  ]).
+    ((destruct decide (a = b)
+      || (odestruct (@decide (a = b)) ; [shelve | |])
+      || destruct decide (a =ⱼ b)
+      || (odestruct (@decide (a =ⱼ b)); [shelve | |])) ;
+     [ | right; abstract tac
+    ]).
+
+Ltac decide_fields l r right_tac :=
+  tryif unify l r then idtac else
+    lazymatch l with
+    | ?C ?a =>
+        lazymatch r with
+        | ?C' ?a' =>
+            decide_fields C C' right_tac;
+            decide_field a a' right_tac
+        | _ => right; abstract right_tac
+        end
+    | _ => right; abstract right_tac
+    end.
 
 Ltac decide_eq :=
+    lazymatch goal with
+    | |- Decision (?l = ?r) =>
+        unshelve
+          (decide_fields l r
+             ltac:((injection as [=] || intro); by simplify_eq);
+           left; abstract (subst; reflexivity))
+    end.
+
+Ltac decide_jmeq :=
   lazymatch goal with
-  | |- Decision (?f ?a ?b ?c ?d ?e ?f ?g = ?f ?a' ?b' ?c' ?d' ?e' ?f' ?g') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      decide_field f f'; [ .. |
-      decide_field g g'; [ .. |
-      left; reflexivity]]]]]]]
-  | |- Decision (?f ?a ?b ?c ?d ?e ?f = ?f ?a' ?b' ?c' ?d' ?e' ?f') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      decide_field f f'; [ .. |
-      left; reflexivity]]]]]]
-  | |- Decision (?f ?a ?b ?c ?d ?e = ?f ?a' ?b' ?c' ?d' ?e') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      left; reflexivity]]]]]
-  | |- Decision (?f ?a ?b ?c ?d = ?f ?a' ?b' ?c' ?d') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      left; reflexivity]]]]
-  | |- Decision (?f ?a ?b ?c = ?f ?a' ?b' ?c') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      left; reflexivity]]]
-  | |- Decision (?f ?a ?b = ?f ?a' ?b') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      left; reflexivity]]
-  | |- Decision (?f ?a = ?f ?a') =>
-      decide_field a a'; [ .. |
-      left; reflexivity]
-  | |- Decision (?f = ?f) => left; reflexivity
-  | |- Decision (_ = _) => right; discriminate
+  | |- Decision (?l =ⱼ ?r) =>
+      unshelve
+        (decide_fields l r
+           ltac:(subst; rewrite JMeq_simpl in *; (injection as [=] || intro); by simplify_eq);
+         left; abstract (subst; reflexivity))
   end.
 
 (** Hint database to decide equality *)
@@ -205,38 +221,16 @@ Create HintDb eqdec discriminated.
 
 #[global] Hint Extern 3 => progress cbn : eqdec.
 #[global] Hint Extern 10 (Decision (_ = _)) => decide_eq : eqdec.
+#[global] Hint Extern 10 (Decision (_ =ⱼ _)) => decide_jmeq : eqdec.
 #[global] Hint Extern 4 (Decision (?a =@{_ * _} _)) => is_var a; destruct a : eqdec.
 #[global] Hint Extern 4 (Decision (_ =@{_ * _} ?b)) => is_var b; destruct b : eqdec.
 #[global] Hint Extern 4 (Decision (?a =@{option _} _)) => is_var a; destruct a : eqdec.
 #[global] Hint Extern 4 (Decision (_ =@{option _} ?b)) => is_var b; destruct b : eqdec.
 
-(** EqDecision on sigT *)
-Lemma eqdec_existT `{EqDecision A} {P : A -> Type} (p : A) (x y : P p) :
-  existT p x = existT p y <-> x = y.
-  Proof. hauto q:on use: Eqdep_dec.inj_pair2_eq_dec. Qed.
-#[global] Hint Rewrite @eqdec_existT using typeclasses eauto : core.
+#[global] Instance sigT_dec `{EqDecision A} (P : A → Type) `{EqDepDecision A P} :
+  EqDecision (sigT P).
+Proof. intros [] []. decide_eq. Defined.
 
-Global Instance sigT_dec `{EqDecision A} (P : A -> Type)
-  `{forall a: A, EqDecision (P a)} : EqDecision (sigT P).
-  unfold EqDecision.
-  intros [x p] [y q].
-  destruct (decide (x = y)) as [e | e].
-  - destruct e.
-    destruct (decide (p = q)) as [e | e].
-    + destruct e.
-      left.
-      reflexivity.
-    + right.
-      intro.
-      apply e.
-      apply eqdec_existT.
-      assumption.
-  - right.
-    intro.
-    apply e.
-    eapply eq_sigT_fst.
-    eassumption.
-Defined.
 
 (* Add a hint for resolving Decision of matches*)
 #[export] Hint Extern 10 (Decision match ?x with _ => _ end) =>

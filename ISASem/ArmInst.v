@@ -270,10 +270,16 @@ Proof.
   intro x. by destruct x.
 Defined.
 
-#[global] Instance Explicit_access_kind_dec : EqDecision Explicit_access_kind.
+#[global] Instance Access_variety_eq_dec : EqDecision Access_variety.
 Proof. solve_decision. Defined.
 
-#[global] Instance Access_kind_dec `{EqDecision arch_ak} : EqDecision (Access_kind arch_ak).
+#[global] Instance Access_strength_eq_dec : EqDecision Access_strength.
+Proof. solve_decision. Defined.
+
+#[global] Instance Explicit_access_kind_eq_dec : EqDecision Explicit_access_kind.
+Proof. solve_decision. Defined.
+
+#[global] Instance Access_kind_eq_dec `{EqDecision arch_ak} : EqDecision (Access_kind arch_ak).
 Proof. solve_decision. Defined.
 
 #[global] Instance arm_acc_type_eq_dec : EqDecision arm_acc_type.
@@ -282,7 +288,19 @@ Proof. solve_decision. Defined.
 #[global] Instance MemAttrHints_eq_dec : EqDecision MemAttrHints.
 Proof. solve_decision. Defined.
 
+#[global] Instance MemType_eq_dec : EqDecision MemType.
+Proof. solve_decision. Defined.
+
+#[global] Instance DeviceType_eq_dec : EqDecision DeviceType.
+Proof. solve_decision. Defined.
+
+#[global] Instance Shareability_eq_dec : EqDecision Shareability.
+Proof. solve_decision. Defined.
+
 #[global] Instance MemoryAttributes_eq_dec : EqDecision MemoryAttributes.
+Proof. solve_decision. Defined.
+
+#[global] Instance TGx_eq_dec : EqDecision TGx.
 Proof. solve_decision. Defined.
 
 #[global] Instance S1TTWParams_eq_dec : EqDecision S1TTWParams.
@@ -291,10 +309,25 @@ Proof. solve_decision. Defined.
 #[global] Instance S2TTWParams_eq_dec : EqDecision S2TTWParams.
 Proof. solve_decision. Defined.
 
-#[global] Instance ArithFact_eq_dec P : EqDecision (ArithFact P).
-Proof. left. apply ArithFact_irrelevant. Defined.
+Definition sigT_ArithFactP_eq_dec `{EqDecision A} (P : A → Prop) : EqDecision {x : A & ArithFactP (P x)}.
+Proof.
+  intros [x ?] [y ?]. destruct decide (x = y).
+  - left. abstract (subst; f_equal; apply proof_irrelevance).
+  - right. abstract naive_solver.
+Defined.
+
+#[global] Instance Level_eq_dec : EqDecision Level := sigT_ArithFactP_eq_dec _.
+
+#[global] Instance Regime_eq_dec : EqDecision Regime.
+Proof. solve_decision. Defined.
 
 #[global] Instance TranslationInfo_eq_dec : EqDecision TranslationInfo.
+Proof. solve_decision. Defined.
+
+#[global] Instance MBReqDomain_eq_dec : EqDecision MBReqDomain.
+Proof. solve_decision. Defined.
+
+#[global] Instance MBReqTypes_eq_dec : EqDecision MBReqTypes.
 Proof. solve_decision. Defined.
 
 #[global] Instance DxB_eq_dec : EqDecision DxB.
@@ -303,7 +336,34 @@ Proof. solve_decision. Defined.
 #[global] Instance Barrier_eq_dec : EqDecision Barrier.
 Proof. solve_decision. Defined.
 
+#[global] Instance AccType_eq_dec : EqDecision AccType.
+Proof. solve_decision. Defined.
+
+#[global] Instance CacheOp_eq_dec : EqDecision CacheOp.
+Proof. solve_decision. Defined.
+
+#[global] Instance CacheOpScope_eq_dec : EqDecision CacheOpScope.
+Proof. solve_decision. Defined.
+
+#[global] Instance CacheType_eq_dec : EqDecision CacheType.
+Proof. solve_decision. Defined.
+
+#[global] Instance SecurityState_eq_dec : EqDecision SecurityState.
+Proof. solve_decision. Defined.
+
+#[global] Instance CachePASpace_eq_dec : EqDecision CachePASpace.
+Proof. solve_decision. Defined.
+
 #[global] Instance CacheRecord_eq_dec : EqDecision CacheRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance TLBIOp_eq_dec : EqDecision TLBIOp.
+Proof. solve_decision. Defined.
+
+#[global] Instance TLBILevel_eq_dec : EqDecision TLBILevel.
+Proof. solve_decision. Defined.
+
+#[global] Instance TLBIMemAttr_eq_dec : EqDecision TLBIMemAttr.
 Proof. solve_decision. Defined.
 
 #[global] Instance TLBIRecord_eq_dec : EqDecision TLBIRecord.
@@ -312,10 +372,19 @@ Proof. solve_decision. Defined.
 #[global] Instance TLBI_eq_dec : EqDecision TLBI.
 Proof. solve_decision. Defined.
 
+#[global] Instance Exception_eq_dec : EqDecision Exception.
+Proof. solve_decision. Defined.
+
 #[global] Instance ExceptionRecord_eq_dec : EqDecision ExceptionRecord.
 Proof. solve_decision. Defined.
 
+#[global] Instance GPCF_eq_dec : EqDecision GPCF.
+Proof. solve_decision. Defined.
+
 #[global] Instance GPCFRecord_eq_dec : EqDecision GPCFRecord.
+Proof. solve_decision. Defined.
+
+#[global] Instance Fault_eq_dec : EqDecision Fault.
 Proof. solve_decision. Defined.
 
 #[global] Instance FaultRecord_eq_dec : EqDecision FaultRecord.

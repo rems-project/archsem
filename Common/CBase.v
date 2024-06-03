@@ -9,6 +9,7 @@ From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
 Require Import ZArith.
 Require Import Options.
+Require Import JMeq.
 
 
 (** * Axioms
@@ -30,6 +31,10 @@ Instance proof_irrelevance_pi (P : Prop) : ProofIrrel P | 1000 :=
 
 Notation "∅" := Datatypes.Empty_set : type_scope.
 
+(** Heterogenous equality *)
+Notation "x =ⱼ y" := (@JMeq _ x _ y) (at level 70, no associativity).
+Notation "x ≠ⱼ y" := (¬(x =ⱼ y)) (at level 70, no associativity).
+
 (** Functional pipe notation.
 
     TODO figure out a correct parsing level. Currently is just below relation so
@@ -49,6 +54,7 @@ Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
 
 (** Useful for defining decision procedures *)
 Notation dec_if D := (match D with | left _ => left _ | right _ => right _ end).
+Notation dec_if_and D1 D2 := (match D1 with | left _ => dec_if D2 | right _ => right _ end).
 Notation dec_swap D := (match D with | left _ => right _ | right _ => left _ end).
 
 (** Imperative loop in a monad ([M]). If [l] is a [list A] and the body [E] has

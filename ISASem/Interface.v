@@ -11,6 +11,7 @@ Require Import SSCCommon.Effects.
 Require Import SSCCommon.FMon.
 Require Import SSCCommon.CResult.
 Require Import SSCCommon.CBool.
+Require Import SSCCommon.CBitvector.
 Require Import SSCCommon.CDestruct.
 
 (** * The architecture requirements *)
@@ -194,8 +195,11 @@ Module Interface (A : Arch).
     Definition setv_deps {d1 d2 : Type} {n : N} (adeps : d2) (rr : t d1 n) :=
       set_deps (fun _ => adeps) rr.
 
-    #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
+    #[global] Instance eq_dec `{EqDecision deps} n : EqDecision (t deps n).
     Proof. solve_decision. Defined.
+
+    #[global] Instance jmeq_dec `{EqDecision deps} : EqDepDecision (t deps).
+    Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
     Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End ReadReq.
@@ -242,8 +246,11 @@ Module Interface (A : Arch).
         data_deps := ddeps;
         |}.
 
-    #[global] Instance eqdec `{EqDecision deps} n : EqDecision (t deps n).
+    #[global] Instance eq_dec `{EqDecision deps} n : EqDecision (t deps n).
     Proof. solve_decision. Defined.
+
+    #[global] Instance jmeq_dec `{EqDecision deps} : EqDepDecision (t deps).
+    Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
     Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
   End WriteReq.
@@ -315,10 +322,10 @@ Module Interface (A : Arch).
     #[global] Instance outcome_wf : Eff.Wf outcome.
     Proof using. intros T []; apply _. Qed.
 
+
     (* Automatically implies EqDecision (outcome T) on any T *)
     #[global] Instance outcome_eff_dec `{EqDecision deps} : Eff.Decision outcome.
-    Proof using. intros ? ? [] []; decide_eff_eq. Qed.
-
+    Proof using. intros ? ? [] []; decide_eff_eq. Defined.
 
     #[global] Program Instance outcome_exc : Eff.Exc outcome :=
       { exc := string;

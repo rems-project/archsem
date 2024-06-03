@@ -695,21 +695,21 @@ Definition hlast {n : nat} {T : fin (S n) -> Type} (v : hvec T) : T (fin_last n)
 
 
 
-Unset Program Cases.
-
-Global Program Instance countable_sigT `{Countable A} (P : A -> Type)
-  {eqP : forall a : A, EqDecision (P a)} {cntP: forall a : A, Countable (P a)}
-  : Countable (sigT P) :=
-  (inj_countable (fun sig => (projT1 sig, encode (projT2 sig)))
-                        (fun '(a, b) =>
-                           bd ← decode b;
-                           Some $ existT a bd) _).
+Global Program Instance countable_sigT `{Countable A} (P : A → Type)
+    {eqdepP : EqDepDecision P} {eqP: ∀ a, EqDecision (P a)}
+    {cntP: ∀ a : A, Countable (P a)} : Countable (sigT P) :=
+  (inj_countable
+     (λ sig, (projT1 sig, encode (projT2 sig)))
+     (λ '(a, b),
+       bd ← decode b;
+       Some $ existT a bd)
+     _).
 Next Obligation.
   intros.
   cbn.
   setoid_rewrite decode_encode.
   hauto lq:on.
-Qed.
+Defined.
 
 Module TLB.
 
@@ -724,8 +724,11 @@ Module TLB.
     Arguments va {_}.
     Arguments asid {_}.
 
-    #[global] Instance dec lvl : EqDecision (t lvl).
+    #[global] Instance eq_dec lvl : EqDecision (t lvl).
     Proof. solve_decision. Defined.
+
+    #[global] Instance eqdep_dec : EqDepDecision t.
+    Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
     #[global] Instance count lvl : Countable (t lvl).
     Proof.
@@ -733,15 +736,6 @@ Module TLB.
                         (fun x => make x.1 x.2)).
       sauto.
     Qed.
-
-    (* unfold EqDecision. *)
-    (* intros [lvlx vax asidx] [lvly vay asidy]. *)
-    (* destruct (decide (lvlx = lvly)) as [<- | H]. *)
-    (* destruct (decide (vax = vay)) as [<- | H]. *)
-    (* destruct (decide (asidx = asidy)) as [<- | H]. *)
-    (* left. reflexivity. *)
-    (* all :right; inversion 1; autorewrite with core in *; done. *)
-    (* Defined. *)
   End NDCtxt.
 
   Module Ctxt.
@@ -750,22 +744,16 @@ Module TLB.
     Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
     Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
-    (* #[global] Instance dec : EqDecision t. *)
-    (* Proof. solve_decision. Defined. *)
   End Ctxt.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
-    #[global] Instance dec lvl : EqDecision (t lvl).
-    Proof. solve_decision. Defined.
   End Entry.
 
   (* Full Entry *)
   Module FE.
     Definition t := { ctxt : Ctxt.t & Entry.t (Ctxt.lvl ctxt) }.
-    #[global] Instance dec : EqDecision t.
-    Proof. solve_decision. Defined.
   End FE.
 
   Module VATLB.

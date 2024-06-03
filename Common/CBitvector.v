@@ -12,6 +12,16 @@ Require Import CBool.
 Require Import CList.
 
 
+(** Heterogenous equality decision *)
+#[export] Instance bv_eqdep_dec : EqDepDecision bv.
+Proof using.
+  intros ? ? ? a b.
+  destruct decide (bv_unsigned a = bv_unsigned b).
+  - left. abstract naive_solver use bv_eq.
+  - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
+Defined.
+
+
 
 (** This make lia slower and more powerful. I think it's better with it on *)
 Ltac Zify.zify_convert_to_euclidean_division_equations_flag ::= constr:(true).

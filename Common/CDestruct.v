@@ -91,6 +91,9 @@ Global Hint Mode ObvFalse + : typeclass_instances.
 Global Instance obv_false_False : ObvFalse False.
 Proof. by tcclean. Qed.
 
+Global Instance obv_false_neq A (x : A) : ObvFalse (x ≠ x).
+Proof. by tcclean. Qed.
+
 Global Hint Extern 10 (ObvFalse _) =>
   let H := fresh "H" in
   constructor; intro H; discriminate H : typeclass_instances.
@@ -290,6 +293,16 @@ Global Instance cdestruct_inj4 `{Inj4 A B C D E R1 R2 R3 R4 RS f}
   CDestrSimpl (RS (f x1 x2 x3 x4) (f y1 y2 y3 y4))
     (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4).
 Proof. constructor. apply (inj4_iff f). Qed.
+
+(** JMeq simplification *)
+Global Instance cdestruct_JMeq A (x y : A) :
+  CDestrSimpl (x =ⱼ y) (x = y).
+Proof. constructor. use JMeq_eq. naive_solver. Qed.
+
+Global Instance cdestruct_neg_JMeq A (x y : A) :
+  CDestrSimpl (x ≠ⱼ y) (x ≠ y).
+Proof. constructor. use JMeq_eq. naive_solver. Qed.
+
 
 (** Implementation of [CDestrRecInj], see the typeclass definition for an
     explanation *)

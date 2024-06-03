@@ -1,15 +1,15 @@
 (** This file provide support for handling algebraic effects.
     It uses UIP *)
 
+Require Export Program.Equality.
+From Equations Require Import Equations.
 Require Import CBase CBool.
 Require Import Options.
 From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.
 
-Require Export Program.Equality.
 
-From Equations Require Import Equations.
 
 
 
@@ -285,11 +285,13 @@ Module Eff.
                      end
       }.
     Next Obligation.
+      intros. cbn.
       repeat case_split;
         (split; intro Heq; [simplify_eff_eq | rewrite fmap_Some in Heq]);
         sauto q:on dep:on use:exc_wf db:eff.
     Qed.
     Next Obligation.
+      intros. cbn.
       case_split;
         rewrite fmap_is_Some;
         rewrite exc_empty;
@@ -339,58 +341,19 @@ Notation "X ≠ₑ@{ Eff } Y":= (¬X =ₑ@{ Eff } Y)
     type (Inductive) to be destroyed before the call *)
 Ltac decide_eff_eq :=
   lazymatch goal with
-  | |- Decision (?f ?a ?b ?c ?d ?e ?f ?g =ₑ ?f ?a' ?b' ?c' ?d' ?e' ?f' ?g') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      decide_field f f'; [ .. |
-      decide_field g g'; [ .. |
-      left; reflexivity]]]]]]]
-  | |- Decision (?f ?a ?b ?c ?d ?e ?f =ₑ ?f ?a' ?b' ?c' ?d' ?e' ?f') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      decide_field f f'; [ .. |
-      left; reflexivity]]]]]]
-  | |- Decision (?f ?a ?b ?c ?d ?e =ₑ ?f ?a' ?b' ?c' ?d' ?e') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      decide_field e e'; [ .. |
-      left; reflexivity]]]]]
-  | |- Decision (?f ?a ?b ?c ?d =ₑ ?f ?a' ?b' ?c' ?d') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      decide_field d d'; [ .. |
-      left; reflexivity]]]]
-  | |- Decision (?f ?a ?b ?c =ₑ ?f ?a' ?b' ?c') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      decide_field c c'; [ .. |
-      left; reflexivity]]]
-  | |- Decision (?f ?a ?b =ₑ ?f ?a' ?b') =>
-      decide_field a a'; [ .. |
-      decide_field b b'; [ .. |
-      left; reflexivity]]
-  | |- Decision (?f ?a =ₑ ?f ?a') =>
-      decide_field a a'; [ .. |
-      left; reflexivity]
-  | |- Decision (?f =ₑ ?f) => left; reflexivity
-  | |- Decision (_ =ₑ _) => right; discriminate
-  end.
+  | |- Decision (?l =ₑ ?r) =>
+      unshelve
+        (decide_fields l r
+           ltac:(unfold Eff.eq; (injection as [=] || intro); by simplify_eq);
+         left; abstract (subst; reflexivity))
+         end.
 
 (** * Generic noreturn type
 
 This is intended to mark explicitly effect that are not returning when defining
 custom effects *)
 
-Definition noreturn := False.
+Definition noreturn : Set := ∅%type.
 
 #[global] Instance emptyT_noreturn : EmptyT noreturn.
 Proof. inversion 1. Qed.
@@ -404,10 +367,8 @@ Inductive MChoice : eff := ChooseFin (n : nat) : MChoice (fin n).
 #[global] Instance MChoice_EffWf : Eff.Wf MChoice.
 Proof. intros T [[]]; tc_solve. Qed.
 
-Equations MChoice_EffDec : Eff.Decision MChoice :=
-  MChoice_EffDec _ _ (ChooseFin n) (ChooseFin n') := dec_if (decide (n = n')).
-Solve All Obligations with hauto lq:on.
-#[global] Existing Instance MChoice_EffDec.
+#[global] Instance MChoice_EffDec : Eff.Decision MChoice.
+Proof. intros ? ? [] []; decide_eff_eq. Defined.
 
 Inductive discard_type := discard_value.
 
@@ -468,12 +429,8 @@ Arguments MState : clear implicits.
 #[global] Instance MState_EffWf `{Inhabited St} : Eff.Wf (MState St).
 Proof. intros _ []; tc_solve. Qed.
 
-Equations MState_EffDec `{EqDecision St} : Eff.Decision (MState St) :=
-  MState_EffDec _ _ (MSet s) (MSet s') := dec_if (decide (s = s'));
-  MState_EffDec _ _ MGet MGet := left _;
-  MState_EffDec _ _ _ _ := right _.
-Solve All Obligations with hauto lq:on.
-#[global] Existing Instance MState_EffDec.
+#[global] Instance MState_EffDec `{EqDecision St} : Eff.Decision (MState St).
+Proof. intros ? ? [] []; decide_eff_eq. Defined.
 
 Notation mGet := (mcall MGet).
 Definition mget `{MCall (MState St) M, FMap M} {T} (proj : St → T) : M T :=

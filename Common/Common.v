@@ -134,6 +134,21 @@ End VecLookup.
 
 #[global] Hint Rewrite @vec_lookup_nat_in : vec.
 
+Equations vec_eqdep_dec `{EqDecision T} : EqDepDecision (vec T) :=
+  vec_eqdep_dec _ _ _ vnil vnil := left _;
+  vec_eqdep_dec _ _ _ (vcons _ _) vnil := right _;
+  vec_eqdep_dec _ _ _ vnil (vcons _ _) := right _;
+  vec_eqdep_dec _ _ H (vcons x v1) (vcons y v2) :=
+    dec_if_and (decide (x = y)) (vec_eqdep_dec _ _ (Nat.succ_inj _ _ H) v1 v2).
+Solve All Obligations with
+  (intros;
+   unfold TCFindEq in *;
+   simplify_eq /=;
+     rewrite JMeq_simpl in *;
+   naive_solver).
+#[export] Existing Instance vec_eqdep_dec.
+
+
 
 (** * Finite decidable quantifiers ***)
 

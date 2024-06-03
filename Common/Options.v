@@ -22,6 +22,13 @@ but not transitively. *)
     making rewriting a bit slower *)
 #[export] Set Keyed Unification.
 
+(** Disable Fancy program pattern matching. The equality can be recovered (if
+needed) with [inspect] *)
+#[export] Unset Program Cases.
+
+(** We want [idtac] by default *)
+#[export] Obligation Tactic := idtac.
+
 (** Use the if _ is _ notation in this project, but do not force users to use it *)
 Export IfNotations.
 
