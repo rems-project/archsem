@@ -203,7 +203,7 @@ Section rel.
     end.
 
   (* symmetry relation for [T] and [TLBI] with same vmid *)
-  Definition same_vmid := sym_rel_with_same_key cd (λ _ event, get_vmid event).
+  Definition same_vmid := same_key (λ _ event, get_vmid event) cd.
 
   Definition get_asid (event : iEvent) :=
     match event with
@@ -213,7 +213,7 @@ Section rel.
     end.
 
   (* symmetry relation for [T] and [TLBI] with same asid *)
-  Definition same_asid := sym_rel_with_same_key cd (λ _ event, get_asid event).
+  Definition same_asid := same_key (λ _ event, get_asid event) cd.
 
   (* armv9-interface/tlbi.cat#L158 *)
   (* NOTE: the definition diverges from the hacky cat version *)
@@ -242,7 +242,7 @@ Section rel.
     end.
 
   Definition va_page_overlap :=
-    sym_rel_with_same_key cd (λ _ event, get_va_page event).
+    same_key (λ _ event, get_va_page event) cd.
 
   Definition get_ipa_page (event : iEvent) :=
     match event with
@@ -257,7 +257,7 @@ Section rel.
     end.
 
   Definition ipa_page_overlap :=
-    sym_rel_with_same_key cd (λ _ event, get_ipa_page event).
+    same_key (λ _ event, get_ipa_page event) cd.
 
   (* armv9-interface/tlbi.cat#L173 *)
   Definition tlbi_translate_same_va_page : grel EID.t :=

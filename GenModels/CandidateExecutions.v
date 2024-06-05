@@ -589,17 +589,17 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         naive_solver.
     Qed.
 
-    (** Returns a symmetric relation, such that two events are in the relation
+    (** Returns an equivalence relation, such that two events are in the relation
         iff they have the same key computed with [get_key] *)
-    Definition sym_rel_with_same_key `{Countable K} (cd : t)
-      (get_key : EID.t -> iEvent -> option K) :=
+    Definition same_key `{Countable K} (get_key : EID.t -> iEvent -> option K)
+        (cd : t) :=
       finmap_reduce_union (λ k s, s × s) (gather_by_key cd get_key).
 
-    (** An unfold instance for [sym_rel_with_same_key] *)
-    Global Instance set_elem_of_sym_rel_with_same_key `{Countable K} cd
+    (** An unfold instance for [same_key] *)
+    Global Instance set_elem_of_same_key `{Countable K} cd
       get_key eids :
       SetUnfoldElemOf eids
-        (sym_rel_with_same_key cd get_key)
+        (same_key get_key cd)
         (∃ E1 E2 (k: K), cd !! eids.1 = Some E1 ∧ cd !! eids.2 = Some E2
                          ∧ get_key eids.1 E1 = Some k ∧ get_key eids.2 E2 = Some k).
     Proof.
@@ -615,14 +615,14 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         repeat split_and; first eassumption.
         all: lookup_lookup_total; set_solver.
     Qed.
-    #[global] Typeclasses Opaque sym_rel_with_same_key.
+    #[global] Typeclasses Opaque same_key.
 
 
     (** ** Thread and instruction based orders and relations *)
 
     (** Equivalence relation relating events from the same thread *)
-    Definition same_thread (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid))).
+    Definition same_thread : t → grel EID.t :=
+      same_key (λ eid _, Some (eid.(EID.tid))).
     #[global] Typeclasses Opaque same_thread.
     #[global] Instance set_elem_of_same_thread (cd : t) eids:
       SetUnfoldElemOf eids (same_thread cd)
@@ -638,8 +638,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
     (** Equivalence relation relating events from the same instruction instance *)
-    Definition same_instruction_instance (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
+    Definition same_instruction_instance : t → grel EID.t :=
+      same_key (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
     #[global] Typeclasses Opaque same_instruction_instance.
     #[global] Instance set_elem_of_same_instruction_instance (cd : t) eids:
       SetUnfoldElemOf eids (same_instruction_instance cd)
@@ -655,8 +655,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Qed.
 
     (** Equivalence relation relating bytes event from the same memory access *)
-    Definition same_access (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd
+    Definition same_access : t → grel EID.t :=
+      same_key
         (λ eid _, Some (eid.(EID.tid), eid.(EID.iid), eid.(EID.ieid))).
     #[global] Typeclasses Opaque same_access.
     #[global] Instance set_elem_of_same_access (cd : t) eids:
@@ -729,21 +729,21 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     Implicit Type ev : iEvent.
 
-    (** Symmetry relation relating memory events that have the same physical
+    (** Equivalence relation relating memory events that have the same physical
         address. In an [MixedSize] model which splits reads but not write, this
         is incomplete as it will not mention memory footprint overlaps *)
-    Definition same_pa (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _, get_pa).
+    Definition same_pa : t → grel EID.t :=
+      same_key (λ _, get_pa).
     Typeclasses Opaque same_pa.
 
-    (** Symmetry relation relating memory events that have the same size. *)
-    Definition same_size (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _, get_size).
+    (** Equivalence relation relating memory events that have the same size. *)
+    Definition same_size : t → grel EID.t :=
+      same_key (λ _, get_size).
     Typeclasses Opaque same_size.
 
-    (** Symmetry relation relating memory event that have the same size and value *)
-    Definition same_mem_value (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _, get_mem_value).
+    (** Equivalence relation relating memory event that have the same size and value *)
+    Definition same_mem_value : t → grel EID.t :=
+      same_key (λ _, get_mem_value).
     Typeclasses Opaque same_mem_value.
 
     Lemma same_mem_value_size (cd : t) :
@@ -764,16 +764,16 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
 
 
-    (** Symmetry relation relating register events referring to the same
+    (** Equivalence relation relating register events referring to the same
     register *)
-    Definition same_reg (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ eid ev, get_reg ev |$> (EID.tid eid,.)).
+    Definition same_reg : t →  grel EID.t :=
+      same_key (λ eid ev, get_reg ev |$> (EID.tid eid,.)).
     Typeclasses Opaque same_reg.
 
-    (** Symmetry relation relating register events refering to the same
+    (** Equivalence relation relating register events refering to the same
     register with the same value *)
-    Definition same_reg_val (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ eid ev, get_reg_val ev |$> (EID.tid eid,.)).
+    Definition same_reg_val : t →  grel EID.t :=
+      same_key (λ eid ev, get_reg_val ev |$> (EID.tid eid,.)).
     Typeclasses Opaque same_reg_val.
 
     Lemma same_reg_val_same_reg (cd : t) :
@@ -1076,8 +1076,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
 
     (** This relation only make sense for 8-bytes non-mixed-size models.
         It relates events with the same values *)
-    Definition val8 (cd : t) : grel EID.t :=
-      sym_rel_with_same_key cd (λ _ event, get_val event).
+    Definition val8 : t →  grel EID.t :=
+      same_key (λ _ event, get_val event).
 
     Definition is_not_size8 (event : iEvent) :Prop :=
       match event with
