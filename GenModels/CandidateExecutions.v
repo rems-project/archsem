@@ -904,7 +904,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         co_contains_overlapping_writes:
         ∀ weid1 weid2 ∈ mem_writes cd,
           is_overlapping cd weid1 weid2 →
-          (weid1, weid2) ∈ coherence cd ∨ (weid2, weid2) ∈ coherence cd
+          (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
 
 
