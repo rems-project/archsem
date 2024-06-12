@@ -795,7 +795,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         might run against the instruction order for relaxed registers but follow the
         instruction order for regular register *)
     Definition reg_from_reads cd :=
-      (⦗reg_reads cd⦘⨾ same_reg_val cd⨾ ⦗reg_writes cd⦘)
+      (⦗reg_reads cd⦘⨾ same_reg cd⨾ ⦗reg_writes cd⦘)
         ∖ (instruction_order cd ∪ ⦗reg_writes cd⦘ ⨾ reg_reads_from cd)⁻¹.
     #[global] Typeclasses Opaque reg_from_reads.
 
