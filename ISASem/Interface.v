@@ -1,4 +1,3 @@
-
 Require Import Strings.String.
 Require Import stdpp.unstable.bitvector.
 Require Import stdpp.countable.
@@ -13,6 +12,7 @@ Require Import SSCCommon.CResult.
 Require Import SSCCommon.CBool.
 Require Import SSCCommon.CBitvector.
 Require Import SSCCommon.CDestruct.
+Require Import ClassicalDescription.
 
 (** * The architecture requirements *)
 
