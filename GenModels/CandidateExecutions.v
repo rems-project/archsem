@@ -996,7 +996,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         rf_valid_initial:
         ∀ reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid
       }.
-    Arguments reads_from_wf : clear implicits.
+    #[global] Arguments reads_from_wf : clear implicits.
 
 
     (** *** Coherence wellformedness *)
@@ -1011,7 +1011,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           is_overlapping cd weid1 weid2 →
           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
-    Arguments coherence_wf : clear implicits.
+    #[global] Arguments coherence_wf : clear implicits.
 
     (** *** lxsx wellformedness *)
 
@@ -1022,7 +1022,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         lxsx_instruction_order : lxsx cd ⊆ instruction_order cd;
         lxsx_same_pa : lxsx cd ⊆ same_pa cd
       }.
-    Arguments lxsx_wf : clear implicits.
+    #[global] Arguments lxsx_wf : clear implicits.
 
 
     (** *** Reg reads from wellformedness
@@ -1040,7 +1040,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         rrf_initial_valid:
           initial_reg_reads cd ⊆ possible_initial_reg_reads cd;
       }.
-    Arguments reg_reads_from_wf : clear implicits.
+    #[global] Arguments reg_reads_from_wf : clear implicits.
 
     Lemma rrf_irreflexive (cd : t) :
       reg_reads_from_wf cd → grel_irreflexive (reg_reads_from cd).
