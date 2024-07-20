@@ -7,7 +7,7 @@ Require Import SSCCommon.Effects.
 
 Section Seq.
 
-Context {deps : Type} {regs_whitelist : gset reg}.
+Context {deps : Type} (regs_whitelist : option (gset reg)).
 
 (** A sequential state for bookkeeping reads and writes to registers/memory in
     gmaps, as well as, the initial state *)
@@ -78,9 +78,11 @@ Definition sequential_model_outcome T (call : outcome deps T) : seqmon T :=
   match call with
   | RegRead reg racc => mget (read_reg_seq_state reg)
   | RegWrite reg racc deps val =>
-    if decide (reg ∈ regs_whitelist)
-    then msetv (lookup reg ∘ regs) (Some val)
-    else mthrow "Write to illegal register"
+    if regs_whitelist is Some rwl
+    then if bool_decide (reg ∈ rwl)
+      then msetv (lookup reg ∘ regs) (Some val)
+      else mthrow "Write to illegal register"
+    else msetv (lookup reg ∘ regs) (Some val)
   | MemRead n rr =>
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then
