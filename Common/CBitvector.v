@@ -4,8 +4,8 @@
 Require Import Lia.
 Require Import stdpp.decidable.
 Require Import stdpp.countable.
-Require Export stdpp.unstable.bitvector.
-Require Export stdpp.unstable.bitvector_tactics.
+Require Export stdpp.bitvector.bitvector.
+Require Export stdpp.bitvector.tactics.
 Require Import CBase.
 Require Import Options.
 Require Import CBool.

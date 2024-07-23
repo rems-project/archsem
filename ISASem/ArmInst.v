@@ -1,5 +1,5 @@
 Require Import Strings.String.
-Require Import stdpp.unstable.bitvector.
+Require Import stdpp.bitvector.bitvector.
 Require Import stdpp.strings.
 Require Import stdpp.base.
 Require Import stdpp.countable.

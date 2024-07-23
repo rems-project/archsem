@@ -70,7 +70,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Require Import SailStdpp.Base.
 Require Import SailStdpp.Real.
-Require Import stdpp.unstable.bitvector.
+Require Import stdpp.bitvector.bitvector.
 Import ListNotations.
 Open Scope string.
 Open Scope bool.

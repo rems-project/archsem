@@ -1,5 +1,5 @@
 Require Import Strings.String.
-Require Import stdpp.unstable.bitvector.
+Require Import stdpp.bitvector.bitvector.
 
 (* This is needed because sail cannot export into multiple Coq files *)
 Require Import SailArmInstTypes.

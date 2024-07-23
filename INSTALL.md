@@ -10,7 +10,7 @@ The `Makefile` just calls dune directly.
 
 (1) Install the dependencies below.
 
-(2) Call `opam pin .` This should make the library available as 4 top-level modules for any other 
+(2) Call `opam pin .` This should make the library available as 4 top-level modules for any other
 projects or coq file (assuming you are using a Coq setup from opam):
  - SSCCommon (this project extra standard library, basically a stdpp extension)
  - ISASem (The ISA Model interface)
@@ -41,9 +41,9 @@ opam install dune
 
 ### Coq
 
-This project was tested with Coq 8.17.1. If you want exactly that version do:
+This project was tested with Coq 8.18.0. If you want exactly that version do:
 ```
-opam pin coq 8.17.1
+opam pin coq 8.18.0
 ```
 otherwise you can install it with `opam install coq`
 
@@ -83,7 +83,7 @@ opam install coq-hammer-tactics coq-record-update coq-equations
 
 #### stdpp
 
-This development use the unstable version of `stdpp`, it can be installed by
+This development uses `stdpp` and its splitoff `stdpp-bitvector`, it can be installed by
 checking out the repository:
 ```
 git clone https://gitlab.mpi-sws.org/iris/stdpp
@@ -92,7 +92,7 @@ git clone https://gitlab.mpi-sws.org/iris/stdpp
 Then, if you want the precise version of stdpp this project was tested
 against, do:
 ```
-git checkout 75a2c41
+git checkout coq-stdpp-1.10.0
 ```
 
 Then you can install stdpp with `opam pin .` in the `stdpp` directory. Opam will
@@ -109,7 +109,7 @@ git clone https://github.com/rems-project/coq-sail
 
 Then (optionally), in that repository, if you want the version used for development, do:
 ```
-git checkout c79d1a7
+git checkout 51506978
 ```
 
 Then you can install `coq-sail-stdpp` with `opam pin coq-sail-stdpp .` in the
