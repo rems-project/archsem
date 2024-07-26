@@ -11,7 +11,7 @@ Require Import CInduction.
 
 (** This file provide utility for dealing with sets. *)
 
-(*** Utilities ***)
+(** * Utilities ***)
 
 Lemma elements_singleton_iff `{FinSet A C} (s : C) (a : A) :
   elements s = [a] <-> s ≡ {[a]}.
@@ -92,7 +92,7 @@ Defined.
 Definition mset_omap {E} `{MonadSet E} {A B} (f : A → option B) (S : E A) : E B :=
   x ← S; othrow () (f x).
 
-(*** Simplification ***)
+(** * Simplification ***)
 
 (** Automation for set simplifications *)
 Tactic Notation "set_simp" "in" "|-*" :=
@@ -128,7 +128,7 @@ End SetSimp.
 
 
 
-(*** Set Unfolding ***)
+(** * Set Unfolding ***)
 
 (** This section is mostly about improving the set_unfold tactic *)
 
@@ -220,7 +220,7 @@ Module SetUnfoldPair.
 End SetUnfoldPair.
 
 
-(*** Set Induction ***)
+(** * Set Induction ***)
 
 (* There are some case where both instances can apply, but they both give the
    same result so we don't really care which one is chosen *)
@@ -241,32 +241,36 @@ Program Global Instance set_cind_L `{FinSet A C} {lei : LeibnizEquiv C}
   |}.
 Solve All Obligations with intros; apply set_ind_L; naive_solver.
 
-(** Induction principles over set_fold *)
-Program Definition set_fold_cind `{FinSet A C} B (X : C)
-  (b : B) (f : A -> B -> B) (P : C -> B -> Prop)
-  {pr: Proper (equiv ==> eq ==> impl) P} : CInduction X (P X (set_fold f b X)) :=
-  {|
-    induction_requirement :=
-      (P ∅ b) /\ (forall x X r, x ∉ X -> P X r -> P ({[x]} ∪ X) (f x r))
-  |}.
-Solve All Obligations with
-  intros; apply (set_fold_ind (fun x y => P y x)); [solve_proper | hauto..].
-Arguments set_fold_cind : clear implicits.
+(* Implement funelim on [set_fold].
 
-Program Definition set_fold_cind_L `{FinSet A C} B (X : C)
-  {lei : LeibnizEquiv C} (b : B) (f : A -> B -> B) (P : C -> B -> Prop)
-   : CInduction X (P X (set_fold f b X)) :=
-  {|
-    induction_requirement :=
-      (P ∅ b) /\ (forall x X r, x ∉ X -> P X r -> P ({[x]} ∪ X) (f x r))
-  |}.
-Solve All Obligations with
-  intros; apply (set_fold_ind_L (fun x y => P y x)); hauto.
+In general, the order of parameters needs to be:
+   - Fixed parameters that are not changing in the induction
+   - The induction property P
+   - The induction cases
+   - The arguments that are being inducted upon
+   - The conclusion, which is P applied to the arguments in function order,
+     then the function application
+ *)
+Lemma set_fold_ind_L' `{FinSet A C} `{!LeibnizEquiv C}
+  {B} (f : A → B → B) (b : B) (P : C → B → Prop) :
+  P ∅ b → (∀ x X r, x ∉ X → P X r → P ({[ x ]} ∪ X) (f x r)) →
+  ∀ X, P X (set_fold f b X).
+Proof. eapply (set_fold_ind_L (flip P)). Qed.
 
-Arguments set_fold_cind_L : clear implicits.
+(* Then when instantiating the typeclass, all the non-inductive parameters
+   should be instance parameters, and the magic integer should be 1 (for P) +
+   the number of induction cases (here 2)
+
+WARN: FinSet (and LeibnizEquiv) typeclass needs to be either resolvable from
+   constants (e.g. with a concrete C type like gset) or be a section variable,
+   otherwise funelim gets confused if it's just a local lemma variable. *)
+#[global] Instance FunctionalElimination_set_fold_L
+  `{FinSet A C} `{!LeibnizEquiv C} {B} f b :
+  FunctionalElimination (@set_fold A C _ B f b) _ 3 :=
+  set_fold_ind_L' (A := A) (C := C) f b.
 
 
-(*** GSet Cartesian product ***)
+(** * GSet Cartesian product ***)
 
 
 Section GSetProduct.
@@ -282,11 +286,8 @@ Section GSetProduct.
   Infix "×" := gset_product (at level 44, left associativity) : stdpp_scope.
 
   Lemma gset_product_spec (sa : gset A) (sb : gset B) a b :
-    (a, b) ∈ sa × sb <-> a ∈ sa /\ b ∈ sb.
-  Proof using.
-    unfold gset_product.
-    cinduction sa using set_fold_cind_L; set_solver.
-  Qed.
+    (a, b) ∈ sa × sb ↔ a ∈ sa ∧ b ∈ sb.
+  Proof. unfold gset_product. funelim (set_fold _ _ _); set_solver. Qed.
 
   Global Instance set_unfold_gset_product (sa : gset A) (sb : gset B) x P Q :
     SetUnfoldElemOf x.1 sa P -> SetUnfoldElemOf x.2 sb Q ->

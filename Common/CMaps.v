@@ -12,7 +12,7 @@ Require Import CInduction.
     lookup accross various map operations *)
 
 
-(*** Lookup Unfold ***)
+(** * Lookup Unfold ***)
 
 Class LookupUnfold {K A M : Type} {lk : Lookup K A M}
   (k : K) (m : M) (oa : option A) :=
@@ -78,7 +78,7 @@ Qed.
 
 
 
-(*** Lookup Total Unfold ***)
+(** * Lookup Total Unfold ***)
 
 Class LookupTotalUnfold {K A M : Type} {lk : LookupTotal K A M}
   (k : K) (m : M) (a : A) := {lookup_total_unfold : m !!! k = a }.
@@ -196,7 +196,7 @@ Proof.
   hauto.
 Qed.
 
-(*** Map related Set unfoldings ***)
+(** * Map related Set unfoldings ***)
 
 Global Instance set_unfold_elem_of_map_to_list `{Countable A} B (x : A * B)
     (m : gmap A B) me :
@@ -205,7 +205,7 @@ Global Instance set_unfold_elem_of_map_to_list `{Countable A} B (x : A * B)
 Proof. tcclean. destruct x. apply elem_of_map_to_list. Qed.
 
 
-(*** Map induction ***)
+(** * Map induction ***)
 
 Program Global Instance map_cind `{FinMap K M} A (m : M A) (P : M A -> Prop) :
   CInduction m (P m) :=
@@ -215,56 +215,63 @@ Program Global Instance map_cind `{FinMap K M} A (m : M A) (P : M A -> Prop) :
   |}.
 Solve All Obligations with intros; apply map_ind; naive_solver.
 
-(* When one of the argument of the generic predicate depends on the other, the
-   dependent one should be after its dependency in the argument order otherwise
-   the pattern matching of cinduction fails *)
-Program Definition map_fold_cind `{FinMap K M} A B (m : M A)
-  (b : B) (f : K -> A -> B -> B) (P : M A -> B -> Prop) :
-  CInduction m (P m (map_fold f b m)) :=
-  {|
-    induction_requirement :=
-      P ∅ b /\
-        (forall i x m r, m !! i = None -> P m r -> P (<[i:=x]> m) (f i x r) )
-  |}.
-Solve All Obligations with intros; apply (map_fold_ind (fun x y => P y x)); hauto.
-Arguments map_fold_cind : clear implicits.
+(* See CSets induction for set_fold for explanation of funelim instances *)
+Lemma map_fold_ind' `{FinMap K M} {A B}
+  (f : K → A → B → B) (b : B) (P : M A → B → Prop) :
+  P ∅ b → (∀ i x m r, m !! i = None → P m r → P (<[i:=x]> m) (f i x r)) →
+  ∀ m, P m (map_fold f b m).
+Proof. eapply (map_fold_ind (flip P)). Qed.
+
+(* Same Warning as set_unfold: FinMap needs to be resolvable from global context
+or section variable, not local variable *)
+#[global] Instance FunctionalElimination_map_fold
+  `{FinMap K M} {A B} f b :
+  FunctionalElimination (@map_fold K A (M A) _ B f b) _ 3 :=
+  map_fold_ind' (K := K) (M := M) (A:= A) (B := B) f b.
 
 
-(*** FinMap reduce ***)
+(** * FinMap reduce ***)
 
-(** This take a mapping function, an operator, and a neutral (or starting)
-    element and then reduce using the operator after applying a conversion
-    function to the key and value *)
-Definition finmap_reduce `{FinMap K M} {A B} (f : K → A → B)
+Section FinMapReduce.
+  Context `{FM: FinMap K M}.
+  Context {A B : Type}.
+
+  (** This take a mapping function, an operator, and a neutral (or starting)
+      element and then reduce using the operator after applying a conversion
+      function to the key and value *)
+  Definition finmap_reduce  (f : K → A → B)
     (op : B → B → B) : B → M A → B :=
-  map_fold (λ (k : K) (v : A) (acc : B), op acc (f k v)).
+    map_fold (λ (k : K) (v : A) (acc : B), op acc (f k v)).
 
-Definition finmap_reduce_union `{FinMap K M} {A} `{Empty B, Union B}
-    (f : K → A → B) : M A → B := finmap_reduce f (∪) ∅.
+  Context `{SS : SemiSet X B}.
 
-Global Instance set_unfold_elem_of_finmap_reduce_union
-    `{FinMap K M} {A} `{SemiSet X B}
+  (** Reduce each element of a map to a set, and then union all the sets *)
+  Definition finmap_reduce_union (f : K → A → B)
+    : M A → B := finmap_reduce f (∪) ∅.
+
+  Global Instance set_unfold_elem_of_finmap_reduce_union
     (m : M A) (f : K → A → B) (x : X) P:
-  (∀ k v, SetUnfoldElemOf x (f k v) (P k v)) →
-  SetUnfoldElemOf x (finmap_reduce_union f m) (∃ k v, m !! k = Some v ∧ P k v).
-Proof.
-  tcclean. clear dependent P.
-  unfold finmap_reduce_union, finmap_reduce.
-  cinduction m using map_fold_cind with idtac.
-  - setoid_rewrite lookup_unfold.
-    set_solver.
-  - clear m. intros i v m r Hn Hxr.
-    set_unfold.
-    setoid_rewrite Hxr; clear Hxr.
-    split.
-    + intros [(k&v'&?) | ?].
-      * exists k.
-        exists v'.
-        rewrite lookup_unfold.
-        hauto l:on.
-      * sfirstorder.
-    + hauto lq:on rew:off simp+:rewrite lookup_unfold in *.
-Qed.
+    (∀ k v, SetUnfoldElemOf x (f k v) (P k v)) →
+    SetUnfoldElemOf x (finmap_reduce_union f m) (∃ k v, m !! k = Some v ∧ P k v).
+  Proof using FM SS.
+    tcclean. clear dependent P.
+    unfold finmap_reduce_union, finmap_reduce.
+    funelim (map_fold _ _ _).
+    - setoid_rewrite lookup_unfold.
+      set_solver.
+    - do 7 deintro. intros i v m r Hn Hxr.
+      set_unfold.
+      setoid_rewrite Hxr; clear Hxr.
+      split.
+      + intros [(k&v'&?) | ?].
+        * exists k.
+          exists v'.
+          rewrite lookup_unfold.
+          hauto l:on.
+        * sfirstorder.
+      + hauto lq:on rew:off simp+:rewrite lookup_unfold in *.
+  Qed.
+End FinMapReduce.
 
 
 (** * FinMap setter *)

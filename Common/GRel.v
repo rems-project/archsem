@@ -19,7 +19,7 @@
 Require Import Wellfounded.
 
 Require Import Options.
-From stdpp Require Export option.
+From stdpp Require Export option fin_maps.
 Require Import Common.
 
 (* For some reason some typeclass instance defined in CSets is missing even if
@@ -126,8 +126,6 @@ Section GRel.
     repeat (match goal with | H : _ = _ |- _ => setoid_rewrite H end).
 
 
-  (* Set Printing All. *)
-
   Lemma grel_map_eq_wf (rm rm' : grel_map):
     grel_map_wf rm -> grel_map_wf rm' -> (forall a : A, rm !!! a = rm' !!! a) -> rm = rm'.
   Proof using.
@@ -145,7 +143,7 @@ Section GRel.
     e2 ∈ (grel_to_map r !!! e1) <-> (e1, e2) ∈ r.
   Proof using.
     unfold grel_to_map.
-    cinduction r using set_fold_cind_L.
+    funelim (set_fold _ _ _).
     - set_solver.
     - destruct x as [e3 e4].
       set_unfold.
@@ -163,7 +161,7 @@ Section GRel.
     unfold grel_map_wf.
     intro a.
     unfold grel_to_map.
-    cinduction r using set_fold_cind_L.
+    funelim (set_fold _ _ _).
     - rewrite lookup_unfold. congruence.
     - destruct x as [e3 e4].
       rewrite lookup_unfold.
@@ -189,7 +187,7 @@ Section GRel.
     (e1, e2) ∈ gmap_to_rel rm <-> e2 ∈ (rm !!! e1).
   Proof using.
     unfold gmap_to_rel.
-    cinduction rm using map_fold_cind.
+    funelim (map_fold _ _ _).
     - rewrite lookup_total_unfold.
       set_solver.
     - assert (m !!! i = ∅). {rewrite lookup_total_lookup. hauto lq:on. }
@@ -265,7 +263,7 @@ Section GRel.
     (e1, e2) ∈ (r ⨾ r') <-> exists e3, (e1, e3) ∈ r /\ (e3, e2) ∈ r'.
   Proof using.
     unfold grel_seq.
-    cinduction r using set_fold_cind_L.
+    funelim (set_fold _ _ _).
     - set_solver.
     - destruct x.
       set_unfold.
