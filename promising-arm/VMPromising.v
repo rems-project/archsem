@@ -1232,12 +1232,13 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
 
 
 (** Runs an outcome. *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
-   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
+Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
+   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) :=
+  λ '(ts, mem, iis),
   let initmem := Memory.initial_from_memMap initmem in
   let deps_to_view :=
     fun deps => IIS.from_DepOn deps ts iis in
-  match o with
+  match out with
   | RegWrite reg racc deps val =>
       guard_or
         "Non trivial write reg access types unsupported"

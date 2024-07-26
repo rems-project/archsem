@@ -54,7 +54,7 @@ Definition to_result_list `(e : t E A) : list (result E A) :=
 #[global] Instance throw_inst {E} : MThrow E (t E) := λ _ e, make [] [e].
 
 #[global] Instance choose_inst {E} : MChoose (t E) :=
-  λ _ '(ChooseFin n), make (enum (fin n)) [].
+  λ '(ChooseFin n), make (enum (fin n)) [].
 #[global] Typeclasses Opaque choose_inst.
 
 Lemma mdiscard_eq {E A} : mdiscard =@{t E A} make [] [].

@@ -74,7 +74,7 @@ Definition seq_state_to_init (seqs : seq_state) : MState.init 1 :=
      MState.termCond := seqs.(initSt).(MState.termCond) |}.
 
 (** This is the effect handler for the outcome effect in the sequential model *)
-Definition sequential_model_outcome T (call : outcome deps T) : seqmon T :=
+Definition sequential_model_outcome (call : outcome deps) : seqmon (eff_ret call) :=
   match call with
   | RegRead reg racc => mget (read_reg_seq_state reg)
   | RegWrite reg racc deps val =>

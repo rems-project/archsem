@@ -135,94 +135,88 @@ Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
 
   Record footprint_state := { num_reads : nat; fprt : option Footprint.t}.
 
-  Definition add_fine_grained_dependency_fprt_outcome {A : Type}
-      (out : outcome unit A) (fprt : Footprint.t) (num_read : nat)
-      : nat * outcome DepOn.t A :=
+
+  #[local] Notation ReplEffD call := (ReplEff (call : outcome DepOn.t)).
+  Definition add_fine_grained_dependency_fprt_outcome
+    (out : outcome unit) (fprt : Footprint.t) (num_read : nat)
+    : nat * repl_eff out (outcome DepOn.t) :=
     match out with
-    | RegRead reg direct => (num_read, RegRead reg direct)
+    | RegRead reg direct as rr =>
+        (num_read, ReplEffD (RegRead reg direct))
     | RegWrite reg direct () val =>
         (num_read,
-          RegWrite reg direct (Footprint.reg_write_dep fprt reg num_read) val)
+          ReplEffD (RegWrite reg direct (Footprint.reg_write_dep fprt reg num_read) val))
     | MemRead n rr =>
-        rr |> ReadReq.setv_deps (Footprint.mem_read_dep fprt num_read)
-           |> MemRead n
-           |> (S num_read,.)
+        let rr := ReadReq.setv_deps (Footprint.mem_read_dep fprt num_read) rr in
+        (S num_read, ReplEffD (MemRead n rr))
     | MemWrite n wr =>
         let (addr_dep, data_dep) := Footprint.mem_write_dep fprt num_read in
-        wr |> WriteReq.setv_deps addr_dep data_dep
-           |> MemWrite n
-           |> (num_read,.)
-    | InstrAnnounce opcode => (num_read, InstrAnnounce opcode)
+        let wr := WriteReq.setv_deps addr_dep data_dep wr in
+        (num_read, ReplEffD (MemWrite n wr))
+    | InstrAnnounce opcode => (num_read, ReplEffD (InstrAnnounce opcode))
     | BranchAnnounce pa () =>
-        Footprint.ctrl_dep fprt num_read
-        |> BranchAnnounce pa
-        |> (num_read,.)
-    | Barrier barrier => (num_read, Barrier barrier)
+        (num_read, ReplEffD (BranchAnnounce pa (Footprint.ctrl_dep fprt num_read)))
+    | Barrier barrier => (num_read, ReplEffD (Barrier barrier))
     | CacheOp () cop =>
-        (num_read, CacheOp (Footprint.special_dep fprt num_read) cop)
+        (num_read, ReplEffD (CacheOp (Footprint.special_dep fprt num_read) cop))
     | TlbOp () tlbop =>
-        (num_read, TlbOp (Footprint.special_dep fprt num_read) tlbop)
+        (num_read, ReplEffD (TlbOp (Footprint.special_dep fprt num_read) tlbop))
     | TakeException fault =>
-        (num_read, TakeException (fault_add_deps fprt fault))
-    | ReturnException pa => (num_read, ReturnException pa)
-    | GenericFail msg => (num_read, GenericFail msg)
+        (num_read, ReplEffD (TakeException (fault_add_deps fprt fault)))
+    | ReturnException pa => (num_read, ReplEffD (ReturnException pa))
+    | GenericFail msg => (num_read, ReplEffD (GenericFail msg))
     end.
 
-  Definition add_empty_dependency_outcome {A : Type}
-      (out : outcome unit A) (num_read : nat)
-      : nat * outcome DepOn.t A :=
+  Definition add_empty_dependency_outcome (out : outcome unit) (num_read : nat)
+      : nat * repl_eff out (outcome DepOn.t) :=
     match out with
-    | RegRead reg direct => (num_read, RegRead reg direct)
+    | RegRead reg direct => (num_read, ReplEffD (RegRead reg direct))
     | RegWrite reg direct () val =>
         (num_read,
-          RegWrite reg direct DepOn.emp val)
+          ReplEffD (RegWrite reg direct DepOn.emp val))
     | MemRead n rr =>
-        rr |> ReadReq.setv_deps DepOn.emp
-           |> MemRead n
-           |> (S num_read,.)
+        let rr := ReadReq.setv_deps DepOn.emp rr in
+        (S num_read, ReplEffD (MemRead n rr))
     | MemWrite n wr =>
-        wr |> WriteReq.setv_deps DepOn.emp DepOn.emp
-           |> MemWrite n
-           |> (num_read,.)
-    | InstrAnnounce opcode => (num_read, InstrAnnounce opcode)
-    | BranchAnnounce pa () => (num_read, BranchAnnounce pa DepOn.emp)
-    | Barrier barrier => (num_read, Barrier barrier)
-    | CacheOp () cop => (num_read, CacheOp DepOn.emp cop)
-    | TlbOp () tlbop => (num_read, TlbOp DepOn.emp tlbop)
+        let wr := WriteReq.setv_deps DepOn.emp DepOn.emp wr in
+        (num_read, ReplEffD (MemWrite n wr))
+    | InstrAnnounce opcode => (num_read, ReplEffD (InstrAnnounce opcode))
+    | BranchAnnounce pa () => (num_read, ReplEffD (BranchAnnounce pa DepOn.emp))
+    | Barrier barrier => (num_read, ReplEffD (Barrier barrier))
+    | CacheOp () cop => (num_read, ReplEffD (CacheOp DepOn.emp cop))
+    | TlbOp () tlbop => (num_read, ReplEffD (TlbOp DepOn.emp tlbop))
     | TakeException fault =>
-        (num_read, TakeException (fault_add_empty_deps fault))
-    | ReturnException pa => (num_read, ReturnException pa)
-    | GenericFail msg => (num_read, GenericFail msg)
+        (num_read, ReplEffD (TakeException (fault_add_empty_deps fault)))
+    | ReturnException pa => (num_read, ReplEffD (ReturnException pa))
+    | GenericFail msg => (num_read, ReplEffD (GenericFail msg))
     end.
 
-  Definition add_dependency_handler (fmod : footprint_model) :
-      fHandler (outcome unit) (stateT (nat * option Footprint.t) (iMon DepOn.t)) :=
-    λ T out,
+  Program Definition add_dependency_handler (fmod : footprint_model) :
+    fHandler (outcome unit) (stateT (nat * option Footprint.t) (iMon DepOn.t)) :=
+    λ out,
       '(num_read, fprt) ← mGet;
       match fprt with
       | Some fprt =>
-          let '(num_read, out) :=
+          let '(num_read, rout) :=
             add_fine_grained_dependency_fprt_outcome out fprt num_read
           in
           msetv fst num_read;;
-          mcall out
+          mcall_repl rout
       | _ =>
-          match out in outcome _ T'
-                return stateT (nat * option Footprint.t) (iMon DepOn.t) T' with
+          match out with
           | InstrAnnounce opcode =>
               ctxt ← st_lift get_footprint_context;
               let fprt' : Footprint.t := fmod opcode ctxt in
               msetv snd (Some fprt')
           | out =>
-              let '(num_read, out) :=
+              let '(num_read, rout) :=
                 add_empty_dependency_outcome out num_read
               in
               msetv fst num_read;;
-              (* No idea why this doesn't type better *)
-              (@mcall (outcome DepOn.t) _ _ _ (out : outcome DepOn.t _)
-                : stateT _ (iMon DepOn.t) _)
+              mcall_repl rout
           end
       end.
+
 
   (** Add fine grained dependencies after the InstrAnnounce depending on a
       footprint model *)

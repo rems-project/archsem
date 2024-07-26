@@ -183,7 +183,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
     Definition ISA_match (cd : t) (isem : iMon ()) :=
       ∀ tid : fin nmth,
       ∀ trc ∈ cd.(events) !!! tid,
-      iTrace_match isem trc.
+      cmatch isem trc.
 
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
     Proof using. solve_decision. Qed.
@@ -192,10 +192,18 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
         assertion or an Isla assumption that failed. Due to out of order
         effects, an error might not be from the last instruction. *)
     Definition ISA_failed (cd : t) :=
-      ∃ thread ∈ (vec_to_list cd.(events)), ∃ instr ∈ thread, is_Error instr.2.
+      ∃ thread ∈ (vec_to_list cd.(events)),
+      ∃ instr ∈ thread,
+      ∃ msg, instr.2 = FTEStop (GenericFail msg).
 
     #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
-    Proof using. solve_decision. Qed.
+    Proof using.
+      unfold ISA_failed.
+      apply list_exist_dec. intro.
+      apply list_exist_dec. intro tr.
+      destruct (tr.2) as [| | call]; try (right; abstract hauto lq:on).
+      destruct call; (right + left); abstract hauto lq:on.
+    Defined.
 
     Definition lookup_instruction (cd : t) (tid iid : nat) :
         option (iTrace ()) :=

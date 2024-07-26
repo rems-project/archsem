@@ -267,21 +267,20 @@ Module Interface (A : Arch).
     Inductive outcome : eff :=
       (** Reads a register [reg] with provided access type [racc]. It is up to
           concurrency model to interpret [racc] properly *)
-    | RegRead (reg : reg) (racc : reg_acc) : outcome reg_type
+    | RegRead (reg : reg) (racc : reg_acc)
 
       (** Write a register [reg] with value [reg_val] and access type [racc].
           The dependencies [deps] should describe the data flow into that
           register value. *)
     | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
-        (regval: reg_type) : outcome unit
+        (regval: reg_type)
       (** Read [n] bytes of memory in a single access (Single Copy Atomic in Arm
           terminology). See [ReadReq.t] for the various required fields.
 
           The result is either a success (value read and optional tag) or a
           error (intended for physical memory errors, not translation, access
           control, or segmentation faults *)
-    | MemRead (n : N) : ReadReq.t deps n →
-                        outcome (bv (8 * n) * option bool + abort)%type
+    | MemRead (n : N) (rr: ReadReq.t deps n)
       (** Write [n] bytes of memory in a single access (Single Copy Atomic in
           Arm terminology). See [WriteReq.t] for the various required fields.
 
@@ -291,58 +290,72 @@ Module Interface (A : Arch).
             could not be achieved (e.g. exclusive failure)
           - inr abort: The write was attempted, but a physical abort happened
            *)
-    | MemWrite (n : N) : WriteReq.t deps n → outcome (bool + abort)%type
+    | MemWrite (n : N) (wr : WriteReq.t deps n)
       (** Declare the opcode of the current instruction when known. Used for
           dependency computations, and some other cases *)
-    | InstrAnnounce (opcode : bvn) : outcome unit
+    | InstrAnnounce (opcode : bvn)
       (** Declare a conditional branch to a new physical address [pa]. [deps]
           represent the data-flow into the conditional decision to take that
           branch. Unconditional branched do not need to be announced *)
-    | BranchAnnounce (pa : pa) (deps : deps) : outcome unit
+    | BranchAnnounce (pa : pa) (deps : deps)
       (** Issues a barrier such as DMB (for Arm), fence.XX (for RISC-V), ... *)
-    | Barrier : barrier -> outcome unit
+    | Barrier : barrier -> outcome
       (** Issues a cache operation such as DC or IC (for Arm) *)
-    | CacheOp (deps : deps) : cache_op → outcome unit
+    | CacheOp (deps : deps) (cop : cache_op)
       (** Issues a TLB maintenance operation, such as TLBI (for Arm) *)
-    | TlbOp (deps : deps) : tlb_op → outcome unit
+    | TlbOp (deps : deps) (tlbop : tlb_op)
       (** Take an exception. The [fault] type constructor make depend on a value
           whose data-flow can be encoded in the deps type *)
-    | TakeException : fault deps → outcome unit
+    | TakeException (flt : fault deps)
       (** Return from an exception to this address e.g. ERET (for Arm) or
           IRET (for x86) *)
-    | ReturnException (pa : pa) : outcome unit
+    | ReturnException (pa : pa)
 
       (** Bail out when something went wrong. This is to represent ISA model
           incompleteness: When getting out of the range of supported
           instructions or behaviors of the ISA model. The string is for
           debugging but otherwise irrelevant *)
-    | GenericFail (msg : string) : outcome noreturn.
-    Arguments outcome _%type.
+    | GenericFail (msg : string).
 
-    #[global] Instance outcome_wf : Eff.Wf outcome.
-    Proof using. intros T []; apply _. Qed.
+    #[export] Instance outcome_ret : Effect outcome :=
+      λ out, match out with
+             | RegRead _ _ => reg_type
+             | MemRead n _ => (bv (8 * n) * option bool + abort)%type
+             | MemWrite n _ => (bool + abort)%type
+             | GenericFail _ => ∅%type
+             | _ => unit
+             end.
 
+    #[export] Instance outcome_wf : EffWf outcome.
+    Proof using. intros []; cbn; try tc_solve. Qed.
 
     (* Automatically implies EqDecision (outcome T) on any T *)
-    #[global] Instance outcome_eff_dec `{EqDecision deps} : Eff.Decision outcome.
-    Proof using. intros ? ? [] []; decide_eff_eq. Defined.
+    #[export] Instance outcome_eq_dec `{EqDecision deps} : EqDecision outcome.
+    Proof using. intros [] []; decide_eq. Defined.
 
-    #[global] Program Instance outcome_exc : Eff.Exc outcome :=
-      { exc := string;
-        exc2eff := λ s, existT _ (GenericFail s);
-        eff2exc := λ _ x,
-          match x return option string with
-          | GenericFail s => Some s
-          | _ => None
-          end
-      }.
-    Next Obligation. hauto qb:on. Qed.
-    Next Obligation.
-      intros. cbn.
-      case_split; try (apply Eff.exc_empty_helper); sfirstorder.
+    #[export] Instance outcome_EffCTrans : EffCTrans outcome.
+    Proof using.
+      intros [] [].
+      all: try (abstract discriminate).
+      all: cbn in *.
+      all: try (intros; assumption).
+      (* MemRead case *)
+      intros e [[b o]| a].
+      - left. split.
+        + eapply ctrans; [|eassumption].
+          abstract naive_solver.
+        + assumption.
+      - right. assumption.
+    Defined.
+
+    #[export] Instance outcome_EffCTransSimpl : EffCTransSimpl outcome.
+    Proof.
+      intros [] ? ?; cbn.
+      all: try reflexivity.
+      repeat case_match; try simp ctrans; reflexivity.
     Qed.
 
-
+    (** ** Instruction monad *)
 
     (** An instruction semantic is a non-deterministic program using the
         uninterpreted effect type [outcome] *)
@@ -368,24 +381,15 @@ Module Interface (A : Arch).
       }.
 
     (** A single event in an instruction execution. Events cannot contain
-        termination outcome (outcomes of type `outcome False`)
-
-        IEvent cannot be used a pattern in a match anymore, sorry, use FEvent
-        instead *)
+        termination outcome (outcomes of type `outcome False`) *)
     Definition iEvent := fEvent outcome.
-    Definition IEvent {T} : outcome T → T → iEvent := @FEvent outcome T.
 
-    (** An execution trace for a single instruction.
-        If the result is an A, it means a successful execution that returned A
-        If the result is a string, it means a GenericFail *)
-    Definition iTrace (A : Type) : Type := list iEvent * result string A.
-
-    Definition iTrace_match {A : Type} (f : iMon A) (tr : iTrace A) :=
-      cmatch f (fTrace_list_res_full tr.1 tr.2).
+    (** An execution trace for a single instruction. *)
+    Definition iTrace := fTrace outcome.
 
   End Interface.
 
-  Arguments outcome _%type _%type : clear implicits.
+  Arguments outcome _%type : clear implicits.
   Arguments iMon : clear implicits.
   Arguments iSem : clear implicits.
   Arguments iTrace : clear implicits.
@@ -417,7 +421,7 @@ Module Interface (A : Arch).
 
   Lemma get_reg_val_get_reg `(ev : iEvent deps) rrv :
     get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
-  Proof. destruct ev as [? [] ?]; hauto lq:on. Qed.
+  Proof. destruct ev as [[] ?]; hauto lq:on. Qed.
 
   (** Get the physical address out of an memory event *)
   Definition get_pa `(e : iEvent deps) : option pa:=
@@ -446,7 +450,7 @@ Module Interface (A : Arch).
   Lemma get_mem_value_size `(ev : iEvent deps) bv :
     get_mem_value ev = Some bv → get_size ev = Some (bvn_n bv / 8)%N.
   Proof.
-    destruct ev as [? [] ?];
+    destruct ev as [[] ?];
       cdestruct_intro #CDestrCbnSubst #CDestrMatch; cbn; f_equal; lia.
   Qed.
 
@@ -505,13 +509,13 @@ Module Interface (A : Arch).
     Definition is_reg_readP_spec ev :
       is_reg_readP ev ↔
         ∃ reg racc rval, ev = RegRead reg racc &→ rval ∧ P reg racc rval.
-    Proof. destruct ev as [? [] ?]; split; cdestruct_intro;naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct_intro;naive_solver. Qed.
     Definition is_reg_readP_cdestr ev := cdestr_simpl (is_reg_readP_spec ev).
     #[global] Existing Instance is_reg_readP_cdestr.
 
     Context `{Pdec: ∀ reg racc rval, Decision (P reg racc rval)}.
     #[global] Instance is_reg_readP_dec ev: Decision (is_reg_readP ev).
-    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
 
     (** ** Register writes *)
     Definition is_reg_writeP ev : Prop :=
@@ -525,14 +529,14 @@ Module Interface (A : Arch).
         ∃ reg racc deps rval,
           ev = RegWrite reg racc deps rval &→ () ∧ P reg racc rval.
     Proof.
-      destruct ev as [? [] fret];
+      destruct ev as [[] fret];
         split; cdestruct_intro; destruct fret; naive_solver.
     Qed.
     Definition is_reg_writeP_cdestr ev := cdestr_simpl (is_reg_writeP_spec ev).
     #[global] Existing Instance is_reg_writeP_cdestr.
 
     #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
-    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
 
   End isReg.
   Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
@@ -558,13 +562,13 @@ Module Interface (A : Arch).
 
     Definition is_mem_read_reqP_spec ev:
       is_mem_read_reqP ev ↔ ∃ n rr rres, ev = MemRead n rr &→ rres ∧ P n rr rres.
-    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct_intro; naive_solver. Qed.
     Definition is_mem_read_reqP_cdestr ev := cdestr_simpl (is_mem_read_reqP_spec ev).
     #[global] Existing Instance is_mem_read_reqP_cdestr.
 
     Context `{Pdec : ∀ n rr rres, Decision (P n rr rres)}.
     #[global] Instance is_mem_read_reqP_dec ev : Decision (is_mem_read_reqP ev).
-    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
   End isMemReadReq.
   Notation is_mem_read_req := (is_mem_read_reqP (λ _ _ _, True)).
 
@@ -616,13 +620,13 @@ Module Interface (A : Arch).
 
     Definition is_mem_write_reqP_spec ev:
       is_mem_write_reqP ev ↔ ∃ n wr wres, ev = MemWrite n wr &→ wres ∧ P n wr wres.
-    Proof. destruct ev as [? [] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct_intro; naive_solver. Qed.
     Definition is_mem_write_reqP_cdestr ev := cdestr_simpl (is_mem_write_reqP_spec ev).
     #[global] Existing Instance is_mem_write_reqP_cdestr.
 
     Context `{Pdec: ∀ n wr wres, Decision (P n wr wres)}.
     #[global] Instance is_mem_write_reqP_dec ev: Decision (is_mem_write_reqP ev).
-    Proof using Pdec. destruct ev as [? [] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
   End isMemWriteReq.
   Notation is_mem_write_req := (is_mem_write_reqP (λ _ _ _, True)).
 

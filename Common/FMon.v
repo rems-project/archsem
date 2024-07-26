@@ -1,13 +1,12 @@
+Require Import Program.Equality.
 Require Import Common.
 Require Import Options.
 From stdpp Require Import option.
 
 (* Reexporting Effects. Using FMon implies using Effects *)
 Require Export Effects.
-Open Scope effect_scope.
 
-(* Needed for setoid rewrite along fequiv and cequiv that are defined as an
-   Equiv instance *)
+(* Needed for setoid rewrite along cequiv that is defined as an Equiv instance *)
 #[export] Typeclasses Transparent Equiv.
 
 
@@ -20,13 +19,18 @@ non-termination. *)
 
 Section FMon.
   Context {Eff : eff}.
+  Context {ER : Effect Eff}.
+  Context {ED : EqDecision Eff}.
+  Context {Wf : EffWf Eff}.
+  Context {CT : EffCTrans Eff}.
+  Context {CTS : EffCTransSimpl Eff}.
 
   (** This implementation is not very computationally efficient in case of
-      repeated binds, but has the advantage of being canonical up to
-      functional extensionality *)
+      repeated binds, but has the advantage of being canonical, e.g. trace
+      equivalence is Leibtniz equality (with functional extensionality)*)
   Inductive fMon {A : Type} :=
   | Ret (ret : A)
-  | Next {T : Type} (call : Eff T) (k : T → fMon).
+  | Next (call : Eff) (k : eff_ret call → fMon).
   Arguments fMon : clear implicits.
 
   #[global] Instance fMon_ret : MRet fMon := @Ret.
@@ -46,432 +50,435 @@ Section FMon.
       | Ret x => Ret (f x)
       | Next oc k => Next oc (λ x, map f (k x)) end.
 
-  #[global] Instance fMon_call : MCall Eff fMon := λ _ out, Next out Ret.
+  #[global] Instance fMon_call : MCall Eff fMon := λ out, Next out Ret.
 
-  (** * FMon equivalence
-
-     This would be plain equality with functional extensionality,
-     TODO: maybe we should actually require FunExt and remove this *)
-  Inductive fequiv {A} : Equiv (fMon A) :=
-  | FERet a : fequiv (Ret a) (Ret a)
-  | FENext T (call : Eff T) k1 k2 (Hpr : pointwise_relation T fequiv k1 k2):
-    fequiv (Next call k1) (Next call k2).
-
-  #[global] Instance fequiv_sym A : Symmetric (@fequiv A).
-  Proof using. intros x y H. induction H; constructor; naive_solver. Qed.
-
-  #[global] Instance fequiv_refl A : Reflexive (@fequiv A).
-  Proof using. intros x. induction x; constructor; naive_solver. Qed.
-
-  #[global] Instance fequiv_trans A : Transitive (@fequiv A).
-  Proof using.
-    intros x y z H H'.
-    generalize dependent z.
-    induction H;
-      intros z H';
-      dependent destruction H';
-      constructor;
-      sfirstorder.
-  Qed.
-
-  #[global] Instance fequiv_equiv A : Equivalence (@fequiv A).
-  Proof using. constructor; apply _. Qed.
-
-  #[global] Instance Next_fequiv_Proper A T (call : Eff T):
-    Proper (pointwise_relation T fequiv ==> @fequiv A) (Next call).
-  Proof using. hauto l:on. Qed.
-
-  Infix "≡ₑ" := fequiv (at level 70, no associativity).
-  Infix "≡ₑ@{ A }" := (@fequiv A _)
-                       (at level 70, only parsing, no associativity).
-
-  (** * Events and traces *)
+  (** * Events *)
 
   (** A event of an effect type is a combination of an effect call and its
       result *)
-  Record fEvent := FEvent {ftype : Type; fcall : Eff ftype; fret: ftype}.
-  Arguments FEvent {_} _ _.
-
+  Record fEvent := FEvent {fcall : Eff; fret : eff_ret fcall}.
   Infix "&→" := FEvent (at level 45, no associativity).
 
-  (** The type of trace over fMon. Those trace are partial and can stop
-      anywhere *)
-  Inductive fTrace {A : Type} :=
-  | FTNext (ev : fEvent) (ntr : fTrace)
-  | FTRet (a : A)
-  | FTStop {T} (call : Eff T).
-  Arguments fTrace : clear implicits.
-
-  Fixpoint ftlist {A : Type} (ft : fTrace A) :=
-    match ft with
-    | FTNext ev ntr => ev :: ftlist ntr
-    | _ => []
-    end.
-  Fixpoint ftres {A : Type} (ft : fTrace A) : result (sigT Eff) A:=
-    match ft with
-    | FTNext ev ntr => ftres ntr
-    | FTRet a => Ok a
-    | FTStop call => Error (existT _ call)
-    end.
-
-  Fixpoint fTrace_list_res {A} (l : list fEvent) (r : result (sigT Eff) A) :=
-    match l with
-    | [] => match r with
-            | Ok a => FTRet a
-            | Error (existT T call) => FTStop call
-            end
-    | ev :: tl => FTNext ev (fTrace_list_res tl r)
-    end.
-
-  Lemma fTrace_ftlist_ftres {A} (ft : fTrace A) :
-    fTrace_list_res (ftlist ft) (ftres ft) = ft.
-  Proof using. induction ft; sfirstorder. Qed.
-  Hint Rewrite @fTrace_ftlist_ftres : fmon.
-
-  Lemma ftlist_fTrace_list_res {A} l e :
-    ftlist (@fTrace_list_res A l e) = l.
-  Proof using. induction l; hauto lq:on. Qed.
-  Hint Rewrite @ftlist_fTrace_list_res : fmon.
-
-  Lemma ftres_fTrace_list_res {A} l e :
-    ftres (@fTrace_list_res A l e) = e.
-  Proof using. induction l; hauto lq:on. Qed.
-  Hint Rewrite @ftres_fTrace_list_res : fmon.
-
-  (** * Full traces *)
-
-  (** Full trace are traces that only stop on a non returning effect *)
-  Definition ftfull {A} (ft : fTrace A) :=
-    ∀ T call, ftres ft = Error (existT T call) → T → False.
-  Lemma ftfull_FTRet {A} (a : A) : ftfull (FTRet a).
-  Proof using. hfcrush. Qed.
-  Hint Resolve ftfull_FTRet : fmon.
-  Lemma ftfull_FTNext {A} ev (ntr : fTrace A) :
-    ftfull ntr → ftfull (FTNext ev ntr).
-  Proof using. hfcrush. Qed.
-  Hint Resolve ftfull_FTNext : fmon.
-  Lemma ftfull_FTStop {A} T (call : Eff T) :
-    (T → False) → ftfull (A := A) (FTStop call).
-  Proof using. intros H T' call' H'. by dependent destruction H'. Qed.
-  Hint Resolve ftfull_FTStop : fmon.
-  Lemma ftfull_FTStop_spec {A} T (call : Eff T) :
-    ftfull (A := A) (FTStop call) ↔ (T → False).
-  Proof using. split; [sfirstorder | apply ftfull_FTStop]. Qed.
-  Hint Rewrite @ftfull_FTStop_spec : fmon.
-
-  Equations ftfull_dec {A} `{Eff.Wf Eff} (ft : fTrace A) : Decision (ftfull ft) :=
-    ftfull_dec (FTNext _ tr) := dec_if (ftfull_dec tr);
-    ftfull_dec (FTRet _) := left _;
-    ftfull_dec (@FTStop T call) with decideT T := {
-      | inleft _ => right _
-      | inright _ => left _
-      }.
-  Solve All Obligations with hauto l:on db:fmon.
-
-  (** If the effect type provides an exception type to represent its non
-      terminating calls, then we can use that type to represent a trace *)
-  Context {Ex : Eff.Exc Eff}.
-  Notation exc := (Eff.exc Eff).
-
-  (** If an effect type provide an exception, one can throw that exception
-      This is implemented by a Hint Extern later *)
-  Definition fmon_throw_exc : MThrow exc fMon :=
-    λ _ e, mcall_noret (Eff.exc2eff e).T2.
-
-  Definition ftres_full {A} (ft : fTrace A) : option (result exc A) :=
-    match ftres ft with
-    | Ok a => Some (Ok a)
-    | Error (existT T call) => Eff.eff2exc call |$> Error
-    end.
-
-  Lemma ftres_full_ftfull {A} (ft : fTrace A) :
-    ftfull ft ↔ is_Some (ftres_full ft).
-  Proof using.
-    unfold ftfull, ftres_full.
-    destruct (ftres ft) as [|[]].
-    - hauto l:on.
-    - rewrite fmap_is_Some.
-      rewrite Eff.exc_empty.
-      split.
-      + naive_solver.
-      + injection 2. sfirstorder.
-  Qed.
-
-  Definition fTrace_list_res_full {A} (l : list fEvent) (r : result exc A) :=
-    fTrace_list_res l (mapE Eff.exc2eff r).
-
-  Lemma fTrace_ftlist_ftres_full {A} (ft : fTrace A) e:
-    ftres_full ft = Some e →
-    fTrace_list_res_full (ftlist ft) e = ft.
-  Proof using.
-    unfold fTrace_list_res_full.
-    intro H.
-    rewrite <- fTrace_ftlist_ftres.
-    f_equal.
-    unfold ftres_full, mapE in *.
-    repeat case_split;
-      try (f_equal; rewrite Eff.exc_wf);
-      try (rewrite fmap_Some in * );
-      sfirstorder.
-  Qed.
-  Hint Rewrite @fTrace_ftlist_ftres_full : fmon.
-
-  Lemma ftlist_fTrace_list_res_full {A} l e :
-    ftlist (@fTrace_list_res_full A l e) = l.
-  Proof using. unfold fTrace_list_res_full. hauto l:on db:fmon. Qed.
-  Hint Rewrite @ftlist_fTrace_list_res_full : fmon.
-
-  Lemma ftres_fTrace_list_res_full {A} l e :
-    ftres_full (@fTrace_list_res_full A l e) = Some e.
-  Proof using.
-    unfold fTrace_list_res_full, ftres_full.
-    autorewrite with fmon.
-    destruct e; cbn in *.
-    + done.
-    + case_split.
-      rewrite Eff.exc_wf in *.
-      hauto lq:on.
-  Qed.
-  Hint Rewrite @ftres_fTrace_list_res_full : fmon.
-
-  Lemma ftfull_fTrace_list_res_full A l e: ftfull (A:=A) (fTrace_list_res_full l e).
-  Proof using.
-    rewrite ftres_full_ftfull.
-    by rewrite ftres_fTrace_list_res_full.
-  Qed.
-  Hint Resolve ftfull_fTrace_list_res_full : fmon.
-
-  (** * Trace matching *)
-
-  Inductive fmatch {A : Type} : fMon A → fTrace A → Prop :=
-  | FTMNext T (call : Eff T) k ret tr :
-    fmatch (k ret) tr → fmatch (Next call k) (FTNext (call &→ ret) tr)
-  | FTMRet a : fmatch (Ret a) (FTRet a)
-  | FTMStop T (call : Eff T) k : fmatch (Next call k) (FTStop call).
-
-  Lemma fmatch_next A T (call : Eff T) (k : T → fMon A) (ret : T) tr:
-    fmatch (Next call k) (FTNext (call &→ ret) tr)
-      ↔ fmatch (k ret) tr.
-  Proof using.
-    split; intro H.
-    - dependent destruction H. hauto inv:fTrace.
-    - sauto lq:on.
-  Qed.
-
-  #[global] Instance fmatch_Proper A :
-    Proper (@fequiv A ==> eq ==> iff) fmatch.
-  Proof using.
-    intros m1 m2 H ? t ->.
-    generalize dependent t.
-    induction H.
-    - naive_solver.
-    - split;
-        intro Hfm;
-        dependent destruction Hfm;
-        constructor;
-        naive_solver.
-  Qed.
-
-  Lemma ftrace_exists {A} (m : fMon A) : ∃ t, fmatch m t.
-  Proof using. induction m; hauto q:on ctrs:fmatch. Qed.
-
-  Context {Wf : Eff.Wf Eff}.
-
-  Lemma ftrace_ftfull_exists {A} (m : fMon A) : ∃ t, fmatch m t ∧ ftfull t.
-  Proof using Wf.
-    induction m. { hauto lq:on ctrs:fmatch hint:db:fmon. }
-    destruct (decideT T).
-    - hauto lq:on ctrs:fmatch.
-    - hauto lq:on ctrs:fmatch db:fmon.
-  Qed.
-
-  Lemma fequiv_via_ftrace_ftfull A m1 m2:
-    (∀ trc : fTrace A, ftfull trc → fmatch m1 trc ↔ fmatch m2 trc) →
-    m1 ≡ₑ m2.
-  Proof using Wf.
-    generalize dependent m2.
-    induction m1; intros m2 Ht; destruct m2.
-    - hauto ctrs:fmatch inv:fmatch q:on db:fmon.
-    - hauto ctrs:fmatch inv:fmatch q:on db:fmon.
-    - hauto ctrs:fmatch inv:fmatch q:on db:fmon.
-    - destruct (ftrace_ftfull_exists (Next call k)) as [tr [Htr Hfull]].
-      pose proof Htr as Htr2.
-      apply Ht in Htr2. 2: done.
-      dependent destruction Htr;
-      dependent destruction Htr2.
-      + clear dependent tr.
-        constructor.
-        intro a.
-        apply H.
-        intro trc.
-        specialize Ht with (FTNext (call &→ a) trc).
-        by setoid_rewrite fmatch_next in Ht.
-      + constructor. intro. hauto l:on db:fmon.
-  Qed.
-
-  (** * Fmon Handling *)
-
-  Definition fHandler (M : Type → Type) := ∀ A, Eff A → M A.
-
-  Definition mcall_fHandler `{MC : MCall Eff M} : fHandler M := @mcall _ _ MC.
-
-  Fixpoint finterp `{MRet M, MBind M} (handler : fHandler M)
-    [A] (mon : fMon A) : M A :=
-    match mon with
-    | Ret a => (mret a : M A)
-    | @Next _ T call k => ret ←@{M} handler T call; finterp handler (k ret)
-    end.
-
-  #[global] Instance fequiv_finterp A `{MRet M, MBind M} (handler : fHandler M):
-    (∀ T, Proper (pointwise_relation T eq ==> eq ==> eq) (@mbind M _ T A)) →
-    Proper (@fequiv A ==> eq) (finterp handler (A := A)).
-  Proof using.
-    intros P m1 m2 He.
-    induction He; sfirstorder.
-  Qed.
-
-  Lemma finterp_mcall A (f : fMon A) : finterp mcall_fHandler f ≡ₑ f.
-  Proof using. induction f; hauto l:on. Qed.
-
-
-
-  (** * Decidability for fmatch *)
-
-  Context {ED : Eff.Decision Eff}.
-
-  Definition event_extract (ev : fEvent) {T} (call : Eff T) : option T :=
-    match decide (ev.(fcall) =ₑ call) with
-    | left e => Some (Eff.conv_ret (Eff.eq_type e) ev.(fret))
+  (** Decide if a [call] matches an event [ev] and return the return value with
+      the correct type if it matches *)
+  Definition event_extract (ev : fEvent) (call : Eff) : option (eff_ret call) :=
+    match decide (ev.(fcall) = call) with
+    | left e => Some (ctrans e ev.(fret))
     | right _ => None
     end.
 
-  Lemma event_extract_Some ev T (call : Eff T) ret :
+  Lemma event_extract_Some ev (call : Eff) ret :
     event_extract ev call = Some ret ↔ ev = (call &→ ret).
-  Proof using.
+  Proof using CTS.
     unfold event_extract.
+    destruct ev. cbn in *.
     case_decide.
-    - pose proof H as H'.
-      simplify_eff_eq in H'.
-      setoid_rewrite UIP_refl.
-      split.
-      + hauto q:on inv:fEvent.
-      + intro E.
-        destruct ev.
-        by dependent destruction E.
-    - hauto q:on.
+    - subst. simp ctrans. naive_solver.
+    - naive_solver.
   Qed.
+  Hint Rewrite @event_extract_Some : fmon.
 
-  Lemma event_extract_None ev T (call : Eff T) :
-    event_extract ev call = None ↔ fcall ev ≠ₑ call.
-  Proof using.
+  Lemma event_extract_None ev (call : Eff) :
+    event_extract ev call = None ↔ fcall ev ≠ call.
+  Proof using CTS.
     rewrite eq_None_not_Some.
     apply not_iff_compat.
     unfold is_Some.
     setoid_rewrite event_extract_Some.
-    clear Wf Ex. (* Otherwise sauto uses them *)
-    sauto.
+    destruct ev. naive_solver.
+  Qed.
+  Hint Rewrite @event_extract_None : fmon.
+
+  (** * Event as transitions
+
+  One can see a free monad (or an itree) as a state transtion system where the
+  free monad value itself is the state and events are transitions. *)
+
+  (** [fsteps] describe the result of list of transitions labelled by events in
+      the list applied on the monad. There is a [fstep] notation instead of a
+      separate predicate for a single transition *)
+  Inductive fsteps {A : Type} : fMon A → list fEvent → fMon A → Prop :=
+  | FMNil f : fsteps f [] f
+  | FMCons call k ret tl f' :
+    fsteps (k ret) tl f' → fsteps (Next call k) ((call &→ ret) :: tl) f'.
+  Notation fstep f ev f' := (fsteps f [ev] f').
+  Hint Constructors fsteps : fmon.
+
+  Lemma fsteps_nil {A} (f f' : fMon A) :
+    fsteps f [] f' ↔ f = f'.
+  Proof. sauto. Qed.
+  Hint Rewrite @fsteps_nil : fmon.
+
+  Lemma fsteps_app {A} l l' (f f' : fMon A) :
+    fsteps f (l ++ l') f' ↔ ∃ f'', fsteps f l f'' ∧ fsteps f'' l' f'.
+  Proof.
+    split.
+    - generalize dependent f.
+      induction l; cbn.
+      + sauto lq:on.
+      + intros f H. dependent destruction H.
+        sauto lq:on.
+    - intros (f'' & H & H').
+      induction H; hauto.
   Qed.
 
-  Equations fmatch_dec `{EqDecision A}
-      (f : fMon A) tr : Decision (fmatch f tr) :=
-    fmatch_dec (Next call k) (FTNext ev ft)
-      with inspect (event_extract ev call) := {
-      | Some ret eq: _ =>
-          dec_if (fmatch_dec (k ret) ft)
-      | None eq: _ => right _
+  Definition fsteps_cons {A} ev tl (f f' : fMon A) :
+    fsteps f (ev :: tl) f' ↔ ∃ f'', fstep f ev f'' ∧ fsteps f'' tl f'
+  := fsteps_app [ev] tl f f'.
+  Lemma fsteps_Next_cons {A} call k ret tl (f : fMon A) :
+      fsteps (Next call k) ((call &→ ret) :: tl) f ↔ fsteps (k ret) tl f.
+    Proof.
+      split; intro H.
+      - by dependent destruction H.
+      - by constructor.
+  Qed.
+  Hint Rewrite @fsteps_Next_cons : fmon.
+
+  Lemma fsteps_Ret_cons {A} ret l (f : fMon A) :
+    fsteps (Ret ret) l f ↔ l = [] ∧ f = Ret ret.
+  Proof.
+    split; intro H.
+    - by dependent destruction H.
+    - hauto ctrs:fsteps.
+  Qed.
+
+  (** ** Replay function *)
+
+  (** [freplay] is a computational version of [fsteps]. It takes a free monad
+      and a list of events and tries to replay it. It might fail of course *)
+  Equations freplay {A} (f : fMon A) (l : list fEvent) : option (fMon A) :=
+    freplay f [] := Some f;
+    freplay (Next call k) (ev :: tl)  with event_extract ev call := {
+      | Some ret => freplay (k ret) tl
+      | None => None
       } ;
-    fmatch_dec (Ret r) (FTRet r') := dec_if (decide (r = r'));
-    fmatch_dec (Next call k) (FTStop call') := dec_if (decide (call =ₑ call'));
-    fmatch_dec _ _ := right _.
+    freplay _ _ := None.
+
+  Lemma freplay_ind A
+    (P : fMon A → list fEvent → option (fMon A) → Prop)
+    (Pempty: ∀ f : fMon A, P f [] (Some f))
+    (PRetNone: ∀ ret ev tl, P (Ret ret) (ev :: tl) None)
+    (Pcallmatch: ∀ call k ret tl o,
+       freplay (k ret) tl = o →
+       P (k ret) tl o → P (Next call k) (call &→ ret :: tl) o)
+    (Pcallnomatch: ∀ call k call' ret' tl ,
+       call ≠ call' → P (Next call k) (call' &→ ret' :: tl) None) f l :
+    P f l (freplay f l).
+    funelim (freplay _ _); sauto db:fmon lq:on.
+  Qed.
+  Remove Hints FunctionalElimination_freplay : typeclass_instances.
+  #[global] Instance FunctionalElimination_freplay' A :
+    FunctionalElimination (@freplay A) _ 5 := @freplay_ind A.
+
+  Lemma freplay_Some l {A} (f f' : fMon A) :
+    freplay f l = Some f' ↔ fsteps f l f'.
+  Proof using CTS. funelim (freplay _ _); sauto db:fmon lq:on dep:on. Qed.
+
+  Lemma freplay_None l {A} (f f' : fMon A) :
+    freplay f l = None ↔ ∀ f', ¬ fsteps f l f'.
+  Proof using CTS.
+    setoid_rewrite <- freplay_Some.
+    destruct (freplay _ _); naive_solver.
+  Qed.
+
+  (** ** Free monad traces
+
+  The type of trace over fMon. Those trace are partial and can stop
+  anywhere, including having or not an incomplete next event. *)
+
+  (** *** Trace ends *)
+
+  (** A trace end is either nothing, a return value or an incomplete event i.e a
+      call without a return value *)
+  Inductive fTraceEnd {A : Type} :=
+  | FTENothing
+  | FTERet (a : A)
+  | FTEStop (call : Eff).
+  Arguments fTraceEnd : clear implicits.
+
+  #[export] Instance fTraceEnd_eqdec `{EqDecision A} : EqDecision (fTraceEnd A).
+  Proof using ED. solve_decision. Defined.
+
+  (** Definition of trance end matching a value of the monad *)
+  Definition fmatch_end {A} (f : fMon A) (tre : fTraceEnd A) :=
+    match tre with
+    | FTENothing => True
+    | FTERet r => if f is Ret r' then r = r' else False
+    | FTEStop call => if f is Next call' _ then call = call' else False
+    end.
+
+  #[export] Instance fmatch_end_dec `{EqDecision A}
+    (f : fMon A) tre : Decision (fmatch_end f tre).
+  Proof using ED. unfold fmatch_end. tc_solve. Defined.
+
+  Lemma fmatch_end_ret `(r : A) : fmatch_end (Ret r) (FTERet r).
+  Proof. done. Qed.
+  Hint Resolve fmatch_end_ret : fmon.
+
+  Lemma fmatch_end_stop {A} (call : Eff) k :
+    fmatch_end (A := A) (Next call k) (FTEStop call).
+  Proof. done. Qed.
+  Hint Resolve fmatch_end_stop : fmon.
+
+  (** *** Traces *)
+
+  (** A trace is a list of events and an end. *)
+  Definition fTrace A : Type := list fEvent * fTraceEnd A.
+  Notation FTRet a := ([], FTERet a).
+  Notation FTStop call := ([], FTEStop call).
+  Notation FTNothing := ([], FTENothing).
+
+  (** We keep the defintion of a trace matching a monad value as an inductive
+  for convenience *)
+  Inductive fmatch {A : Type} : fMon A → fTrace A → Prop :=
+  | FTMNothing f : fmatch f FTNothing
+  | FTMRet a : fmatch (Ret a) (FTRet a)
+  | FTMStop call k : fmatch (Next call k) (FTStop call)
+  | FTMNext call k ret tl tre :
+    fmatch (k ret) (tl, tre) → fmatch (Next call k) ((call &→ ret) :: tl, tre).
+
+  (** Matching a whole trace is the same as running all the transition and then
+      matching the end of the trace *)
+  Lemma fmatch_fsteps {A} (f : fMon A) tr :
+    fmatch f tr ↔ ∃ f', fsteps f tr.1 f' ∧ fmatch_end f' tr.2.
+  Proof.
+    split.
+    - induction 1; hauto l:on db:fmon.
+    - destruct tr. cbn. intros [f' [FS FME]].
+      induction FS; sauto.
+  Qed.
+
+  (** [fmatch] is decidable which is very import for the rest of this project *)
+  Equations fmatch_dec `{EqDecision A}
+    (f : fMon A) tr : Decision (fmatch f tr) :=
+    fmatch_dec f (l, tre)
+      with inspect (freplay f l) := {
+      | Some f' eq: _ =>
+          dec_if (decide (fmatch_end f' tre))
+      | None eq: _ => right _
+      }.
   Solve All Obligations with
     intros; cbn in *;
-    try (rewrite event_extract_Some in *;
-         subst ev;
-         by rewrite <- fmatch_next in * );
-    try match goal with | |- ¬ _ => intro H; dependent destruction H end;
-    try(rewrite event_extract_None in * );
-    hauto db:fmon.
-  #[global] Existing Instance fmatch_dec.
+    rewrite fmatch_fsteps;
+    setoid_rewrite <- freplay_Some;
+    naive_solver.
 
+  Lemma fmatch_next A (call : Eff) (k : eff_ret call → fMon A) (ret : eff_ret call) tl tre:
+    fmatch (Next call k) (call &→ ret :: tl, tre)
+      ↔ fmatch (k ret) (tl, tre).
+  Proof using.
+    repeat rewrite fmatch_fsteps.
+    by setoid_rewrite fsteps_Next_cons.
+  Qed.
+
+  (** *** Full traces *)
+
+  (** Full trace are traces that only stop on a non returning effect *)
+  Definition ftfull {A} (ft : fTrace A) :=
+    match ft.2 with
+    | FTEStop call => eff_ret call → False
+    | FTERet _ => True
+    | FTENothing => False
+    end.
+  Lemma ftfull_FTRet {A} (a : A) : ftfull (FTRet a).
+  Proof using. naive_solver. Qed.
+  Hint Resolve ftfull_FTRet : fmon.
+  Lemma ftfull_FTStop {A} (call : Eff) :
+    (eff_ret call → False) → ftfull (A := A) (FTStop call).
+  Proof using. naive_solver. Qed.
+  Hint Resolve ftfull_FTStop : fmon.
+  Lemma ftfull_FTStop_spec {A} (call : Eff) :
+    ftfull (A := A) (FTStop call) ↔ (eff_ret call → False).
+  Proof using. split; [sfirstorder | apply ftfull_FTStop]. Qed.
+  Hint Rewrite @ftfull_FTStop_spec : fmon.
+
+  Equations ftfull_dec {A} `{!EffWf Eff} (ft : fTrace A) : Decision (ftfull ft) :=
+    ftfull_dec (_, FTEStop call) with decideT (eff_ret call) := {
+      | inleft _ => right _
+      | inright _ => left _
+      };
+    ftfull_dec (_, FTENothing) := right _;
+    ftfull_dec (_, FTERet) := left _.
+  Solve All Obligations with unfold ftfull; sfirstorder.
+
+
+  (** A full trace always exists for any free monad value *)
+  Lemma ftrace_ftfull_exists {A} (m : fMon A) : ∃ t, fmatch m t ∧ ftfull t.
+  Proof using Wf.
+    setoid_rewrite fmatch_fsteps.
+    unfold fTrace. apply exists_pair.
+    induction m as [|?? IH].
+    - repeat (eexists || split || auto with fmon || cbn).
+    - destruct (decideT (eff_ret call)) as [e | ?].
+      + specialize (IH e). sauto q:on dep:on db:pair.
+      + repeat (eexists || split || auto with fmon || cbn).
+  Qed.
+
+  (** Two value of the free monad that generate the same set of full traces are
+      equal *)
+  Theorem fmon_eq_via_ftrace_ftfull A m1 m2:
+    (∀ trc : fTrace A, ftfull trc → fmatch m1 trc ↔ fmatch m2 trc) → m1 = m2.
+  Proof using Wf.
+    generalize dependent m2.
+    induction m1 as [ret| call k IH]; intros m2 Ht.
+    - specialize (Ht ([], FTERet ret)). hauto l:on inv:fmatch db:fmon.
+    - destruct m2 as [ret2 | call2 k2].
+      + clear IH. specialize (Ht ([], FTERet ret2)).
+        hauto l:on inv:fmatch db:fmon.
+      + destruct (ftrace_ftfull_exists (Next call k)) as [tr [Htr Hfull]].
+        pose proof Htr as Htr2.
+        apply Ht in Htr2. 2: done.
+        dependent destruction Htr; dependent destruction Htr2;
+          cbn in *; first done.
+        all: f_equal.
+        all: apply functional_extensionality.
+        all: intro ret'.
+        * done.
+        * apply IH.
+          intros [tl' tre'].
+          specialize Ht with (call &→ ret' :: tl', tre').
+          by setoid_rewrite fmatch_next in Ht.
+  Qed.
+
+  Corollary fmon_eq_via_ftrace A m1 m2:
+    (∀ trc : fTrace A, fmatch m1 trc ↔ fmatch m2 trc) → m1 = m2.
+  Proof using Wf. intro. apply fmon_eq_via_ftrace_ftfull. naive_solver. Qed.
+
+  (** ** Free monad effect handling *)
+
+  (** A handler is a function that decribe how to interpret all effects of [Eff]
+      in a monad [M] *)
+  Definition fHandler (M : Type → Type) := ∀ call : Eff, M (eff_ret call).
+
+  (** If the target monad already supports the effect, then there is a trivial
+      handler *)
+  Definition mcall_fHandler `{MC : !MCall Eff M} : fHandler M := mcallM M.
+
+  (** Free monad interpret: Interprets a monad using a handler *)
+  Fixpoint finterp `{MR: MRet M, MB: MBind M} (handler : fHandler M)
+    [A] (mon : fMon A) : M A :=
+    match mon with
+    | Ret a => (mret a : M A)
+    | Next call k => ret ←@{M} handler call; finterp handler (k ret)
+    end.
+
+  (** Interpreting inside the free monad itself is the identity *)
+  Lemma finterp_mcall A (f : fMon A) : finterp mcall_fHandler f = f.
+  Proof using. induction f; hauto l:on use:functional_extensionality.
+  Qed.
+  Hint Rewrite finterp_mcall : fmon.
 End FMon.
-Arguments fMon : clear implicits.
-Arguments fEvent : clear implicits.
-Arguments FEvent {_ _} _ _.
-Arguments fTrace : clear implicits.
-Arguments fHandler : clear implicits.
-#[global] Instance fequiv_params : Params (@fequiv) 2 := {}.
-Infix "≡ₑ" := fequiv (at level 70, no associativity).
-Infix "≡ₑ@{ A }" := (@fequiv A _)
-                      (at level 70, only parsing, no associativity).
+
+Arguments fMon _ {_}.
+Arguments fEvent _ {_}.
+Arguments fTraceEnd :clear implicits.
+Arguments fTrace _ {_}.
+Arguments fHandler _ {_}.
+
 Infix "&→" := FEvent (at level 45, no associativity).
-Infix "&→@{ Eff }" := (@FEvent (Eff _) _)
+Infix "&→@{ Eff }" := (@FEvent Eff _)
                         (at level 45, only parsing, no associativity).
 
-Definition fHandler_plus {Effl Effr : eff} `{MRet M, MBind M}
-    (fl : fHandler Effl M) (fr : fHandler Effr M) : fHandler (Effl +ₑ Effr) M :=
-  λ T e, match e with
-         | inl l => fl T l
-         | inr r => fr T r
-         end.
-Infix "+ₕ" := fHandler_plus (at level 50, left associativity) : effect_scope.
+Notation fstep f ev f' := (fsteps f [ev] f').
+Notation FTRet a := ([], FTERet a).
+Notation FTStop call := ([], FTEStop call).
+Notation FTNothing := ([], FTENothing).
 
-#[export] Hint Extern 5 (MThrow _ ?M) =>
-  let Eff := mk_evar eff in unify M (fMon Eff);
-  class_apply (@fmon_throw_exc Eff _) : typeclass_instances.
+(** Create a handler for a sum of effects from handler for each individual
+    effects *)
+Definition fHandler_plus `{Effect Effl, Effect Effr, MRet M, MBind M}
+    (fl : fHandler Effl M) (fr : fHandler Effr M) : fHandler (Effl + Effr) M :=
+  λ call, match call with
+          | inl l => fl l
+          | inr r => fr r
+          end.
+Infix "+ₕ" := fHandler_plus (at level 50, left associativity).
 
 (** * Choice monad: Non deterministic free monad *)
+Notation Nextl e := (Next (inl e)).
+Notation Nextr e := (Next (inr e)).
+
 Section CMon.
   Context {Eff : eff}.
+  Context {ER : Effect Eff}.
+  Context {ED : EqDecision Eff}.
+  Context {Wf : EffWf Eff}.
+  Context {CT : EffCTrans Eff}.
+  Context {CTS : EffCTransSimpl Eff}.
 
   (** A choice monad is just a free monad with additional choice effects. The
       only difference is the theory around it (equivalence, trace matching, etc.) *)
-  Definition cMon := fMon (Eff +ₑ MChoice).
-  Notation Nextl e := (Next (inl e)).
-  Notation Nextr e := (Next (inr e)).
+  Definition cMon := fMon (Eff + MChoice).
 
-  Definition cinterp `{MRet M, MBind M, MChoose M} (f : fHandler Eff M) [A]
-      (c : cMon A) : M A :=
+  (** Interprets the effect in a monad supporting non-determinism *)
+  Definition cinterp `{MR: MRet M, MB: MBind M, MCh: MChoose M}
+      (f : fHandler Eff M) [A] (c : cMon A) : M A :=
     finterp (f +ₕ mcall_fHandler) c.
 
-  Definition cmon_throw_exc `{Eff.Exc Eff} : MThrow (Eff.exc Eff) cMon :=
-    λ _ e, @mthrow (Eff.exc Eff + discard_type) _ _ _ (inl e).
-
-  (** * CMon matching with a trace *)
+  (** ** Matching a choice monad with a trace that does not contain choice
+         points *)
   Inductive cmatch {A : Type} : cMon A → fTrace Eff A → Prop :=
-  | CTMNext T (call : Eff T) k ret tr :
-    cmatch (k ret) tr → cmatch (Nextl call k) (FTNext (call &→ ret) tr)
-  | CTMChoose n i k tr : cmatch (k i) tr →
-    cmatch (Nextr (ChooseFin n) k) tr
+  | CTMNothing f : cmatch f FTNothing
   | CTMRet a : cmatch (Ret a) (FTRet a)
-  | CTMStop T (call : Eff T) k : cmatch (Nextl call k) (FTStop call).
+  | CTMStop (call : Eff) k : cmatch (Nextl call k) (FTStop call)
+  | CTMNext (call : Eff) k ret tl tre :
+    cmatch (k ret) (tl, tre) → cmatch (Nextl call k) (call &→ ret :: tl, tre)
+  | CTMChoose n i k tr : cmatch (k i) tr →
+    cmatch (Nextr (ChooseFin n) k) tr.
 
-  #[local] Instance cmatch_fequiv_Proper A :
-    Proper (fequiv ==> eq ==> iff) (@cmatch A).
+  Lemma cmatch_Nextl A (call : Eff) (k : eff_ret call → cMon A)
+    (ret : eff_ret call) tl tre:
+    cmatch (Nextl call k) (call &→ ret :: tl, tre)
+      ↔ cmatch (k ret) (tl, tre).
   Proof using.
-    intros m1 m2 H ? t ->.
-    generalize dependent t.
-    induction H.
-    - naive_solver.
-    - destruct call as [call | choice];
-        split;
-        intro Hfm;
-        dependent induction Hfm;
-        try (intro H'; dependent destruction H');
-        econstructor;
-        naive_solver.
+    split.
+    - intro H. by dependent destruction H.
+    - by constructor.
   Qed.
 
-  Lemma cmatch_Nextl A T (call : Eff T) (k : T → cMon A) (ret : T) tr:
-    cmatch (Nextl call k) (FTNext (call &→ ret) tr)
-      ↔ cmatch (k ret) tr.
-  Proof using.
-    split; intro H.
-    - dependent destruction H. hauto inv:fTrace.
-    - sauto lq:on.
-  Qed.
+  (* Useful in the following definition for typeclass search *)
+  #[local] Hint Extern 10 (Decision _) => cbn in * : typeclass_instances.
+
+  (** Decide a cmatch: This is a bit dumb, it will try every possible
+      non-deterministic choice until one match succeeded or all failed. However
+      in practice, if concrete value of cMon avoid doing choice before doing
+      very long identical sequences of calls in all branches, this shouldn't be
+      that bad. *)
+  Equations cmatch_dec `{EqDecision A} (f : cMon A) tr
+    : Decision (cmatch f tr) :=
+    cmatch_dec _ FTNothing := left _;
+    cmatch_dec (Ret r) (FTRet r') := dec_if (decide (r = r'));
+    cmatch_dec (Nextl call k) (FTStop call') :=
+      dec_if (decide (call = call'));
+    cmatch_dec (Nextl call k) (ev :: tl, tre)
+      with inspect (event_extract ev call) := {
+      | Some ret eq: _ =>
+          dec_if (cmatch_dec (k ret) (tl, tre))
+      | None eq: _ => right _
+      } ;
+    cmatch_dec (Nextr (ChooseFin n) k) tr :=
+      dec_if (decide (∃x : fin n, cmatch (k x) tr));
+    cmatch_dec _ _ := right _.
+  Solve All Obligations with
+    cbn;
+    intros;
+    try match goal with | H : ∃ _, _ |- _ => destruct H end;
+    try rewrite event_extract_Some in *;
+    try rewrite event_extract_None in *;
+    subst;
+    try (intro H; dependent destruction H);
+    try econstructor;
+    naive_solver.
+  #[export] Existing Instance cmatch_dec.
+
+  (** ** Choice monad equivalence
+
+  A choice monad is not a canonical representation, so there is a non-equality
+  equivalence relation *)
+
 
   (** Definition of strong equivalence. I haven't found a way to define it in a
-      more useable manner. In particular one can't do an induction on it *)
+      more useable manner. In particular one can't do (yet) an induction on it *)
   Definition cequiv {A} : Equiv (cMon A) :=
     λ c1 c2, ∀ tr, cmatch c1 tr ↔ cmatch c2 tr.
 
@@ -484,20 +491,7 @@ Section CMon.
   #[global] Instance cequiv_trans A : Transitive (@cequiv A).
   Proof using. unfold Transitive, cequiv in *. naive_solver. Qed.
   #[global] Instance cequiv_equiv A : Equivalence (@cequiv A).
-  Proof using. constructor; apply _. Qed.
-
-  #[global] Instance cequiv_fequiv_Proper A :
-    Proper (fequiv ==> fequiv ==> iff) (@cequiv A).
-  Proof using.
-    unfold cequiv.
-    intros m1 m2 H m'1 m'2 H'.
-    setoid_rewrite H.
-    setoid_rewrite H'.
-    reflexivity.
-  Qed.
-
-  #[global] Instance fequiv_cequiv A : subrelation fequiv (@cequiv A).
-  Proof using. by intros x y ->. Qed.
+  Proof using. constructor; tc_solve. Qed.
 
   #[global] Instance cmatch_cequiv_Proper A :
     Proper (cequiv ==> eq ==> iff) (@cmatch A).
@@ -506,12 +500,12 @@ Section CMon.
     by unfold cequiv in H.
   Qed.
 
-  (** * Some cequiv useability lemma *)
   Lemma cequiv_Ret A (a : A) : cequiv (Ret a) (Ret a).
   Proof using. reflexivity. Qed.
 
-  Lemma cequiv_Next A T call k k':
-    pointwise_relation T cequiv k k' → @cequiv A (Next call k) (Next call k').
+  Lemma cequiv_Next A call k k':
+    pointwise_relation (eff_ret call) cequiv k k' →
+    @cequiv A (Next call k) (Next call k').
   Proof using.
     intros H trc.
     destruct call;
@@ -522,53 +516,13 @@ Section CMon.
       by rewrite H in *.
   Qed.
 
-  #[global] Instance Next_cequiv_Proper A T call:
-    Proper (pointwise_relation T cequiv ==> @cequiv A) (Next call).
+  #[global] Instance Next_cequiv_Proper A call:
+    Proper (pointwise_relation (eff_ret call) cequiv ==> @cequiv A) (Next call).
   Proof using. intros k k'. apply cequiv_Next. Qed.
 
-  (* TODO: Make a good inversion tactic for cequiv *)
-
-  (** * Decidability for cmatch *)
-  Context {ED : Eff.Decision Eff}.
-
-  (** Decide a cmatch: a bit dumb, it will try every possible non-deterministic
-      choice until one match succeeded or all failed. However in practice, if
-      concrete value of cMon avoid doing choice before doing very long
-      identical sequenced of calls in all choice, this shouldn't be that bad. *)
-  Equations cmatch_dec `{EqDecision A} (f : cMon A) tr
-    : Decision (cmatch f tr) :=
-    cmatch_dec (Nextl call k) (FTNext ev ft)
-      with inspect (event_extract ev call) := {
-      | Some ret eq: _ =>
-          dec_if (cmatch_dec (k ret) ft)
-      | None eq: _ => right _
-      } ;
-    cmatch_dec (Ret r) (FTRet r') := dec_if (decide (r = r'));
-    cmatch_dec (Nextl call k) (FTStop call') :=
-      dec_if (decide (call =ₑ call'));
-    cmatch_dec (Nextr (ChooseFin n) k) tr :=
-      dec_if (@decide (∃x : fin n, cmatch (k x) tr) _);
-    cmatch_dec _ _ := right _.
-  Solve Obligations with
-    try (intros; cbn in *;
-         lazymatch goal with | |- Decision _ => fail | |- _ => idtac end;
-         try (rewrite event_extract_Some in *;
-              subst ev;
-              by rewrite <- cmatch_Nextl in * );
-         try match goal with | |- ¬ _ => intro H; dependent destruction H end;
-         try(rewrite event_extract_None in * );
-         hauto ctrs:cmatch).
-  Next Obligation. cbn. intros. apply _. Defined.
-  #[global] Existing Instance cmatch_dec.
+  (* TODO: Make a good induction principle for cequiv *)
 
 End CMon.
-Arguments cMon : clear implicits.
-
-Notation Nextl e := (Next (inl e)).
-Notation Nextr e := (Next (inr e)).
+Arguments cMon _ {_}.
 
 #[global] Instance cequiv_params : Params (@cequiv) 2 := {}.
-
-#[export] Hint Extern 5 (MThrow _ ?M) =>
-  let Eff := mk_evar eff in unify M (cMon Eff);
-  class_apply (@cmon_throw_exc Eff _) : typeclass_instances.

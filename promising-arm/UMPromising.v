@@ -478,12 +478,12 @@ Module IIS.
 End IIS.
 
 (** Runs an outcome. *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) A (o : outcome A) :
-   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) A := λ '(ts, mem, iis),
+Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
+   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) := λ '(ts, mem, iis),
   let initmem := Memory.initial_from_memMap initmem in
   let deps_to_view :=
     λ deps, IIS.from_DepOn deps ts.(TState.regs) iis in
-  match o with
+  match out with
   | RegWrite reg racc deps val =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       let wr_view := deps_to_view deps in

@@ -370,7 +370,7 @@ Section common_def.
     Decision (is_translation_read_fault event).
   Proof.
     unfold is_translation_read_fault.
-    destruct event as [T call ret].
+    destruct event as [call ret].
     destruct call; tc_solve.
   Qed.
 

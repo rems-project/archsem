@@ -19,7 +19,7 @@ Section ST.
   #[global] Instance st_fmap : FMap stateT := λ _ _ f ma s,
       (ma s) |$> (λ '(s, a), (s, f a)).
 
-  #[global] Instance st_call_MState : MCall (MState St) stateT | 10 := λ _ eff,
+  #[global] Instance st_call_MState : MCall (MState St) stateT | 10 := λ eff,
       match eff with
       | MSet s => λ _, mret (s, ())
       | MGet => λ s, mret (s, s)
@@ -31,7 +31,7 @@ Section ST.
   (* Specific instances can override this if they want a state modifying effect
   different from MState. *)
   #[global] Instance st_call_inner `{MCall Eff M} : MCall Eff stateT | 100 :=
-    λ _ eff, st_lift (mcall eff).
+    λ eff, st_lift (mcall eff).
 
 End ST.
 Arguments stateT : clear implicits.
