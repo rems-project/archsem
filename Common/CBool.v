@@ -19,6 +19,18 @@ Require Import Options.
 Require Import CDestruct.
 
 
+(** Add a few lemma to the brefl rewrite database *)
+Lemma true_is_true (b : bool) : b ↔ is_true b.
+Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- true_is_true : brefl.
+
+Lemma true_eq_true (b : bool) : b ↔ b = true.
+Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- true_eq_true : brefl.
+
+Lemma not_eq_false (b : bool) : ¬ b ↔ b = false.
+Proof. destruct b; naive_solver. Qed.
+#[export] Hint Rewrite <- not_eq_false : brefl.
 
 (** * Bool unfold ***)
 
@@ -36,19 +48,6 @@ Proof. solve_proper2_tc. Qed.
 
 (* Explain to coq hammer tactic how to use Is_true and BoolUnfold *)
 #[export] Hint Rewrite @bool_unfold using typeclasses eauto : brefl.
-
-Lemma true_is_true (b : bool) : b ↔ is_true b.
-  Proof. destruct b; naive_solver. Qed.
-#[export] Hint Rewrite <- true_is_true : brefl.
-
-Lemma true_eq_true (b : bool) : b ↔ b = true.
-  Proof. destruct b; naive_solver. Qed.
-#[export] Hint Rewrite <- true_eq_true : brefl.
-
-Lemma not_eq_false (b : bool) : ¬ b ↔ b = false.
-  Proof. destruct b; naive_solver. Qed.
-#[export] Hint Rewrite <- not_eq_false : brefl.
-
 
 
 (* Basic implementation of BoolUnfold *)
@@ -95,6 +94,15 @@ Global Instance bool_unfold_pair A B c (b : A → B → bool) P:
   (∀ x y, BoolUnfold (b x y) (P x y)) →
   BoolUnfold (let '(x, y) := c in b x y) (let '(x, y) := c in P x y).
 Proof. by destruct c. Qed.
+
+Definition bool_unfold_reflect  `(r : reflect P b) : BoolUnfold b P.
+Proof. tcclean. destruct r; naive_solver. Qed.
+
+#[global] Instance bool_unfold_Z_leb z z' :
+  BoolUnfold (z <=? z')%Z (z ≤ z')%Z := bool_unfold_reflect (Z.leb_spec0 z z').
+
+#[global] Instance bool_unfold_Z_le z z' :
+  BoolUnfold (z <? z')%Z (z < z')%Z := bool_unfold_reflect (Z.ltb_spec0 z z').
 
 
 (** * Decidable propositions ***)
