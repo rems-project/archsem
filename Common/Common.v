@@ -35,6 +35,7 @@ Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
 
 (** * Vectors ***)
 
+(** ** Vector alter *)
 Section VAlter.
   Context {A : Type}.
   Context {n : nat}.
@@ -88,6 +89,8 @@ Create HintDb vec discriminated.
 #[global] Hint Rewrite @valter_eq using done : vec.
 #[global] Hint Rewrite @vec_to_list_length : vec.
 
+
+(** ** Vector partial lookup *)
 Section VecLookup.
   Context {T : Type}.
   Context {n : nat}.
@@ -134,6 +137,8 @@ End VecLookup.
 
 #[global] Hint Rewrite @vec_lookup_nat_in : vec.
 
+(** ** Vector heterogenous equality *)
+
 Equations vec_eqdep_dec `{EqDecision T} : EqDepDecision (vec T) :=
   vec_eqdep_dec _ _ _ vnil vnil := left _;
   vec_eqdep_dec _ _ _ (vcons _ _) vnil := right _;
@@ -148,6 +153,26 @@ Solve All Obligations with
    naive_solver).
 #[export] Existing Instance vec_eqdep_dec.
 
+
+(** ** Vector transport *)
+
+Equations ctrans_vec T : CTrans (vec T) :=
+  ctrans_vec _ 0 0 _ vnil := vnil;
+  ctrans_vec _ (S x) (S y) H (vcons a v) :=
+    vcons a (ctrans_vec T x y (eq_add_S H) v).
+#[export] Existing Instance ctrans_vec.
+
+Lemma ctrans_vec_vnil `(H : 0 = 0) A : ctrans H vnil =@{vec A 0} vnil.
+Proof. reflexivity. Qed.
+#[export] Hint Rewrite @ctrans_vec_vnil : ctrans.
+
+Lemma ctrans_vec_vcons `(H : S x = S y) `(a : A) v :
+  ctrans H (vcons a v) = vcons a (ctrans (eq_add_S H) v).
+Proof. reflexivity. Qed.
+#[export] Hint Rewrite @ctrans_vec_vcons : ctrans.
+
+#[export] Instance ctrans_vec_simpl T : CTransSimpl (vec T).
+Proof. intros x p v. induction v; simp ctrans; congruence. Qed.
 
 
 (** * Finite decidable quantifiers ***)

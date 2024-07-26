@@ -223,7 +223,7 @@ Definition regval_bv (n : N) (rv : regval) : option (bv n) :=
   match rv with
   | @Regval_bitvector z b =>
       match decide (z = n) with
-      | left e => Some (bv_conv e b)
+      | left e => Some (ctrans e b)
       | right _ => None
       end
   | _ => None

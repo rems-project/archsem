@@ -1,16 +1,17 @@
+Require Export Equations.Prop.Equations.
+Require Export Program.Equality Relations.
+Require Import ZArith JMeq.
 
 From stdpp Require Export base.
 From stdpp Require Export fin.
 From stdpp Require Export tactics.
 From stdpp Require Import vector.
 From stdpp Require Import decidable.
-Require Export Relations.
+
 From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
-Require Import ZArith.
-Require Import Options.
-Require Import JMeq.
 
+Require Import Options.
 
 (** * Axioms
 
@@ -492,11 +493,16 @@ Class DecisionT (T : Type) := decideT : T + {T → False}.
 Global Hint Mode DecisionT ! : typeclass_instances.
 Global Arguments decideT _ {_} : simpl never, assert.
 
-Global Instance inabited_decisionT `{Inhabited T} : DecisionT T :=
+(** Trivial instances of Decision T if type is either inhabited or empty *)
+Global Instance inhabited_decisionT `{Inhabited T} : DecisionT T :=
   inleft inhabitant.
 Global Instance emptyT_decisionT `{EmptyT T} : DecisionT T := inright emptyT.
 
-(** Application of DecisionT to fin *)
+(** ** Inhabited, EmptyT, and DecisionT, missing base type instances *)
+
+Global Instance emptyT_empty : EmptyT ∅.
+Proof. inversion 1. Qed.
+
 Global Instance emptyT_fin0 : EmptyT (fin 0).
 Proof. inversion 1. Qed.
 
@@ -536,3 +542,65 @@ Definition idM (T : Type) := T.
 #[global] Instance idM_bind : MBind idM := λ _ _ f ma, f ma.
 #[global] Instance idM_join : MJoin idM := λ _ mma, mma.
 #[global] Instance idM_fmap : FMap idM := λ _ _ f ma, f ma.
+
+(** * Computable transport
+
+This allow to computably transport object of type families along an equality on
+the indices (e.g. [fin], [vec], [bv]). The equality must be on concrete values
+and not on types (e.g. [n = m] and not [fin n = fin m]).
+
+The goal for ctrans is to compute using [vm_compute] and similar tactics even if
+the equality proof is entirely opaque. Nevertheless it can safely be extracted
+to [Obj.magic]. This is a band aid until we have builtin [cast] from Observable
+Type Theory (OTT). *)
+
+(** CTrans is the main typeclass for computable transport. It only contains
+computational content and not soundness *)
+Class CTrans {T : Type} (F : T → Type) :=
+  ctrans : ∀ (x y : T) (eq : x = y) (a : F x), F y.
+#[global] Arguments ctrans {_ _ _ _ _} _ _.
+#[export] Instance: Params (@ctrans) 3 := {}.
+#[export] Hint Mode CTrans ! ! : typeclass_instances.
+
+(** [CTransSimpl] is a companion typeclass that the soundness proof of a
+[CTrans] instance *)
+Class CTransSimpl `{CTrans T F} :=
+  ctrans_simpl : ∀ (x : T) (p : x = x) (a : F x), ctrans p a = a.
+#[global] Arguments CTransSimpl {_} _ {_}.
+#[export] Hint Mode CTransSimpl ! ! - : typeclass_instances.
+#[export] Hint Rewrite @ctrans_simpl using tc_solve : ctrans.
+
+Lemma ctrans_trans `{CTransSimpl T F} {n m p : T}
+    (e : n = m) (e' : m = p) (a : F n) :
+  a |> ctrans e |> ctrans e' = ctrans (eq_trans e e') a.
+Proof. subst. cbn. by simp ctrans. Qed.
+#[export] Hint Rewrite @ctrans_trans using tc_solve : ctrans.
+
+Lemma ctrans_sym `{CTransSimpl T F} {n m : T} (e : n = m) (a : F n) (b : F m):
+  a = ctrans (symmetry e) b ↔ ctrans e a = b.
+Proof. subst. cbn. by simp ctrans. Qed.
+#[export] Hint Rewrite @ctrans_sym using tc_solve : ctrans.
+
+(** ** Computable transport for [fin] *)
+
+Arguments eq_add_S {_ _} _.
+
+Equations ctrans_fin : CTrans fin :=
+ctrans_fin (S x) (S y) _ 0%fin := 0%fin;
+ctrans_fin (S x) (S y) H (FS a) := FS (ctrans_fin x y (eq_add_S H) a).
+#[export] Existing Instance ctrans_fin.
+
+Lemma ctrans_fin_zero `(H : S x = S y) : ctrans H (0%fin) = 0%fin.
+Proof. reflexivity. Qed.
+#[export] Hint Rewrite @ctrans_fin_zero : ctrans.
+
+Lemma ctrans_fin_succ `(H : S x = S y) a :
+  ctrans H (FS a) = FS (ctrans (eq_add_S H) a).
+Proof. unfold ctrans. by simp ctrans_fin. Qed.
+#[export] Hint Rewrite @ctrans_fin_succ : ctrans.
+
+#[export] Instance ctrans_fin_simpl : CTransSimpl fin.
+Proof.
+  intros x p a.
+  induction a; simp ctrans; congruence.
+Qed.

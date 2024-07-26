@@ -26,44 +26,52 @@ Defined.
 (** This make lia slower and more powerful. I think it's better with it on *)
 Ltac Zify.zify_convert_to_euclidean_division_equations_flag ::= constr:(true).
 
-(*** BV conv ***)
+(** * Computable transport instance
 
-Lemma symmetry_symmetry {A} (x y : A) (e : x = y) :
-  symmetry (symmetry e) = e.
-Proof. by destruct e. Qed.
-#[global] Hint Rewrite @symmetry_symmetry : core.
+This implements the transport along bitvector size equality in computable way.*)
 
-Module BVDecidableType.
-  Definition U := N.
-  Definition eq_dec (x y:U) : {x = y} + {x <> y} := decide_rel (=) x y.
-End BVDecidableType.
+#[export] Instance ctrans_bv : CTrans bv :=
+  λ n m H b,
+    (* Implementation is keep the z and do a non-computable transport of the
+       proof. This can break things like reflexivity, but people should use
+       [bv_eq] *)
+    let '(@BV _ z wf) := b in
+    let wf' := match H with eq_refl => wf end
+    in @BV m z wf'.
 
-Module BVEqDep := Eqdep_dec.DecidableEqDep(BVDecidableType).
+#[export] Instance ctrans_bv_simpl : CTransSimpl bv.
+Proof. intros ?? []. bv_solve. Qed.
+Opaque ctrans_bv.
 
-Definition bv_conv {n m : N} (e : n = m) (b : bv n) : bv m :=
-  match e with
-  | eq_refl => b
-  end.
+Lemma bv_unfold_ctrans_bv n m (e : n = m) s w b z:
+  BvUnfold n s w b z → BvUnfold m s w (ctrans e b) z.
+Proof. tcclean. subst. simp ctrans. Qed.
+#[global] Hint Resolve bv_unfold_ctrans_bv : bv_unfold_db.
 
-Lemma bv_conv_simpl {n} (e : n = n) (b : bv n) :
-  bv_conv e b = b.
-Proof. by rewrite (BVEqDep.UIP_refl n e). Qed.
-#[global] Hint Rewrite @bv_conv_simpl : bv_unfold.
+Lemma ctrans_bv_0 `(H : n = m) : ctrans H (bv_0 n) = bv_0 m.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite @ctrans_bv_0 : ctrans bv_simplify.
 
-Lemma bv_conv_trans {n m p : N} (e : n = m) (e' : m = p) (b : bv n) :
-  b |> bv_conv e |> bv_conv e' = b |> bv_conv (eq_trans e e').
-Proof. naive_solver. Qed.
+Lemma ctrans_Z_to_bv `(H : n = m) z : ctrans H (Z_to_bv n z) = Z_to_bv m z.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite @ctrans_Z_to_bv : ctrans bv_simplify.
 
-Lemma bv_conv_sym {n m : N} (e : n = m) (bn : bv n) (bm : bv m) :
-  bn = bv_conv (symmetry e) bm <-> bv_conv e bn = bm.
-Proof. naive_solver. Qed.
+Lemma bv_unsigned_ctrans `(H : n = m) b :
+  bv_unsigned (ctrans H b) = bv_unsigned b.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite @bv_unsigned_ctrans : ctrans bv_simplify.
 
-Global Instance bv_unfold_bv_conv n m (e : n = m) s w b z:
-  BvUnfold n s w b z → BvUnfold m s w (bv_conv e b) z.
-Proof. tcclean. naive_solver. Qed.
+Lemma ctrans_bv_extract i `(H : n = m) `(b : bv p) :
+  ctrans H (bv_extract i n b) = bv_extract i m b.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite @ctrans_bv_extract : ctrans bv_simplify.
 
+Lemma bv_extract_ctrans `(H : n = m) `(b : bv n) i l :
+  bv_extract i l (ctrans H b) = bv_extract i l b.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite @bv_extract_ctrans : ctrans bv_simplify.
 
-(*** bv rewrite databases ***)
+(** * Rewrite databases *)
 
 Lemma bv_wrap_bv_unsigned' {n m} (b : bv m) :
   n = m -> bv_wrap n (bv_unsigned b) = bv_unsigned b.
@@ -75,29 +83,7 @@ Proof. intro H. rewrite H. apply bv_wrap_bv_unsigned. Qed.
 #[global] Hint Rewrite Z_to_bv_bv_unsigned : bv_simplify.
 
 
-Lemma transport_Z_to_bv {n m : N} (e : n = m) (z : Z) :
-  bv_conv e (Z_to_bv n z) = Z_to_bv m z.
-Proof. scongruence. Qed.
-#[global] Hint Rewrite @transport_Z_to_bv : bv_simplify.
-
-Lemma transport_bv_unsigned (n m i l : N) (b : bv n) (e : n = m):
-  bv_unsigned (bv_conv e b) = bv_unsigned b.
-Proof. scongruence. Qed.
-#[global] Hint Rewrite transport_bv_unsigned : bv_simplify.
-
-Lemma transport_bv_extract1 (n m i l : N) (b : bv n) (e : n = m):
-  bv_extract i l (bv_conv e b) = bv_extract i l b.
-Proof. scongruence. Qed.
-#[global] Hint Rewrite transport_bv_extract1 : bv_simplify.
-
-Lemma transport_bv_extract2 (n i l l' : N) (b : bv n) (e : l = l'):
-  bv_conv e (bv_extract i l b) = bv_extract i l' b.
-Proof. scongruence. Qed.
-#[global] Hint Rewrite transport_bv_extract2 : bv_simplify.
-
-
-
-(*** bv_solve improvements ***)
+(** * [bv_solve] improvements *)
 
 
 (* Makes bv_unfold slower but more powerful, we'll see if that is better. *)
@@ -118,7 +104,7 @@ Ltac bv_solve' :=
   forall_hyps ltac:(fun H => bv_simplify_arith H); bv_solve.
 
 
-(*** Extra bitvector function ***)
+(** * Extra bitvector functions *)
 
 
 (* This section might be upstreamed to stdpp. *)
@@ -197,7 +183,7 @@ Definition bv_nor {n : N} (bv1 bv2 : bv n) : bv n := bv_or bv1 bv2 |> bv_not.
 Definition bv_xnor {n : N} (bv1 bv2 : bv n) : bv n := bv_xor bv1 bv2 |> bv_not.
 
 
-(*** Extra bvn functions ***)
+(** * Extra [bvn] functions *)
 
 Definition BVN (n : N) (val : Z) {wf: BvWf n val} : bvn := BV n val.
 
@@ -233,7 +219,7 @@ Definition bvn_sign_extend (l : N) (x : bvn) : bvn :=
 Definition bvn_binop (f : forall {n : N}, bv n -> bv n -> bv n) (x y : bvn)
     : option bvn :=
   match decide (bvn_n x = bvn_n y) with
-  | left eq => Some (f (bv_conv eq (bvn_val x)) (bvn_val y) : bvn)
+  | left eq => Some (f (ctrans eq (bvn_val x)) (bvn_val y) : bvn)
   | right _ => None
   end.
 
