@@ -247,14 +247,14 @@ Tactic Notation "cdestruct" ident(H) "as" simple_intropattern_list(pats) :=
 Tactic Notation "cdestruct_intro" :=
   let H := intro_get_name in cdestruct H.
 Tactic Notation "cdestruct_intro" "as" simple_intropattern_list(pats) :=
-  let H := intro_get_name in cdestruct H as pats.
+  let H := intro_get_name in cdestruct H as (pats).
 
 (** [cdestruct_intros] will introduce all possible values (like [intros]), but
 additionally destroy each of them with the [cdestruct] engine. *)
 Tactic Notation "cdestruct_intros" :=
   let H := intro_get_name in cdestruct_core H; intros.
 Tactic Notation "cdestruct_intros" "as" simple_intropattern_list(pats) :=
-  let H := intro_get_name in cdestruct_core H; intro pats.
+  let H := intro_get_name in cdestruct_core H; intros pats.
 
 (** ** Default Instanciation of the CDestruct typeclasses *)
 
