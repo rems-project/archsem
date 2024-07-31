@@ -4,6 +4,7 @@
  (modules
    Common
    CBase
+   CExtraction
    Options
    CDestruct
    CArith
