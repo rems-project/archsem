@@ -88,12 +88,15 @@ Arguments t : clear implicits.
 End PromMemory.
 
 (* to be imported *)
-Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
-  Import IWD.
+Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT (IWD.IWA)).
+  Import IWD.IWA.Arch.
+  Import IWD.IWA.Interface.
+  Import IWD.DD.
   Import TM.
-  Notation outcome := (IWD.outcome DepOn.t).
-  Notation iMon := (IWD.iMon DepOn.t).
-  Notation iSem := (IWD.iSem DepOn.t).
+
+  Notation outcome := (outcome DepOn.t).
+  Notation iMon := (iMon DepOn.t).
+  Notation iSem := (iSem DepOn.t).
 
   Structure PromisingModel := {
       tState : Type;
@@ -344,6 +347,6 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
 
 End Gen.
 
-Module Type GenT (IWD : InterfaceWithDeps) (TM : TermModelsT IWD).
+Module Type GenT (IWD : InterfaceWithDeps) (TM : TermModelsT IWD.IWA).
   Include Gen IWD TM.
 End GenT.

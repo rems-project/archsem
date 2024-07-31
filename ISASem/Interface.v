@@ -674,6 +674,5 @@ End InterfaceT.
 
 Module Type InterfaceWithArch.
   Declare Module Arch : Arch.
-  Include Arch.
-  Include Interface Arch.
+  Declare Module Interface : InterfaceT Arch.
 End InterfaceWithArch.

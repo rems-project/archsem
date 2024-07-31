@@ -30,14 +30,17 @@ Open Scope Z_scope.
 Open Scope stdpp_scope.
 
 (* Module to be imported *)
-Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD).
-  Import IWD.
+Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA).
+  Import IWD.IWA.Arch.
+  Import IWD.IWA.Interface.
+  Import IWD.DD.
   Import Term.
-  #[local] Notation outcome := (IWD.outcome DepOn.t).
-  #[local] Notation iMon := (IWD.iMon DepOn.t).
-  #[local] Notation iSem := (IWD.iSem DepOn.t).
-  #[local] Notation iEvent := (IWD.iEvent DepOn.t).
-  #[local] Notation iTrace := (IWD.iTrace DepOn.t).
+
+  #[local] Notation outcome := (outcome DepOn.t).
+  #[local] Notation iMon := (iMon DepOn.t).
+  #[local] Notation iSem := (iSem DepOn.t).
+  #[local] Notation iEvent := (iEvent DepOn.t).
+  #[local] Notation iTrace := (iTrace DepOn.t).
   #[local] Open Scope nat.
 
   (** Relational event ID, this might differ from ISA events in certain

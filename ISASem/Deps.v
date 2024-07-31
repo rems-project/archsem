@@ -14,9 +14,9 @@ Require Import SSCCommon.StateT.
 Local Open Scope stdpp_scope.
 Local Open Scope Z_scope.
 
-
 Module DepsDefs (IWA : InterfaceWithArch). (* to be imported *)
-  Import IWA.
+  Import IWA.Interface.
+  Import IWA.Arch.
 
   Module DepOn.
     Record t :=
@@ -106,15 +106,20 @@ Module DepsDefs (IWA : InterfaceWithArch). (* to be imported *)
   End Footprint.
 End DepsDefs.
 
+Module Type DepsDefsT (IWA : InterfaceWithArch).
+  Include DepsDefs IWA.
+End DepsDefsT.
+
 Module Type InterfaceWithDeps.
   Declare Module IWA : InterfaceWithArch.
-  Include IWA.
-  Include DepsDefs IWA.
+  Declare Module DD : DepsDefsT IWA.
 End InterfaceWithDeps.
 
 (** Optional system for dependency computation *)
 Module Type ArchDeps (IWD : InterfaceWithDeps).
-  Import IWD.
+  Import IWD.IWA.Arch.
+  Import IWD.IWA.Interface.
+  Import IWD.DD.
 
   (** Extra context for footprint analysis *)
   Parameter footprint_context : Type.
@@ -128,7 +133,9 @@ Module Type ArchDeps (IWD : InterfaceWithDeps).
 End ArchDeps.
 
 Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
-  Import IWD.
+  Import IWD.IWA.Arch.
+  Import IWD.IWA.Interface.
+  Import IWD.DD.
   Import AD.
 
   Definition footprint_model := bvn → footprint_context → Footprint.t.
@@ -226,10 +233,11 @@ Module DepsComp (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
 
 End DepsComp.
 
+Module Type DepsCompT (IWD : InterfaceWithDeps) (AD : ArchDeps IWD).
+  Include DepsComp IWD AD.
+End DepsCompT.
+
 Module Type InterfaceWithDepsComp.
   Declare Module IWD : InterfaceWithDeps.
   Declare Module AD : ArchDeps IWD.
-  Include IWD.
-  Include AD.
-  Include DepsComp IWD AD.
 End InterfaceWithDepsComp.

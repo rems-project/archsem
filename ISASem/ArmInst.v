@@ -485,18 +485,18 @@ Module Arm.
   Include Interface.
   Module IWA <: InterfaceWithArch.
     Module Arch := Arch.
-    Include Arch.
-    Include Interface.
+    Module Interface := Interface.
   End IWA.
-  Module DepsDefs := DepsDefs IWA.
-  Include DepsDefs.
+  Module DD := DepsDefs IWA.
+  Include DD.
   Module IWD <: InterfaceWithDeps.
     Module IWA := IWA.
-    Include IWA.
-    Include DepsDefs.
+    Module DD := DepsDefs IWA.
   End IWD.
   Module ArchDeps <: ArchDeps IWD.
-    Import IWD.
+    Import IWD.IWA.Arch.
+    Import IWD.IWA.Interface.
+    Import IWD.DD.
     Definition footprint_context := unit.
     Definition get_footprint_context {deps : Type}
       : iMon deps () := mret ().

@@ -24,7 +24,8 @@ Require Import ISASem.Interface.
     heavily depending on various requirements that are not yet known.
  *)
 Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
-  Import IWA.
+  Import IWA.Arch.
+  Import IWA.Interface.
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
   Definition memoryMap := pa → bv 8.

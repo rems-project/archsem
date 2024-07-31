@@ -17,11 +17,11 @@ Module VMSA := VMSA22Arm.
 Module Thm2.
 
   Import Candidate.
-  #[local] Notation outcome := (IWD.outcome DepOn.t).
-  #[local] Notation iMon := (IWD.iMon DepOn.t).
-  #[local] Notation iSem := (IWD.iSem DepOn.t).
-  #[local] Notation iEvent := (IWD.iEvent DepOn.t).
-  #[local] Notation iTrace := (IWD.iTrace DepOn.t).
+  #[local] Notation outcome := (outcome DepOn.t).
+  #[local] Notation iMon := (iMon DepOn.t).
+  #[local] Notation iSem := (iSem DepOn.t).
+  #[local] Notation iEvent := (iEvent DepOn.t).
+  #[local] Notation iTrace := (iTrace DepOn.t).
 
   (* Given the initial memory [: memoryMap], the root [: pa] of the page table,
      the range of the page table [: gset pa], this predicate checks that the
