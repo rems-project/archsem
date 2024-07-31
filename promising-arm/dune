@@ -11,3 +11,8 @@
                --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
  )
 )
+
+(alias
+ (name coq)
+ (deps (alias_rec all))
+)
