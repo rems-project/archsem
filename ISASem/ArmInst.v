@@ -233,9 +233,9 @@ Definition regval_bv (n : N) (rv : regval) : option (bv n) :=
   settable! Build_FullAddress <FullAddress_paspace; FullAddress_address>.
 
 #[global] Instance PASpace_eq_dec : EqDecision PASpace.
-Proof. solve_decision. Qed.
+Proof. solve_decision. Defined.
 #[global] Instance FullAddress_eq_dec : EqDecision FullAddress.
-Proof. solve_decision. Qed.
+Proof. solve_decision. Defined.
 
 Definition PASpace_to_nat (pa : PASpace) : nat :=
   match pa with

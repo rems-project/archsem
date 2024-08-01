@@ -327,7 +327,7 @@ Module Interface (A : Arch).
              end.
 
     #[export] Instance outcome_wf : EffWf outcome.
-    Proof using. intros []; cbn; try tc_solve. Qed.
+    Proof using. intros []; cbn; try tc_solve. Defined.
 
     (* Automatically implies EqDecision (outcome T) on any T *)
     #[export] Instance outcome_eq_dec `{EqDecision deps} : EqDecision outcome.
@@ -336,14 +336,14 @@ Module Interface (A : Arch).
     #[export] Instance outcome_EffCTrans : EffCTrans outcome.
     Proof using.
       intros [] [].
-      all: try (abstract discriminate).
+      all: try discriminate.
       all: cbn in *.
       all: try (intros; assumption).
       (* MemRead case *)
       intros e [[b o]| a].
       - left. split.
         + eapply ctrans; [|eassumption].
-          abstract naive_solver.
+          naive_solver.
         + assumption.
       - right. assumption.
     Defined.
@@ -515,7 +515,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ reg racc rval, Decision (P reg racc rval)}.
     #[global] Instance is_reg_readP_dec ev: Decision (is_reg_readP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
 
     (** ** Register writes *)
     Definition is_reg_writeP ev : Prop :=
@@ -536,7 +536,7 @@ Module Interface (A : Arch).
     #[global] Existing Instance is_reg_writeP_cdestr.
 
     #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
 
   End isReg.
   Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
@@ -568,7 +568,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec : ∀ n rr rres, Decision (P n rr rres)}.
     #[global] Instance is_mem_read_reqP_dec ev : Decision (is_mem_read_reqP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
   End isMemReadReq.
   Notation is_mem_read_req := (is_mem_read_reqP (λ _ _ _, True)).
 
@@ -596,7 +596,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ n rr rval otag, Decision (P n rr rval otag)}.
     #[global] Instance is_mem_readP_dec ev: Decision (is_mem_readP ev).
-    Proof using Pdec. unfold is_mem_readP. solve_decision. Qed.
+    Proof using Pdec. unfold is_mem_readP. solve_decision. Defined.
   End IsMemRead.
   Notation is_mem_read := (is_mem_readP (λ _ _ _ _, True)).
 
@@ -626,7 +626,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ n wr wres, Decision (P n wr wres)}.
     #[global] Instance is_mem_write_reqP_dec ev: Decision (is_mem_write_reqP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Qed.
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
   End isMemWriteReq.
   Notation is_mem_write_req := (is_mem_write_reqP (λ _ _ _, True)).
 
@@ -654,7 +654,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ n wr, Decision (P n wr)}.
     #[global] Instance is_mem_writeP_dec ev: Decision (is_mem_writeP ev).
-    Proof using Pdec. unfold is_mem_writeP. solve_decision. Qed.
+    Proof using Pdec. unfold is_mem_writeP. solve_decision. Defined.
   End isMemWrite.
   Notation is_mem_write := (is_mem_writeP (λ _ _, True)).
 
