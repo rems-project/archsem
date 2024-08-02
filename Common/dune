@@ -30,4 +30,5 @@
 
 (alias
  (name coq)
+ (deps (alias_rec all))
 )
