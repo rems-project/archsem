@@ -7,7 +7,7 @@ Require Import SSCCommon.Effects.
 
 Section Seq.
 
-Context {deps : Type} (regs_whitelist : option (gset reg)).
+Context (regs_whitelist : option (gset reg)).
 
 (** A sequential state for bookkeeping reads and writes to registers/memory in
     gmaps, as well as, the initial state *)
@@ -74,10 +74,10 @@ Definition seq_state_to_init (seqs : seq_state) : MState.init 1 :=
      MState.termCond := seqs.(initSt).(MState.termCond) |}.
 
 (** This is the effect handler for the outcome effect in the sequential model *)
-Definition sequential_model_outcome (call : outcome deps) : seqmon (eff_ret call) :=
+Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   match call with
   | RegRead reg racc => mget (read_reg_seq_state reg)
-  | RegWrite reg racc deps val =>
+  | RegWrite reg racc val =>
     if regs_whitelist is Some rwl
     then if bool_decide (reg ∈ rwl)
       then msetv (lookup reg ∘ regs) (Some val)
@@ -93,21 +93,20 @@ Definition sequential_model_outcome (call : outcome deps) : seqmon (eff_ret call
     else
       read ← mget (read_mem_seq_state n rr.(ReadReq.pa));
       mret (inl (read, None))
+  | MemWriteAddrAnnounce _ _ _ _ => mret ()
   | MemWrite n wr =>
     write_mem_seq_state wr.(WriteReq.pa) (wr.(WriteReq.value) |> bv_to_bytes 8);;
     mret (inl true)
-  | InstrAnnounce _ => mret ()
-  | BranchAnnounce _ deps => mret ()
   | Barrier _ => mret ()
-  | CacheOp _ _ => mret ()
-  | TlbOp _ _ => mret ()
+  | CacheOp _ => mret ()
+  | TlbOp _ => mret ()
   | TakeException _ => mthrow "Taking exception is not supported"
   | ReturnException _ => mret ()
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   end.
 
 (** Run instructions until a final state has been reached or fuel is depleted *)
-Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon deps unit)
+Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
   : seqmon (MState.final 1) :=
   if fuel is S fuel
   then
@@ -120,7 +119,7 @@ Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon deps unit)
 
 (** Run the model on given initial MState and an initially blank sequential state.
     The sequential state gets discarded and only the final state is returned *)
-Definition sequential_model_exec (fuel : nat) (isem : iMon deps unit)
+Definition sequential_model_exec (fuel : nat) (isem : iMon ())
   (initSt : MState.init 1) : Exec.t string (MState.final 1) :=
   '(_, fs) ← sequential_model_seqmon fuel isem
              {| initSt := initSt; regs := ∅; mem := ∅ |};
@@ -129,7 +128,7 @@ Definition sequential_model_exec (fuel : nat) (isem : iMon deps unit)
 (** Top-level one-threaded sequential model function that takes fuel (guaranteed
     termination) and an instruction monad, and returns a computational set of
     all possible final states. *)
-Definition sequential_modelc (fuel : nat) (isem : iMon deps unit) : (Model.c ∅) :=
+Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   λ n,
   match n with
   | 1 => λ initSt : MState.init 1,

@@ -17,12 +17,6 @@ Section rel.
 
   Import Candidate.
 
-  Notation outcome := (outcome DepOn.t).
-  Notation iMon := (iMon DepOn.t).
-  Notation iSem := (iSem DepOn.t).
-  Notation iEvent := (iEvent DepOn.t).
-  Notation iTrace := (iTrace DepOn.t).
-
   Notation "'W'" := (W cd).
   Notation "'R'" := (R cd).
   Notation "'A'" := (A cd).
@@ -112,7 +106,7 @@ Section rel.
   Definition has_tlb_op_P (P : _ -> Prop) `{forall op, Decision (P op)}
     (event : iEvent) :=
     match event with
-    | TlbOp _ op &→ _ => P op
+    | TlbOp op &→ _ => P op
     | _ => False
     end.
 
@@ -197,7 +191,7 @@ Section rel.
 
   Definition get_vmid (event : iEvent) :=
     match event with
-    | TlbOp _ tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_vmid))
+    | TlbOp tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_vmid))
     | MemRead _ rreq &→ _ => (rreq.(ReadReq.translation).(TranslationInfo_vmid))
     | _ => None
     end.
@@ -207,7 +201,7 @@ Section rel.
 
   Definition get_asid (event : iEvent) :=
     match event with
-    | TlbOp _ tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_asid))
+    | TlbOp tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_asid))
     | MemRead _ rreq &→ _ => (rreq.(ReadReq.translation).(TranslationInfo_asid))
     | _ => None
     end.
@@ -236,7 +230,7 @@ Section rel.
                                   | Some va => Some (page_of_addr va)
                                   | None => None
                                   end
-    | TlbOp _ tlbop &→ _ => Some (page_of_addr (tlbop.(TLBI_rec)
+    | TlbOp tlbop &→ _ => Some (page_of_addr (tlbop.(TLBI_rec)
                                                       .(TLBIRecord_address)))
     | _ => None
     end.
@@ -251,7 +245,7 @@ Section rel.
         | Some (ipa, _) => Some (page_of_addr ipa)
         | None => None
         end
-    | TlbOp _ tlbop &→ _ => Some (page_of_addr
+    | TlbOp tlbop &→ _ => Some (page_of_addr
                                           (tlbop.(TLBI_rec).(TLBIRecord_address)))
     | _ => None
     end.

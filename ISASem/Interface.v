@@ -47,6 +47,9 @@ Module Type Arch.
   Parameter reg_acc_eq : EqDecision reg_acc.
   #[export] Existing Instance reg_acc_eq.
 
+  (** The program counter register *)
+  Parameter pc_reg : reg.
+
 
   (** Virtual address size *)
   Parameter va_size : N.
@@ -140,11 +143,10 @@ Module Type Arch.
   Parameter tlb_op_eq : EqDecision tlb_op.
   #[export] Existing Instance tlb_op_eq.
 
-  (** Fault type for a fault raised by the instruction (not by the concurrency model)
-      In Arm terms, this means any synchronous exception decided by the ISA model *)
-  Parameter fault : Type -> Type.
+  (** Fault type for a architectural fault or exception *)
+  Parameter fault : Type.
 
-  Parameter fault_eq : ∀ deps, EqDecision deps → EqDecision (fault deps).
+  Parameter fault_eq : EqDecision fault.
   #[export] Existing Instance fault_eq.
 
 End Arch.
@@ -170,44 +172,29 @@ Module Interface (A : Arch).
   (** ** Memory read request *)
   Module ReadReq.
     #[local] Open Scope N.
-    Record t {deps : Type} {n : N} :=
+    Record t {n : N} :=
       make
         { pa : pa;
           access_kind : accessKind;
           va : option va;
           translation : translation;
           tag : bool;
-          addr_deps : deps;
         }.
     Arguments t : clear implicits.
 
-    Definition set_deps {d1 d2 : Type} {n : N} (f : d1 -> d2) (rr : t d1 n)
-      : t d2 n :=
-      {|
-        pa := rr.(pa);
-        access_kind := rr.(access_kind);
-        va := rr.(va);
-        translation := rr.(translation);
-        tag := rr.(tag);
-        addr_deps := f rr.(addr_deps);
-        |}.
-
-    Definition setv_deps {d1 d2 : Type} {n : N} (adeps : d2) (rr : t d1 n) :=
-      set_deps (fun _ => adeps) rr.
-
-    #[global] Instance eq_dec `{EqDecision deps} n : EqDecision (t deps n).
+    #[global] Instance eq_dec n : EqDecision (t n).
     Proof. solve_decision. Defined.
 
-    #[global] Instance jmeq_dec `{EqDecision deps} : EqDepDecision (t deps).
+    #[global] Instance jmeq_dec : EqDepDecision t.
     Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
-    Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
+    Definition range `(rr : t n) := pa_range (pa rr) (N.to_nat n).
   End ReadReq.
 
   (** ** Memory write request *)
   Module WriteReq.
     #[local] Open Scope N.
-    Record t {deps : Type} {n : N} :=
+    Record t {n : N} :=
       make
         { pa : pa;
           access_kind : accessKind;
@@ -215,196 +202,151 @@ Module Interface (A : Arch).
           va : option va;
           translation : A.translation;
           tag : option bool;
-          addr_deps : deps;
-          data_deps : deps;
         }.
     Arguments t : clear implicits.
 
-    Definition set_deps {d1 d2 : Type} {n : N} (f : d1 -> d2) (wr : t d1 n)
-      : t d2 n :=
-      {|
-        pa := wr.(pa);
-        access_kind := wr.(access_kind);
-        value := wr.(value);
-        va := wr.(va);
-        translation := wr.(translation);
-        tag := wr.(tag);
-        addr_deps := f wr.(addr_deps);
-        data_deps := f wr.(data_deps);
-        |}.
-
-    Definition setv_deps {d1 d2 : Type} {n : N} (adeps ddeps : d2)
-      (wr : t d1 n) : t d2 n:=
-      {|
-        pa := wr.(pa);
-        access_kind := wr.(access_kind);
-        value := wr.(value);
-        va := wr.(va);
-        translation := wr.(translation);
-        tag := wr.(tag);
-        addr_deps := adeps;
-        data_deps := ddeps;
-        |}.
-
-    #[global] Instance eq_dec `{EqDecision deps} n : EqDecision (t deps n).
+    #[global] Instance eq_dec n : EqDecision (t n).
     Proof. solve_decision. Defined.
 
-    #[global] Instance jmeq_dec `{EqDecision deps} : EqDepDecision (t deps).
+    #[global] Instance jmeq_dec : EqDepDecision t.
     Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
-    Definition range {deps n} (rr : t deps n) := pa_range (pa rr) (N.to_nat n).
+    Definition range `(rr : t n) := pa_range (pa rr) (N.to_nat n).
   End WriteReq.
 
 
-  (** ** Outcomes*)
-  Section Interface.
-    (** The Interface is parametric over the type use to represent dependencies.
-        In particular this type can be unit for an ISA model that does not
-        contain any dependency information *)
-    Context {deps : Type}.
+  (** ** Outcomes *)
 
-    (** The effect type used by ISA models *)
-    Inductive outcome : eff :=
-      (** Reads a register [reg] with provided access type [racc]. It is up to
-          concurrency model to interpret [racc] properly *)
-    | RegRead (reg : reg) (racc : reg_acc)
+  (** The effect type used by ISA models *)
+  Inductive outcome : eff :=
+    (** Reads a register [reg] with provided access type [racc]. It is up to
+        concurrency model to interpret [racc] properly *)
+  | RegRead (reg : reg) (racc : reg_acc)
 
-      (** Write a register [reg] with value [reg_val] and access type [racc].
-          The dependencies [deps] should describe the data flow into that
-          register value. *)
-    | RegWrite (reg : reg) (racc : reg_acc) (deps : deps)
-        (regval: reg_type)
-      (** Read [n] bytes of memory in a single access (Single Copy Atomic in Arm
-          terminology). See [ReadReq.t] for the various required fields.
+    (** Write a register [reg] with value [reg_val] and access type [racc]. *)
+  | RegWrite (reg : reg) (racc : reg_acc) (regval: reg_type)
 
-          The result is either a success (value read and optional tag) or a
-          error (intended for physical memory errors, not translation, access
-          control, or segmentation faults *)
-    | MemRead (n : N) (rr: ReadReq.t deps n)
-      (** Write [n] bytes of memory in a single access (Single Copy Atomic in
-          Arm terminology). See [WriteReq.t] for the various required fields.
+    (** Read [n] bytes of memory in a single access (Single Copy Atomic in Arm
+        terminology). See [ReadReq.t] for the various required fields.
 
-          If the result is:
-          - inl true: The write happened
-          - inl false: The write didn't happened because the required strength
-            could not be achieved (e.g. exclusive failure)
-          - inr abort: The write was attempted, but a physical abort happened
-           *)
-    | MemWrite (n : N) (wr : WriteReq.t deps n)
-      (** Declare the opcode of the current instruction when known. Used for
-          dependency computations, and some other cases *)
-    | InstrAnnounce (opcode : bvn)
-      (** Declare a conditional branch to a new physical address [pa]. [deps]
-          represent the data-flow into the conditional decision to take that
-          branch. Unconditional branched do not need to be announced *)
-    | BranchAnnounce (pa : pa) (deps : deps)
-      (** Issues a barrier such as DMB (for Arm), fence.XX (for RISC-V), ... *)
-    | Barrier : barrier -> outcome
-      (** Issues a cache operation such as DC or IC (for Arm) *)
-    | CacheOp (deps : deps) (cop : cache_op)
-      (** Issues a TLB maintenance operation, such as TLBI (for Arm) *)
-    | TlbOp (deps : deps) (tlbop : tlb_op)
-      (** Take an exception. The [fault] type constructor make depend on a value
-          whose data-flow can be encoded in the deps type *)
-    | TakeException (flt : fault deps)
-      (** Return from an exception to this address e.g. ERET (for Arm) or
-          IRET (for x86) *)
-    | ReturnException (pa : pa)
+        The result is either a success (value read and optional tag) or a
+        error (intended for physical memory errors, not translation, access
+        control, or segmentation faults *)
+  | MemRead (n : N) (rr: ReadReq.t n)
 
-      (** Bail out when something went wrong. This is to represent ISA model
-          incompleteness: When getting out of the range of supported
-          instructions or behaviors of the ISA model. The string is for
-          debugging but otherwise irrelevant *)
-    | GenericFail (msg : string).
+    (** Announce the address or a subsequent write, all the parameters must
+        match up with the content of the later write *)
+  | MemWriteAddrAnnounce (n : N) (pa : pa)
+      (acc : accessKind) (trans : translation)
 
-    #[export] Instance outcome_ret : Effect outcome :=
-      λ out, match out with
-             | RegRead _ _ => reg_type
-             | MemRead n _ => (bv (8 * n) * option bool + abort)%type
-             | MemWrite n _ => (bool + abort)%type
-             | GenericFail _ => ∅%type
-             | _ => unit
-             end.
+    (** Write [n] bytes of memory in a single access (Single Copy Atomic in
+        Arm terminology). See [WriteReq.t] for the various required fields.
 
-    #[export] Instance outcome_wf : EffWf outcome.
-    Proof using. intros []; cbn; try tc_solve. Defined.
+        If the result is:
+        - inl true: The write happened
+        - inl false: The write didn't happened because the required strength
+          could not be achieved (e.g. exclusive failure)
+        - inr abort: The write was attempted, but a physical abort happened
+          *)
+  | MemWrite (n : N) (wr : WriteReq.t n)
 
-    (* Automatically implies EqDecision (outcome T) on any T *)
-    #[export] Instance outcome_eq_dec `{EqDecision deps} : EqDecision outcome.
-    Proof using. intros [] []; decide_eq. Defined.
+    (** Issues a barrier such as DMB (for Arm), fence.XX (for RISC-V), ... *)
+  | Barrier (b : barrier)
+    (** Issues a cache operation such as DC or IC (for Arm) *)
+  | CacheOp (cop : cache_op)
+    (** Issues a TLB maintenance operation, such as TLBI (for Arm) *)
+  | TlbOp (tlbop : tlb_op)
+    (** Take an exception. Includes hardware faults and physical interrupts *)
+  | TakeException (flt : fault)
+    (** Return from an exception to this address e.g. ERET (for Arm) or
+        IRET (for x86) *)
+  | ReturnException (pa : pa)
 
-    #[export] Instance outcome_EffCTrans : EffCTrans outcome.
-    Proof using.
-      intros [] [].
-      all: try discriminate.
-      all: cbn in *.
-      all: try (intros; assumption).
-      (* MemRead case *)
-      intros e [[b o]| a].
-      - left. split.
-        + eapply ctrans; [|eassumption].
-          naive_solver.
-        + assumption.
-      - right. assumption.
-    Defined.
+    (** Bail out when something went wrong. This is to represent ISA model
+        incompleteness: When getting out of the range of supported
+        instructions or behaviors of the ISA model. The string is for
+        debugging but otherwise irrelevant *)
+  | GenericFail (msg : string).
 
-    #[export] Instance outcome_EffCTransSimpl : EffCTransSimpl outcome.
-    Proof.
-      intros [] ? ?; cbn.
-      all: try reflexivity.
-      repeat case_match; try simp ctrans; reflexivity.
-    Qed.
+  #[export] Instance outcome_ret : Effect outcome :=
+    λ out, match out with
+            | RegRead _ _ => reg_type
+            | MemRead n _ => (bv (8 * n) * option bool + abort)%type
+            | MemWrite n _ => (bool + abort)%type
+            | GenericFail _ => ∅%type
+            | _ => unit
+            end.
 
-    (** ** Instruction monad *)
+  #[export] Instance outcome_wf : EffWf outcome.
+  Proof using. intros []; cbn; try tc_solve. Defined.
 
-    (** An instruction semantic is a non-deterministic program using the
-        uninterpreted effect type [outcome] *)
-    Definition iMon := cMon outcome.
+  (* Automatically implies EqDecision (outcome T) on any T *)
+  #[export] Instance outcome_eq_dec : EqDecision outcome.
+  Proof using. intros [] []; decide_eq. Defined.
 
-    (** The semantics of an complete instruction. A full definition of
-        instruction semantics is allowed to have an internal state that gets
-        passed from one instruction to the next. This is useful to handle
-        pre-computed instruction semantics (e.g. Isla). For complete instruction
-        semantics, we expect that A will be unit.
+  #[export] Instance outcome_EffCTrans : EffCTrans outcome.
+  Proof using.
+    intros [] [].
+    all: try discriminate.
+    all: cbn in *.
+    all: try (intros; assumption).
+    (* MemRead case *)
+    intros e [[b o]| a].
+    - left. split.
+      + eapply ctrans; [|eassumption].
+        naive_solver.
+      + assumption.
+    - right. assumption.
+  Defined.
 
-        This is planned to disappear and be replaced by a plain [iMon ()], so
-        some modules (like CandidateExecutions) will already assume [iMon ()].
-        *)
-    Record iSem :=
-      {
-        (** The instruction model internal state *)
-        isa_state : Type;
-        (** The instruction model initial state for a thread with a specific Tid
-            *)
-        init_state : nat -> isa_state;
-        semantic : isa_state -> iMon isa_state
-      }.
+  #[export] Instance outcome_EffCTransSimpl : EffCTransSimpl outcome.
+  Proof.
+    intros [] ? ?; cbn.
+    all: try reflexivity.
+    repeat case_match; try simp ctrans; reflexivity.
+  Qed.
 
-    (** A single event in an instruction execution. Events cannot contain
-        termination outcome (outcomes of type `outcome False`) *)
-    Definition iEvent := fEvent outcome.
+  (** ** Instruction monad *)
 
-    (** An execution trace for a single instruction. *)
-    Definition iTrace := fTrace outcome.
+  (** An instruction semantic is a non-deterministic program using the
+      uninterpreted effect type [outcome] *)
+  Definition iMon := cMon outcome.
 
-  End Interface.
+  (** The semantics of an complete instruction. A full definition of
+      instruction semantics is allowed to have an internal state that gets
+      passed from one instruction to the next. This is useful to handle
+      pre-computed instruction semantics (e.g. Isla). For complete instruction
+      semantics, we expect that A will be unit.
 
-  Arguments outcome _%type : clear implicits.
-  Arguments iMon : clear implicits.
-  Arguments iSem : clear implicits.
-  Arguments iTrace : clear implicits.
-  Arguments iEvent : clear implicits.
+      This is planned to disappear and be replaced by a plain [iMon ()], so
+      some modules (like CandidateExecutions) will already assume [iMon ()].
+      *)
+  Record iSem :=
+    {
+      (** The instruction model internal state *)
+      isa_state : Type;
+      (** The instruction model initial state for a thread with a specific Tid
+          *)
+      init_state : nat -> isa_state;
+      semantic : isa_state -> iMon isa_state
+    }.
 
+  (** A single event in an instruction execution. Events cannot contain
+      termination outcome (outcomes of type `outcome False`) *)
+  Definition iEvent := fEvent outcome.
+
+  (** An execution trace for a single instruction. *)
+  Definition iTrace := fTrace outcome.
 
   (** * Event accessors
 
      A set of accessors over the iEvent type *)
 
   (** Get the register out of a register event *)
-  Definition get_reg `(ev : iEvent deps) : option reg :=
+  Definition get_reg (ev : iEvent) : option reg :=
     match ev with
     | RegRead reg _ &→ _ => Some reg
-    | RegWrite reg _ _ _ &→ _ => Some reg
+    | RegWrite reg _ _ &→ _ => Some reg
     | _ => None
     end.
 
@@ -412,42 +354,44 @@ Module Interface (A : Arch).
 
       This gives both the register and the value, because later the value might
       have a type that depend on the register *)
-  Definition get_reg_val `(ev : iEvent deps) : option (reg * reg_type) :=
+  Definition get_reg_val (ev : iEvent) : option (reg * reg_type) :=
     match ev with
     | RegRead reg _ &→ regval => Some (reg, regval)
-    | RegWrite reg _ _ regval &→ _ => Some (reg, regval)
+    | RegWrite reg _ regval &→ _ => Some (reg, regval)
     | _ => None
     end.
 
-  Lemma get_reg_val_get_reg `(ev : iEvent deps) rrv :
+  Lemma get_reg_val_get_reg (ev : iEvent) rrv :
     get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
   Proof. destruct ev as [[] ?]; hauto lq:on. Qed.
 
   (** Get the physical address out of an memory event *)
-  Definition get_pa `(e : iEvent deps) : option pa:=
+  Definition get_pa (e : iEvent) : option pa:=
     match e with
     | MemRead _ rr &→ _ => Some rr.(ReadReq.pa)
+    | MemWriteAddrAnnounce _ pa _ _ &→ _ => Some pa
     | MemWrite _ wr &→ _ => Some wr.(WriteReq.pa)
     | _ => None
     end.
 
   (** Get the size out of an memory event *)
-  Definition get_size `(ev : iEvent deps) : option N :=
+  Definition get_size (ev : iEvent) : option N :=
     match ev with
     | MemRead n _ &→ _ => Some n
+    | MemWriteAddrAnnounce n _ _ _ &→ _ => Some n
     | MemWrite n _ &→ _ => Some n
     | _ => None
     end.
 
   (** Get the value out of a memory event *)
-  Definition get_mem_value `(ev : iEvent deps) : option bvn :=
+  Definition get_mem_value (ev : iEvent) : option bvn :=
     match ev with
     | MemRead n _ &→ inl (bv, _) => Some (bv : bvn)
     | MemWrite n wr &→ _ => Some (wr.(WriteReq.value) : bvn)
     | _ => None
     end.
 
-  Lemma get_mem_value_size `(ev : iEvent deps) bv :
+  Lemma get_mem_value_size (ev : iEvent) bv :
     get_mem_value ev = Some bv → get_size ev = Some (bvn_n bv / 8)%N.
   Proof.
     destruct ev as [[] ?];
@@ -456,15 +400,7 @@ Module Interface (A : Arch).
 
   (** Get the content of a barrier, returns none if not a barrier (or is an
         invalid EID) *)
-  Definition get_branch_pa `(ev : iEvent deps) : option pa:=
-    match ev with
-    | BranchAnnounce pa _ &→ () => Some pa
-    | _ => None
-    end.
-
-  (** Get the content of a barrier, returns none if not a barrier (or is an
-        invalid EID) *)
-  Definition get_barrier `(ev : iEvent deps) : option barrier:=
+  Definition get_barrier (ev : iEvent) : option barrier:=
     match ev with
     | Barrier b &→ () => Some b
     | _ => None
@@ -472,17 +408,17 @@ Module Interface (A : Arch).
 
   (** Get the content of a cache operation, returns none if not a cache operation
         (or is an invalid EID) *)
-  Definition get_cacheop `(ev : iEvent deps) : option cache_op :=
+  Definition get_cacheop (ev : iEvent) : option cache_op :=
     match ev with
-    | CacheOp _ co &→ () => Some co
+    | CacheOp co &→ () => Some co
     | _ => None
     end.
 
   (** Get the content of a TLB operation, returns none if not a TLB operation
         (or is an invalid EID) *)
-  Definition get_tlbop `(ev : iEvent deps) : option tlb_op :=
+  Definition get_tlbop (ev : iEvent) : option tlb_op :=
     match ev with
-    | TlbOp _ to &→ () => Some to
+    | TlbOp to &→ () => Some to
     | _ => None
     end.
 
@@ -497,8 +433,7 @@ Module Interface (A : Arch).
 
   Section isReg.
     Context (P : reg → reg_acc → reg_type → Prop).
-    Context {deps : Type}.
-    Implicit Type ev : iEvent deps.
+    Implicit Type ev : iEvent.
 
     Definition is_reg_readP ev : Prop :=
       match ev with
@@ -520,14 +455,14 @@ Module Interface (A : Arch).
     (** ** Register writes *)
     Definition is_reg_writeP ev : Prop :=
       match ev with
-      | RegWrite reg racc _ rval &→ _ => P reg racc rval
+      | RegWrite reg racc rval &→ _ => P reg racc rval
       | _ => False
       end.
 
     Definition is_reg_writeP_spec ev :
       is_reg_writeP ev ↔
-        ∃ reg racc deps rval,
-          ev = RegWrite reg racc deps rval &→ () ∧ P reg racc rval.
+        ∃ reg racc rval,
+          ev = RegWrite reg racc rval &→ () ∧ P reg racc rval.
     Proof.
       destruct ev as [[] fret];
         split; cdestruct_intro; destruct fret; naive_solver.
@@ -548,10 +483,9 @@ Module Interface (A : Arch).
 
       This is the general case for both failed and successful memory reads *)
   Section isMemReadReq.
-    Context {deps: Type}.
     Context
-    (P : ∀ n : N, ReadReq.t deps n → (bv (8 * n) * option bool + abort) → Prop).
-    Implicit Type ev : iEvent deps.
+    (P : ∀ n : N, ReadReq.t n → (bv (8 * n) * option bool + abort) → Prop).
+    Implicit Type ev : iEvent.
 
     Definition is_mem_read_reqP ev : Prop :=
       match ev with
@@ -574,9 +508,8 @@ Module Interface (A : Arch).
 
   (** *** Successful memory reads *)
   Section IsMemRead.
-    Context {deps: Type}.
-    Context (P : ∀ n : N, ReadReq.t deps n → bv (8 * n) → option bool → Prop).
-    Implicit Type ev : iEvent deps.
+    Context (P : ∀ n : N, ReadReq.t n → bv (8 * n) → option bool → Prop).
+    Implicit Type ev : iEvent.
 
     (** Filters memory read that are successful (that did not get a physical
         memory abort *)
@@ -602,14 +535,46 @@ Module Interface (A : Arch).
 
   (** ** Memory writes *)
 
+  (** *** Memory write address announce *)
+  Section isMemWriteAddrAnnounce.
+    Context
+      (P : N → pa → accessKind → translation → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_mem_write_addr_announceP ev : Prop :=
+      match ev with
+      | MemWriteAddrAnnounce n pa acc trans &→ () => P n pa acc trans
+      | _ => False
+      end.
+
+    Definition is_mem_write_addr_announceP_spec ev:
+      is_mem_write_addr_announceP ev ↔
+        ∃ n pa acc trans,
+          ev = MemWriteAddrAnnounce n pa acc trans &→ () ∧ P n pa acc trans.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct_intro; destruct fret; naive_solver.
+    Qed.
+    Typeclasses Opaque is_mem_write_addr_announceP.
+    Definition is_mem_write_addr_announceP_cdestr ev :=
+      cdestr_simpl (is_mem_write_addr_announceP_spec ev).
+    #[global] Existing Instance is_mem_write_addr_announceP_cdestr.
+
+    Context `{Pdec: ∀ n pa acc trans, Decision (P n pa acc trans)}.
+    #[global] Instance is_mem_write_addr_announceP_dec ev:
+      Decision (is_mem_write_addr_announceP ev).
+    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+  End isMemWriteAddrAnnounce.
+  Notation is_mem_write_addr_announce :=
+    (is_mem_write_addr_announceP (λ _ _ _ _, True)).
+
   (** *** Memory write requests
 
       This is the general case for both failed and successful memory writes. *)
   Section isMemWriteReq.
-    Context {deps: Type}.
     Context
-      (P : ∀ n : N, WriteReq.t deps n → (bool + abort) → Prop).
-    Implicit Type ev : iEvent deps.
+      (P : ∀ n : N, WriteReq.t n → (bool + abort) → Prop).
+    Implicit Type ev : iEvent.
 
     Definition is_mem_write_reqP ev : Prop :=
       match ev with
@@ -632,10 +597,9 @@ Module Interface (A : Arch).
 
   (** *** Successful memory writes *)
   Section isMemWrite.
-    Context {deps: Type}.
     Context
-      (P : ∀ n : N, WriteReq.t deps n → Prop).
-    Implicit Type ev : iEvent deps.
+      (P : ∀ n : N, WriteReq.t n → Prop).
+    Implicit Type ev : iEvent.
 
     (** Filters memory writes that are successful (that did not get a physical
         memory abort). This might still not have written in case of exclusive
@@ -658,10 +622,9 @@ Module Interface (A : Arch).
   End isMemWrite.
   Notation is_mem_write := (is_mem_writeP (λ _ _, True)).
 
-  Definition is_mem_event `(ev : iEvent deps) :=
+  Definition is_mem_event (ev : iEvent) :=
     is_mem_read ev \/ is_mem_write ev.
 
-  Notation is_branch ev := (is_Some (get_branch_pa ev)).
   Notation is_barrier ev := (is_Some (get_barrier ev)).
   Notation is_cacheop ev := (is_Some (get_cacheop ev)).
   Notation is_tlbop ev := (is_Some (get_tlbop ev)).

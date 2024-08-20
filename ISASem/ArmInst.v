@@ -6,7 +6,6 @@ Require Import stdpp.countable.
 Require Import stdpp.vector.
 Require Import SSCCommon.Options.
 Require Import Interface.
-Require Import Deps.
 Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
@@ -410,6 +409,8 @@ Module Arm.
     Definition reg_acc := option string.
     Definition reg_acc_eq : EqDecision reg_acc := _.
 
+    Definition pc_reg := "_PC".
+
     Definition va_size := 64%N.
     Definition pa := FullAddress.
     Definition pa_eq : EqDecision pa := _.
@@ -475,9 +476,8 @@ Module Arm.
     Definition tlb_op_eq : EqDecision TLBI := _.
 
     (* TODO fixup dependencies in exception type *)
-    Definition fault (deps : Type) := Exn.
-    Definition fault_eq :
-      ∀ deps, EqDecision deps → EqDecision (fault deps) := _.
+    Definition fault := Exn.
+    Definition fault_eq : EqDecision Exn := _.
   End Arch.
   Include Arch.
 
@@ -487,35 +487,9 @@ Module Arm.
     Module Arch := Arch.
     Module Interface := Interface.
   End IWA.
-  Module DD := DepsDefs IWA.
-  Include DD.
-  Module IWD <: InterfaceWithDeps.
-    Module IWA := IWA.
-    Module DD := DepsDefs IWA.
-  End IWD.
-  Module ArchDeps <: ArchDeps IWD.
-    Import IWD.IWA.Arch.
-    Import IWD.IWA.Interface.
-    Import IWD.DD.
-    Definition footprint_context := unit.
-    Definition get_footprint_context {deps : Type}
-      : iMon deps () := mret ().
-    Definition fault_add_empty_deps := @id Exn.
-    Definition fault_add_deps (_ : Footprint.t) := @id Exn.
-  End ArchDeps.
-  Module AD := ArchDeps.
-  Include ArchDeps.
-  Module DepsComp := DepsComp IWD ArchDeps.
-  Include DepsComp.
-  Module IWDC <: InterfaceWithDepsComp.
-    Module IWD := IWD.
-    Module AD := ArchDeps.
-    Include IWD.
-    Include ArchDeps.
-    Include DepsComp.
-  End IWDC.
 End Arm.
 
 Bind Scope string_scope with Arm.reg.
+
 
 Export Arm.

@@ -23,24 +23,17 @@ Require Import SSCCommon.FMon.
 Require Import SSCCommon.StateT.
 
 Require Import ISASem.Interface.
-Require Import ISASem.Deps.
 Require Import TermModels.
 
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
 (* Module to be imported *)
-Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA).
-  Import IWD.IWA.Arch.
-  Import IWD.IWA.Interface.
-  Import IWD.DD.
+Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
+  Import IWA.Arch.
+  Import IWA.Interface.
   Import Term.
 
-  #[local] Notation outcome := (outcome DepOn.t).
-  #[local] Notation iMon := (iMon DepOn.t).
-  #[local] Notation iSem := (iSem DepOn.t).
-  #[local] Notation iEvent := (iEvent DepOn.t).
-  #[local] Notation iTrace := (iTrace DepOn.t).
   #[local] Open Scope nat.
 
   (** Relational event ID, this might differ from ISA events in certain
@@ -177,8 +170,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
 
 
     Section Cand.
-      Context {et : exec_type} {nmth : nat}.
-      Notation t := (t et nmth).
+    Context {et : exec_type} {nmth : nat}.
+    Notation t := (t et nmth).
 
     (** Asserts that a candidate conforms to an ISA model.
         This version only supports ISA model without inter-instruction state.
@@ -190,6 +183,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
 
     #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
     Proof using. solve_decision. Qed.
+
 
     (** This true if one of the instruction had an ISA model failure like a Sail
         assertion or an Isla assumption that failed. Due to out of order
@@ -360,9 +354,13 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
 
     (** Get the set of all register reads *)
     Definition reg_reads := collect_all (λ _, is_reg_read).
+    Definition pc_reads :=
+      collect_all (λ _, is_reg_readP (λ reg _ _, reg = pc_reg)).
 
     (** Get the set of all register writes *)
     Definition reg_writes := collect_all (λ _, is_reg_write).
+    Definition pc_writes :=
+      collect_all (λ _, is_reg_writeP (λ reg _ _, reg = pc_reg)).
 
     (** Get the set of all memory reads *)
     Definition mem_reads := collect_all (λ _, is_mem_read).
@@ -384,6 +382,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
     Qed.
 
     (** Get the set of all memory writes *)
+    Definition mem_write_addr_announces := collect_all (λ _, is_mem_write_addr_announce).
+    Typeclasses Opaque mem_write_addr_announces.
     Definition mem_writes := collect_all (λ _, is_mem_write).
     Typeclasses Opaque mem_writes.
     Definition mem_write_reqs := collect_all (λ _, is_mem_write_req).
@@ -408,11 +408,6 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
 
     Lemma mem_events_union cd : mem_events cd = mem_reads cd ∪ mem_writes cd.
     Proof. unfold mem_events, mem_reads, mem_writes, is_mem_event. set_solver. Qed.
-
-    (** Get the set of all branches *)
-    Definition branches (cd : t) :=
-      collect_all (λ _ event, is_branch event) cd.
-    Typeclasses Opaque branches.
 
     (** Get the set of all barriers *)
     Definition barriers (cd : t) :=
@@ -451,7 +446,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
       foldl (λ umap itrc,
           foldl (λ umap ev,
               match ev with
-              | RegWrite reg _ _ val &→ _ => <[reg := val]> umap
+              | RegWrite reg _ val &→ _ => <[reg := val]> umap
               | _ => umap
               end
             ) umap itrc.1
@@ -752,6 +747,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
       same_key (λ _, get_size).
     Typeclasses Opaque same_size.
 
+    Definition same_footprint cd := same_pa cd ∩ same_size cd.
+
     (** Equivalence relation relating memory event that have the same size and value *)
     Definition same_mem_value : t → grel EID.t :=
       same_key (λ _, get_mem_value).
@@ -848,6 +845,8 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
       naive_solver.
     Qed.
 
+    Definition pc_reads_from cd := pc_writes cd ₛ⨾ reg_reads_from cd ⨾ₛ pc_reads cd.
+    Definition reg_reads_from_data cd := reg_reads_from cd ∖ pc_reads_from cd.
 
     (** * Generic wellformedness
         This section is for wellformedness properties that are not dependent on
@@ -945,7 +944,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
       assert (eid ∈ reg_reads cd) as Hr by set_solver.
       clear - Hw Hr.
       set_unfold.
-      cdestruct Hw as ? Hw ???? ->.
+      cdestruct Hw as ? Hw ??? ->.
       cdestruct Hr as ? Hr ??? ->.
       by rewrite Hw in Hr.
     Qed.
@@ -964,97 +963,43 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
       set_solver.
     Qed.
 
+
+
     End Cand.
 
     (** * Dependency relations *)
 
-    Module IIO.
-
-      Record t := make {
-          regs : gmap reg nat;
-          mem_reads : list nat;
-        }.
-
-      #[global] Instance eta : Settable _ :=
-        settable! make <regs; mem_reads>.
-
-      Definition init := make ∅ [].
-
-      Definition get_deps (deps : DepOn.t) (s : t) : gset nat :=
-          let list_deps :=
-            list_filter_map (λ reg, s.(regs) !! reg) deps.(DepOn.regs) ++
-              list_filter_map (λ memnum, s.(mem_reads) !! memnum)
-                deps.(DepOn.mem_reads) in
-          list_to_set list_deps.
-
-      Definition instr_deps (instr : iTrace ()) : grel nat * grel nat :=
-        for@{stateM t} (ieid, ev) in enumerate instr.1 do
-          match fcall ev with
-          | RegRead reg _ =>
-              mset regs (insert reg ieid);;
-              mret (∅, ∅)
-          | RegWrite _ _ deps _ =>
-              wdeps ← mget (get_deps deps);
-              mret (wdeps × {[ieid]}, ∅)
-          | MemRead _ rr =>
-              adeps ← mget (get_deps rr.(ReadReq.addr_deps));
-              mset mem_reads (.++[ieid]);;
-              mret (∅, adeps × {[ieid]})
-          | MemWrite _ wr =>
-              adeps ← mget (get_deps wr.(WriteReq.addr_deps));
-              ddeps ← mget (get_deps wr.(WriteReq.data_deps));
-              mret (ddeps × {[ieid]}, adeps × {[ieid]})
-          | BranchAnnounce _ deps =>
-              cdeps ← mget (get_deps deps);
-              (* Control deps are data deps to a BranchAnnounce *)
-              mret (cdeps × {[ieid]}, ∅)
-
-              (* TODO Need fault deps *)
-          | _ => mret (∅, ∅)
-          end
-        end init |>
-          (λ '(_, l), foldl (λ '(d, a) '(d', a'), (d ∪ d', a ∪ a')) (∅, ∅) l).
-
-
-      Definition eid_deps {et n} (cd : Candidate.t et n) : grel EID.t * grel EID.t :=
-        foldl (λ '(d, a) '(tid, iid, instr),
-            let '(base_data, base_addr) := instr_deps instr in
-            (d ∪ convert_to_EID_rel et tid iid base_data instr,
-              a ∪ convert_to_EID_rel et tid iid base_addr instr))
-          (∅, ∅) (instruction_list cd).
-
-      Definition data {et n} (cd : Candidate.t et n) : grel EID.t := (eid_deps cd).1.
-      Definition addr {et n} (cd : Candidate.t et n) : grel EID.t := (eid_deps cd).2.
-    End IIO.
-
-    Notation iio_data cd := (IIO.data cd).
-    Notation iio_addr cd := (IIO.addr cd).
-
     Section Deps.
       Context {et n} (cd : t et n).
+
+      Definition iio_addr :=
+        iio cd ⨾ₛ mem_reads cd ∪
+          iio cd ⨾
+            ((mem_write_addr_announces cd ₛ⨾ iio cd ⨾ₛ mem_write_reqs cd) ∩
+               same_footprint cd).
 
       (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
       (* TODO prove all of the wellformedness properties directly from the definition *)
       Definition addr :=
-        ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ reg_reads_from cd)⁺)⨾
-          iio_addr cd⨾
-          ⦗mem_events cd⦘.
+        mem_reads cd ₛ⨾
+          (⦗mem_reads cd⦘ ∪ (iio cd ⨾ reg_reads_from_data cd)⁺)⨾
+          iio_addr⨾ₛ
+          mem_events cd.
       Global Typeclasses Opaque addr.
 
       Definition data :=
-        ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (reg_reads_from cd))⁺)⨾
-          iio_data cd⨾
-          ⦗mem_write_reqs cd⦘.
+        mem_reads cd ₛ⨾
+          (⦗mem_reads cd⦘ ∪ (iio cd ⨾ (reg_reads_from_data cd))⁺)⨾
+          iio cd⨾ₛ
+          mem_write_reqs cd.
       Global Typeclasses Opaque data.
 
       Definition ctrl :=
-        ⦗mem_reads cd⦘⨾
-          (⦗mem_reads cd⦘ ∪ (iio_data cd ⨾ (reg_reads_from cd))⁺)⨾
-          iio_data cd⨾
-          ⦗branches cd⦘⨾
-          (instruction_order cd).
+        mem_reads cd ₛ⨾
+          (⦗mem_reads cd⦘ ∪ (iio cd ⨾ (reg_reads_from_data cd))⁺)⨾
+          iio cd⨾ₛ
+          pc_writes cd⨾
+          instruction_order cd.
       Global Typeclasses Opaque ctrl.
     End Deps.
 
@@ -1062,7 +1007,7 @@ Module CandidateExecutions (IWD : InterfaceWithDeps) (Term : TermModelsT IWD.IWA
     (* TODO add check on access types *)
     Definition atomic_update {et n} (cd : t et n) :=
       same_instruction_instance cd ∩ (mem_reads cd × mem_writes cd) ∩
-        same_pa cd ∩ same_size cd ∩ iio_data cd.
+        same_footprint cd ∩ iio cd.
 
   End Candidate.
 

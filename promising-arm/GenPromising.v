@@ -20,7 +20,6 @@ Open Scope Z_scope.
 Open Scope stdpp_scope.
 
 Require Import ISASem.Interface.
-Require Import ISASem.Deps.
 
 Require Import GenModels.TermModels.
 
@@ -88,15 +87,10 @@ Arguments t : clear implicits.
 End PromMemory.
 
 (* to be imported *)
-Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT (IWD.IWA)).
-  Import IWD.IWA.Arch.
-  Import IWD.IWA.Interface.
-  Import IWD.DD.
+Module Gen (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
+  Import IWA.Arch.
+  Import IWA.Interface.
   Import TM.
-
-  Notation outcome := (outcome DepOn.t).
-  Notation iMon := (iMon DepOn.t).
-  Notation iSem := (iSem DepOn.t).
 
   Structure PromisingModel := {
       tState : Type;
@@ -347,6 +341,6 @@ Module Gen (IWD : InterfaceWithDeps) (TM : TermModelsT (IWD.IWA)).
 
 End Gen.
 
-Module Type GenT (IWD : InterfaceWithDeps) (TM : TermModelsT IWD.IWA).
-  Include Gen IWD TM.
+Module Type GenT (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
+  Include Gen IWA TM.
 End GenT.

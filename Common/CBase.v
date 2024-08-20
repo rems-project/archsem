@@ -3,6 +3,7 @@ Require Export Program.Equality Relations.
 Require Import ZArith JMeq.
 
 From stdpp Require Export base.
+From stdpp Require Export numbers.
 From stdpp Require Export fin.
 From stdpp Require Export tactics.
 From stdpp Require Import vector.

@@ -3,7 +3,6 @@
  (package coq-system-semantics)
  (modules
    Interface
-   Deps
    ; SailArmInst
    ; SailArmInst_types
    SailArmInstTypes

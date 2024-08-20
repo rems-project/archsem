@@ -388,7 +388,7 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
     vaddr and vdata. Return the new state.
 
     This may mutate memory if no existing promise can be fullfilled *)
-Definition write_mem (tid : nat) (loc : Loc.t) (vaddr : view) (vdata : view)
+Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
            (data : val) : Exec.t string (TState.t * Memory.t * view):=
   let msg := Msg.make tid loc data in
@@ -401,14 +401,13 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vaddr : view) (vdata : view)
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  let vpre := vaddr ⊔ vdata ⊔ ts.(TState.vcap) ⊔ vbob in
+  let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (TState.coh ts loc) < time)%nat;;
   let ts :=
     ts |> set TState.prom (delete time)
        |> TState.update_coh loc time
        |> TState.update TState.vwr time
        |> TState.update TState.vrel (view_if is_release time)
-       |> TState.update TState.vcap vaddr
   in mret (ts, mem, time).
 
 
@@ -419,7 +418,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vaddr : view) (vdata : view)
 
     If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
-Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
+Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (ak : Explicit_access_kind) (ts : TState.t)
            (mem : Memory.t) (data : val)
   : Exec.t string (TState.t * Memory.t):=
@@ -428,7 +427,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
   guard_or "Atomic RMV unsupported" (acv = AV_atomic_rmw) ;;
   let xcl := acv =? AV_exclusive in
   if xcl then
-    '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
+    '(ts, mem, time) ← write_mem tid loc vdata acs ts mem data;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
@@ -437,43 +436,23 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (vaddr : view)
     (* let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) true) ts in *)
     mret (TState.clear_xclb ts, mem)
   else
-    '(ts, mem, time) ← write_mem tid loc vaddr vdata acs ts mem data;
-    let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) false) ts in
+    '(ts, mem, time) ← write_mem tid loc vdata acs ts mem data;
+    let ts := TState.set_fwdb loc (FwdItem.make time vdata false) ts in
     mret (ts, mem).
 
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
-  Record t :=
-    make {
-        def : view; (* The default view, comprising everything that
-                       happened earlier in the instruction *)
-        reads : list view (* the list of view of every values read from memory*)
-      }.
+  Record t := make { strict : view }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <def;reads>.
+    settable! make <strict>.
 
-  Definition init : t := make 0 [].
+  Definition init : t := make 0.
 
-  (** Add a new memory read to the IIS *)
-  Definition add_read (v : view) (iis : t) : t :=
-    iis |> set def (max v)
-        |> set reads (.++ [v]).
-
-  (** Add a new register read to the IIS *)
-  Definition add_reg (v : view) (iis : t) : t :=
-    iis |> set def (max v).
-
-  Definition from_read_deps (deps : list nat) (iis : t) : view :=
-   List.fold_left (fun v dep => match iis.(reads) !! dep with
-                                  | Some v' => max v v'
-                                  | None => v end) deps 0%nat.
-
-  Definition from_DepOn (deps : DepOn.t) (regs: reg -> reg_type * view) (iis : t)
-    : view :=
-    max (from_read_deps deps.(DepOn.mem_reads) iis) $
-    List.fold_left (fun v reg => max v $ (regs reg).2) deps.(DepOn.regs) 0%nat.
+  (** Add a new view to the IIS *)
+  Definition add (v : view) (iis : t) : t :=
+    iis |> set strict (max v).
 
 End IIS.
 
@@ -481,46 +460,50 @@ End IIS.
 Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
    stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) := λ '(ts, mem, iis),
   let initmem := Memory.initial_from_memMap initmem in
-  let deps_to_view :=
-    λ deps, IIS.from_DepOn deps ts.(TState.regs) iis in
   match out with
-  | RegWrite reg racc deps val =>
+  | RegWrite reg racc val =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      let wr_view := deps_to_view deps in
-      let ts := TState.set_reg reg (val, wr_view) ts in
+      let vreg := iis.(IIS.strict) in
+      let ts :=
+        if decide (reg = pc_reg) then
+          ts
+          |> TState.update TState.vcap vreg
+          |> TState.set_reg reg (val, 0%nat)
+        else TState.set_reg reg (val, vreg) ts
+      in
       mret (ts, mem, iis, ())
   | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       let (val, view) := ts.(TState.regs) reg in
-      let iis := IIS.add_reg view iis in
+      let iis := IIS.add view iis in
       mret (ts, mem, iis, val)
   | MemRead 8 rr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
-      let vaddr := deps_to_view rr.(ReadReq.addr_deps) in
+      let vaddr := iis.(IIS.strict) in
       match rr.(ReadReq.access_kind) with
       | AK_explicit eak =>
           '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
-          mret (ts, mem, IIS.add_read view iis, inl (val, None))
+          mret (ts, mem, IIS.add view iis, inl (val, None))
       | AK_ifetch () => mthrow "TODO ifetch"
       | _ => mthrow "Only ifetch and explicit accesses supported"
       end
   | MemRead _ _ => mthrow "Memory read of size other than 8"
+  | MemWriteAddrAnnounce _ _ _ _ =>
+      let vaddr := iis.(IIS.strict) in
+      let ts := TState.update TState.vcap vaddr ts in
+      mret (ts, mem, iis, ())
   | MemWrite 8 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let vaddr := deps_to_view wr.(WriteReq.addr_deps) in
       let data := wr.(WriteReq.value) in
-      let vdata := deps_to_view wr.(WriteReq.data_deps) in
+      let vdata := iis.(IIS.strict) in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
-          '(ts, mem) ← write_mem_xcl tid addr vaddr vdata eak ts mem data;
+          '(ts, mem) ← write_mem_xcl tid addr vdata eak ts mem data;
           mret (ts, mem, iis, inl true)
       | AK_ifetch () => mthrow "Write of type ifetch ???"
       | AK_ttw () => mthrow "Write of type TTW ???"
       | _ => mthrow "Unsupported non-explicit write"
       end
-  | BranchAnnounce _ deps =>
-      let ts := TState.update TState.vcap (deps_to_view deps) ts in
-      mret (ts, mem, iis, ())
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>

@@ -2,13 +2,19 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories ISASem SSCCommon stdpp SailStdpp Hammer RecordUpdate Equations GenModels)
-  (extracted_modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt BinNat BinNums BinPosDef BinPos CBase CBitvector CBool CList CMaps COption countable CResult CSets Datatypes decidable definitions Deps Effects Exec fin0 finite fin_maps Fin FMon gmap Interface list0 List list_numbers listset mapset Nat numbers option PeanoNat propset RecordSet SailArmInstTypes sets Specif StateT String0 strings TermModels vector0 VectorDef Vector)
+  (theories ISASem SSCCommon stdpp SailStdpp Hammer RecordUpdate Equations
+            GenModels)
+  (extracted_modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt
+                     BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
+                     CList CMaps COption countable CResult CSets Datatypes
+                     decidable definitions Effects Exec fin0 finite fin_maps Fin
+                     FMon gmap Interface list0 List list_numbers listset mapset
+                     Nat numbers option PeanoNat propset RecordSet
+                     SailArmInstTypes sets Specif StateT String0 strings
+                     TermModels vector0 VectorDef Vector)
 )
 
 (library
   (name System_semantics_ocaml)
   (public_name coq-system-semantics)
-  (libraries zarith)
-  (modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt BinNat BinNums BinPosDef BinPos CBase CBitvector CBool CList CMaps COption countable CResult CSets Datatypes decidable definitions Deps Effects Exec fin0 finite fin_maps Fin FMon gmap Interface list0 List list_numbers listset mapset Nat numbers option PeanoNat propset RecordSet SailArmInstTypes sets Specif StateT String0 strings TermModels vector0 VectorDef Vector)
-)
+  (libraries zarith))

@@ -16,12 +16,6 @@ Require Import GenModels.ArmInst.
 Section common_def.
   Import Candidate.
 
-  Notation outcome := (outcome DepOn.t).
-  Notation iMon := (iMon DepOn.t).
-  Notation iSem := (iSem DepOn.t).
-  Notation iEvent := (iEvent DepOn.t).
-  Notation iTrace := (iTrace DepOn.t).
-  
   #[local] Hint Extern 10 (Decision (?x _)) => unfold x : typeclass_instances.
   #[local] Hint Extern 10 (Decision (?x _ _)) => unfold x : typeclass_instances.
   #[local] Hint Extern 10 (Decision (?x _ _ _)) => unfold x : typeclass_instances.
@@ -283,7 +277,7 @@ Section common_def.
 
   Definition is_tlbi (event : iEvent) :=
     match event with
-    | TlbOp _ _ &→ _ => True
+    | TlbOp _ &→ _ => True
     | _ => False
     end.
 
@@ -292,7 +286,7 @@ Section common_def.
 
   Definition is_cacheop (event : iEvent) :=
     match event with
-    | CacheOp _ _ &→ _ => True
+    | CacheOp _ &→ _ => True
     | _ => False
     end.
 
@@ -335,7 +329,7 @@ Section common_def.
   (* armv9-interface/regs.cat#L2 *)
   Definition is_msr (event : iEvent) :=
     match event with
-    | RegWrite _ (Some _) _ _ &→ _ => True
+    | RegWrite _ (Some _) _ &→ _ => True
     | _ => False
   end.
   Global Instance is_msr_dec event : Decision (is_msr event).
@@ -404,11 +398,6 @@ End common_def.
 
 Module GenArmNMS.
   Import Candidate.
-  Notation outcome := (outcome DepOn.t).
-  Notation iMon := (iMon DepOn.t).
-  Notation iSem := (iSem DepOn.t).
-  Notation iEvent := (iEvent DepOn.t).
-  Notation iTrace := (iTrace DepOn.t).
 
   Section def.
     Context {nmth : nat}.
