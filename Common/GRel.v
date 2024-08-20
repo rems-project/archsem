@@ -276,6 +276,39 @@ Section GRel.
     SetUnfoldElemOf x (r ⨾ r') (exists z, P z /\ Q z).
   Proof using. tcclean. apply grel_seq_spec. Qed.
 
+  (** ** Sequence with set
+
+  This is an optimisation for [⦗s⦘⨾r] and [r⨾⦗s⦘] *)
+
+  Definition grel_seq_setl (s : gset A) (r : grel) : grel :=
+    r |> filter (λ '(e1, e2), e1 ∈ s).
+  Infix "ₛ⨾" := grel_seq_setl (at level 44, left associativity) : stdpp_scope.
+
+  Lemma grel_seq_setl_spec s r e1 e2 :
+    (e1, e2) ∈ s ₛ⨾ r ↔ e1 ∈ s ∧ (e1, e2) ∈ r.
+  Proof. unfold grel_seq_setl. set_solver. Qed.
+
+  #[export] Instance set_unfold_elem_of_grel_seq_setl s r x P Q:
+    SetUnfoldElemOf x.1 s P →
+    SetUnfoldElemOf x r Q →
+    SetUnfoldElemOf x (s ₛ⨾ r) (P ∧ Q).
+  Proof. tcclean. destruct x. apply grel_seq_setl_spec. Qed.
+
+
+  Definition grel_seq_setr (r : grel) (s : gset A) : grel :=
+    r |> filter (λ '(e1, e2), e2 ∈ s).
+  Infix "⨾ₛ" := grel_seq_setr (at level 44, left associativity) : stdpp_scope.
+
+  Lemma grel_seq_setr_spec r s e1 e2 :
+    (e1, e2) ∈ r ⨾ₛ s ↔ (e1, e2) ∈ r ∧ e2 ∈ s.
+  Proof. unfold grel_seq_setr. set_solver. Qed.
+
+  #[export] Instance set_unfold_elem_of_grel_seq_setr r s x P Q:
+    SetUnfoldElemOf x r P →
+    SetUnfoldElemOf x.2 s Q →
+    SetUnfoldElemOf x (r ⨾ₛ s) (P ∧ Q).
+  Proof. tcclean. destruct x. apply grel_seq_setr_spec. Qed.
+
   (*** Inversion ***)
 
   Definition grel_inv : grel -> grel := set_map (fun x => (x.2, x.1)).
@@ -310,6 +343,12 @@ Section GRel.
   Proof using. tcclean. apply grel_from_set_spec. Qed.
 
   Typeclasses Opaque grel_from_set.
+
+  Lemma grel_seq_from_setl s r : ⦗ s ⦘ ⨾ r = s ₛ⨾ r.
+  Proof. set_solver. Qed.
+
+  Lemma grel_seq_from_setr r s : r ⨾ ⦗ s ⦘ = r ⨾ₛ s.
+  Proof. set_solver. Qed.
 
 
   (*** Transitive closure ***)
@@ -799,6 +838,8 @@ Arguments grel_plus_cind_r : clear implicits.
 (* Notations need to be redefined out of the section. *)
 (* TODO maybe grel scope would be better *)
 Infix "⨾" := grel_seq (at level 44, left associativity) : stdpp_scope.
+Infix "ₛ⨾" := grel_seq_setl (at level 44, left associativity) : stdpp_scope.
+Infix "⨾ₛ" := grel_seq_setr (at level 44, left associativity) : stdpp_scope.
 Notation "r ⁻¹" := (grel_inv r) (at level 1) : stdpp_scope.
 Notation "⦗ a ⦘" := (grel_from_set a) (format "⦗ a ⦘") : stdpp_scope.
 Notation "a ⁺" := (grel_plus a) (at level 1, format "a ⁺") : stdpp_scope.
