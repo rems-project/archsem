@@ -140,14 +140,8 @@ Qed.
 
 (** * Decisions *)
 
-Global Instance forall_list_decision A P (l : list A):
-  (∀ x : A, Decision (P x)) → Decision (∀ x ∈ l, P x).
-Proof. intro. rewrite <- Forall_forall. solve_decision. Defined.
-
-Global Instance exist_list_decision A P (l : list A):
-  (∀ x : A, Decision (P x)) → Decision (∃ x ∈ l, P x).
-Proof. intro. rewrite <- Exists_exists. solve_decision. Defined.
-
+Global Existing Instance list_forall_dec.
+Global Existing Instance list_exist_dec.
 
 (** * List utility functions *)
 
