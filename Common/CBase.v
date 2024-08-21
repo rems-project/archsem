@@ -133,6 +133,23 @@ Proof. destruct x; solve_decision. Qed.
 
 Notation guard' P := (guard P;; mret ()).
 
+(** * Cartesian product *)
+
+(** Typeclass for definition of cartesian product on sets and lists.
+    For list we expect lexicographic order see [list_prod] *)
+Class CProd A B C := cprod : A → B → C.
+Global Hint Mode CProd ! ! - : typeclass_instances.
+Global Instance: Params (@cprod) 4 := {}.
+
+(** × must be left associative because the * of types is left associative.
+      Thus if you have sa : set A, sb : set B and sc : set C, then
+      sa × sb × sc : set (A * B * C) *)
+Infix "×" := cprod (at level 39, left associativity) : stdpp_scope.
+Notation "(×)" := cprod (only parsing) : stdpp_scope.
+Notation "( x ×.)" := (cprod x) (only parsing) : stdpp_scope.
+Notation "(.× x )" := (λ y, cprod y x) (only parsing) : stdpp_scope.
+
+
 (** * Constrained quantifiers ***)
 
 #[local] Notation "∀in x ∈ b , P" := (∀ x, x ∈ b → P)
@@ -394,7 +411,7 @@ Proof. solve_proper2_tc. Qed.
     slower in the general case. Keep it as an immediate instance for parametric
     [SetterWf] instance such as [Setter_compose_wf] *)
 #[export] Remove Hints RecordSet.set_wf : typeclass_instances.
-Hint Immediate set_wf : typeclass_instances.
+Hint Immediate RecordSet.set_wf : typeclass_instances.
 
 Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
   set proj (fun _ => v).
