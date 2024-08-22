@@ -36,11 +36,11 @@ Definition read_byte_seq_state (seqst : seq_state) (pa : pa) : bv 8 :=
   fst (read_byte_seq_state_flag seqst pa).
 
 Definition read_mem_seq_state (n : N) (pa : pa) (seqst : seq_state) : bv (8 * n) :=
-  pa_range pa (N.to_nat n) |$> read_byte_seq_state seqst |> bv_of_bytes (8 * n).
+  pa_range pa n |$> read_byte_seq_state seqst |> bv_of_bytes (8 * n).
 
 Definition read_mem_seq_state_flag (n : N) (pa : pa) (seqst : seq_state)
   : bv (8 * n) * bool :=
-  let bf := pa_range pa (N.to_nat n) |$> read_byte_seq_state_flag seqst in
+  let bf := pa_range pa n |$> read_byte_seq_state_flag seqst in
   let '(bytes, flags) := split bf in
     (bv_of_bytes (8 * n) bytes, existsb id flags).
 

@@ -49,7 +49,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
               a [nat] when the interface monad supports parallel composition *)
           ieid : nat;
           (** Byte number for events that are split per byte, None for others *)
-          byte : option nat
+          byte : option N
           }.
 
     #[global] Instance eta : Settable _ :=
@@ -85,12 +85,12 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         or by an event per byte. This is the function that decides which event
         are split per byte. [None] means not split, and [Some n], means split in
         [n] *)
-    Definition bytes_per_event (et : exec_type) (ev : iEvent) : list (option nat) :=
+    Definition bytes_per_event (et : exec_type) (ev : iEvent) : list (option N) :=
       match et with
       | MS =>
           match ev with
           | MemRead n rr &→ _ =>
-              let main := seq 0 (N.to_nat n) |$> Some in
+              let main := seqN 0 n |$> Some in
               if rr.(ReadReq.tag) then main else None :: main
           | _ => [None]
           end
@@ -903,7 +903,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       rval ← get_mem_value read;
       match reid.(EID.byte) with
       | Some n =>
-          let rpa' := pa_addZ rpa (Z.of_nat n) in
+          let rpa' := pa_addN rpa n in
           rbyte ← (bv_to_bytes 8 (bvn_val rval)) !! n;
           offset ← pa_diffZ rpa' wpa;
           wbyte ← (bv_to_bytes 8 (bvn_val wval)) !! offset;
@@ -943,8 +943,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       w2 ← cd !! eid2;
       pa2 ← get_pa w2;
       size2 ← get_size w2;
-      diff ← pa_diffZ pa2 pa1;
-      guard' (- (Z.of_N size2) < diff < (Z.of_N size1))%Z.
+      guard' (pa_overlap pa1 size1 pa2 size2).
 
     Record coherence_wf (cd : t) :=
       {

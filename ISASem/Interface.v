@@ -5,14 +5,8 @@ Require Import stdpp.finite.
 Require Import stdpp.gmap.
 
 Require Import SSCCommon.Options.
-Require Import SSCCommon.CBase.
-Require Import SSCCommon.Effects.
+Require Import SSCCommon.Common.
 Require Import SSCCommon.FMon.
-Require Import SSCCommon.CResult.
-Require Import SSCCommon.CBool.
-Require Import SSCCommon.CBitvector.
-Require Import SSCCommon.CDestruct.
-Require Import ClassicalDescription.
 
 (** * The architecture requirements *)
 
@@ -162,12 +156,19 @@ Module Interface (A : Arch).
   (** Memory access kind *)
   Notation accessKind := mem_acc.
 
+  Definition pa_addN pa n := pa_addZ pa (Z.of_N n).
+
   (** The list of all physical addresses accessed when accessing [pa] with size
       [n] *)
-  Definition pa_range pa n := seq 0 n |> map (λ n, pa_addZ pa (Z.of_nat n)).
+  Definition pa_range pa n := seqN 0 n |> map (λ n, pa_addN pa n).
 
-  Lemma pa_range_length pa n : length (pa_range pa n) = n.
+  Lemma pa_range_length pa n : length (pa_range pa n) = N.to_nat n.
   Proof. unfold pa_range. by autorewrite with list. Qed.
+
+  Definition pa_overlap pa1 size1 pa2 size2 : Prop :=
+    is_Some $
+      diff ← pa_diffZ pa2 pa1;
+      guard' (- (Z.of_N size2) < diff < (Z.of_N size1))%Z.
 
   (** ** Memory read request *)
   Module ReadReq.
@@ -188,7 +189,7 @@ Module Interface (A : Arch).
     #[global] Instance jmeq_dec : EqDepDecision t.
     Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
-    Definition range `(rr : t n) := pa_range (pa rr) (N.to_nat n).
+    Definition range `(rr : t n) := pa_range (pa rr) n.
   End ReadReq.
 
   (** ** Memory write request *)
@@ -211,7 +212,7 @@ Module Interface (A : Arch).
     #[global] Instance jmeq_dec : EqDepDecision t.
     Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
-    Definition range `(rr : t n) := pa_range (pa rr) (N.to_nat n).
+    Definition range `(rr : t n) := pa_range (pa rr) n.
   End WriteReq.
 
 

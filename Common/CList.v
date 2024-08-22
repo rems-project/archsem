@@ -280,6 +280,17 @@ Section FilterMap.
   Proof using. induction l; hauto lq:on. Qed.
 End FilterMap.
 
+(** ** seqN *)
+
+Definition seqN (s l : N) := seq (N.to_nat s) (N.to_nat l) |$> N.of_nat.
+
+Global Instance set_elem_of_seqN x n l:
+  SetUnfoldElemOf x (seqN n l) (n ≤ x < n + l)%N.
+Proof.
+  tcclean. unfold seqN. set_unfold. split.
+  - intros []. lia.
+  - intros. exists (N.to_nat x). lia.
+Qed.
 
 (** * List lemmas *)
 
@@ -442,6 +453,11 @@ Proof. apply NoDup_singleton. Qed.
 #[global] Hint Resolve NoDup_mret : nodup.
 
 Ltac solve_NoDup := unshelve (typeclasses eauto with nodup).
+
+Lemma NoDup_seqN n l : NoDup (seqN n l).
+Proof. unfold seqN. solve_NoDup. lia. Qed.
+#[global] Hint Resolve NoDup_seqN : nodup.
+
 
 Lemma NoDup_zip_with_l {A B C} (f : A → B → C) l l':
   (∀ x y x' y', f x x' = f y y' → x = y) → NoDup l →

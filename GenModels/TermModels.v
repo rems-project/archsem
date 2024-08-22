@@ -32,7 +32,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
   (** Read a sequence of bytes from  a [memoryMap]:  *)
   Definition memoryMap_read (mm : memoryMap) (pa : pa) (n : N) : bv (8 * n) :=
-    pa_range pa (N.to_nat n) |$> mm |> bv_of_bytes (8 * n).
+    pa_range pa n |$> mm |> bv_of_bytes (8 * n).
 
   Definition registerMap := reg → reg_type.
 
