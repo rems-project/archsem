@@ -16,6 +16,13 @@ Require Import Program Equality.
   by simplify_dep_elim
   : typeclass_instances.
 
+Create HintDb inj discriminated.
+
+(** Use f_equal automatically and safely on injective functions *)
+Hint Extern 1 (?f ?x = ?f ?y) =>
+       has_option (Inj (=) (=) f);
+       simple apply (f_equal f) : inj.
+
 (** Deduce Inj2 instance from dependent injection. This might use UIP *)
 #[export] Hint Extern 20 (Inj2 ?A ?B eq ?Constr) =>
   eunify A eq;
@@ -30,6 +37,10 @@ Lemma inj2_iff `{Inj2 A B C RA RB RC f} {HP : Proper (RA ==> RB ==> RC) f}
 Proof. split; intro; [by apply (inj2 f) | apply HP; naive_solver]. Qed.
 Arguments inj2_iff {_ _ _ _ _ _} _ {_ _}.
 
+(** Use f_equal automatically and safely on injective functions *)
+Hint Extern 1 (?f _ _ = ?f _ _) =>
+       has_option (Inj2 (=) (=) (=) f);
+       simple apply (f_equal2 f) : inj.
 
 
 Class Inj3 {A B C D} (R1 : relation A) (R2 : relation B) (R3 : relation C)
@@ -51,6 +62,11 @@ Arguments inj3_iff {_ _ _ _ _ _ _ _} _ {_ _}.
   unfold Inj3;
   by simplify_dep_elim
   : typeclass_instances.
+
+(** Use f_equal automatically and safely on injective functions *)
+Hint Extern 1 (?f _ _ _ = ?f _ _ _) =>
+       has_option (Inj3 (=) (=) (=) (=) f);
+       simple apply (f_equal3 f) : inj.
 
 
 Class Inj4 {A B C D E} (R1 : relation A) (R2 : relation B) (R3 : relation C)
@@ -80,6 +96,12 @@ Arguments inj4_iff {_ _ _ _ _ _ _ _ _ _} _ {_ _}.
   unfold Inj4;
   by simplify_dep_elim
   : typeclass_instances.
+
+(** Use f_equal automatically and safely on injective functions *)
+Hint Extern 1 (?f _ _ _ _ = ?f _ _ _ _) =>
+       has_option (Inj3 (=) (=) (=) (=) (=) f);
+       simple apply (f_equal4 f) : inj.
+
 
 (** * ObvFalse
 
