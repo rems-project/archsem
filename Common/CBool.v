@@ -249,13 +249,11 @@ Proof. intros [] []. decide_eq. Defined.
 #[export] Hint Extern 1 (Decision (?a = ?b)) => eunify a b; left;reflexivity : typeclass_instances.
 
 (** Equality with pattern. Decide equation of the form [a = Constr b c d] where
-    the entire type might not have EqDecision Such as [x =@{bool + R) inl true] *)
+    the entire type might not have EqDecision Such as [x =@{bool + R} inl true] *)
 #[export] Hint Extern 15 (Decision (?a = ?b)) =>
-  (let h := get_head b in
-   is_constructor h;
-   destruct a
-   ||
-   let h := get_head a in
-   is_constructor h;
-   destruct b);
+  let ha := get_head a in
+  let hb := get_head b in
+  assert_fails (is_constructor ha; is_constructor hb);
+  ((is_constructor hb; destruct a) ||
+   (is_constructor ha; destruct b));
   try (right; discriminate); try (left; reflexivity); autorewrite with inj : typeclass_instances.

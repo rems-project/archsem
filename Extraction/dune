@@ -11,7 +11,7 @@
                      FMon gmap Interface list0 List list_numbers listset mapset
                      Nat numbers option PeanoNat propset RecordSet
                      SailArmInstTypes sets Specif StateT String0 strings
-                     TermModels vector0 VectorDef Vector)
+                     TermModels vector0 VectorDef Vector CRelationClasses)
 )
 
 (library
