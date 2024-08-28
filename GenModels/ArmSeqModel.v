@@ -101,7 +101,7 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   | CacheOp _ => mret ()
   | TlbOp _ => mret ()
   | TakeException _ => mthrow "Taking exception is not supported"
-  | ReturnException _ => mret ()
+  | ReturnException => mret ()
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   end.
 

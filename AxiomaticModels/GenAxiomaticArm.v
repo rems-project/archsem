@@ -313,7 +313,7 @@ Section common_def.
 
   Definition is_return_exception (event : iEvent) :=
     match event with
-    | ReturnException _ &→ _ => True
+    | ReturnException &→ _ => True
     | _ => False
     end.
 

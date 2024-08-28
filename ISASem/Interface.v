@@ -261,7 +261,7 @@ Module Interface (A : Arch).
   | TakeException (flt : fault)
     (** Return from an exception to this address e.g. ERET (for Arm) or
         IRET (for x86) *)
-  | ReturnException (pa : pa)
+  | ReturnException
 
     (** Bail out when something went wrong. This is to represent ISA model
         incompleteness: When getting out of the range of supported

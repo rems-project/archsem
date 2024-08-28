@@ -1315,7 +1315,7 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
       let viio := iis.(IIS.strict) in
       '(iis, ts, mem) ← run_tlbi tid iis ts viio tlbi mem;
       mret (ts, mem, iis, ())
-  | ReturnException _ =>
+  | ReturnException =>
       let '(iis, ts) := run_cse iis ts in
       mret (ts, mem, iis, ())
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
