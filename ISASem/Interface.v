@@ -70,10 +70,14 @@ Module Type Arch.
   #[export] Hint Rewrite pa_addZ_assoc : arch.
   #[export] Hint Rewrite pa_addZ_zero : arch.
 
-  Parameter pa_diffZ : pa → pa → option Z.
-  Parameter pa_addZ_diffZ:
-    ∀ pa pa' z, pa_diffZ pa' pa = Some z → pa_addZ pa z = pa'.
-
+  Parameter pa_diffN : pa → pa → option N.
+  Parameter pa_diffN_addZ:
+    ∀ pa pa' n, pa_diffN pa' pa = Some n → pa_addZ pa (Z.of_N n) = pa'.
+  Parameter pa_diffN_existZ:
+    ∀ pa pa' z, pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
+  Parameter pa_diffN_minimalZ:
+    ∀ pa pa' n, pa_diffN pa' pa = Some n →
+                ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
 
   (** Memory access kind (architecture specific) *)
   Parameter mem_acc : Type.
@@ -149,6 +153,7 @@ End Arch.
 
 Module Interface (A : Arch).
   Import A.
+  Open Scope N.
 
   (** Virtual address are tag-less bitvectors *)
   Definition va := bv va_size.
@@ -157,6 +162,28 @@ Module Interface (A : Arch).
   Notation accessKind := mem_acc.
 
   Definition pa_addN pa n := pa_addZ pa (Z.of_N n).
+  Lemma pa_addN_assoc pa n n':
+    pa_addN (pa_addN pa n) n' = pa_addN pa (n + n').
+  Proof. unfold pa_addN. rewrite pa_addZ_assoc. f_equal. lia. Qed.
+  #[export] Hint Rewrite pa_addN_assoc : pa.
+  Lemma pa_addN_zero pa : pa_addN pa 0 = pa.
+  Proof. unfold pa_addN. apply pa_addZ_zero. Qed.
+  #[export] Hint Rewrite pa_addN_zero : pa.
+  Lemma pa_diffN_addN pa pa' n:
+    pa_diffN pa' pa = Some n → pa_addN pa n = pa'.
+  Proof. unfold pa_addN. apply pa_diffN_addZ. Qed.
+  Hint Immediate pa_diffN_addN : pa.
+  Lemma pa_diffN_existN pa pa' n:
+    pa_addN pa n = pa' → is_Some (pa_diffN pa' pa).
+  Proof. unfold pa_addN. apply pa_diffN_existZ. Qed.
+  Lemma pa_diffN_minimalN pa pa' n:
+    pa_diffN pa' pa = Some n → ∀ n', pa_addN pa n' = pa' → n ≤ n'.
+  Proof. sauto use:pa_diffN_minimalZ. Qed.
+
+  (* If faced with [pa_add pa n = pa_add pa n'], trying to prove [n = n'] is a good
+     idea *)
+  Definition f_equal_pa_addN pa := f_equal (pa_addN pa).
+  Hint Resolve f_equal_pa_addN : pa.
 
   (** The list of all physical addresses accessed when accessing [pa] with size
       [n] *)
@@ -165,10 +192,72 @@ Module Interface (A : Arch).
   Lemma pa_range_length pa n : length (pa_range pa n) = N.to_nat n.
   Proof. unfold pa_range. by autorewrite with list. Qed.
 
-  Definition pa_overlap pa1 size1 pa2 size2 : Prop :=
+  Definition pa_in_range pa size pa' : Prop :=
     is_Some $
-      diff ← pa_diffZ pa2 pa1;
-      guard' (- (Z.of_N size2) < diff < (Z.of_N size1))%Z.
+      diff ← pa_diffN pa' pa;
+    guard' (diff < size)%N.
+
+  Lemma pa_in_range_spec pa size pa':
+    pa_in_range pa size pa' ↔ ∃ n, pa_addN pa n = pa' ∧ n < size.
+  Proof.
+    unfold pa_in_range, is_Some.
+    split.
+    - cdestruct_intro #CDestrEqSome.
+      eauto with pa.
+    - cdestruct_intro.
+      odestruct pa_diffN_existN; first eassumption.
+      opose proof (pa_diffN_minimalN _ _ _ _ _ _); try eassumption.
+      typeclasses eauto with core option lia.
+  Qed.
+
+  Definition pa_overlap pa1 size1 pa2 size2 : Prop :=
+    pa_in_range pa1 size1 pa2 ∨ pa_in_range pa2 size2 pa1.
+
+  Lemma pa_overlap_spec pa1 size1 pa2 size2 :
+    pa_overlap pa1 size1 pa2 size2 ∧ 0 < size1 ∧ 0 < size2 ↔
+      ∃ n1 n2, (n1 < size1 ∧ n2 < size2 ∧ pa_addN pa1 n1 = pa_addN pa2 n2)%N.
+  Proof.
+    unfold pa_overlap.
+    setoid_rewrite pa_in_range_spec.
+    split.
+    - cdestruct_intro use cdestruct_or # CDestrCbnSubst;
+      setoid_rewrite pa_addN_assoc;
+      typeclasses eauto with core lia pa.
+    - cdestruct_intros as n1 n2 H1 H2 H.
+      intuition; try lia.
+      destruct decide (n1 ≤ n2).
+      1: right; exists (n2 - n1).
+      2: left; exists (n1 - n2).
+      (* TODO figure out better automation on pa_addZ *)
+      all: intuition; try lia.
+      all: unfold pa_addN in *.
+      all: rewrite N2Z.inj_sub by lia.
+      all: rewrite <- pa_addZ_assoc.
+      all: (rewrite H || rewrite <- H).
+      all: rewrite pa_addZ_assoc.
+      all: rewrite <- pa_addZ_zero.
+      all: f_equal; lia.
+  Qed.
+
+  Lemma pa_overlap_refl pa size :
+    0 < size → pa_overlap pa size pa size.
+  Proof.
+    unfold pa_overlap. left.
+    apply pa_in_range_spec.
+    eexists.
+    by rewrite pa_addN_zero.
+  Qed.
+  Hint Resolve pa_overlap_refl : pa.
+
+  Lemma pa_overlap_sym pa1 size1 pa2 size2 :
+    pa_overlap pa1 size1 pa2 size2 → pa_overlap pa2 size2 pa1 size1.
+  Proof. unfold pa_overlap. tauto. Qed.
+  Hint Immediate pa_overlap_sym : pa.
+
+  Lemma pa_overlap_sym_iff pa1 size1 pa2 size2 :
+    pa_overlap pa1 size1 pa2 size2 ↔ pa_overlap pa2 size2 pa1 size1.
+  Proof. unfold pa_overlap. tauto. Qed.
+
 
   (** ** Memory read request *)
   Module ReadReq.

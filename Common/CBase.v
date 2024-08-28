@@ -354,6 +354,12 @@ Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
   destruct decide (x = y) as [? | pat]; [subst y |].
 
 
+(** * Proof search ***)
+
+(* Useful to tell auto/eauto to call lia could be improved by looking if the
+   goal is an equality/inequality on integers*)
+Hint Extern 10 => lia : lia.
+
 (** * Typeclass magic ***)
 
 Require Import Morphisms.

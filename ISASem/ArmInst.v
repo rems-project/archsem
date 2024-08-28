@@ -423,18 +423,38 @@ Module Arm.
     Lemma pa_addZ_zero pa : pa_addZ pa 0 = pa.
     Proof. record_eq; cbn; [reflexivity | bv_solve]. Qed.
 
-    Definition pa_diffZ pa' pa :=
+    Definition pa_diffN pa' pa :=
       if (FullAddress_paspace pa' =? FullAddress_paspace pa) then
-        Some $ bv_signed (FullAddress_address pa' - FullAddress_address pa)
+        Some $ Z.to_N $
+          bv_unsigned (FullAddress_address pa' - FullAddress_address pa)
       else None.
 
-    Lemma pa_addZ_diffZ pa pa' z: pa_diffZ pa' pa = Some z → pa_addZ pa z = pa'.
+    Lemma pa_diffN_addZ pa pa' n:
+      pa_diffN pa' pa = Some n → pa_addZ pa (Z.of_N n) = pa'.
     Proof.
-    unfold pa_diffZ, pa_addZ, set.
-    destruct pa. destruct pa'. cbn.
+    unfold pa_diffN, pa_addZ, set.
+    destruct pa, pa'. cbn.
     cdestruct_intros # CDestrMatch # CDestrSubst.
     record_eq; cbn; [reflexivity | bv_solve].
     Qed.
+    Lemma pa_diffN_existZ pa pa' z:
+      pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
+    Proof.
+      destruct pa, pa'.
+      cdestruct_intro # CDestrCbnSubst.
+      unfold pa_diffN. hauto q:on.
+    Qed.
+    #[local] Opaque N.le.
+    Lemma pa_diffN_minimalZ pa pa' n:
+      pa_diffN pa' pa = Some n →
+      ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
+    Proof.
+      destruct pa, pa'.
+      unfold pa_diffN.
+      cdestruct_intros # CDestrCbnSubst # CDestrMatch.
+      bv_solve.
+    Qed.
+
 
     Definition mem_acc := Access_kind arm_acc_type.
     Definition mem_acc_eq : EqDecision mem_acc := _.

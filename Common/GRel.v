@@ -714,7 +714,7 @@ Section GRel.
   Proof using. solve_decision. Qed.
 
   Definition grel_symmetric_spec (r : grel) :
-    grel_symmetric r → ∀ x y, (x, y) ∈ r → (y, x) ∈ r.
+    grel_symmetric r ↔ ∀ x y, (x, y) ∈ r → (y, x) ∈ r.
   Proof using. unfold grel_symmetric. set_solver. Qed.
 
   (*** Irreflexive ***)

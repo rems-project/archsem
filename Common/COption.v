@@ -16,7 +16,7 @@ Notation ofail := (othrow ()).
 
 Class EqSomeUnfold {A} (oa : option A) (a : A) (P : Prop) :=
   {eq_some_unfold : oa = Some a ↔ P}.
-Global Hint Mode EqSomeUnfold + + + - : typeclass_instances.
+Global Hint Mode EqSomeUnfold + + - - : typeclass_instances.
 
 Global Instance eq_some_unfold_default {A} (oa : option A) (a : A):
   EqSomeUnfold oa a (oa = Some a) | 1000.
@@ -69,3 +69,7 @@ Class CDestrEqSome := cdestr_eq_some {}.
   `{∀ x, Unconvertible (option T) oa (Some x)} :
     CDestrSimpl (Some a = oa) P.
 Proof. sfirstorder. Qed.
+
+(** * Hint database for options *)
+Hint Extern 5 (_ = Some _) => progress (apply eq_some_unfold) : option.
+Hint Extern 5 (Some _ = _) => progress (apply eq_some_unfold) : option.
