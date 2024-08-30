@@ -61,12 +61,14 @@ Proof. tcclean. case_guard; rewrite eq_some_unfold; naive_solver. Qed.
 Class CDestrEqSome := cdestr_eq_some {}.
 
 #[export] Instance cdestr_eq_some_dir `{CDestrEqSome} `{EqSomeUnfold T oa a P}
-  `{∀ x, Unconvertible (option T) oa (Some x)} :
-    CDestrSimpl (oa = Some a) P :=
+  `{∀ x, Unconvertible (option T) oa (Some x)}
+  `{Unconvertible Prop (oa = Some a) P} :
+  CDestrSimpl (oa = Some a) P :=
   cdestr_simpl (@eq_some_unfold T oa a P _).
 
 #[export] Instance cdestr_eq_some_rev `{CDestrEqSome} `{EqSomeUnfold T oa a P}
-  `{∀ x, Unconvertible (option T) oa (Some x)} :
+  `{∀ x, Unconvertible (option T) oa (Some x)}
+  `{Unconvertible Prop (oa = Some a) P} :
     CDestrSimpl (Some a = oa) P.
 Proof. sfirstorder. Qed.
 

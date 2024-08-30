@@ -2,6 +2,10 @@ Require Export Equations.Prop.Equations.
 Require Export Program.Equality Relations.
 Require Import ZArith JMeq.
 
+From Ltac2 Require Export Ltac2.
+Export Ltac2.Printf.
+#[export] Set Default Proof Mode "Classic".
+
 From stdpp Require Export base.
 From stdpp Require Export numbers.
 From stdpp Require Export fin.
@@ -98,6 +102,7 @@ Defined.
     purposes *)
 Definition inspect {A} (a : A) : {b | a = b} :=
   exist _ a eq_refl.
+Arguments inspect : simpl never.
 
 (** When matching [inspect p] instead of [p], this notation allows to have the
     cases be [| pat_for_p eq: Heq => ...] *)
@@ -180,6 +185,98 @@ Notation "∃ x ∈ b , P" := (∃ x, x ∈ b ∧ P)
 
 Arguments clos_refl_trans {_}.
 
+(** * Ltac2 utils *)
+
+(** Fix up the do notation. The default one doesn't work *)
+Ltac2 Notation terminal("do") n(thunk(tactic(0))) t(thunk(self)) := do0 n t.
+
+(** Get the name of the last hypothesis *)
+Ltac2 last_hyp_name () := let (h, _, _) := List.last (Control.hyps ()) in h.
+(** Introduce an hypothesis and get the automatically generated name *)
+Ltac2 intro_get_name () := intro; last_hyp_name ().
+
+(** If a constr is a variable, get the variable name, otherwise None *)
+Ltac2 get_var (c: constr) :=
+  match Constr.Unsafe.kind c with
+  | Constr.Unsafe.Var i => Some i
+  | _ => None
+  end.
+Ltac2 get_var_bt (c: constr) := Option.get_bt (get_var c).
+
+(** Used when success has been found *)
+Ltac2 Type exn ::= [ Success ].
+
+(** Return true if the tactics succeeds in the context, and [false] otherwise *)
+Ltac2 succeeds0 t :=
+  match Control.case (fun () => t (); Control.zero Success) with
+  | Err Success => true
+  | Err _ => false
+  | Val _ => Control.throw Assertion_failure
+  end.
+Ltac2 Notation succeeds := succeeds0.
+
+(** Backtrack if the boolean is not [true] *)
+Ltac2 assert_bt b := if b then () else Control.zero Assertion_failure.
+
+(** Ltac2 version of pose_proof *)
+Ltac2 pose_proof c := Std.pose None c; Std.clearbody [last_hyp_name()].
+Ltac2 Notation "pose" "proof" c(constr) := pose_proof c.
+Ltac2 pose_proof_get c :=
+  Std.pose None c;
+  let n := last_hyp_name () in
+  Std.clearbody [n];
+  n.
+
+
+Ltac2 id_prt () := Message.of_ident.
+
+Ltac2 rec list_prt_in (printer : unit -> 'a -> message) () (l : 'a list) :=
+  match l with
+  | [] => Message.of_string ""
+  | [a] => printer () a
+  | h :: tl => fprintf "%a; %a" printer h (list_prt_in printer) tl
+  end.
+
+Ltac2 list_prt (printer : unit -> 'a -> message) () (l : 'a list) :=
+  fprintf "[%a]" (list_prt_in printer) l.
+
+Ltac2 opt_prt (printer : unit -> 'a -> message) () (o : 'a option) :=
+  match o with
+  | Some x => fprintf "Some %a" printer x
+  | None => fprintf "None"
+  end.
+
+Ltac2 rec removelast_rev (l : 'a list) :=
+  let rec aux (acc : 'a list) (ls : 'a list) :=
+    match ls with
+    | [] => []
+    | [a] => acc
+    | x :: (_ :: _ as t) => aux (x :: acc) t
+    end
+  in aux [] l.
+
+Ltac2 revert_until c :=
+  match
+    List.fold_left
+      (fun o (h, _, c') =>
+         match o with
+         | [] => if succeeds (Std.unify c c') then [h] else []
+         | l => h :: l
+         end
+      ) (Control.hyps ()) []
+
+  with
+  | [] => Control.zero Not_found
+  | l =>
+      Std.revert (removelast_rev l); Std.clear [List.last l]
+  end.
+Ltac2 Notation "revert" "until" c(open_constr) := revert_until c.
+
+Ltac2 block_goal0 () := ltac1:(block_goal).
+Ltac2 Notation block_goal := block_goal0 ().
+Ltac2 unblock_goal0 () := ltac1:(unblock_goal).
+Ltac2 Notation unblock_goal := unblock_goal0 ().
+
 
 (** * Tactic options
 
@@ -200,6 +297,11 @@ param 1 param2.] *)
 
     This can be used more generally to check if a typeclass instance exists *)
 Ltac has_option opt := assert_succeeds (eassert opt; first tc_solve).
+
+Ltac2 has_option0 c := succeeds (assert $c by ltac1:(tc_solve)).
+Ltac2 Notation "has_option" c(constr) := has_option0 c.
+Ltac2 Notation "assert_option" c(constr) := assert_bt (has_option0 c).
+
 
 (** To enable an option locally, one can either do it at Section/Module scope
     with: [#[local] Exixting Instance option1.]. Alternatively one can use the
@@ -265,6 +367,11 @@ Ltac hyp_revert_until_block :=
   end.
 
 Ltac revert_generated_hyps tac := hyp_start_block; tac; hyp_revert_until_block.
+
+Ltac2 revert_generated_hyps tac :=
+  Control.enter (fun () => pose proof HypBlock; tac (); revert until hyp_block).
+
+
 
 (** ** Rewriting *)
 
@@ -594,16 +701,21 @@ Class CTransSimpl `{CTrans T F} :=
 #[export] Hint Mode CTransSimpl ! ! - : typeclass_instances.
 #[export] Hint Rewrite @ctrans_simpl using tc_solve : ctrans.
 
-Lemma ctrans_trans `{CTransSimpl T F} {n m p : T}
-    (e : n = m) (e' : m = p) (a : F n) :
-  a |> ctrans e |> ctrans e' = ctrans (eq_trans e e') a.
-Proof. subst. cbn. by simp ctrans. Qed.
-#[export] Hint Rewrite @ctrans_trans using tc_solve : ctrans.
-
 Lemma ctrans_sym `{CTransSimpl T F} {n m : T} (e : n = m) (a : F n) (b : F m):
   a = ctrans (symmetry e) b ↔ ctrans e a = b.
 Proof. subst. cbn. by simp ctrans. Qed.
 #[export] Hint Rewrite @ctrans_sym using tc_solve : ctrans.
+
+Lemma ctrans_trans `{CTransSimpl T F} {n m p : T}
+  (e : n = m) (e' : m = p) (a : F n) :
+  a |> ctrans e |> ctrans e' = ctrans (eq_trans e e') a.
+Proof. subst. cbn. by simp ctrans. Qed.
+#[export] Hint Rewrite @ctrans_trans using tc_solve : ctrans.
+
+Lemma ctrans_inj `{CTransSimpl T F} {n m : T} (e e' : n = m) (a b : F n):
+  ctrans e a = ctrans e' b ↔ a = b.
+Proof. rewrite <- ctrans_sym. simp ctrans. reflexivity. Qed.
+#[export] Hint Rewrite @ctrans_inj using tc_solve : ctrans.
 
 (** ** Computable transport for [fin] *)
 

@@ -1,6 +1,6 @@
 Require Import Options.
 Require Import CBase.
-Require Import Program Equality.
+Require Import Program.Equality.
 
 
 (** * Injectivity
@@ -186,6 +186,12 @@ Class CDestrMatchT (T : Type) := {}.
 Class CDestrMatch := {}.
 Global Instance cdestr_matchT `{CDestrMatch} T : CDestrMatchT T. Qed.
 
+(** If [CDestrMatchNoEq] is enabled for a type, then whenever CDestruct destroy
+    the discriminee of a match with it, it does not generate the corresponding
+    equality *)
+Class CDestrMatchNoEq (T : Type) := {}.
+
+
 (** [CDestrRecInj] allow [cdestruct] to blow up record equalities of the form
     [{| ... |} = {| ... |}] in a group of field-wise equality. One must specify
     the constructor term for internal reasons (it's hard to guess). The record
@@ -193,90 +199,100 @@ Global Instance cdestr_matchT `{CDestrMatch} T : CDestrMatchT T. Qed.
 Class CDestrRecInj (rec_type : Type) {constr_type : Type}
   (constr : constr_type) := {}.
 
-(* TODO switch to hyp_block hyp management *)
+Ltac2 subst_constr x := let x := get_var_bt x in Std.subst [x].
 
-(* Assumes already blocked goal, H must be a valid hyp from which no other hyp
-   depends on*)
-Ltac cdestruct_core H :=
-  (* Check that no other hypothesis depends on H *)
-  assert_succeeds (revert H);
-  (* Continues running by introducing the next hypothesis, The a is unit
-     argument for lazyness *)
-  let cont a :=
-      match goal with
-      | |- block _ => idtac
-      | |- ?G =>
-          let x := intro_get_name in
-          once cdestruct_core x
-      | |- _ => idtac
-      end in
-  match type of H with
-  | ?T =>
-      has_option (CDestrCase T);
-      case H; clear H;
-      cont ()
-  | _ =>
-      once apply obv_false in H;
-      destruct H;
-      fail
-  | _ =>
-      (* TODO this is slow, there is way to make it faster.
-         It should only run at top level *)
-      once rewrite cdestruct_simpl in H;
-      once cdestruct_core H
-  | ?t = ?t =>
-      (clear H || (revert H; refine (simplification_K _ t _ _)));
-      cont ()
-  | ?x = ?y =>
-      has_option CDestrSubst;
-      once first [subst x | subst y];
-      cont ()
-  | ?P =>
-      has_option CDestrSubst;
-      let H' := fresh in
-      pose proof H as H';
-      apply cdestr_supersubst in H';
-      match type of H' with
-      | ?x = ?y => once first [subst x | subst y]
+Ltac2 cdestruct_step () :=
+  match! goal with
+  | [|- ∀ _ : ?t, _] =>
+      let h := intro_get_name () in
+      assert_option (CDestrCase $t);
+      Std.case false (Control.hyp h, Std.NoBindings);
+      clear $h
+  | [|- ∀ _, _] =>
+      let h := intro_get_name () in
+      apply obv_false in $h;
+      Std.case false (Control.hyp h, Std.NoBindings)
+  | [|- ∀ _, _] =>
+      let h := intro_get_name () in
+      apply (iffLR cdestruct_simpl) in $h;
+      revert $h
+  | [|- ?t = ?t → _ ] => intros _
+  | [|- ∀ _ : ?t = ?t, _ ] => refine '(simplification_K _ $t _ _)
+  | [|- ∀ _ : ?x = ?y, _ ] =>
+      assert_option CDestrSubst;
+      let h := intro_get_name () in
+      first [subst_constr x | subst_constr y]
+  | [|- ∀ _ : _, _ ] =>
+      let h := intro_get_name () in
+      progress (cbn in $h);
+      revert $h
+  | [|- ∀ _, _ ] =>
+      assert_option CDestrSubst;
+      let h := intro_get_name () in
+      let p := Control.hyp h in
+      let e := pose_proof_get constr:(cdestr_supersubst $p) in
+      lazy_match! Constr.type (Control.hyp e) with
+      | ?x = ?y => first [subst_constr x | subst_constr y]
       end;
-      once cdestruct_core H
-  | _ =>
-      has_option CDestrCbn;
-      progress (cbn in H);
-      once cdestruct_core H
-  | context [match ?b with _ => _ end] =>
-      let T := type of b in
-      has_option (CDestrMatchT T);
-      let Heqn := fresh in
-      destruct b eqn:Heqn;
-      revert H;
-      once cdestruct_core Heqn
-  | ?T =>
-      cont ();
-      try revert H
+      revert $h
+  | [|- ∀ _ : ?p, _ ] =>
+      lazy_match! p with
+      | context [match inspect ?b with _ => _ end] =>
+          let t := Constr.type b in
+          assert_option (CDestrMatchT $t);
+          Std.case false ('(inspect $b), Std.NoBindings);
+          let hb := intro_get_name () in
+          Std.case false (Control.hyp hb, Std.NoBindings);
+          clear $hb
+      | context [match ?b with _ => _ end] =>
+          let t := Constr.type b in
+          assert_option (CDestrMatchT $t);
+          match get_var b with
+          | Some x => Std.case false (b, Std.NoBindings); clear $x
+          | None =>
+              if has_option (CDestrMatchNoEq $t)
+              then Std.case false (b, Std.NoBindings)
+              else
+                ltac1:(b |- case_eq b) (Ltac1.of_constr b)
+          end
+      end
+  | [|- ∀ _, _] => intro
   end.
 
-(** [cdestruct H] will destroy [H] with the cdestruct engine. It will not touch
-    the other hypotheses or the goal (unless through [CDestrSubst] or
-    [CDestrMatch]. *)
-Tactic Notation "cdestruct" ident(H) :=
-  block_goal; cdestruct_core H; intros; unblock_goal.
-Tactic Notation "cdestruct" ident(H) "as" simple_intropattern_list(pats) :=
-  block_goal; cdestruct_core H; intros pats; unblock_goal.
+Ltac2 cdestruct_intros0 () := repeat (once (cdestruct_step ())).
+Ltac2 Notation cdestruct_intros := cdestruct_intros0 ().
 
-(** [cdestruct_intro] will introduce the next value and call cdestruct on it.
-    It's the [cdestruct] equivalent of [destruct 1]. *)
-Tactic Notation "cdestruct_intro" :=
-  let H := intro_get_name in cdestruct H.
-Tactic Notation "cdestruct_intro" "as" simple_intropattern_list(pats) :=
-  let H := intro_get_name in cdestruct H as (pats).
+Ltac2 Notation "cdestruct_intros" "as" ip(intropatterns) :=
+  revert_generated_hyps cdestruct_intros0; Std.intros false ip.
 
-(** [cdestruct_intros] will introduce all possible values (like [intros]), but
-additionally destroy each of them with the [cdestruct] engine. *)
-Tactic Notation "cdestruct_intros" :=
-  let H := intro_get_name in cdestruct_core H; intros.
+Ltac2 cdestruct_intro0 () :=
+  Control.enter
+    (fun () =>
+       let h := intro_get_name () in
+       block_goal;
+       revert $h;
+       cdestruct_intros;
+       unblock_goal).
+Ltac2 Notation cdestruct_intro := cdestruct_intro0 ().
+
+Ltac2 cdestruct0 h :=
+  block_goal;
+  revert $h;
+  cdestruct_intros;
+  unblock_goal.
+Ltac2 Notation "cdestruct" h(ident) := cdestruct0 h.
+
+Tactic Notation "cdestruct_intros" := ltac2:(cdestruct_intros).
 Tactic Notation "cdestruct_intros" "as" simple_intropattern_list(pats) :=
-  let H := intro_get_name in cdestruct_core H; intros pats.
+  ltac2:(revert_generated_hyps cdestruct_intros0); intros pats.
+Tactic Notation "cdestruct_intro" := ltac2:(cdestruct_intro).
+Tactic Notation "cdestruct_intro" "as" simple_intropattern_list(pats) :=
+  ltac2:(revert_generated_hyps cdestruct_intro0); intros pats.
+Ltac cdestruct0 := ltac2:(h |- cdestruct0 (Option.get (Ltac1.to_ident h))).
+Tactic Notation "cdestruct" hyp(h) := cdestruct0 h.
+Tactic Notation "cdestruct" hyp(h) "as" simple_intropattern_list(pats) :=
+  revert_generated_hyps ltac:(cdestruct0 h); intros pats.
+
 
 (** ** Default Instanciation of the CDestruct typeclasses *)
 
@@ -286,6 +302,7 @@ Tactic Notation "cdestruct_intros" "as" simple_intropattern_list(pats) :=
     [cdestruct use cdestruct_or] *)
 Global Instance cdestruct_and A B : CDestrCase (A ∧ B) := ltac:(constructor).
 #[global] Instance cdestruct_ex T P : CDestrCase (∃ x : T, P x) := ltac:(constructor).
+Definition cdestruct_sigT T (F : T → Type) : CDestrCase (sigT F) := ltac:(constructor).
 #[global] Instance cdestruct_pair (A B : Type) : CDestrCase (A * B) :=
   ltac:(constructor).
 Global Instance cdestruct_True : CDestrCase True := ltac:(constructor).
@@ -294,6 +311,11 @@ Definition cdestruct_or A B : CDestrCase (A ∨ B) := ltac:(constructor).
 Definition cdestruct_sum A B : CDestrCase (A + B) := ltac:(constructor).
 #[global] Instance cdestruct_unit : CDestrCase unit := ltac:(constructor).
 #[global] Instance cdestruct_Empty_set : CDestrCase Empty_set := ltac:(constructor).
+
+#[global] Instance cdestruct_match_noeq_sig A (P : A → Prop)
+  : CDestrMatchNoEq (sig P)  := ltac:(constructor).
+#[global] Instance cdestruct_match_noeq_sumbool P Q
+  : CDestrMatchNoEq ({P} + {Q})  := ltac:(constructor).
 
 (** Injective equalities are simplified by default, up to 4 arguments *)
 Global Instance cdestruct_inj `{Inj A B RA RB f} {HP: Proper (RA ==> RB) f} x y :
@@ -315,6 +337,45 @@ Global Instance cdestruct_inj4 `{Inj4 A B C D E R1 R2 R3 R4 RS f}
   CDestrSimpl (RS (f x1 x2 x3 x4) (f y1 y2 y3 y4))
     (R1 x1 y1 ∧ R2 x2 y2 ∧ R3 x3 y3 ∧ R4 x4 y4).
 Proof. constructor. apply (inj4_iff f). Qed.
+
+(** CTrans simplification *)
+#[global] Instance cdestruct_ctrans_inj `{CTransSimpl T F} {n m : T} (e e' : n = m)
+  (a b : F n):
+  CDestrSimpl (ctrans e a = ctrans e' b) (a = b).
+Proof. constructor. by simp ctrans. Qed.
+
+#[global] Instance cdestruct_ctrans_simpl_l `{CTransSimpl T F} {n : T} (e : n = n)
+  (a b : F n):
+  CDestrSimpl (ctrans e a = b) (a = b).
+Proof. constructor. by simp ctrans. Qed.
+
+#[global] Instance cdestruct_ctrans_simpl_r `{CTransSimpl T F} {n : T} (e : n = n)
+  (a b : F n):
+  CDestrSimpl (a = ctrans e b) (a = b).
+Proof. constructor. by simp ctrans. Qed.
+
+Hint Extern 5 (CDestrSuperSubst ?P _ _ _) =>
+       let TP := type of P in
+       match P with
+       | context [@ctrans _ _ _ ?A ?B ?E _] =>
+           assert_fails (unify A B);
+           constructor;
+           intro;
+           exact E
+       end : typeclass_instances.
+(* (* TODO improve to any ctrans in the context, and not just left or right of equality *) *)
+(* #[global] Instance cdestr_supersubst_ctrans_l `{CTransSimpl T F} *)
+(*   `{Unconvertible T n n} (e : n = n) (a : F n) b : *)
+(*   CDestrSuperSubst (ctrans e a = b) T n n. *)
+(* Proof. *)
+(*   Set Typeclasses Debug. *)
+(*   tc_solve. *)
+(*   by tcclean. Qed. *)
+
+(* #[global] Instance cdestr_supersubst_ctrans_r `{CTransSimpl T F} *)
+(*   `{Unconvertible T n m} (e : n = m) (a : F n) b : *)
+(*   CDestrSuperSubst (b = ctrans e a) T n m. *)
+(* Proof. by tcclean. Qed. *)
 
 (** JMeq simplification *)
 Global Instance cdestruct_JMeq A (x y : A) :

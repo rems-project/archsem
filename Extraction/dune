@@ -3,7 +3,7 @@
 (coq.extraction
   (prelude ArmInstExtr)
   (theories ISASem SSCCommon stdpp SailStdpp Hammer RecordUpdate Equations
-            GenModels)
+            GenModels Ltac2)
   (extracted_modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
                      CList CMaps COption countable CResult CSets Datatypes
