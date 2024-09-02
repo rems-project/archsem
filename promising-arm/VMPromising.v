@@ -606,10 +606,11 @@ Module TState.
   (** Extract a plain register map from the thread state without views.
       This is used to decide if a thread has terminated, and to observe the
       results of the model *)
-  Definition reg_map (ts : t) : registerMap := fst ∘ read_reg ts.
+  Definition reg_map (ts : t) : registerMap :=
+    λ r, (read_reg ts r).1.
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : Reg.app) (rv : reg_type * view) : t -> t
+  Definition set_reg (reg : Reg.app) (rv : regval * view) : t -> t
     := set regs (fun_add reg rv).
 
   (** Sets the coherence view of a location *)

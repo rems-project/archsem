@@ -395,14 +395,22 @@ Proof. solve_decision. Defined.
 Module Arm.
 
   Module Arch <: Arch.
-    (* TODO: This should be an enum not a string *)
     Definition reg := string.
     Definition reg_eq : EqDecision reg := _.
     Definition reg_countable : Countable reg := _.
-    Definition reg_type := regval.
-    Definition reg_type_eq : EqDecision reg_type := _.
-    Definition reg_type_countable : Countable reg_type := _.
-    Definition reg_type_inhabited : Inhabited reg_type := _.
+
+    Definition reg_type (_ : reg) := regval.
+
+    Definition reg_type_eq (r : reg) : EqDecision (reg_type r) := _.
+    Definition reg_type_countable (r : reg) : Countable (reg_type r) := _.
+    Definition reg_type_inhabited (r : reg) : Inhabited (reg_type r) := _.
+    Definition ctrans_reg_type : CTrans reg_type := λ _ _ _ x, x.
+    #[export] Existing Instance ctrans_reg_type.
+    Definition ctrans_reg_type_simpl : CTransSimpl reg_type := λ _ _ _, eq_refl.
+    #[export] Existing Instance ctrans_reg_type_simpl.
+    Definition reg_type_eq_dep_dec : EqDepDecision reg_type.
+    Proof. unfold EqDepDecision. intros. rewrite JMeq_simpl. tc_solve. Defined.
+    #[export] Existing Instance reg_type_eq_dep_dec.
 
     (** None means default access (strict or relaxed is up to the concurrency model).
         Some s, means access with a MSR/MRS with name "s" *)

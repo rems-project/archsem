@@ -480,27 +480,37 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     (** * Connection to final state *)
 
     (** Get the list of final register values in a candidate for a thread *)
-    Definition final_reg_gmap_tid (cd : t) (tid : fin nmth) :
-      gmap reg reg_type :=
-      foldl (λ umap itrc,
-          foldl (λ umap ev,
-              match ev with
-              | RegWrite reg _ val &→ _ => <[reg := val]> umap
-              | _ => umap
-              end
-            ) umap itrc.1
-        ) (∅ : gmap reg reg_type) (cd.(events) !!! tid).
+    (* TODO fix it when Dmaps are working *)
+    (* Definition final_reg_gmap_tid (cd : t) (tid : fin nmth) : *)
+    (*   gmap reg reg_type := *)
+    (*   foldl (λ umap itrc, *)
+    (*       foldl (λ umap ev, *)
+    (*           match ev with *)
+    (*           | RegWrite reg _ val &→ _ => <[reg := val]> umap *)
+    (*           | _ => umap *)
+    (*           end *)
+    (*         ) umap itrc.1 *)
+    (*     ) (∅ : gmap reg reg_type) (cd.(events) !!! tid). *)
 
 
     (** Get the final register maps of all threads from a candidate *)
     Definition final_reg_map_tid (cd : t) (tid : fin nmth) :
         registerMap :=
-      let umap := final_reg_gmap_tid cd tid in
       λ reg,
-        match umap !! reg with
-        | Some val => val
-        | None => (cd.(init).(MState.regs) !!! tid) reg
-        end.
+      let oval :=
+        foldl (λ val itrc,
+            foldl (λ (val : option (reg_type reg)) ev,
+                match ev with
+                | RegWrite reg' _ val' &→ _ =>
+                    if decide (reg' = reg) is left e
+                    then Some (ctrans e val')
+                    else val
+                | _ => val
+                end
+              ) val itrc.1
+          ) None (cd.(events) !!! tid)
+      in
+      if oval is Some val then val else (cd.(init).(MState.regs) !!! tid) reg.
 
     (** Get all the final register map from candidate *)
     Definition final_reg_map (cd : t) : vec registerMap nmth :=

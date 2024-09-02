@@ -301,7 +301,7 @@ Module TState.
     fun reg => (ts.(regs) reg).1.
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : reg) (rv : reg_type * view) : t -> t
+  Definition set_reg (reg : reg) (rv : (reg_type reg) * view) : t -> t
     := set regs (fun_add reg rv).
 
   (** Sets the coherence view of a location *)

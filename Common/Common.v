@@ -33,6 +33,23 @@ Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
   fun x : A => if k =? x then v else f x.
 
 
+(** countable for sigT, copied from prod_countable *)
+#[global] Program Instance sigT_countable `{Countable A} (P : A → Type)
+  `{EqDecision (sigT P)}
+  `{∀ a : A, EqDecision (P a)} `{∀ a : A, Countable (P a)} : Countable (sigT P)
+  := {|
+    encode xy := prod_encode (encode (xy.T1)) (encode (xy.T2));
+    decode p :=
+      x ← prod_decode_fst p ≫= decode;
+      y ← prod_decode_snd p ≫= decode; Some (existT x y)
+  |}.
+Next Obligation.
+  intros ??????? [x y]. cbn.
+  rewrite prod_decode_encode_fst, prod_decode_encode_snd; cbn.
+  by repeat (rewrite decode_encode; cbn).
+Qed.
+
+
 (** * Vectors ***)
 
 (** ** Vector alter *)

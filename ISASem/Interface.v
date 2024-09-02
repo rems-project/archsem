@@ -1,14 +1,13 @@
 Require Import Strings.String.
-Require Import stdpp.bitvector.bitvector.
-Require Import stdpp.countable.
-Require Import stdpp.finite.
-Require Import stdpp.gmap.
 
 Require Import SSCCommon.Options.
 Require Import SSCCommon.Common.
 Require Import SSCCommon.FMon.
 
-(** * The architecture requirements *)
+(** * The architecture requirements
+
+The SailStdpp library already defines the architecure requirements, however this
+development requires slightly more things, so this looks a bit different *)
 
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
@@ -22,17 +21,21 @@ Module Type Arch.
   Parameter reg_countable : @Countable reg reg_eq.
   #[export] Existing Instance reg_countable.
 
-  (** The type of registers. This needs to be a type generic enough to contain
-      the value of any register.
-
-      TODO: Decide if an architecture should provide a standard default value *)
-  Parameter reg_type : Type.
-  Parameter reg_type_eq : EqDecision reg_type.
+  (** Register value type are dependent on the register, therefore we need all
+      the dependent type manipulation typeclasses *)
+  Parameter reg_type : reg → Type.
+  Parameter reg_type_eq : ∀ (r : reg), EqDecision (reg_type r).
   #[export] Existing Instance reg_type_eq.
-  Parameter reg_type_countable : @Countable reg_type reg_type_eq.
+  Parameter reg_type_countable : ∀ (r : reg), Countable (reg_type r).
   #[export] Existing Instance reg_type_countable.
-  Parameter reg_type_inhabited : Inhabited reg_type.
+  Parameter reg_type_inhabited : ∀ r : reg, Inhabited (reg_type r).
   #[export] Existing Instance reg_type_inhabited.
+  Parameter ctrans_reg_type : CTrans reg_type.
+  #[export] Existing Instance ctrans_reg_type.
+  Parameter ctrans_reg_type_simpl : CTransSimpl reg_type.
+  #[export] Existing Instance ctrans_reg_type_simpl.
+  Parameter reg_type_eq_dep_dec : EqDepDecision reg_type.
+  #[export] Existing Instance reg_type_eq_dep_dec.
 
 
   (** Register access kind (architecture specific) *)
@@ -155,6 +158,7 @@ Module Interface (A : Arch).
   Import A.
   Open Scope N.
 
+  (** ** Memory utility *)
   (** Virtual address are tag-less bitvectors *)
   Definition va := bv va_size.
 
@@ -314,7 +318,7 @@ Module Interface (A : Arch).
   | RegRead (reg : reg) (racc : reg_acc)
 
     (** Write a register [reg] with value [reg_val] and access type [racc]. *)
-  | RegWrite (reg : reg) (racc : reg_acc) (regval: reg_type)
+  | RegWrite (reg : reg) (racc : reg_acc) (regval: reg_type reg)
 
     (** Read [n] bytes of memory in a single access (Single Copy Atomic in Arm
         terminology). See [ReadReq.t] for the various required fields.
@@ -360,7 +364,7 @@ Module Interface (A : Arch).
 
   #[export] Instance outcome_ret : Effect outcome :=
     λ out, match out with
-            | RegRead _ _ => reg_type
+            | RegRead r _ => reg_type r
             | MemRead n _ => (bv (8 * n) * option bool + abort)%type
             | MemWrite n _ => (bool + abort)%type
             | GenericFail _ => ∅%type
@@ -380,20 +384,20 @@ Module Interface (A : Arch).
     all: try discriminate.
     all: cbn in *.
     all: try (intros; assumption).
-    (* MemRead case *)
-    intros e [[b o]| a].
-    - left. split.
-      + eapply ctrans; [|eassumption].
-        naive_solver.
-      + assumption.
-    - right. assumption.
+    (* There is 2 non trivial cases where the return type depends on the content
+       of the effect constructor *)
+    - (* RegRead case *)
+      intros e. eapply ctrans. naive_solver.
+    - (* MemRead case *)
+      intros e [[b o]| a]; [left | right]; intuition.
+      eapply ctrans; [| eassumption].
+      apply (f_equal (λ out, if out is MemRead n _ then 8 * n else 0) e).
   Defined.
 
   #[export] Instance outcome_EffCTransSimpl : EffCTransSimpl outcome.
   Proof.
-    intros [] ? ?; cbn.
-    all: try reflexivity.
-    repeat case_match; try simp ctrans; reflexivity.
+    intros [] ? ?; try reflexivity; cbn;
+      repeat case_match; simp ctrans; reflexivity.
   Qed.
 
   (** ** Instruction monad *)
@@ -444,16 +448,16 @@ Module Interface (A : Arch).
 
       This gives both the register and the value, because later the value might
       have a type that depend on the register *)
-  Definition get_reg_val (ev : iEvent) : option (reg * reg_type) :=
+  Definition get_reg_val (ev : iEvent) : option (sigT reg_type) :=
     match ev with
-    | RegRead reg _ &→ regval => Some (reg, regval)
-    | RegWrite reg _ regval &→ _ => Some (reg, regval)
+    | RegRead reg _ &→ regval => Some (existT reg regval)
+    | RegWrite reg _ regval &→ _ => Some (existT reg regval)
     | _ => None
     end.
 
   Lemma get_reg_val_get_reg (ev : iEvent) rrv :
-    get_reg_val ev = Some rrv → get_reg ev = Some rrv.1.
-  Proof. destruct ev as [[] ?]; hauto lq:on. Qed.
+    get_reg_val ev = Some rrv → get_reg ev = Some rrv.T1.
+  Proof. destruct ev as [[] ?]; cbn; hauto lq:on. Qed.
 
   Definition get_rec_acc (ev : iEvent) : option reg_acc :=
     match ev with
@@ -536,7 +540,7 @@ Module Interface (A : Arch).
   (** ** Register reads ***)
 
   Section isReg.
-    Context (P : reg → reg_acc → reg_type → Prop).
+    Context (P : ∀ r : reg, reg_acc → reg_type r → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_reg_readP ev : Prop :=
