@@ -5,16 +5,18 @@ Require Import SSCCommon.FMon.
 Require Import GenModels.ArmInst.
 Require Import GenAxiomaticArm.
 
-(** This is an implementation of a user-mode sequential Axiomatic model in ARM style.
+(** This is an implementation of a user-mode SC Axiomatic model in ARM style.
 
     This model used the "pa" part of the interface as the main address and does
     not check that that translation makes sense if there is one. However it will
     check that translations and instruction fetchs read from initial memory if
-    they exist, and that no writes are made to the address used for translation *)
+    they exist, and that no writes are made to the address used for
+    translations(more exactly that translation reads never read from non-initial
+    writes) *)
 Import Candidate.
 Section rel.
   Context (regs_whitelist : gset reg).
-  Notation nmth := 1%nat.
+  Context {nmth : nat}.
   Context (cd : Candidate.t NMS nmth).
 
   Notation W := (W cd).
@@ -51,9 +53,14 @@ Section rel.
   Notation rfr := (reg_from_reads cd).
 
   Definition is_illegal_reg_write (regs : gset reg) :=
-    is_reg_writeP (λ reg _ _, reg ∉ regs).
+    is_reg_writeP (λ reg acc _, reg ∉ regs ∨ acc ≠ None).
 
   Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
+
+  Definition is_illegal_reg_read (regs : gset reg) :=
+    is_reg_writeP (λ reg acc _, acc ≠ None).
+
+  Definition Illegal_RR := collect_all (λ _, is_illegal_reg_read regs_whitelist) cd.
 
   (* po orders memory events between instructions *)
   Definition po := ⦗M⦘⨾instruction_order⨾⦗M⦘.
@@ -71,21 +78,16 @@ Section rel.
   Definition valid_eids_rc r := r ∪ id.
   Definition valid_eids_compl a := (valid_eids cd) ∖ a.
 
-  (* rf orders explicit reads and writes,
-     is unusual because of the handle of initial writes *)
   Definition fr := ⦗W⦘⨾(from_reads cd)⨾⦗R⦘.
 
+  (* TODO This does not distinguishes UB conditions from invalid conditions *)
   Record consistent := {
-      coherence : grel_acyclic (po_loc ∪ fr ∪ co ∪ rf);
+      total : grel_acyclic (full_instruction_order cd ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
       initial_reads : (T ∪ IF) ⊆ IR;
-      register_coherence : grel_acyclic (Rpo_loc ∪ rfr ∪ rrf);
-      register_permitted : Illegal_RW = ∅;
+      register_write_permitted : Illegal_RW = ∅;
+      register_read_permitted : Illegal_RR = ∅;
+      memory_events_permitted : (mem_events cd) ⊆ M ∪ T ∪ IF;
+      is_nms' : is_nms cd;
     }.
-
-  Record wf := {
-     co_wf : coherence_wf cd;
-     rf_wf : reads_from_wf cd;
-     rrf_wf : reg_reads_from_wf cd;
-  }.
 
 End rel.
