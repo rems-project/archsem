@@ -866,8 +866,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         before the read event (aka the read reads from the write, or a
         coherence-later write)*)
     Definition from_reads cd :=
-      (mem_reads cd ₛ⨾ overlapping cd⨾ₛ mem_writes cd)
-        ∖ (coherence cd ∪ ⦗reg_writes cd⦘ ⨾ reads_from cd)⁻¹.
+      (⦗mem_reads cd⦘⨾ overlapping cd ⨾⦗mem_writes cd⦘)
+        ∖ ((coherence cd ∪ ⦗reg_writes cd⦘) ⨾ reads_from cd)⁻¹.
     #[global] Typeclasses Opaque from_reads.
 
 
@@ -907,8 +907,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         might run against the instruction order for relaxed registers but follow the
         instruction order for regular register *)
     Definition reg_from_reads cd :=
-      (⦗reg_reads cd⦘⨾ same_reg cd⨾ ⦗reg_writes cd⦘)
-        ∖ (instruction_order cd ∪ ⦗reg_writes cd⦘ ⨾ reg_reads_from cd)⁻¹.
+      ⦗reg_reads cd⦘⨾ same_reg cd ⨾⦗reg_writes cd⦘
+        ∖ ((instruction_order cd ∪ ⦗reg_writes cd⦘)⨾ reg_reads_from cd)⁻¹.
     #[global] Typeclasses Opaque reg_from_reads.
 
 
@@ -949,7 +949,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       naive_solver.
     Qed.
 
-    Definition pc_reads_from cd := pc_writes cd ₛ⨾ reg_reads_from cd ⨾ₛ pc_reads cd.
+    Definition pc_reads_from cd := ⦗pc_writes cd⦘⨾ reg_reads_from cd ⨾⦗pc_reads cd⦘.
     Definition reg_reads_from_data cd := reg_reads_from cd ∖ pc_reads_from cd.
 
     (** * Generic wellformedness
@@ -1089,32 +1089,32 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Context {et n} (cd : t et n).
 
       Definition iio_addr :=
-        iio cd ⨾ₛ mem_reads cd ∪
+        iio cd ⨾⦗mem_reads cd⦘ ∪
           iio cd ⨾
-            ((mem_write_addr_announces cd ₛ⨾ iio cd ⨾ₛ mem_write_reqs cd) ∩
+            (⦗mem_write_addr_announces cd⦘⨾ iio cd ⨾⦗mem_write_reqs cd⦘ ∩
                same_footprint cd).
 
       (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
       (* TODO prove all of the wellformedness properties directly from the definition *)
       Definition addr :=
-        mem_reads cd ₛ⨾
+        ⦗mem_reads cd⦘⨾
           (⦗mem_reads cd⦘ ∪ (iio cd ⨾ reg_reads_from_data cd)⁺)⨾
-          iio_addr⨾ₛ
-          mem_events cd.
+          iio_addr⨾
+          ⦗mem_events cd⦘.
       Global Typeclasses Opaque addr.
 
       Definition data :=
-        mem_reads cd ₛ⨾
+        ⦗mem_reads cd⦘⨾
           (⦗mem_reads cd⦘ ∪ (iio cd ⨾ (reg_reads_from_data cd))⁺)⨾
-          iio cd⨾ₛ
-          mem_write_reqs cd.
+          iio cd⨾
+          ⦗mem_write_reqs cd⦘.
       Global Typeclasses Opaque data.
 
       Definition ctrl :=
-        mem_reads cd ₛ⨾
+        ⦗mem_reads cd⦘⨾
           (⦗mem_reads cd⦘ ∪ (iio cd ⨾ (reg_reads_from_data cd))⁺)⨾
-          iio cd⨾ₛ
-          pc_writes cd⨾
+          iio cd⨾
+          ⦗pc_writes cd⦘⨾
           instruction_order cd.
       Global Typeclasses Opaque ctrl.
     End Deps.

@@ -28,7 +28,7 @@ Require Import CSets.
 
 Import SetUnfoldPair.
 
-(*** Maps of sets utilities ***)
+(** * Maps of sets utilities ***)
 
 (** Union of set options, that merge two options, using the union in case of two
 Some. Useful for map of set merging *)
@@ -100,7 +100,7 @@ Import SetUnfoldLookupTotal.
 
 
 
-(*** Grels ***)
+(** * Grels ***)
 
 Section GRel.
   Context {A : Type}.
@@ -234,7 +234,8 @@ Section GRel.
   Qed.
   Hint Rewrite gmap_to_rel_to_map using auto with grel : grel.
 
-  (*** Domain and range ***)
+
+  (** ** Domain and range ***)
 
   Definition grel_dom (r : grel) : gset A := set_map fst r.
   Definition grel_rng (r : grel) : gset A := set_map snd r.
@@ -252,12 +253,13 @@ Section GRel.
   Typeclasses Opaque grel_dom.
   Typeclasses Opaque grel_rng.
 
-  (*** Sequence ***)
+
+  (** ** Sequence ***)
 
   Definition grel_seq (r r' : grel) : grel :=
     let rm := grel_to_map r' in
     set_fold (fun '(e1, e2) res => res ∪ set_map (e1,.) (rm !!! e2)) ∅ r.
-  Infix "⨾" := grel_seq (at level 44, left associativity) : stdpp_scope.
+  Infix "⨾" := grel_seq (at level 39, left associativity) : stdpp_scope.
 
   Lemma grel_seq_spec r r' e1 e2 :
     (e1, e2) ∈ (r ⨾ r') <-> exists e3, (e1, e3) ∈ r /\ (e3, e2) ∈ r'.
@@ -265,51 +267,21 @@ Section GRel.
     unfold grel_seq.
     funelim (set_fold _ _ _).
     - set_solver.
-    - destruct x.
+    - case_split.
       set_unfold.
       hauto q:on.
   Qed.
 
   Global Instance set_unfold_elem_of_grel_seq r r' x P Q:
-    (forall z, SetUnfoldElemOf (x.1, z) r (P z)) ->
-    (forall z, SetUnfoldElemOf (z, x.2) r' (Q z)) ->
-    SetUnfoldElemOf x (r ⨾ r') (exists z, P z /\ Q z).
+    (forall z, SetUnfoldElemOf (x.1, z) r (P z)) →
+    (forall z, SetUnfoldElemOf (z, x.2) r' (Q z)) →
+    SetUnfoldElemOf x (r ⨾ r') (∃ z, P z ∧ Q z) | 20.
   Proof using. tcclean. apply grel_seq_spec. Qed.
 
-  (** ** Sequence with set
-
-  This is an optimisation for [⦗s⦘⨾r] and [r⨾⦗s⦘] *)
-
-  Definition grel_seq_setl (s : gset A) (r : grel) : grel :=
-    r |> filter (λ '(e1, e2), e1 ∈ s).
-  Infix "ₛ⨾" := grel_seq_setl (at level 44, left associativity) : stdpp_scope.
-
-  Lemma grel_seq_setl_spec s r e1 e2 :
-    (e1, e2) ∈ s ₛ⨾ r ↔ e1 ∈ s ∧ (e1, e2) ∈ r.
-  Proof. unfold grel_seq_setl. set_solver. Qed.
-
-  #[export] Instance set_unfold_elem_of_grel_seq_setl s r x P Q:
-    SetUnfoldElemOf x.1 s P →
-    SetUnfoldElemOf x r Q →
-    SetUnfoldElemOf x (s ₛ⨾ r) (P ∧ Q).
-  Proof. tcclean. destruct x. apply grel_seq_setl_spec. Qed.
+  Typeclasses Opaque grel_seq.
 
 
-  Definition grel_seq_setr (r : grel) (s : gset A) : grel :=
-    r |> filter (λ '(e1, e2), e2 ∈ s).
-  Infix "⨾ₛ" := grel_seq_setr (at level 44, left associativity) : stdpp_scope.
-
-  Lemma grel_seq_setr_spec r s e1 e2 :
-    (e1, e2) ∈ r ⨾ₛ s ↔ (e1, e2) ∈ r ∧ e2 ∈ s.
-  Proof. unfold grel_seq_setr. set_solver. Qed.
-
-  #[export] Instance set_unfold_elem_of_grel_seq_setr r s x P Q:
-    SetUnfoldElemOf x r P →
-    SetUnfoldElemOf x.2 s Q →
-    SetUnfoldElemOf x (r ⨾ₛ s) (P ∧ Q).
-  Proof. tcclean. destruct x. apply grel_seq_setr_spec. Qed.
-
-  (*** Inversion ***)
+  (** ** Inversion ***)
 
   Definition grel_inv : grel -> grel := set_map (fun x => (x.2, x.1)).
   Notation "r ⁻¹" := (grel_inv r) (at level 1) : stdpp_scope.
@@ -328,7 +300,7 @@ Section GRel.
   Typeclasses Opaque grel_inv.
 
 
-  (*** Set into rel ***)
+  (** ** Set into rel ***)
 
   Definition grel_from_set (s : gset A) : grel := set_map (fun x => (x, x)) s.
 
@@ -338,20 +310,26 @@ Section GRel.
   Proof using. unfold grel_from_set. set_solver. Qed.
 
   Global Instance set_unfold_elem_of_grel_from_set s x P:
-    SetUnfoldElemOf x.1 s P ->
-    SetUnfoldElemOf x ⦗s⦘ (P /\ x.1 = x.2).
+    SetUnfoldElemOf x.1 s P →
+    SetUnfoldElemOf x ⦗s⦘ (P ∧ x.1 = x.2) | 20.
   Proof using. tcclean. apply grel_from_set_spec. Qed.
 
   Typeclasses Opaque grel_from_set.
 
-  Lemma grel_seq_from_setl s r : ⦗ s ⦘ ⨾ r = s ₛ⨾ r.
-  Proof. set_solver. Qed.
+  Global Instance set_unfold_elem_of_grel_from_set_seq s r x P Q:
+    SetUnfoldElemOf x.1 s P →
+    SetUnfoldElemOf x r Q →
+    SetUnfoldElemOf x (⦗s⦘⨾r) (P ∧ Q) | 10.
+  Proof using. tcclean. destruct x. set_solver. Qed.
 
-  Lemma grel_seq_from_setr r s : r ⨾ ⦗ s ⦘ = r ⨾ₛ s.
-  Proof. set_solver. Qed.
+  Global Instance set_unfold_elem_of_grel_seq_from_set r s x P Q:
+    SetUnfoldElemOf x r P →
+    SetUnfoldElemOf x.2 s Q →
+    SetUnfoldElemOf x (r⨾⦗s⦘) (P ∧ Q) | 10.
+  Proof using. tcclean. destruct x. set_solver. Qed.
 
 
-  (*** Transitive closure ***)
+  (** ** Transitive closure ***)
 
   (** Decides if there exists a path between x and y in r that goes only through
       points in l. x and y themselves don't need to be in l *)
@@ -834,14 +812,18 @@ Arguments grel _ {_ _}.
 Arguments grel_plus_cind : clear implicits.
 Arguments grel_plus_cind_r : clear implicits.
 
-
 (* Notations need to be redefined out of the section. *)
 (* TODO maybe grel scope would be better *)
-Infix "⨾" := grel_seq (at level 44, left associativity) : stdpp_scope.
-Infix "ₛ⨾" := grel_seq_setl (at level 44, left associativity) : stdpp_scope.
-Infix "⨾ₛ" := grel_seq_setr (at level 44, left associativity) : stdpp_scope.
-Notation "r ⁻¹" := (grel_inv r) (at level 1) : stdpp_scope.
 Notation "⦗ a ⦘" := (grel_from_set a) (format "⦗ a ⦘") : stdpp_scope.
+
+Infix "⨾" := grel_seq (at level 37, left associativity) : stdpp_scope.
+Infix "⨾@{ K }" := (@grel_seq K _ _) (at level 37, left associativity) : stdpp_scope.
+Notation "(⨾)" := grel_seq (only parsing) : stdpp_scope.
+Notation "(⨾@{ K } )" := (@grel_seq K _ _) (only parsing) : stdpp_scope.
+Notation "( r ⨾.)" := (grel_seq r) (only parsing) : stdpp_scope.
+Notation "(.⨾ r )" := (λ r', r' ≡ r) (only parsing) : stdpp_scope.
+
+Notation "r ⁻¹" := (grel_inv r) (at level 1) : stdpp_scope.
 Notation "a ⁺" := (grel_plus a) (at level 1, format "a ⁺") : stdpp_scope.
 
 (** Users might not want the reflexive notation from finite type. Sometimes you

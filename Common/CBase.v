@@ -144,7 +144,7 @@ Global Instance: Params (@cprod) 4 := {}.
 (** × must be left associative because the * of types is left associative.
       Thus if you have sa : set A, sb : set B and sc : set C, then
       sa × sb × sc : set (A * B * C) *)
-Infix "×" := cprod (at level 39, left associativity) : stdpp_scope.
+Infix "×" := cprod (at level 37, left associativity) : stdpp_scope.
 Notation "(×)" := cprod (only parsing) : stdpp_scope.
 Notation "( x ×.)" := (cprod x) (only parsing) : stdpp_scope.
 Notation "(.× x )" := (λ y, cprod y x) (only parsing) : stdpp_scope.

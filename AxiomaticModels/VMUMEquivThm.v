@@ -215,7 +215,7 @@ Module Thm2.
                 Local Typeclasses Transparent VMSA.CSE instruction_order VMSA.speculative MSR VMSA.ContextChange.
           }
           Local Typeclasses Opaque VMSA.CSE VMSA.speculative VMSA.ctxob W R isb UM.po VMSA.trfi VMSA.po.
-          set_unfold. hauto lq: on rew: off.
+          set_unfold; hauto lq:on rew:off.
           Local Typeclasses Transparent VMSA.CSE VMSA.speculative VMSA.ctxob W R isb UM.po VMSA.trfi VMSA.po.
         }
         assert (UM.aob erased_cd ⊆ VMSA.aob cd) as Haob.
@@ -567,21 +567,14 @@ Module Thm2.
           clear - H7 H8.
           Local Typeclasses Opaque T W instruction_order data addr VMSA.po VMSA.rfi.
           rewrite assoc. 2: apply _.
-          set_unfold.
-          intros ? (?&?&?). destruct H as (? & ?& [? |?]).
-          - apply (H7 (x1, x0)). hauto l:on.
-          - apply (H8 (x1, x0)). hauto l:on.
+          set_unfold. autorewrite with pair in *. hauto q:on.
           Local Typeclasses Transparent T W instruction_order data addr VMSA.po VMSA.rfi.
         }
         assert (⦗T cd⦘⨾ ((addr cd ∪ data cd) ⨾ VMSA.trfi cd) = ∅).
         {
           clear - H7 H8.
           Local Typeclasses Opaque T W instruction_order data addr VMSA.po VMSA.rfi.
-          rewrite assoc. 2: apply _.
-          set_unfold.
-          intros ? (?&?&?). destruct H as (? & ?& [? |?]).
-          - apply (H7 (x1, x0)). hauto l:on.
-          - apply (H8 (x1, x0)). hauto l:on.
+          set_unfold. autorewrite with pair in *. hauto q:on.
           Local Typeclasses Transparent T W instruction_order data addr VMSA.po VMSA.rfi.
         }
         clear -H7 H8 H9 H11 H12 H13 H14.
@@ -695,7 +688,7 @@ Module Thm2.
             set_unfold.
             unfold VMSA.has_tlbi_op. unfold VMSA.has_tlb_op_P. unfold is_tlbi in H1.
             intros ? ([e ?]&Heq). apply (H1 x.1).
-            left.  destruct e as [call ret]. destruct call; hauto lq:on.
+            left. hauto drew:off.
           }
           assert (⦗VMSA.TLBI_S2 cd⦘ = ∅) as ->.
           {
@@ -704,7 +697,7 @@ Module Thm2.
             set_unfold.
             unfold VMSA.has_tlbi_op. unfold VMSA.has_tlb_op_P. unfold is_tlbi in H1.
             intros ? ([e ?]&Heq). apply (H1 x.1).
-            left.  destruct e as [call ret]. destruct call; hauto lq:on.
+            left. hauto drew:off.
           }
           Local Typeclasses Opaque VMSA.Stage1 VMSA.tlb_barriered VMSA.Stage2 VMSA.trf VMSA.wco VMSA.same_translation valid_eids VMSA.maybe_TLB_cached.
           clear.
