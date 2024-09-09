@@ -280,6 +280,15 @@ Section GRel.
 
   Typeclasses Opaque grel_seq.
 
+  Lemma grel_seq_union_r (r1 r2 r2' : grel):
+    r1 ⨾ (r2 ∪ r2') = (r1 ⨾ r2) ∪ (r1 ⨾ r2').
+  Proof. set_solver. Qed.
+  Lemma grel_seq_union_l (r1 r1' r2 : grel):
+    (r1 ∪ r1') ⨾ r2 = (r1 ⨾ r2) ∪ (r1' ⨾ r2).
+  Proof. set_solver. Qed.
+
+  Global Instance grel_seq_assoc : Assoc (=) grel_seq.
+  Proof. unfold Assoc. set_solver. Qed.
 
   (** ** Inversion ***)
 

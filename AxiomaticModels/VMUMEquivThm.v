@@ -415,22 +415,6 @@ Module Thm2.
 
   (* TODO: move to GRel.v *)
   (* things about grel_seq *)
-  Lemma grel_seq_union_r `{Countable K} (r1 r2 r2' : grel K):
-    r1 ⨾ (r2 ∪ r2') = (r1 ⨾ r2) ∪ (r1 ⨾ r2').
-  Proof.
-    set_unfold. hauto lq:on.
-  Qed.
-
-  Lemma grel_seq_union_l `{Countable K} (r1 r1' r2 : grel K):
-    (r1 ∪ r1') ⨾ r2 = (r1 ⨾ r2) ∪ (r1' ⨾ r2).
-  Proof.
-    set_unfold. hauto lq:on.
-  Qed.
-
-  Global Instance grel_seq_assoc `{Countable K}: Assoc (=) ( (@grel_seq K _ _) ).
-  Proof.
-    intros ??. set_unfold. hauto lq:on.
-  Qed.
 
   Section ob_from_T.
 
