@@ -85,6 +85,11 @@ Proof.
   - sfirstorder use:NoDup_Permutation.
 Qed.
 
+#[global] Instance set_unfold_elem_of_imap {A B : Type} (f : nat → A → B)
+  (l : list A) (y : B) :
+  SetUnfoldElemOf y (imap f l) (∃ i x, y = f i x ∧ l !! i = Some x).
+Proof. tcclean. rewrite elem_of_lookup_imap. naive_solver. Qed.
+
 Global Instance set_unfold_elem_of_filter_list A
   `{∀ x : A, Decision (P x)} x (a : list A) Q:
   SetUnfoldElemOf x a Q →
