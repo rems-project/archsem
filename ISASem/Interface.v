@@ -530,6 +530,11 @@ Module Interface (A : Arch).
     | _ => None
     end.
 
+  Definition get_fault (ev : iEvent) : option fault :=
+    match ev with
+    | TakeException flt &→ () => Some flt
+    | _ => None
+    end.
 
 
   (** * Event manipulation
@@ -626,7 +631,7 @@ Module Interface (A : Arch).
           match rres with
           | inl (rval, otag) => P n rr rval otag
           | _ => False end) ev.
-    Typeclasses Opaque is_mem_readP.
+    #[export] Typeclasses Opaque is_mem_readP.
 
     Definition is_mem_readP_spec ev:
       is_mem_readP ev ↔
@@ -735,7 +740,7 @@ Module Interface (A : Arch).
   Definition is_mem_event (ev : iEvent) :=
     is_mem_read ev \/ is_mem_write ev.
 
-  (** * Allow filtering memory events by kind more easily *)
+  (** ** Allow filtering memory events by kind more easily *)
   Section MemEventByKind.
     Context (P : accessKind → Prop).
     Context {Pdec : ∀ acc, Decision (P acc)}.
@@ -753,11 +758,77 @@ Module Interface (A : Arch).
     Proof using Pdec. unfold is_mem_event_kindP. tc_solve. Defined.
   End MemEventByKind.
 
+  (** ** Barriers *)
+  Section isBarrier.
+    Context (P : barrier → Prop).
+    Implicit Type ev : iEvent.
 
+    Definition is_barrierP ev: Prop :=
+      if ev is Barrier b &→ _ then P b else False.
+    Typeclasses Opaque is_barrierP.
 
-  Notation is_barrier ev := (is_Some (get_barrier ev)).
-  Notation is_cacheop ev := (is_Some (get_cacheop ev)).
-  Notation is_tlbop ev := (is_Some (get_tlbop ev)).
+    Definition is_barrierP_spec ev:
+      is_barrierP ev ↔ ∃ barrier, ev = Barrier barrier &→ () ∧ P barrier.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ b, Decision (P b)}.
+    #[global] Instance is_barrierP_dec ev: Decision (is_barrierP ev).
+    Proof using Pdec. unfold is_barrierP. solve_decision. Defined.
+  End isBarrier.
+  Notation is_barrier := (is_barrierP (λ _, True)).
+
+  (** ** CacheOp *)
+  Section isCacheop.
+    Context (P : cache_op → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_cacheopP ev: Prop :=
+      if ev is CacheOp c &→ _ then P c else False.
+    Typeclasses Opaque is_cacheopP.
+
+    Definition is_cacheopP_spec ev:
+      is_cacheopP ev ↔ ∃ cacheop, ev = CacheOp cacheop &→ () ∧ P cacheop.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_cacheopP_dec ev: Decision (is_cacheopP ev).
+    Proof using Pdec. unfold is_cacheopP. solve_decision. Defined.
+  End isCacheop.
+  Notation is_cacheop := (is_cacheopP (λ _, True)).
+
+  (** ** Tlbop *)
+  Section isTlbop.
+    Context (P : tlb_op → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_tlbopP ev: Prop :=
+      if ev is TlbOp c &→ _ then P c else False.
+    Typeclasses Opaque is_tlbopP.
+
+    Definition is_tlbopP_spec ev:
+      is_tlbopP ev ↔ ∃ tlbop, ev = TlbOp tlbop &→ () ∧ P tlbop.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_tlbopP_dec ev: Decision (is_tlbopP ev).
+    Proof using Pdec. unfold is_tlbopP. solve_decision. Defined.
+  End isTlbop.
+  Notation is_tlbop := (is_tlbopP (λ _, True)).
+
+  Notation is_take_exception ev := (is_Some (get_fault ev)).
+  Definition is_return_exception ev := ev = ReturnException &→ ().
+  #[global] Instance is_return_exception_dec ev :
+    Decision (is_return_exception ev).
+  Proof. destruct ev as [[]?]; (right + left); abstract (hauto q:on). Defined.
 
 End Interface.
 

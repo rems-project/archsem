@@ -826,7 +826,7 @@ Arguments grel_plus_cind_r : clear implicits.
 Notation "⦗ a ⦘" := (grel_from_set a) (format "⦗ a ⦘") : stdpp_scope.
 
 Infix "⨾" := grel_seq (at level 37, left associativity) : stdpp_scope.
-Infix "⨾@{ K }" := (@grel_seq K _ _) (at level 37, left associativity) : stdpp_scope.
+Infix "⨾@{ K }" := (@grel_seq K _ _) (at level 37, left associativity, only parsing) : stdpp_scope.
 Notation "(⨾)" := grel_seq (only parsing) : stdpp_scope.
 Notation "(⨾@{ K } )" := (@grel_seq K _ _) (only parsing) : stdpp_scope.
 Notation "( r ⨾.)" := (grel_seq r) (only parsing) : stdpp_scope.

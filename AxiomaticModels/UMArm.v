@@ -15,169 +15,131 @@ Require Import GenAxiomaticArm.
     not check that that translation makes sense if there is one. However it will
     (TODO) check that translations read from initial memory if they exist, and
     that no writes are made to the address used for translation *)
-Import Candidate.
-Section rel.
+Section UMArm.
+  Import Candidate.
+  Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
   Context (cd : Candidate.t NMS nmth).
+  Import AxArmNames.
 
-  Notation "'rmw'" := (rmw cd).
-  Notation "'addr'" := (addr cd).
-  Notation "'data'" := (data cd).
-  Notation "'ctrl'" := (ctrl cd).
-  Notation "'W'" := (W cd).
-  Notation "'R'" := (R cd).
-  Notation "'M'" := (W ∪ R).
-  Notation "'A'" := (A cd).
-  Notation "'Q'" := (Q cd).
-  Notation "'L'" := (L cd).
-  Notation "'C'" := (C cd).
-  Notation "'int'" := (same_thread cd).
-  Notation "'loc'" := (same_pa cd).
+  (** * Arm standard notations *)
+  Notation F := (F cd).
+  Notation W := (W cd).
+  Notation R := (R cd).
+  Notation M := (mem_events cd).
+  Notation Wx := (Wx cd).
+  Notation Rx := (Rx cd).
+  Notation L := (L cd).
+  Notation A := (A cd).
+  Notation Q := (Q cd).
+  Notation T := (T cd).
+  Notation C := (C cd).
+  Notation TLBI := (TLBI cd).
+  Notation TE := (TE cd).
+  Notation ERET := (ERET cd).
+  Notation MSR := (MSR cd).
+  Notation int := (same_thread cd).
+  Notation loc := (same_pa cd).
+  Notation iio := (iio cd).
+  Notation instruction_order := (instruction_order cd).
+  Notation rmw := (rmw cd).
+  Notation addr := (addr cd).
+  Notation data := (data cd).
+  Notation ctrl := (ctrl cd).
 
-  Notation "'iio'" := (iio cd).
-  Notation "'instruction_order'" := (instruction_order cd).
+  Notation ISB := (isb cd).
+  Notation IF := (ifetch_reads cd).
+  Notation IR := (init_mem_reads cd).
 
-  Notation "'dmbst'" := (dmbst cd).
-  Notation "'dmbsy'" := (dmbsy cd).
-  Notation "'dmbld'" := (dmbld cd).
-  Notation "'dsb'" := (dsb cd).
-  Notation "'dsbsy'" := (dsbsy cd).
-  Notation "'ISB'" := (isb cd).
+  (** * Registers *)
+
+  Notation RW := (reg_writes cd).
+  Notation RR := (reg_reads cd).
+  Notation RE := (RW ∪ RR).
+
+  Definition is_illegal_reg_write (regs : gset reg) :=
+    is_reg_writeP (λ reg acc _, reg ∉ regs ∨ acc ≠ None).
+
+  Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
+
+  Definition Rpo := ⦗RE⦘⨾instruction_order⨾⦗RE⦘.
+  Notation Rloc := (same_reg cd).
+
+  Definition Rpo_loc := Rpo ∩ Rloc.
+
+  Notation rrf := (reg_reads_from cd).
+
+  Notation rfr := (reg_from_reads cd).
+
+  (** * Explicit memory *)
 
   (* po orders memory events between instructions *)
-  Definition po := ⦗M⦘⨾instruction_order⨾⦗M⦘.
+  Definition po := ⦗M ∪ F⦘⨾instruction_order⨾⦗M ∪ F⦘.
 
   (* other shared relations *)
   Definition po_loc := po ∩ loc.
 
-  Definition co := ⦗W⦘⨾(coherence cd)⨾⦗W⦘.
+  Definition co := ⦗W⦘⨾ coherence cd ⨾⦗W⦘.
 
   Definition coi := co ∩ int.
   Definition coe := co ∖ coi.
 
   (* rf orders explicit writes and reads *)
-  Definition rf := ⦗W⦘⨾(reads_from cd)⨾⦗R⦘.
+  Definition rf := ⦗W⦘⨾ reads_from cd ⨾⦗R⦘.
   Definition rfi := rf ∩ int.
   Definition rfe := rf ∖ rfi.
 
-  Notation "'id'" := ⦗valid_eids cd⦘.
-
-  Definition valid_eids_rc r := r ∪ id.
-  Definition valid_eids_compl a := (valid_eids cd) ∖ a.
-
   (* rf orders explicit reads and writes,
      is unusual because of the handle of initial writes *)
-  Definition fr := (loc ∩ (W × R)) ∖ (co ∪ ⦗W⦘ ⨾ rf)⁻¹.
+  Definition fr := ⦗R⦘⨾ from_reads cd ⨾⦗W⦘.
   Definition fri := fr ∩ int.
   Definition fre := fr ∖ fri.
 
   Definition obs := rfe ∪ fr ∪ co.
 
+  Definition speculative := ctrl ∪ (addr⨾po).
+
   Definition dob :=
     addr ∪ data
-    ∪ (ctrl⨾⦗W⦘)
-    (* NOTE: (ctrl | addr;po) ; [ISB]; po; [R] is splitted into two,
-         which seems important for one case of the refinement proof *)
-    ∪ ((ctrl ∪ (addr⨾po))⨾⦗ISB⦘)
-    ∪ (⦗ISB⦘⨾po⨾⦗R⦘)
-    ∪ (addr⨾po⨾⦗W⦘)
-    ∪ ((addr ∪ data)⨾rfi).
+    ∪ (speculative ⨾⦗W⦘)
+    ∪ (speculative ⨾⦗ISB⦘)
+    ∪ ((addr ∪ data) ⨾ rfi).
 
   Definition aob :=
     rmw
     ∪ (⦗grel_rng rmw⦘⨾rfi⨾ (⦗A⦘∪⦗Q⦘)).
 
   Definition bob :=
-    (⦗R⦘⨾po⨾⦗dmbld⦘)
-    ∪ (⦗W⦘⨾po⨾⦗dmbst⦘)
-    ∪ (⦗dmbst⦘⨾po⨾⦗W⦘)
-    ∪ (⦗dmbld⦘⨾po⨾⦗R ∪ W⦘)
+    (⦗R⦘⨾po⨾⦗dmb_load cd⦘)
+    ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
+    ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
+    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R⦘)
     ∪ (⦗L⦘⨾po⨾⦗A⦘)
     ∪ (⦗A ∪ Q⦘⨾po⨾⦗R ∪ W⦘)
     ∪ (⦗R ∪ W⦘⨾po⨾⦗L⦘)
-    ∪ (⦗dsb⦘⨾ po).
+    ∪ (⦗dsb cd⦘⨾ po)
+    ∪ (⦗ISB⦘⨾ instruction_order).
 
   (* Ordered-before *)
   Definition ob1 := obs ∪ dob ∪ aob ∪ bob.
   Definition ob := ob1⁺.
 
+  (* TODO This does not distinguishes UB conditions from invalid conditions.
+     Cache operation are allowed but are effectively no-ops which is find
+     because any TTW or IFetch access must read from initial memory.
+
+     Currently only explicit, TTW or IFetch accesses are accepted but this can
+     be updated later *)
   Record consistent := {
       internal : grel_acyclic (po_loc ∪ fr ∪ co ∪ rf);
+      reg_internal : grel_acyclic (Rpo_loc ∪ rfr ∪ rrf);
       external : grel_irreflexive ob;
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+      initial_reads : (T ∪ IF) ⊆ IR;
+      register_write_permitted : Illegal_RW = ∅;
+      memory_events_permitted : (mem_events cd) ⊆ M ∪ T ∪ IF;
+      is_nms' : is_nms cd;
+      no_exceptions: TE ∪ ERET = ∅
     }.
 
-End rel.
-
-Section wf.
-  Context {nmth : nat}.
-  Context `(cd : Candidate.t NMS nmth).
-  Context `(init_mem : memoryMap).
-  Notation "'rf'" := (rf cd).
-  Notation "'co'" := (co cd).
-  Notation "'W'" := (W cd).
-  Notation "'R'" := (R cd).
-  Notation "'A'" := (A cd).
-  Notation "'Q'" := (Q cd).
-  Notation "'L'" := (L cd).
-  Notation "'ctrl'" := (Candidate.ctrl cd).
-  Notation "'po'" := (po cd).
-
-  Record rf_wf' := {
-      rf_dom : grel_dom rf ⊆ W;
-      rf_rng : grel_rng rf ⊆ R;
-      rf_generic :> NMSWF.generic_rf_wf' cd;
-    }.
-
-  Record initial_wf' :=
-    {
-      (* reads from initial memory get correct values *)
-      initial_rf : R ∖ (grel_rng rf)
-                   = Candidate.collect_all
-                       (λ eid event, eid ∈ R ∖ (grel_rng rf)
-                                     ∧ GenArmNMS.is_initial event init_mem) cd;
-    }.
-
-  Record co_wf' :=
-    {
-      co_dom : grel_dom co ⊆ W;
-      co_rng : grel_rng co ⊆ W;
-      co_asym : co ∩ co⁻¹ = ∅;
-      co_total : co ∪ co⁻¹ = W × W;
-      co_generic :> NMSWF.generic_co_wf' cd;
-    }.
-
-  Record ctrl_wf' := {
-      ctrl_po : ctrl ⨾ po ⊆ ctrl;
-    }.
-
-  Record event_wf' :=
-    {
-      no_cache_op :=
-        Candidate.collect_all
-          (λ _ event, is_cacheop event) cd = ∅;
-      no_tlbi :=
-        Candidate.collect_all
-          (λ _ event, is_tlbi event) cd = ∅;
-      no_ttw :=
-        Candidate.collect_all
-          (λ _ event, is_translate event) cd = ∅;
-      no_exn :=
-        Candidate.collect_all
-          (λ _ event, is_take_exception event) cd = ∅;
-      no_eret :=
-        Candidate.collect_all
-          (λ _ event, is_return_exception event) cd = ∅;
-      no_msr :=
-        Candidate.collect_all
-          (λ _ event, is_msr event) cd = ∅;
-    }.
-
-  Record wf := {
-      rf_wf :> rf_wf';
-      co_wf :> co_wf';
-      ctrl_wf :> ctrl_wf';
-      initial_wf :> initial_wf';
-      event_wf :> event_wf';
-    }.
-End wf.
+End UMArm.

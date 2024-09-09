@@ -1,7 +1,7 @@
 (coq.theory
  (name AxiomaticModels)
  (package coq-system-semantics)
- (modules GenAxiomaticArm UMArm UMSeqArm VMSA22Arm VMUMEquivThm)
+ (modules GenAxiomaticArm UMArm UMSeqArm VMSA22Arm)
  (theories ISASem SSCCommon GenModels)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp

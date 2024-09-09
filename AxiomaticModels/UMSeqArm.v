@@ -14,10 +14,11 @@ Require Import GenAxiomaticArm.
     translations(more exactly that translation reads never read from non-initial
     writes) *)
 Import Candidate.
-Section rel.
+Section UMSeqArm.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
   Context (cd : Candidate.t NMS nmth).
+  Import AxArmNames.
 
   Notation W := (W cd).
   Notation R := (R cd).
@@ -25,17 +26,18 @@ Section rel.
   Notation A := (A cd).
   Notation Q := (Q cd).
   Notation L := (L cd).
-  Notation C := (C cd).
   Notation T := (T cd).
+  Notation TE := (TE cd).
+  Notation ERET := (ERET cd).
   Notation int := (same_thread cd).
   Notation loc := (same_pa cd).
   Notation IR := (init_mem_reads cd).
+  Notation rmw := (rmw cd).
 
   Notation iio := (iio cd).
   Notation instruction_order := (instruction_order cd).
 
-
-  Definition IF := ifetch_reads cd.
+  Notation IF := (ifetch_reads cd).
 
   (* Registers *)
 
@@ -73,21 +75,18 @@ Section rel.
   (* rf orders explicit writes and reads *)
   Definition rf := ⦗W⦘⨾(reads_from cd)⨾⦗R⦘.
 
-  Notation id := ⦗valid_eids cd⦘.
-
-  Definition valid_eids_rc r := r ∪ id.
-  Definition valid_eids_compl a := (valid_eids cd) ∖ a.
-
   Definition fr := ⦗W⦘⨾(from_reads cd)⨾⦗R⦘.
 
   (* TODO This does not distinguishes UB conditions from invalid conditions *)
   Record consistent := {
       total : grel_acyclic (full_instruction_order cd ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
+      atomic : (rmw ∩ (fr⨾ co)) = ∅;
       initial_reads : (T ∪ IF) ⊆ IR;
       register_write_permitted : Illegal_RW = ∅;
       register_read_permitted : Illegal_RR = ∅;
       memory_events_permitted : (mem_events cd) ⊆ M ∪ T ∪ IF;
       is_nms' : is_nms cd;
+      no_exceptions: TE ∪ ERET = ∅
     }.
 
-End rel.
+End UMSeqArm.
