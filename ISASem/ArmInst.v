@@ -206,7 +206,7 @@ Lemma regval_to_gen_tree_inj rv :
   all: apply Forall2_diag.
   all: try assumption.
   (* Only struct case remains *)
-  cdestruct_intros.
+  cdestruct |- **.
   apply fmap_Some_2.
   set_unfold.
   sfirstorder.
@@ -442,14 +442,14 @@ Module Arm.
     Proof.
     unfold pa_diffN, pa_addZ, set.
     destruct pa, pa'. cbn.
-    cdestruct_intros # CDestrMatch # CDestrSubst.
-    record_eq; cbn; [reflexivity | bv_solve].
+    cdestruct n |- ** # CDestrMatch.
+    record_eq; cbn; [congruence | bv_solve].
     Qed.
     Lemma pa_diffN_existZ pa pa' z:
       pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
     Proof.
       destruct pa, pa'.
-      cdestruct_intro # CDestrCbnSubst.
+      cdestruct |- ?.
       unfold pa_diffN. hauto q:on.
     Qed.
     #[local] Opaque N.le.
@@ -457,9 +457,8 @@ Module Arm.
       pa_diffN pa' pa = Some n →
       ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
     Proof.
-      destruct pa, pa'.
       unfold pa_diffN.
-      cdestruct_intros # CDestrCbnSubst # CDestrMatch.
+      cdestruct pa, pa', n |- ** # CDestrMatch # (CDestrCase FullAddress).
       bv_solve.
     Qed.
 

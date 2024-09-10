@@ -206,9 +206,9 @@ Module Interface (A : Arch).
   Proof.
     unfold pa_in_range, is_Some.
     split.
-    - cdestruct_intro #CDestrEqSome.
+    - cdestruct |- ? #CDestrEqSome.
       eauto with pa.
-    - cdestruct_intro.
+    - cdestruct |- ?.
       odestruct pa_diffN_existN; first eassumption.
       opose proof (pa_diffN_minimalN _ _ _ _ _ _); try eassumption.
       typeclasses eauto with core option lia.
@@ -224,10 +224,11 @@ Module Interface (A : Arch).
     unfold pa_overlap.
     setoid_rewrite pa_in_range_spec.
     split.
-    - cdestruct_intro use cdestruct_or # CDestrCbnSubst;
+    (* TODO broken *)
+    - cdestruct pa1,pa2 |- ? ## cdestruct_or;
       setoid_rewrite pa_addN_assoc;
       typeclasses eauto with core lia pa.
-    - cdestruct_intros as n1 n2 H1 H2 H.
+    - cdestruct |- ** as n1 n2 H1 H2 H.
       intuition; try lia.
       destruct decide (n1 ≤ n2).
       1: right; exists (n2 - n1).
@@ -496,7 +497,7 @@ Module Interface (A : Arch).
     get_mem_value ev = Some bv → get_size ev = Some (bvn_n bv / 8)%N.
   Proof.
     destruct ev as [[] ?];
-      cdestruct_intro #CDestrCbnSubst #CDestrMatch; cbn; f_equal; lia.
+      cdestruct bv |- ** #CDestrMatch; cbn; f_equal; lia.
   Qed.
 
   Definition get_access_kind (ev : iEvent) : option mem_acc :=
@@ -557,7 +558,7 @@ Module Interface (A : Arch).
     Definition is_reg_readP_spec ev :
       is_reg_readP ev ↔
         ∃ reg racc rval, ev = RegRead reg racc &→ rval ∧ P reg racc rval.
-    Proof. destruct ev as [[] ?]; split; cdestruct_intro;naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct |- **;naive_solver. Qed.
     Definition is_reg_readP_cdestr ev := cdestr_simpl (is_reg_readP_spec ev).
     #[global] Existing Instance is_reg_readP_cdestr.
 
@@ -578,7 +579,7 @@ Module Interface (A : Arch).
           ev = RegWrite reg racc rval &→ () ∧ P reg racc rval.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct_intro; destruct fret; naive_solver.
+        split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
     Definition is_reg_writeP_cdestr ev := cdestr_simpl (is_reg_writeP_spec ev).
     #[global] Existing Instance is_reg_writeP_cdestr.
@@ -609,7 +610,7 @@ Module Interface (A : Arch).
 
     Definition is_mem_read_reqP_spec ev:
       is_mem_read_reqP ev ↔ ∃ n rr rres, ev = MemRead n rr &→ rres ∧ P n rr rres.
-    Proof. destruct ev as [[] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
     Definition is_mem_read_reqP_cdestr ev := cdestr_simpl (is_mem_read_reqP_spec ev).
     #[global] Existing Instance is_mem_read_reqP_cdestr.
 
@@ -666,7 +667,7 @@ Module Interface (A : Arch).
           ev = MemWriteAddrAnnounce n pa acc trans &→ () ∧ P n pa acc trans.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct_intro; destruct fret; naive_solver.
+        split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
     Typeclasses Opaque is_mem_write_addr_announceP.
     Definition is_mem_write_addr_announceP_cdestr ev :=
@@ -699,7 +700,7 @@ Module Interface (A : Arch).
 
     Definition is_mem_write_reqP_spec ev:
       is_mem_write_reqP ev ↔ ∃ n wr wres, ev = MemWrite n wr &→ wres ∧ P n wr wres.
-    Proof. destruct ev as [[] ?]; split; cdestruct_intro; naive_solver. Qed.
+    Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
     Definition is_mem_write_reqP_cdestr ev := cdestr_simpl (is_mem_write_reqP_spec ev).
     #[global] Existing Instance is_mem_write_reqP_cdestr.
 
@@ -771,7 +772,7 @@ Module Interface (A : Arch).
       is_barrierP ev ↔ ∃ barrier, ev = Barrier barrier &→ () ∧ P barrier.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+        split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
 
     Context `{Pdec: ∀ b, Decision (P b)}.
@@ -793,7 +794,7 @@ Module Interface (A : Arch).
       is_cacheopP ev ↔ ∃ cacheop, ev = CacheOp cacheop &→ () ∧ P cacheop.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+        split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
 
     Context `{Pdec: ∀ c, Decision (P c)}.
@@ -815,7 +816,7 @@ Module Interface (A : Arch).
       is_tlbopP ev ↔ ∃ tlbop, ev = TlbOp tlbop &→ () ∧ P tlbop.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct_intro # CDestrCbn; destruct fret; naive_solver.
+        split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
 
     Context `{Pdec: ∀ c, Decision (P c)}.

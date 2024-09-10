@@ -4,6 +4,7 @@ Require Import ZArith JMeq.
 
 From Ltac2 Require Export Ltac2.
 Export Ltac2.Printf.
+Export Ltac2.Bool.BoolNotations.
 #[export] Set Default Proof Mode "Classic".
 
 From stdpp Require Export base.
@@ -185,7 +186,10 @@ Notation "∃ x ∈ b , P" := (∃ x, x ∈ b ∧ P)
 
 Arguments clos_refl_trans {_}.
 
-(** * Ltac2 utils *)
+(** * Ltac2 utilities *)
+
+(** Pipe notation for function calls *)
+Ltac2 Notation x(self) "|>" f(self) : 4 := f x.
 
 (** Fix up the do notation. The default one doesn't work *)
 Ltac2 Notation terminal("do") n(thunk(tactic(0))) t(thunk(self)) := do0 n t.
@@ -227,25 +231,7 @@ Ltac2 pose_proof_get c :=
   Std.clearbody [n];
   n.
 
-
-Ltac2 id_prt () := Message.of_ident.
-
-Ltac2 rec list_prt_in (printer : unit -> 'a -> message) () (l : 'a list) :=
-  match l with
-  | [] => Message.of_string ""
-  | [a] => printer () a
-  | h :: tl => fprintf "%a; %a" printer h (list_prt_in printer) tl
-  end.
-
-Ltac2 list_prt (printer : unit -> 'a -> message) () (l : 'a list) :=
-  fprintf "[%a]" (list_prt_in printer) l.
-
-Ltac2 opt_prt (printer : unit -> 'a -> message) () (o : 'a option) :=
-  match o with
-  | Some x => fprintf "Some %a" printer x
-  | None => fprintf "None"
-  end.
-
+(** Remove the last element of a list and return the reverted version of the rest *)
 Ltac2 rec removelast_rev (l : 'a list) :=
   let rec aux (acc : 'a list) (ls : 'a list) :=
     match ls with
@@ -255,12 +241,20 @@ Ltac2 rec removelast_rev (l : 'a list) :=
     end
   in aux [] l.
 
-Ltac2 revert_until c :=
+Ltac2 ignore x := x; ().
+
+(** [match_pat p c] decides if term [c] matches pattern [p] *)
+Ltac2 match_pat (p : pattern) (c : constr) : bool :=
+  succeeds (ignore (Pattern.matches p c)).
+
+(** Finds the highest hypothesis that matches the pattern and revert all
+    hypotheses below it *)
+Ltac2 revert_until (clr : bool) (p : pattern) :=
   match
     List.fold_left
-      (fun o (h, _, c') =>
+      (fun o (h, _, c) =>
          match o with
-         | [] => if succeeds (Std.unify c c') then [h] else []
+         | [] => if match_pat p c then [h] else []
          | l => h :: l
          end
       ) (Control.hyps ()) []
@@ -268,14 +262,81 @@ Ltac2 revert_until c :=
   with
   | [] => Control.zero Not_found
   | l =>
-      Std.revert (removelast_rev l); Std.clear [List.last l]
+      Std.revert (removelast_rev l); if clr then Std.clear [List.last l] else ()
   end.
-Ltac2 Notation "revert" "until" c(open_constr) := revert_until c.
+Ltac2 Notation "revert" "until" p(pattern) := revert_until false p.
+Ltac2 Notation "revert" "until" "*" p(pattern) := revert_until true p.
+
+(** Get an hypothesis by pattern *)
+Ltac2 get_hyp (p : pattern) : (ident * constr option * constr) option :=
+  Control.hyps () |> List.find_opt (fun (h, _, c) => match_pat p c).
+
+(** Get an hypothesis name by pattern *)
+Ltac2 get_hyp_id (p : pattern) : ident option :=
+  get_hyp p |> Option.map (fun (h, _, _) => h).
+
 
 Ltac2 block_goal0 () := ltac1:(block_goal).
 Ltac2 Notation block_goal := block_goal0 ().
 Ltac2 unblock_goal0 () := ltac1:(unblock_goal).
 Ltac2 Notation unblock_goal := unblock_goal0 ().
+
+
+(** Ltac2 conversions that throw on error *)
+Ltac2 ltac1_to_ident x := Option.get (Ltac1.to_ident x).
+Ltac2 ltac1_to_list (f : Ltac1.t -> 'a) (t : Ltac1.t) :=
+  t |> Ltac1.to_list |> Option.get |> List.map f.
+
+(** Revert dependent is like generalize dependent but only on hypothesis *)
+Ltac2 revert_dependent (l : ident list) :=
+  List.iter (fun x => ltac1:(x |- generalize dependent x) (Ltac1.of_ident x))
+    (List.rev l).
+Ltac2 Notation "revert" "dependent" l(list1(ident)) := revert_dependent l.
+Tactic Notation "revert" "dependent" ne_ident_list(h) :=
+  let f := ltac2:(h |- revert_dependent (ltac1_to_list ltac1_to_ident h)) in f h.
+
+
+(** ** Ltac2 debug printers *)
+(** Ident Ltac2 printer *)
+Ltac2 prt_id () := fprintf "@%I".
+
+(** Int Ltac2 printer *)
+Ltac2 prt_int () := Message.of_int.
+
+(** String Ltac2 printer *)
+Ltac2 prt_str () := Message.of_string.
+(** Quoted string Ltac2 printer *)
+Ltac2 prt_strq () s :=
+  let quote_string := String.make 1 (Char.of_int 34) in
+  fprintf "%s%s%s" quote_string s quote_string.
+
+(** Term Ltac2 printer *)
+Ltac2 prt_cstr () := Message.of_constr.
+
+(** Bool Ltac2 printer *)
+Ltac2 prt_bool () b :=
+  if b then Message.of_string "true" else Message.of_string "false".
+
+(** List Ltac2 printer *)
+Ltac2 prt_list (printer : unit -> 'a -> message) () (l : 'a list) :=
+  let rec aux () l :=
+    match l with
+    | [] => Message.of_string ""
+    | [a] => printer () a
+    | hd :: tl => fprintf "%a; %a" printer hd aux tl
+    end
+  in fprintf "[%a]" aux l.
+
+(** Option Ltac2 printer *)
+Ltac2 prt_opt (printer : unit -> 'a -> message) () (o : 'a option) :=
+  match o with
+  | Some x => fprintf "Some %a" printer x
+  | None => fprintf "None"
+  end.
+
+(** Hypothesis Ltac2 printer. The name must exist in the current goal *)
+Ltac2 prt_hyp () (x : ident) := fprintf "%I:%t" x (Constr.type (Control.hyp x)).
+
 
 
 (** * Tactic options
@@ -318,7 +379,7 @@ Tactic Notation (at level 4) tactic4(tac) "#" constr(opt) :=
     example [tac use lem] add the lemma/Instance [lem] temporaryly, just while
     [tac] is running. In general, for clarity, prefer [#] for options and [use]
     for other lemmas. *)
-Tactic Notation (at level 4) tactic4(tac) "use" constr(p) :=
+Tactic Notation (at level 4) tactic4(tac) "##" constr(p) :=
   let Use := fresh "Use" in
   pose proof p as Use;
   tac;
@@ -369,7 +430,7 @@ Ltac hyp_revert_until_block :=
 Ltac revert_generated_hyps tac := hyp_start_block; tac; hyp_revert_until_block.
 
 Ltac2 revert_generated_hyps tac :=
-  Control.enter (fun () => pose proof HypBlock; tac (); revert until hyp_block).
+  Control.enter (fun () => pose proof HypBlock; tac (); revert until* hyp_block).
 
 
 

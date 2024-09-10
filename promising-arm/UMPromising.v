@@ -82,7 +82,7 @@ Module Loc.
     ∀ pa ∈ to_pas loc, from_pa_in pa = Some loc.
   Proof.
     set_unfold.
-    cdestruct_intros # CDestrCbnSubst.
+    cdestruct |- **.
     cbn.
     f_equal.
     bv_solve.
