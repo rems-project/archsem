@@ -49,6 +49,7 @@ Require Import Options.
 From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.
+From stdpp Require Import finite.
 
 
 (** * Base effect definitions *)
@@ -69,6 +70,17 @@ Class Effect (Eff : eff) := eff_ret : Eff → Type@{e}.
 #[export] Hint Mode Effect ! : typeclass_instances.
 Unset Typeclasses Unique Instances.
 
+(** Since eff_ret is typeclass opaque, we sometime need to reduce it to resolve
+    a typeclass instance *)
+Ltac eff_ret_red inst := (let h := get_head inst in progress (cbn [eff_ret h])).
+#[export] Hint Extern 5 (EqDecision (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (Finite (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (Countable (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (EmptyT (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
 
 (** Generic interface for calling an algebraic effect in a monad *)
 Class MCall (Eff : eff) `{Effect Eff} (M : Type → Type) :=
@@ -234,6 +246,10 @@ Definition mdiscard `{MChoose M, FMap M} {A} : M A :=
 (** Helper to non-deterministically choose in a list *)
 Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
   mchoose (length l) |$> ((list_to_vec l) !!!.).
+
+Definition mchoosef `{MChoose M, FMap M} `{Finite A} : M A :=
+  mchoosel (enum A).
+
 
 (** Same as [guard] but discard the execution if the proposition is false  *)
 Definition guard_discard `{MChoose M, FMap M, MRet M} P `{Decision P} : M P :=

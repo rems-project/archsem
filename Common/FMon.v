@@ -467,6 +467,7 @@ Section CMon.
   (** A choice monad is just a free monad with additional choice effects. The
       only difference is the theory around it (equivalence, trace matching, etc.) *)
   Definition cMon := fMon (Eff + MChoice).
+  #[export] Typeclasses Transparent cMon.
 
   (** Interprets the effect in a monad supporting non-determinism *)
   Definition cinterp `{MR: MRet M, MB: MBind M, MCh: MChoose M}
@@ -494,10 +495,6 @@ Section CMon.
     - by constructor.
   Qed.
 
-  (* Useful in the following definition for typeclass search *)
-  #[local] Hint Extern 5 (EqDecision (eff_ret _)) => (progress (cbn)) : typeclass_instances.
-  #[local] Hint Extern 5 (Finite (eff_ret _)) => (progress (cbn)) : typeclass_instances.
-
   (** Decide a cmatch: This is a bit dumb, it will try every possible
       non-deterministic choice until one match succeeded or all failed. However
       in practice, if concrete value of cMon avoid doing choice before doing
@@ -518,16 +515,16 @@ Section CMon.
     cmatch_dec (Nextr (ChooseFin n) k) tr :=
       dec_if (@decide (∃x : fin n, cmatch (k x) tr) (@exists_dec _ _ _ _ (λ x, cmatch_dec (k x) tr)));
     cmatch_dec _ _ := right _.
-  Solve All Obligations with
-    cbn;
-    intros;
-    try match goal with | H : ∃ _, _ |- _ => destruct H end;
-    try rewrite event_extract_Some in *;
-    try rewrite event_extract_None in *;
-    subst;
-    try (intro H; dependent destruction H);
-    try econstructor;
-    naive_solver.
+    Solve All Obligations with
+      cbn;
+      intros;
+      try match goal with | H : ∃ _, _ |- _ => destruct H end;
+      try rewrite event_extract_Some in *;
+      try rewrite event_extract_None in *;
+      subst;
+      try (intro H; dependent destruction H);
+      try econstructor;
+      naive_solver.
   #[export] Existing Instance cmatch_dec.
 
   (** ** Choice monad equivalence

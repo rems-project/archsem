@@ -58,6 +58,8 @@ Require UMPromising.
 Require Import ArchSem.GenPromising.
 Require Import ArmInst.
 
+#[local] Open Scope stdpp.
+
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)
 
@@ -231,9 +233,9 @@ Module Memory.
   (** To a snapshot of the memory back to a memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
     fun pa =>
-      (loc ← Loc.from_pa_in pa;
+      (let loc := Loc.from_pa_in pa in
       let '(v, _) := read_last loc init mem in
-      index ← Loc.pa_index pa;
+      let index := Loc.pa_index pa in
       bv_to_bytes 8 v !! bv_unsigned index)
         |> default (bv_0 8).
 
@@ -424,82 +426,89 @@ Module Reg.
   Next Obligation. intros []; by try rewrite decode_encode. Qed.
 
   (* TODO generate that automatically? *)
-  Definition from_arch (r : reg) :=
+  Definition from_arch (r : reg) : option t :=
     match r with
-    | "PC_" => Some PC
-    | "R0" => Some (App (R 0))
-    | "R1" => Some (App (R 1))
-    | "R2" => Some (App (R 2))
-    | "R3" => Some (App (R 3))
-    | "R4" => Some (App (R 4))
-    | "R5" => Some (App (R 5))
-    | "R6" => Some (App (R 6))
-    | "R7" => Some (App (R 7))
-    | "R8" => Some (App (R 8))
-    | "R9" => Some (App (R 9))
-    | "R10" => Some (App (R 10))
-    | "R11" => Some (App (R 11))
-    | "R12" => Some (App (R 12))
-    | "R13" => Some (App (R 13))
-    | "R14" => Some (App (R 14))
-    | "R15" => Some (App (R 15))
-    | "R16" => Some (App (R 16))
-    | "R17" => Some (App (R 17))
-    | "R18" => Some (App (R 18))
-    | "R19" => Some (App (R 19))
-    | "R20" => Some (App (R 20))
-    | "R21" => Some (App (R 21))
-    | "R22" => Some (App (R 22))
-    | "R23" => Some (App (R 23))
-    | "R24" => Some (App (R 24))
-    | "R25" => Some (App (R 25))
-    | "R26" => Some (App (R 26))
-    | "R27" => Some (App (R 27))
-    | "R28" => Some (App (R 28))
-    | "R29" => Some (App (R 29))
-    | "R30" => Some (App (R 30))
-    | "SP_EL0" => Some (App (SP 0))
-    | "SP_EL1" => Some (App (SP 1))
-    | "SP_EL2" => Some (App (SP 2))
-    | "SP_EL3" => Some (App (SP 3))
-    | "PSTATE" => Some (App PSTATE)
-    | "ELR_EL1" => Some (App (ELR 0))
-    | "ELR_EL2" => Some (App (ELR 1))
-    | "ELR_EL3" => Some (App (ELR 2))
-    | "ESR_EL1" => Some (Sys (ESR 0))
-    | "ESR_EL2" => Some (Sys (ESR 1))
-    | "ESR_EL3" => Some (Sys (ESR 2))
-    | "FAR_EL1" => Some (Sys (FAR 0))
-    | "FAR_EL2" => Some (Sys (FAR 1))
-    | "FAR_EL3" => Some (Sys (FAR 2))
-    | "PAR_EL1" => Some (Sys PAR)
-    | "TTBR0_EL1" => Some (Sys (TTBR0 0))
-    | "TTBR0_EL2" => Some (Sys (TTBR0 1))
-    | "TTBR0_EL3" => Some (Sys (TTBR0 2))
-    | "TTBR1_EL1" => Some (Sys (TTBR1 false))
-    | "TTBR1_EL2" => Some (Sys (TTBR1 true))
-    | "VBAR_EL1" => Some (Sys (VBAR 0))
-    | "VBAR_EL2" => Some (Sys (VBAR 1))
-    | "VBAR_EL3" => Some (Sys (VBAR 2))
-    | "VTTBR_EL2" => Some (Sys VTTBR)
+    (* TODO this can't build against SailTinyArm *)
+    | GReg _PC => Some PC
+    (* | "R0" => Some (App (R 0)) *)
+    (* | "R1" => Some (App (R 1)) *)
+    (* | "R2" => Some (App (R 2)) *)
+    (* | "R3" => Some (App (R 3)) *)
+    (* | "R4" => Some (App (R 4)) *)
+    (* | "R5" => Some (App (R 5)) *)
+    (* | "R6" => Some (App (R 6)) *)
+    (* | "R7" => Some (App (R 7)) *)
+    (* | "R8" => Some (App (R 8)) *)
+    (* | "R9" => Some (App (R 9)) *)
+    (* | "R10" => Some (App (R 10)) *)
+    (* | "R11" => Some (App (R 11)) *)
+    (* | "R12" => Some (App (R 12)) *)
+    (* | "R13" => Some (App (R 13)) *)
+    (* | "R14" => Some (App (R 14)) *)
+    (* | "R15" => Some (App (R 15)) *)
+    (* | "R16" => Some (App (R 16)) *)
+    (* | "R17" => Some (App (R 17)) *)
+    (* | "R18" => Some (App (R 18)) *)
+    (* | "R19" => Some (App (R 19)) *)
+    (* | "R20" => Some (App (R 20)) *)
+    (* | "R21" => Some (App (R 21)) *)
+    (* | "R22" => Some (App (R 22)) *)
+    (* | "R23" => Some (App (R 23)) *)
+    (* | "R24" => Some (App (R 24)) *)
+    (* | "R25" => Some (App (R 25)) *)
+    (* | "R26" => Some (App (R 26)) *)
+    (* | "R27" => Some (App (R 27)) *)
+    (* | "R28" => Some (App (R 28)) *)
+    (* | "R29" => Some (App (R 29)) *)
+    (* | "R30" => Some (App (R 30)) *)
+    (* | "SP_EL0" => Some (App (SP 0)) *)
+    (* | "SP_EL1" => Some (App (SP 1)) *)
+    (* | "SP_EL2" => Some (App (SP 2)) *)
+    (* | "SP_EL3" => Some (App (SP 3)) *)
+    (* | "PSTATE" => Some (App PSTATE) *)
+    (* | "ELR_EL1" => Some (App (ELR 0)) *)
+    (* | "ELR_EL2" => Some (App (ELR 1)) *)
+    (* | "ELR_EL3" => Some (App (ELR 2)) *)
+    (* | "ESR_EL1" => Some (Sys (ESR 0)) *)
+    (* | "ESR_EL2" => Some (Sys (ESR 1)) *)
+    (* | "ESR_EL3" => Some (Sys (ESR 2)) *)
+    (* | "FAR_EL1" => Some (Sys (FAR 0)) *)
+    (* | "FAR_EL2" => Some (Sys (FAR 1)) *)
+    (* | "FAR_EL3" => Some (Sys (FAR 2)) *)
+    (* | "PAR_EL1" => Some (Sys PAR) *)
+    (* | "TTBR0_EL1" => Some (Sys (TTBR0 0)) *)
+    (* | "TTBR0_EL2" => Some (Sys (TTBR0 1)) *)
+    (* | "TTBR0_EL3" => Some (Sys (TTBR0 2)) *)
+    (* | "TTBR1_EL1" => Some (Sys (TTBR1 false)) *)
+    (* | "TTBR1_EL2" => Some (Sys (TTBR1 true)) *)
+    (* | "VBAR_EL1" => Some (Sys (VBAR 0)) *)
+    (* | "VBAR_EL2" => Some (Sys (VBAR 1)) *)
+    (* | "VBAR_EL3" => Some (Sys (VBAR 2)) *)
+    (* | "VTTBR_EL2" => Some (Sys VTTBR) *)
     | _ => None
     end.
 
+  Print Arm.Arch.reg.
+  Print SA.greg.
+  Print register.
+  Print register_bitvector_64.
+
   Definition to_arch (reg : t) : Arm.Arch.reg :=
     match reg with
-    | PC => "PC_"
-    | App (R n) => "R" ++ (pretty n)
-    | App (SP n) => "SP_EL" ++ (pretty n)
-    | App PSTATE => "PSTATE"
-    | App (ELR n) => "ELR_EL" ++ (pretty (S n))
-    | Sys (ESR n) => "ESR_EL" ++ (pretty (S n))
-    | Sys (FAR n) => "FAR_EL" ++ (pretty (S n))
-    | Sys PAR => "PAR_EL1"
-    | Sys (TTBR0 n) => "TTBR0_EL" ++ (pretty (S n))
-    | Sys (TTBR1 false) => "TTBR1_EL1"
-    | Sys (TTBR1 true) => "TTBR1_EL2"
-    | Sys (VBAR n) => "VBAR_EL" ++ (pretty (S n))
-    | Sys VTTBR => "VTTBR_EL2"
+    | _ => _PC (* TODO fix *)
+    (* | PC => "PC_" *)
+    (* | App (R n) => "R" ++ (pretty n) *)
+    (* | App (SP n) => "SP_EL" ++ (pretty n) *)
+    (* | App PSTATE => "PSTATE" *)
+    (* | App (ELR n) => "ELR_EL" ++ (pretty (S n)) *)
+    (* | Sys (ESR n) => "ESR_EL" ++ (pretty (S n)) *)
+    (* | Sys (FAR n) => "FAR_EL" ++ (pretty (S n)) *)
+    (* | Sys PAR => "PAR_EL1" *)
+    (* | Sys (TTBR0 n) => "TTBR0_EL" ++ (pretty (S n)) *)
+    (* | Sys (TTBR1 false) => "TTBR1_EL1" *)
+    (* | Sys (TTBR1 true) => "TTBR1_EL2" *)
+    (* | Sys (VBAR n) => "VBAR_EL" ++ (pretty (S n)) *)
+    (* | Sys VTTBR => "VTTBR_EL2" *)
     end.
 
 
@@ -513,7 +522,7 @@ Module Reg.
   Proof.
     destruct reg as [|[]|[]]; unfold EL,ELp in *;
       repeat (deintro; intro n; dependent destruction n) || reflexivity.
-  Qed.
+  Abort.
 
   Lemma from_to_arch (r : reg) (r' : t) : (from_arch r) = Some r' -> to_arch r' = r.
   Proof.
@@ -530,7 +539,7 @@ Module WSReg.
   Record t :=
     make {
         sreg : Reg.sys;
-        val : regval;
+        val : bv 64;
         view : nat
       }.
 
@@ -550,7 +559,7 @@ Module TState.
 
         (* registers values and views *)
         pc : regval;
-        regs : Reg.app -> regval * view;
+        regs : Reg.app -> bv 64 * view;
         regs_init : registerMap;
         sregs : list WSReg.t;
 

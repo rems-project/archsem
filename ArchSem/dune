@@ -6,6 +6,7 @@
    TermModels
    CandidateExecutions
    GenPromising
+   FromSail
  )
  (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon)
  (coqdoc_flags :standard --utf8

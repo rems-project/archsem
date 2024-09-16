@@ -53,12 +53,14 @@ Section Seq.
 
 Context (regs_whitelist : option (gset reg)).
 
+
+
 (** A sequential state for bookkeeping reads and writes to registers/memory in
     gmaps, as well as, the initial state *)
 Record seq_state := {
   initSt : MState.init 1;
   mem : gmap pa (bv 8);
-  regs : gmap reg regval;
+  regs : gmap reg (bv 64);
 }.
 
 Global Instance eta_seq_state : Settable seq_state :=
@@ -66,9 +68,9 @@ Global Instance eta_seq_state : Settable seq_state :=
 
 Notation seqmon := (stateT seq_state (Exec.t string)).
 
-Definition read_reg_seq_state (reg : reg) (seqst : seq_state) : regval :=
+Definition read_reg_seq_state (reg : reg) (seqst : seq_state) : reg_type reg:=
   if (seqst.(regs) !! reg) is Some v
-  then v
+  then regt_of_bv64 v
   else (seqst.(initSt).(MState.regs) !!! 0%fin) reg.
 
 Definition read_byte_seq_state_flag (seqst : seq_state) (pa : pa) : bv 8 * bool :=
@@ -97,9 +99,9 @@ Fixpoint write_mem_seq_state (pa : pa) (bytes : list (bv 8)) : seqmon unit :=
 
 (** Combines a gmap with a registerMap to a new registerMap that was updated
     with the values from the gmap *)
-Definition seq_state_to_init_regs (regs_map : gmap reg regval)
+Definition seq_state_to_init_regs (regs_map : gmap reg (bv 64))
   (regs_vec : vec registerMap 1) : vec registerMap 1 :=
-  [# (λ reg, if (regs_map !! reg) is Some v then v else (regs_vec !!! 0%fin) reg)].
+  [# (λ reg, if (regs_map !! reg) is Some v then regt_of_bv64 v else (regs_vec !!! 0%fin) reg)].
 
 (** Combines a gmap with a memoryMap to a new memoryMap that was updated with the
     values from the gmap *)
@@ -124,9 +126,9 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   | RegWrite reg racc val =>
     if regs_whitelist is Some rwl
     then if bool_decide (reg ∈ rwl)
-      then msetv (lookup reg ∘ regs) (Some val)
+      then msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
       else mthrow "Write to illegal register"
-    else msetv (lookup reg ∘ regs) (Some val)
+    else msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
   | MemRead n rr =>
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then
@@ -184,3 +186,48 @@ Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   end.
 
 End Seq.
+
+
+
+Module Testing.
+  (* Run EOR X0, X1, X2 at pc address 0x500 *)
+
+  Open Scope bv.
+  Definition init_reg : registerMap.
+    intros [].
+    destruct r.
+    destruct r.
+    1: exact 0x500%bv.
+    31: exact 0x0%bv.
+    30: exact 0x11%bv.
+    29: exact 0x101%bv.
+    all: exact 0x0%bv.
+  Defined.
+
+  Definition init_mem : memoryMap := (λ pa,
+                                      if decide (pa =? 0x500) then 0x20
+                                      else if decide (pa =? 0x501) then 0x00
+                                      else if decide (pa =? 0x502) then 0x02
+                                      else if decide (pa =? 0x503) then 0xca
+                                      else 0x00).
+  Definition termCond : terminationCondition 1 := (λ tid rm, rm _PC =? (0x504%bv : bv 64)).
+
+  Definition initState :=
+    {| MState.state := {| MState.memory := init_mem; MState.regs := [# init_reg] |};
+      MState.termCond := termCond |}.
+  Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
+
+  (** Extract R0 on success to have something printable by Coq *)
+  Definition result_extract (a : Model.Res.t ∅ 1) : result string (bv 64) :=
+    match a with
+    | Model.Res.FinalState fs =>
+        let x := ((fs.(MState.regs))) in
+        let y : registerMap := x !!! 0%fin in
+        let z : bv 64 := y R0 in
+        Ok z
+    | Model.Res.Error s => Error s
+    | Model.Res.Unspecified e => Error "hey"
+    end.
+
+  Compute result_extract <$> test_results.
+End Testing.
