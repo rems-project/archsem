@@ -36,6 +36,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
   #[local] Open Scope nat.
 
+  Declare Scope eid_scope.
+  #[local] Open Scope eid_scope.
+
   (** Relational event ID, this might differ from ISA events in certain
       execution types *)
   Module EID.
@@ -69,6 +72,21 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       sauto.
     Qed.
 
+    Definition po_lt (id1 id2 : t) : Prop :=
+      id1.(tid) = id2.(tid) ∧ id1.(iid) < id2.(iid).
+
+    Notation "x <ₚ y" := (po_lt x y) (at level 70, no associativity) : eid_scope.
+
+    Definition iio_lt (id1 id2 : t) : Prop :=
+      id1.(tid) = id2.(tid) ∧ id1.(iid) = id2.(iid) ∧ id1.(ieid) < id2.(ieid).
+
+    Notation "x <ᵢ y" := (iio_lt x y) (at level 70, no associativity) : eid_scope.
+
+    Definition full_po_lt (id1 id2 : t) : Prop :=
+      id1 <ₚ id2 ∨ id1 <ᵢ id2.
+
+    Notation "x <ₚ₊ᵢ y" := (full_po_lt x y) (at level 70, no associativity)
+      : eid_scope.
 
   End EID.
 
@@ -101,8 +119,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Proof. unfold bytes_per_event. solve_NoDup; set_solver. Qed.
     #[global] Hint Resolve bytes_per_event_NoDup : nodup.
 
-    (** Gives the list of valid EIDs for a event at a specific position in a *)
-    (*     candidate *)
+    (** Gives the list of valid EIDs for a event at a specific position in a
+        candidate *)
     Definition EID_list_from_iEvent (et : exec_type) (tid iid ieid : nat)
          (event : iEvent) : list EID.t :=
       EID.make tid iid ieid <$> bytes_per_event et event.
@@ -119,9 +137,684 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       ('(ieid1, ieid2) ← elements ieid_rel;
        iev1 ← option_list (instr.1 !! ieid1);
        iev2 ← option_list (instr.1 !! ieid2);
-       list_prod (EID_list_from_iEvent et tid iid ieid1 iev1)
+       (EID_list_from_iEvent et tid iid ieid1 iev1) ×
          (EID_list_from_iEvent et tid iid ieid2 iev2))
       |> list_to_set.
+
+    Record pre {et : exec_type} {nmth : nat} :=
+      make_pre {
+          (** Initial state *)
+          init : MState.t nmth;
+          (** Each thread is a list of instruction who each have a trace,
+              we force the return type to be unit, but it just means we
+              forget the actual value *)
+          events : vec (list (iTrace ())) nmth
+        }.
+    Arguments pre : clear implicits.
+    Arguments make_pre _ {_}.
+
+    #[global] Instance pre_eta {et nmth} : Settable (pre et nmth) :=
+      settable! (@make_pre et nmth)
+      <init; events>.
+
+    Section Pre.
+      Context {et : exec_type} {nmth : nat}.
+      Implicit Type pe : (pre et nmth).
+
+      (** Asserts that a candidate conforms to an ISA model.
+        This version only supports ISA model without inter-instruction state.
+        We'll see later if such state is required *)
+      Definition ISA_match pe (isem : iMon ()) :=
+        ∀ tid : fin nmth,
+        ∀ trc ∈ pe.(events) !!! tid,
+        cmatch isem trc.
+
+      #[global] Instance ISA_match_dec pe isem : Decision (ISA_match pe isem).
+      Proof using. solve_decision. Qed.
+
+
+      (** This true if one of the instruction had an ISA model failure like a
+          Sail assertion or an Isla assumption that failed. Due to out of order
+          effects, an error might not be from the last instruction. *)
+      Definition ISA_failed pe :=
+        ∃ thread ∈ (vec_to_list pe.(events)),
+        ∃ instr ∈ thread,
+        ∃ msg, instr.2 = FTEStop (GenericFail msg).
+
+      #[global] Instance ISA_failed_dec pe : Decision (ISA_failed pe).
+      Proof using.
+        unfold ISA_failed.
+        apply list_exist_dec. intro.
+        apply list_exist_dec. intro tr.
+        destruct (tr.2) as [| | call]; try (right; abstract hauto lq:on).
+        destruct call; (right + left); abstract hauto lq:on.
+      Defined.
+
+      Definition lookup_instruction pe (tid iid : nat) :
+          option (iTrace ()) :=
+        traces ← pe.(events) !! tid;
+        traces !! iid.
+
+      Definition instruction_list pe : list (nat * nat * iTrace ()) :=
+        '(tid, traces) ← enumerate pe.(events);
+        '(iid, trace) ← enumerate traces;
+        [(tid, iid, (trace : iTrace ()))].
+
+
+      (** Allow [set_unfold] to unfold through [match] constructs *)
+      #[local] Existing Instance set_unfold_match.
+
+      Lemma instruction_list_match pe tid iid ev :
+        lookup_instruction pe tid iid = Some ev ↔
+          (tid, iid, ev) ∈ instruction_list pe.
+      Proof using.
+        destruct ev.
+        unfold lookup_instruction.
+        unfold instruction_list.
+        set_unfold.
+        setoid_rewrite lookup_unfold.
+        setoid_rewrite eq_some_unfold.
+        repeat setoid_rewrite exists_pair.
+        naive_solver.
+      Qed.
+      Global Typeclasses Opaque lookup_instruction.
+      Opaque lookup_instruction.
+      Global Typeclasses Opaque instruction_list.
+
+      Definition lookup_iEvent pe (tid iid ieid : nat) :
+        option iEvent :=
+      '(trace, result) ← lookup_instruction pe tid iid;
+      trace !! ieid.
+
+      Definition iEvent_list pe : list (nat * nat * nat * iEvent) :=
+        '(tid, iid, (trace, trace_end)) ← instruction_list pe;
+        '(ieid, event) ← enumerate trace;
+        mret (tid, iid, ieid, event).
+
+      Lemma iEvent_list_match pe tid iid ieid ev :
+        lookup_iEvent pe tid iid ieid = Some ev ↔
+          (tid, iid, ieid, ev) ∈ iEvent_list pe.
+      Proof using.
+        unfold lookup_iEvent.
+        unfold iEvent_list.
+        set_unfold.
+        setoid_rewrite eq_some_unfold.
+        setoid_rewrite instruction_list_match.
+        repeat setoid_rewrite exists_pair.
+        naive_solver.
+      Qed.
+      #[global] Typeclasses Opaque lookup_iEvent.
+      Opaque lookup_iEvent.
+      #[global] Typeclasses Opaque iEvent_list.
+
+      Definition EID_list_from_event_ids pe (tid iid ieid : nat) :
+          list EID.t :=
+        ev ← option_list (lookup_iEvent pe tid iid ieid);
+        EID_list_from_iEvent et tid iid ieid ev.
+
+      (** Get an event at a given event ID in a pre-execution *)
+      Global Instance lookup_eid_pre : Lookup EID.t iEvent (pre et nmth) :=
+        λ eid pe,
+          ev ← lookup_iEvent pe eid.(EID.tid) eid.(EID.iid) eid.(EID.ieid);
+          guard (eid.(EID.byte) ∈ bytes_per_event et ev);;
+          Some ev.
+      #[global] Typeclasses Opaque lookup_eid_pre.
+
+      Definition event_list pe : list (EID.t * iEvent) :=
+        '(tid, iid, ieid, event) ← iEvent_list pe;
+        EID_list_from_iEvent et tid iid ieid event |$> (.,event).
+      Global Typeclasses Opaque event_list.
+
+      Lemma event_list_match pe eid ev :
+        pe !! eid = Some ev ↔ (eid, ev) ∈ event_list pe.
+      Proof using.
+        unfold lookup at 1.
+        unfold lookup_eid_pre.
+        unfold event_list.
+        unfold EID_list_from_iEvent.
+        destruct eid.
+        set_unfold.
+        setoid_rewrite eq_some_unfold.
+        setoid_rewrite iEvent_list_match.
+        repeat setoid_rewrite exists_pair.
+        naive_solver.
+      Qed.
+
+      Global Instance set_unfold_elem_of_event_list pe x :
+        SetUnfoldElemOf x (event_list pe) (pe !! x.1 = Some x.2).
+      Proof using . tcclean. destruct x. symmetry. apply event_list_match. Qed.
+
+      Lemma event_list_NoDup1 pe : NoDup (event_list pe).*1.
+      Proof using.
+        unfold event_list.
+        unfold iEvent_list.
+        unfold instruction_list.
+        rewrite fmap_unfold #FMapUnfoldFmap.
+        solve_NoDup; set_unfold; cdestruct_intros # CDestrCbnSubst; congruence.
+      Qed.
+
+      Lemma event_list_NoDup pe : NoDup (event_list pe).
+      Proof using. eapply NoDup_fmap_1. apply event_list_NoDup1. Qed.
+
+      Definition event_map pe : gmap EID.t iEvent :=
+        event_list pe |> list_to_map.
+
+      Lemma event_map_match pe eid : (event_map pe) !! eid = pe !! eid.
+      Proof using.
+        unfold event_map.
+        destruct (pe !! eid) eqn: Heq.
+        - apply elem_of_list_to_map.
+          + apply event_list_NoDup1.
+          + set_solver.
+        - apply not_elem_of_list_to_map_1.
+          set_solver.
+      Qed.
+
+      Global Instance lookup_unfold_event_map x pe R :
+        LookupUnfold x pe R → LookupUnfold x (event_map pe) R.
+      Proof using. tcclean. apply event_map_match. Qed.
+
+      (** * Accessors ***)
+
+      Definition collect_all (P : EID.t -> iEvent -> Prop)
+        `{∀ eid event, Decision (P eid event)}
+        pe : gset EID.t :=
+        filter (fun '(eid, event) => P eid event) (event_list pe)
+          |> map fst |> list_to_set.
+      Global Instance set_elem_of_collect_all eid P
+        `{∀ eid event, Decision (P eid event)} pe :
+        SetUnfoldElemOf eid (collect_all P pe) (∃x, pe !! eid = Some x ∧ P eid x).
+      Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+      Global Typeclasses Opaque collect_all.
+
+      (** Get the set of all valid EID for that candidate *)
+      Definition valid_eids pe :=
+        collect_all (fun _ _ => True) pe.
+
+      Global Instance set_elem_of_valid_eids eid pe :
+        SetUnfoldElemOf eid (valid_eids pe) (is_Some (pe !! eid)).
+      Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+      Global Typeclasses Opaque valid_eids.
+
+      (** Get the set of all register reads *)
+      Definition reg_reads := collect_all (λ _, is_reg_read).
+      Definition pc_reads :=
+        collect_all (λ _, is_reg_readP (λ reg _ _, reg = pc_reg)).
+
+      (** Get the set of all register writes *)
+      Definition reg_writes := collect_all (λ _, is_reg_write).
+      Definition pc_writes :=
+        collect_all (λ _, is_reg_writeP (λ reg _ _, reg = pc_reg)).
+
+      (** Get the set of all memory reads *)
+      Definition mem_reads := collect_all (λ _, is_mem_read).
+      Typeclasses Opaque mem_reads.
+      Definition mem_read_reqs:= collect_all (λ _ , is_mem_read_req).
+      Typeclasses Opaque mem_read_reqs.
+      Definition mem_read_aborts :=
+        collect_all (λ _, is_mem_read_reqP (λ _ _, is_inr)).
+      Typeclasses Opaque mem_read_aborts.
+
+      Lemma mem_read_reqs_union pe :
+        mem_read_reqs pe = mem_reads pe ∪ mem_read_aborts pe.
+      Proof.
+        unfold mem_reads, mem_read_reqs, mem_read_aborts.
+        set_unfold.
+        split;
+          cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum;
+          naive_solver.
+      Qed.
+
+      (** Get the set of all memory writes *)
+      Definition mem_write_addr_announces := collect_all (λ _, is_mem_write_addr_announce).
+      Typeclasses Opaque mem_write_addr_announces.
+      Definition mem_writes := collect_all (λ _, is_mem_write).
+      Typeclasses Opaque mem_writes.
+      Definition mem_write_reqs := collect_all (λ _, is_mem_write_req).
+      Typeclasses Opaque mem_write_reqs.
+      Definition mem_write_aborts :=
+        collect_all (λ _, is_mem_write_reqP (λ _ _ res, res ≠ inl true)).
+      Typeclasses Opaque mem_write_aborts.
+
+      Lemma mem_write_reqs_union pe :
+        mem_write_reqs pe = mem_writes pe ∪ mem_write_aborts pe.
+      Proof.
+        unfold mem_writes, mem_write_reqs, mem_write_aborts.
+        set_unfold.
+        split;
+          cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum
+            # (CDestrCase bool);
+          naive_solver.
+      Qed.
+
+      Definition mem_events := collect_all (λ _, is_mem_event).
+      Typeclasses Opaque mem_events.
+
+      Lemma mem_events_union pe : mem_events pe = mem_reads pe ∪ mem_writes pe.
+      Proof. unfold mem_events, mem_reads, mem_writes, is_mem_event. set_solver. Qed.
+
+      (* WARNING: intense boilerplate *)
+      Section ByKind.
+        Context (P : accessKind → Prop).
+        Context {Pdec : ∀ acc, Decision (P acc)}.
+        Definition mem_by_kind := collect_all (λ _, is_mem_event_kindP P).
+        #[global] Typeclasses Opaque mem_by_kind.
+        Definition reads_by_kind := collect_all (λ _, is_mem_read_kindP P).
+        #[global] Typeclasses Opaque reads_by_kind.
+        Definition writes_by_kind := collect_all (λ _, is_mem_write_kindP P).
+        #[global] Typeclasses Opaque writes_by_kind.
+      End ByKind.
+      Definition mem_explicit := (mem_by_kind is_explicit).
+      Definition explicit_reads := (reads_by_kind is_explicit).
+      Definition explicit_writes := (writes_by_kind is_explicit).
+      Definition mem_ifetch := (mem_by_kind is_ifetch).
+      Definition ifetch_reads := (reads_by_kind is_ifetch).
+      Definition ifetch_writes := (writes_by_kind is_ifetch). (* empty *)
+      Definition mem_ttw := (mem_by_kind is_ttw).
+      Definition ttw_reads := (reads_by_kind is_ttw).
+      Definition ttw_writes := (writes_by_kind is_ttw).
+      Definition mem_relaxed := (mem_by_kind is_relaxed).
+      Definition relaxed_reads := (reads_by_kind is_relaxed).
+      Definition relaxed_writes := (writes_by_kind is_relaxed).
+      Definition mem_rel_acq := (mem_by_kind is_rel_acq).
+      Definition rel_acq_reads := (reads_by_kind is_rel_acq).
+      Definition rel_acq_writes := (writes_by_kind is_rel_acq).
+      Definition mem_acq_rcpc := (mem_by_kind is_acq_rcpc).
+      Definition acq_rcpc_reads := (reads_by_kind is_acq_rcpc).
+      Definition acq_rcpc_writes := (writes_by_kind is_acq_rcpc).
+      Definition mem_standalone := (mem_by_kind is_standalone).
+      Definition standalone_reads := (reads_by_kind is_standalone).
+      Definition standalone_writes := (writes_by_kind is_standalone).
+      Definition mem_exclusive := (mem_by_kind is_exclusive).
+      Definition exclusive_reads := (reads_by_kind is_exclusive).
+      Definition exclusive_writes := (writes_by_kind is_exclusive).
+      Definition mem_atomic_rmw := (mem_by_kind is_atomic_rmw).
+      Definition atomic_rmw_reads := (reads_by_kind is_atomic_rmw).
+      Definition atomic_rmw_writes := (writes_by_kind is_atomic_rmw).
+
+      (** Get the set of all barriers *)
+      Definition barriers pe :=
+        collect_all (λ _ event, is_Some (get_barrier event)) pe.
+      Typeclasses Opaque barriers.
+
+      (** Get the set of all cache operations *)
+      Definition cacheops pe :=
+        collect_all (λ _ event, is_Some (get_cacheop event)) pe.
+      Typeclasses Opaque cacheops.
+
+      (** Get the set of all TLB operations *)
+      Definition tlbops pe :=
+        collect_all (λ _ event, is_Some (get_tlbop event)) pe.
+      Typeclasses Opaque tlbops.
+
+
+      (** * Supported events
+
+        This framework does not support all kind of events yet. It does not support:
+        - memory tags
+        - Rejecting exclusive memory writes *)
+      Definition unsupported_event (ev : iEvent) : Prop :=
+        is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
+        is_mem_write_reqP (λ n wr r, is_Some (wr.(WriteReq.tag))) ev.
+
+      Definition has_only_supported_events pe : Prop :=
+        iEvent_list pe |> filter (λ '(_,ev), unsupported_event ev) = [].
+
+          (** Get the final register maps of all threads from a candidate *)
+      Definition final_reg_map_tid pe (tid : fin nmth) :
+          registerMap :=
+        λ reg,
+        let oval :=
+          foldl (λ val itrc,
+              foldl (λ (val : option (reg_type reg)) ev,
+                  match ev with
+                  | RegWrite reg' _ val' &→ _ =>
+                      if decide (reg' = reg) is left e
+                      then Some (ctrans e val')
+                      else val
+                  | _ => val
+                  end
+                ) val itrc.1
+            ) None (pe.(events) !!! tid)
+        in
+        if oval is Some val then val else (pe.(init).(MState.regs) !!! tid) reg.
+
+      (** Get all the final register map from candidate *)
+      Definition final_reg_map pe : vec registerMap nmth :=
+        fun_to_vec (final_reg_map_tid pe).
+
+      (** * Utility relations **)
+
+
+      (** ** Relation building helpers *)
+
+      (** This helper computes an optional key from each eid and event pair of a
+          candidate using [get_key], and gathers all eids with the same key
+          together into a set. It returns a map from keys to sets of eids *)
+      Definition gather_by_key `{Countable K} pe
+          (get_key : EID.t -> iEvent -> option K) : gmap K (gset EID.t) :=
+        fold_left (λ acc '(eid, event), match get_key eid event with
+                                        | Some k => {[ k := {[eid]}]}
+                                        | None => ∅
+                                        end ∪ₘ acc) (event_list pe) ∅.
+      #[global] Typeclasses Opaque gather_by_key.
+
+      Global Instance set_elem_of_gather_by_key_lookup `{Countable K} pe
+        (get_key : EID.t → iEvent → option K) (k: K) (eid : EID.t):
+        SetUnfoldElemOf eid (gather_by_key pe get_key !!! k)
+          (∃ E, pe !! eid = Some E ∧ get_key eid E = Some k).
+      Proof.
+        tcclean.
+        unfold gather_by_key.
+        orewrite* (fold_left_inv_ND
+          (λ map tl, ∀ eid k,
+            eid ∈ map !!! k ↔
+              ∃ ev, pe !! eid = Some ev
+                    ∧ (eid, ev) ∉ tl
+                    ∧ get_key eid ev = Some k)).
+        - apply event_list_NoDup.
+        - clear eid k. intros eid k.
+          rewrite lookup_total_unfold.
+          setoid_rewrite event_list_match.
+          set_solver.
+        - clear eid k. intros map [eid ev] tl Hel Hntl Hinv eid' k.
+          rewrite <- event_list_match in Hel.
+          destruct (get_key eid ev) as [k' |] eqn:Hgk.
+          1: destruct decide subst k k'.
+          all: destruct decide subst eid eid'.
+          all: rewrite lookup_total_unfold.
+          all: set_unfold.
+          all: rewrite Hinv.
+          all: set_solver - Hinv.
+        - set_solver.
+      Qed.
+
+      Global Instance lookup_total_unfold_gather_by_key `{Countable K} pe
+          (get_key : EID.t → iEvent → option K) (k: K):
+        LookupTotalUnfold k (gather_by_key pe get_key)
+          (collect_all (λ eid event, get_key eid event = Some k) pe).
+      Proof. tcclean. set_solver. Qed.
+
+
+      Lemma gather_by_key_None `{Countable K} pe
+          (get_key : EID.t → iEvent → option K) (k : K):
+        gather_by_key pe get_key !! k = None ↔
+        ∀ eid ev, (eid, ev) ∈ event_list pe → get_key eid ev ≠ Some k.
+      Proof.
+        unfold gather_by_key.
+        orewrite* (fold_left_inv_ND
+          (λ map tl, ∀ k,
+            map !! k = None ↔
+              ∀ eid ev, (eid, ev) ∈ event_list pe →
+            (eid, ev) ∈ tl ∨ get_key eid ev ≠ Some k)).
+        - apply event_list_NoDup.
+        - clear k.
+          intro k.
+          rewrite lookup_unfold.
+          hauto lq:on.
+        - clear k. intros map [eid ev] tl Hel Hntl Hinv k.
+          destruct (get_key eid ev) as [k' |] eqn:Hgk.
+          1: destruct decide subst k k'.
+          all: rewrite lookup_unfold.
+          all: rewrite option_union_None.
+          all: rewrite Hinv; clear Hinv.
+          all: set_solver.
+        - set_solver.
+      Qed.
+
+      (** If there is an event with key [k], then [k] must in the gathered map *)
+      Lemma lookup_is_Some_gather_by_key `{Countable K} pe
+          (get_key : EID.t → iEvent → option K) (k: K):
+        (∃ eid event, (eid, event) ∈ event_list pe ∧ get_key eid event = Some k) →
+        is_Some (gather_by_key pe get_key !! k).
+      Proof.
+        destruct (gather_by_key pe get_key !! k) eqn:Heqn.
+        - done.
+        - rewrite gather_by_key_None in Heqn.
+          naive_solver.
+      Qed.
+
+      (** Returns an equivalence relation, such that two events are in the relation
+          iff they have the same key computed with [get_key] *)
+      Definition same_key `{Countable K} (get_key : EID.t -> iEvent -> option K)
+          pe :=
+        finmap_reduce_union (λ k s, s × s) (gather_by_key pe get_key).
+
+      (** An unfold instance for [same_key] *)
+      Global Instance set_elem_of_same_key `{Countable K} pe
+        get_key eids :
+        SetUnfoldElemOf eids
+          (same_key get_key pe)
+          (∃ E1 E2 (k: K), pe !! eids.1 = Some E1 ∧ pe !! eids.2 = Some E2
+                          ∧ get_key eids.1 E1 = Some k ∧ get_key eids.2 E2 = Some k).
+      Proof.
+        tcclean. destruct eids.
+        set_unfold.
+        split.
+        - intros (?&?&?&?).
+          lookup_lookup_total; set_solver.
+        - intros (?&?&k&?). destruct_and!.
+          opose proof* (lookup_is_Some_gather_by_key pe get_key k) as [? HSome].
+          { set_solver. }
+          do 2 eexists.
+          repeat split_and; first eassumption.
+          all: lookup_lookup_total; set_solver.
+      Qed.
+      #[global] Typeclasses Opaque same_key.
+
+
+      (** ** Thread and instruction based orders and relations *)
+
+      (** Equivalence relation relating events from the same thread *)
+      Definition same_thread : (pre et nmth) → grel EID.t :=
+        same_key (λ eid _, Some (eid.(EID.tid))).
+      #[global] Typeclasses Opaque same_thread.
+      #[global] Instance set_elem_of_same_thread pe eids:
+        SetUnfoldElemOf eids (same_thread pe)
+          (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
+            eids.1.(EID.tid) = eids.2.(EID.tid)).
+      Proof.
+        tcclean.
+        destruct eids.
+        unfold same_thread.
+        set_unfold.
+        hauto q:on.
+      Qed.
+
+      (** Equivalence relation relating events from the same instruction instance *)
+      Definition same_instruction_instance : (pre et nmth) → grel EID.t :=
+        same_key (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
+      #[global] Typeclasses Opaque same_instruction_instance.
+      #[global] Instance set_elem_of_same_instruction_instance pe eids:
+        SetUnfoldElemOf eids (same_instruction_instance pe)
+          (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
+            eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+            eids.1.(EID.iid) = eids.2.(EID.iid)).
+      Proof.
+        tcclean.
+        destruct eids.
+        unfold same_instruction_instance.
+        set_unfold.
+        hauto q:on.
+      Qed.
+
+      (** Equivalence relation relating bytes event from the same memory access *)
+      Definition same_access : (pre et nmth) → grel EID.t :=
+        same_key
+          (λ eid _, Some (eid.(EID.tid), eid.(EID.iid), eid.(EID.ieid))).
+      #[global] Typeclasses Opaque same_access.
+      #[global] Instance set_elem_of_same_access pe eids:
+        SetUnfoldElemOf eids (same_access pe)
+          (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
+            eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+            eids.1.(EID.iid) = eids.2.(EID.iid) ∧
+            eids.1.(EID.ieid) = eids.2.(EID.ieid)).
+      Proof.
+        tcclean.
+        destruct eids.
+        unfold same_access.
+        set_unfold.
+        hauto q:on.
+      Qed.
+
+      (** Intra Instruction Order: The order in which events ran inside an
+          instruction
+
+          This is intended to disappear in future versions,
+          try not to depend on it *)
+      Definition iio pe :=
+        same_instruction_instance pe
+        |> filter (λ eids, eids.1.(EID.ieid) < eids.2.(EID.ieid)).
+      #[global] Typeclasses Opaque iio.
+      #[global] Instance set_elem_of_iio pe eids:
+      SetUnfoldElemOf eids (iio pe)
+        (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
+          eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+          eids.1.(EID.iid) = eids.2.(EID.iid) ∧
+          eids.1.(EID.ieid) < eids.2.(EID.ieid)). (* Should use <ᵢ *)
+      Proof.
+        tcclean.
+        destruct eids.
+        unfold iio.
+        set_unfold.
+        naive_solver lia.
+      Qed.
+
+      (** Order in which the instructions architecturally ran. This does not mean
+          they micro-architecturally run in that specific order. This is an inter
+          instruction order, it does not order the events inside an instructions
+          (see [iio] for that) *)
+      Definition instruction_order pe :=
+        same_thread pe
+        |> filter (λ eids, eids.1.(EID.iid) < eids.2.(EID.iid)).
+      #[global] Typeclasses Opaque instruction_order.
+      #[global] Instance set_elem_of_instruction_order pe eids:
+      SetUnfoldElemOf eids (instruction_order pe)
+        (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
+          eids.1.(EID.tid) = eids.2.(EID.tid) ∧
+          eids.1.(EID.iid) < eids.2.(EID.iid)).
+      Proof.
+        tcclean.
+        destruct eids.
+        unfold instruction_order.
+        set_unfold.
+        naive_solver lia.
+      Qed.
+
+      (** Complete thread order. This is a strict partial order on each thread
+          events denoting event that happened sequentially before other according
+          to the program and instruction semantics. This does NOT means that this
+          order implies any kind of weak memory ordering *)
+      Definition full_instruction_order pe := instruction_order pe ∪ iio pe.
+
+      (** ** Memory based relations *)
+
+      Implicit Type ev : iEvent.
+
+      (** Equivalence relation relating memory events that have the same physical
+          address. In an [MixedSize] model which splits reads but not write, this
+          is based on the pa of the whole read *)
+      Definition same_pa : (pre et nmth) → grel EID.t :=
+        same_key (λ _, get_pa).
+      Typeclasses Opaque same_pa.
+
+      Definition get_pa_footprint (eid : EID.t) ev : option (pa * N) :=
+        pa ← get_pa ev;
+        match eid.(EID.byte) with
+        | None => get_size ev |$> (pa,.)
+        | Some n => Some (pa_addN pa n, 1%N)
+        end.
+      Typeclasses Opaque get_pa_footprint.
+
+      (** Equivalence relation relating memory events that have the same size. *)
+      Definition same_size : (pre et nmth) → grel EID.t :=
+        same_key (λ _, get_size).
+      Typeclasses Opaque same_size.
+
+      Definition same_footprint pe := same_pa pe ∩ same_size pe.
+
+      (** Equivalence relation relating memory event that have the same size and value *)
+      Definition same_mem_value : (pre et nmth) → grel EID.t :=
+        same_key (λ _, get_mem_value).
+      Typeclasses Opaque same_mem_value.
+
+      Lemma same_mem_value_size pe :
+        same_mem_value pe ⊆ same_size pe.
+      Proof.
+        unfold same_mem_value,same_size.
+        set_unfold.
+        hauto lq:on rew:off use:get_mem_value_size.
+      Qed.
+
+      (** ** Register based relations *)
+
+      (** Equivalence relation relating register events referring to the same
+      register *)
+      Definition same_reg : (pre et nmth) →  grel EID.t :=
+        same_key (λ eid ev, get_reg ev |$> (EID.tid eid,.)).
+      Typeclasses Opaque same_reg.
+
+      (** Equivalence relation relating register events refering to the same
+      register with the same value *)
+      Definition same_reg_val : (pre et nmth) →  grel EID.t :=
+        same_key (λ eid ev, get_reg_val ev |$> (EID.tid eid,.)).
+      Typeclasses Opaque same_reg_val.
+
+      Lemma same_reg_val_same_reg pe :
+        same_reg_val pe ⊆ same_reg pe.
+      Proof.
+        unfold same_reg,same_reg_val.
+        set_unfold.
+        cdestruct_intros #CDestrCbnSubst #CDestrEqSome.
+        setoid_rewrite eq_some_unfold.
+        hauto lq:on rew:off use:get_reg_val_get_reg.
+      Qed.
+
+      Definition is_valid_init_reg_read pe (eid : EID.t) : iEvent → Prop :=
+        is_reg_readP (λ reg _ rv,
+            match pe.(init).(MState.regs) !! eid.(EID.tid) with
+            | Some regmap => rv = regmap reg
+            | None => False
+            end).
+
+      Definition is_valid_init_reg_read_spec pe (eid : EID.t) (ev : iEvent):
+        is_valid_init_reg_read pe eid ev ↔
+          ∃ reg reg_acc rv,
+            (ev = RegRead reg reg_acc &→ rv) ∧
+              ∃ H : eid.(EID.tid) < nmth,
+                (pe.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
+      Proof.
+        unfold is_valid_init_reg_read.
+        split; cdestruct_intros #CDestrCbnSubst #CDestrMatch #CDestrEqSome.
+        - naive_solver.
+        - cbn. by erewrite vec_lookup_nat_in.
+      Qed.
+      Definition is_valid_init_reg_read_cdestr pe eid ev :=
+        cdestr_simpl (is_valid_init_reg_read_spec pe eid ev).
+      #[global] Existing Instance is_valid_init_reg_read_cdestr.
+
+      Definition possible_initial_reg_reads pe :=
+        collect_all (is_valid_init_reg_read pe) pe.
+      #[global] Typeclasses Opaque possible_initial_reg_reads.
+
+      Lemma possible_initial_reg_reads_ok pe :
+        possible_initial_reg_reads pe ⊆ reg_reads pe.
+      Proof.
+        unfold possible_initial_reg_reads.
+        set_unfold.
+        cdestruct_intros # CDestrCbnSubst.
+        naive_solver.
+      Qed.
+
+      Definition is_valid_init_mem_read pe (eid : EID.t) :=
+        is_Some $
+        read ← pe !! eid;
+        guard (is_mem_read read);;
+        pa ← get_pa read;
+        val ← get_mem_value read;
+        guard' (val = memoryMap_read pe.(init).(MState.memory) pa (bvn_n val / 8)).
+
+    End Pre.
 
     (** A candidate execution. It consists of a pre-execution defined by init +
         events, and set of relation describing what happened in the execution.
@@ -134,12 +827,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         - It must be valid according to some model. See [Ax]. *)
     Record t {et : exec_type} {nmth : nat} :=
       make {
-          (** Initial state *)
-          init : MState.t nmth;
-          (** Each thread is a list of instruction who each have a trace,
-              we force the return type to be unit, but it just means we
-              forget the actual value *)
-          events : vec (list (iTrace ())) nmth;
+          (** The preexecution this candidate is based on *)
+          pre_exec :> pre et nmth;
           (** Relate a memory read with the write it gets it's value from *)
           reads_from : grel EID.t;
           (** Register read from (needed because of potentially relaxed
@@ -165,317 +854,22 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     #[global] Instance eta {et nmth} : Settable (t et nmth) :=
         settable! (@make et nmth)
-        <init; events; reads_from; reg_reads_from; coherence; lxsx>.
+        <pre_exec; reads_from; reg_reads_from; coherence; lxsx>.
 
-
+    (** Notations to mean init and events on [t] and not [pre]. Useful for
+        setting, not for getting where coercion inference is good enough. *)
+    Notation init' := (init : t _ _ → _).
+    Notation events' := (events : t _ _ → _).
 
     Section Cand.
     Context {et : exec_type} {nmth : nat}.
     Notation t := (t et nmth).
+    Implicit Type cd : t.
 
-    (** Asserts that a candidate conforms to an ISA model.
-        This version only supports ISA model without inter-instruction state.
-        We'll see later if such state is required *)
-    Definition ISA_match (cd : t) (isem : iMon ()) :=
-      ∀ tid : fin nmth,
-      ∀ trc ∈ cd.(events) !!! tid,
-      cmatch isem trc.
-
-    #[global] Instance ISA_match_dec cd isem : Decision (ISA_match cd isem).
-    Proof using. solve_decision. Qed.
-
-
-    (** This true if one of the instruction had an ISA model failure like a Sail
-        assertion or an Isla assumption that failed. Due to out of order
-        effects, an error might not be from the last instruction. *)
-    Definition ISA_failed (cd : t) :=
-      ∃ thread ∈ (vec_to_list cd.(events)),
-      ∃ instr ∈ thread,
-      ∃ msg, instr.2 = FTEStop (GenericFail msg).
-
-    #[global] Instance ISA_failed_dec (cd : t) : Decision (ISA_failed cd).
-    Proof using.
-      unfold ISA_failed.
-      apply list_exist_dec. intro.
-      apply list_exist_dec. intro tr.
-      destruct (tr.2) as [| | call]; try (right; abstract hauto lq:on).
-      destruct call; (right + left); abstract hauto lq:on.
-    Defined.
-
-    Definition lookup_instruction (cd : t) (tid iid : nat) :
-        option (iTrace ()) :=
-      traces ← cd.(events) !! tid;
-      traces !! iid.
-
-    Definition instruction_list (cd : t) : list (nat * nat * iTrace ()) :=
-      '(tid, traces) ← enumerate cd.(events);
-      '(iid, trace) ← enumerate traces;
-      [(tid, iid, (trace : iTrace ()))].
-
-
-    (** Allow [set_unfold] to unfold through [match] constructs *)
-    #[local] Existing Instance set_unfold_match.
-
-    Lemma instruction_list_match cd tid iid ev :
-      lookup_instruction cd tid iid = Some ev ↔
-        (tid, iid, ev) ∈ instruction_list cd.
-    Proof using.
-      destruct ev.
-      unfold lookup_instruction.
-      unfold instruction_list.
-      set_unfold.
-      setoid_rewrite lookup_unfold.
-      setoid_rewrite eq_some_unfold.
-      repeat setoid_rewrite exists_pair.
-      naive_solver.
-    Qed.
-    Global Typeclasses Opaque lookup_instruction.
-    Opaque lookup_instruction.
-    Global Typeclasses Opaque instruction_list.
-
-    Definition lookup_iEvent (cd : t) (tid iid ieid : nat) :
-        option iEvent :=
-      '(trace, result) ← lookup_instruction cd tid iid;
-      trace !! ieid.
-
-    Definition iEvent_list (cd : t) : list (nat * nat * nat * iEvent) :=
-      '(tid, iid, (trace, trace_end)) ← instruction_list cd;
-      '(ieid, event) ← enumerate trace;
-      mret (tid, iid, ieid, event).
-
-    Lemma iEvent_list_match cd tid iid ieid ev :
-      lookup_iEvent cd tid iid ieid = Some ev ↔
-        (tid, iid, ieid, ev) ∈ iEvent_list cd.
-    Proof using.
-      unfold lookup_iEvent.
-      unfold iEvent_list.
-      set_unfold.
-      setoid_rewrite eq_some_unfold.
-      setoid_rewrite instruction_list_match.
-      repeat setoid_rewrite exists_pair.
-      naive_solver.
-    Qed.
-    #[global] Typeclasses Opaque lookup_iEvent.
-    Opaque lookup_iEvent.
-    #[global] Typeclasses Opaque iEvent_list.
-
-    Definition EID_list_from_event_ids (cd : t) (tid iid ieid : nat) :
-        list EID.t :=
-      ev ← option_list (lookup_iEvent cd tid iid ieid);
-      EID_list_from_iEvent et tid iid ieid ev.
-
-    (** Get an event at a given event ID in a candidate *)
-    Global Instance lookup_eid : Lookup EID.t iEvent t :=
-      λ eid cd,
-        ev ← lookup_iEvent cd eid.(EID.tid) eid.(EID.iid) eid.(EID.ieid);
-        guard (eid.(EID.byte) ∈ bytes_per_event et ev);;
-        Some ev.
-    #[global] Typeclasses Opaque lookup_eid.
-
-
-    Definition event_list (cd : t) : list (EID.t * iEvent) :=
-      '(tid, iid, ieid, event) ← iEvent_list cd;
-      EID_list_from_iEvent et tid iid ieid event |$> (.,event).
-    Global Typeclasses Opaque event_list.
-
-
-    Lemma event_list_match cd eid ev :
-      cd !! eid = Some ev ↔ (eid, ev) ∈ event_list cd.
-    Proof using.
-      unfold lookup at 1.
-      unfold lookup_eid.
-      unfold event_list.
-      unfold EID_list_from_iEvent.
-      destruct eid.
-      set_unfold.
-      setoid_rewrite eq_some_unfold.
-      setoid_rewrite iEvent_list_match.
-      repeat setoid_rewrite exists_pair.
-      naive_solver.
-    Qed.
-
-    Global Instance set_unfold_elem_of_event_list cd x :
-      SetUnfoldElemOf x (event_list cd) (cd !! x.1 = Some x.2).
-    Proof using . tcclean. destruct x. symmetry. apply event_list_match. Qed.
-
-
-    Lemma event_list_NoDup1 cd : NoDup (event_list cd).*1.
-    Proof using.
-      unfold event_list.
-      unfold iEvent_list.
-      unfold instruction_list.
-      rewrite fmap_unfold #FMapUnfoldFmap.
-      solve_NoDup; set_unfold; cdestruct_intros # CDestrCbnSubst; congruence.
-    Qed.
-
-    Lemma event_list_NoDup cd : NoDup (event_list cd).
-    Proof using. eapply NoDup_fmap_1. apply event_list_NoDup1. Qed.
-
-    Definition event_map (cd : t) : gmap EID.t iEvent :=
-      event_list cd |> list_to_map.
-
-    Lemma event_map_match cd eid : (event_map cd) !! eid = cd !! eid.
-    Proof using.
-      unfold event_map.
-      destruct (cd !! eid) eqn: Heq.
-      - apply elem_of_list_to_map.
-        + apply event_list_NoDup1.
-        + set_solver.
-      - apply not_elem_of_list_to_map_1.
-        set_solver.
-    Qed.
-
-    Global Instance lookup_unfold_event_map x cd R :
-      LookupUnfold x cd R → LookupUnfold x (event_map cd) R.
-    Proof using. tcclean. apply event_map_match. Qed.
-
-
-    (** * Accessors ***)
-
-    Definition collect_all (P : EID.t -> iEvent -> Prop)
-      `{∀ eid event, Decision (P eid event)}
-      (cd : t) : gset EID.t :=
-      filter (fun '(eid, event) => P eid event) (event_list cd)
-        |> map fst |> list_to_set.
-    Global Instance set_elem_of_collect_all eid P
-      `{∀ eid event, Decision (P eid event)} cd :
-      SetUnfoldElemOf eid (collect_all P cd) (∃x, cd !! eid = Some x ∧ P eid x).
-    Proof using. tcclean. set_unfold. hauto db:pair. Qed.
-    Global Typeclasses Opaque collect_all.
-
-    (** Get the set of all valid EID for that candidate *)
-    Definition valid_eids (cd : t) :=
-      collect_all (fun _ _ => True) cd.
-
-    Global Instance set_elem_of_valid_eids eid cd :
-      SetUnfoldElemOf eid (valid_eids cd) (is_Some (cd !! eid)).
-    Proof using. tcclean. set_unfold. hauto db:pair. Qed.
-    Global Typeclasses Opaque valid_eids.
-
-    (** Get the set of all register reads *)
-    Definition reg_reads := collect_all (λ _, is_reg_read).
-    Definition pc_reads :=
-      collect_all (λ _, is_reg_readP (λ reg _ _, reg = pc_reg)).
-
-    (** Get the set of all register writes *)
-    Definition reg_writes := collect_all (λ _, is_reg_write).
-    Definition pc_writes :=
-      collect_all (λ _, is_reg_writeP (λ reg _ _, reg = pc_reg)).
-
-    (** Get the set of all memory reads *)
-    Definition mem_reads := collect_all (λ _, is_mem_read).
-    Typeclasses Opaque mem_reads.
-    Definition mem_read_reqs:= collect_all (λ _ , is_mem_read_req).
-    Typeclasses Opaque mem_read_reqs.
-    Definition mem_read_aborts :=
-      collect_all (λ _, is_mem_read_reqP (λ _ _, is_inr)).
-    Typeclasses Opaque mem_read_aborts.
-
-    Lemma mem_read_reqs_union cd :
-      mem_read_reqs cd = mem_reads cd ∪ mem_read_aborts cd.
-    Proof.
-      unfold mem_reads, mem_read_reqs, mem_read_aborts.
-      set_unfold.
-      split;
-        cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum;
-        naive_solver.
-    Qed.
-
-    (** Get the set of all memory writes *)
-    Definition mem_write_addr_announces := collect_all (λ _, is_mem_write_addr_announce).
-    Typeclasses Opaque mem_write_addr_announces.
-    Definition mem_writes := collect_all (λ _, is_mem_write).
-    Typeclasses Opaque mem_writes.
-    Definition mem_write_reqs := collect_all (λ _, is_mem_write_req).
-    Typeclasses Opaque mem_write_reqs.
-    Definition mem_write_aborts :=
-      collect_all (λ _, is_mem_write_reqP (λ _ _ res, res ≠ inl true)).
-    Typeclasses Opaque mem_write_aborts.
-
-    Lemma mem_write_reqs_union cd :
-      mem_write_reqs cd = mem_writes cd ∪ mem_write_aborts cd.
-    Proof.
-      unfold mem_writes, mem_write_reqs, mem_write_aborts.
-      set_unfold.
-      split;
-        cdestruct_intros # CDestrCbnSubst use cdestruct_or use cdestruct_sum
-          # (CDestrCase bool);
-        naive_solver.
-    Qed.
-
-    Definition mem_events := collect_all (λ _, is_mem_event).
-    Typeclasses Opaque mem_events.
-
-    Lemma mem_events_union cd : mem_events cd = mem_reads cd ∪ mem_writes cd.
-    Proof. unfold mem_events, mem_reads, mem_writes, is_mem_event. set_solver. Qed.
-
-    (* WARNING: intense boilerplate *)
-    Section ByKind.
-      Context (P : accessKind → Prop).
-      Context {Pdec : ∀ acc, Decision (P acc)}.
-      Definition mem_by_kind := collect_all (λ _, is_mem_event_kindP P).
-      #[global] Typeclasses Opaque mem_by_kind.
-      Definition reads_by_kind := collect_all (λ _, is_mem_read_kindP P).
-      #[global] Typeclasses Opaque reads_by_kind.
-      Definition writes_by_kind := collect_all (λ _, is_mem_write_kindP P).
-      #[global] Typeclasses Opaque writes_by_kind.
-    End ByKind.
-    Definition mem_explicit := (mem_by_kind is_explicit).
-    Definition explicit_reads := (reads_by_kind is_explicit).
-    Definition explicit_writes := (writes_by_kind is_explicit).
-    Definition mem_ifetch := (mem_by_kind is_ifetch).
-    Definition ifetch_reads := (reads_by_kind is_ifetch).
-    Definition ifetch_writes := (writes_by_kind is_ifetch). (* empty *)
-    Definition mem_ttw := (mem_by_kind is_ttw).
-    Definition ttw_reads := (reads_by_kind is_ttw).
-    Definition ttw_writes := (writes_by_kind is_ttw).
-    Definition mem_relaxed := (mem_by_kind is_relaxed).
-    Definition relaxed_reads := (reads_by_kind is_relaxed).
-    Definition relaxed_writes := (writes_by_kind is_relaxed).
-    Definition mem_rel_acq := (mem_by_kind is_rel_acq).
-    Definition rel_acq_reads := (reads_by_kind is_rel_acq).
-    Definition rel_acq_writes := (writes_by_kind is_rel_acq).
-    Definition mem_acq_rcpc := (mem_by_kind is_acq_rcpc).
-    Definition acq_rcpc_reads := (reads_by_kind is_acq_rcpc).
-    Definition acq_rcpc_writes := (writes_by_kind is_acq_rcpc).
-    Definition mem_standalone := (mem_by_kind is_standalone).
-    Definition standalone_reads := (reads_by_kind is_standalone).
-    Definition standalone_writes := (writes_by_kind is_standalone).
-    Definition mem_exclusive := (mem_by_kind is_exclusive).
-    Definition exclusive_reads := (reads_by_kind is_exclusive).
-    Definition exclusive_writes := (writes_by_kind is_exclusive).
-    Definition mem_atomic_rmw := (mem_by_kind is_atomic_rmw).
-    Definition atomic_rmw_reads := (reads_by_kind is_atomic_rmw).
-    Definition atomic_rmw_writes := (writes_by_kind is_atomic_rmw).
-
-    (** Get the set of all barriers *)
-    Definition barriers (cd : t) :=
-      collect_all (λ _ event, is_Some (get_barrier event)) cd.
-    Typeclasses Opaque barriers.
-
-    (** Get the set of all cache operations *)
-    Definition cacheops (cd : t) :=
-      collect_all (λ _ event, is_Some (get_cacheop event)) cd.
-    Typeclasses Opaque cacheops.
-
-    (** Get the set of all TLB operations *)
-    Definition tlbops (cd : t) :=
-      collect_all (λ _ event, is_Some (get_tlbop event)) cd.
-    Typeclasses Opaque tlbops.
-
-
-    (** * Supported events
-
-       This framework does not support all kind of events yet. It does not support:
-       - memory tags
-       - Rejecting exclusive memory writes *)
-    Definition unsupported_event (ev : iEvent) : Prop :=
-      is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
-      is_mem_write_reqP (λ n wr r, is_Some (wr.(WriteReq.tag))) ev.
-
-    Definition has_only_supported_events (cd : t) : Prop :=
-      iEvent_list cd |> filter (λ '(_,ev), unsupported_event ev) = [].
-
+    (** Get an event at a given event ID in a pre-execution *)
+    Global Instance lookup_eid_candidate : Lookup EID.t iEvent t :=
+      λ eid cd, (pre_exec cd) !! eid.
+    #[global] Typeclasses Opaque lookup_eid_candidate.
 
     (** * Connection to final state *)
 
@@ -492,29 +886,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     (*         ) umap itrc.1 *)
     (*     ) (∅ : gmap reg reg_type) (cd.(events) !!! tid). *)
 
-
-    (** Get the final register maps of all threads from a candidate *)
-    Definition final_reg_map_tid (cd : t) (tid : fin nmth) :
-        registerMap :=
-      λ reg,
-      let oval :=
-        foldl (λ val itrc,
-            foldl (λ (val : option (reg_type reg)) ev,
-                match ev with
-                | RegWrite reg' _ val' &→ _ =>
-                    if decide (reg' = reg) is left e
-                    then Some (ctrans e val')
-                    else val
-                | _ => val
-                end
-              ) val itrc.1
-          ) None (cd.(events) !!! tid)
-      in
-      if oval is Some val then val else (cd.(init).(MState.regs) !!! tid) reg.
-
-    (** Get all the final register map from candidate *)
-    Definition final_reg_map (cd : t) : vec registerMap nmth :=
-      fun_to_vec (final_reg_map_tid cd).
 
     (** Get the last write for each pa in candidate. If it's not in the map, it
         was not written by the candidate *)
@@ -553,271 +924,10 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         option (MState.final nmth) :=
       MState.finalize (MState.MakeI (cd_to_MState cd) term).
 
-    (** * Utility relations **)
-
-
-    (** ** Relation building helpers *)
-
-    (** This helper computes an optional key from each eid and event pair of a
-        candidate using [get_key], and gathers all eids with the same key
-        together into a set. It returns a map from keys to sets of eids *)
-    Definition gather_by_key `{Countable K} (cd : t)
-        (get_key : EID.t -> iEvent -> option K) : gmap K (gset EID.t) :=
-      fold_left (λ acc '(eid, event), match get_key eid event with
-                                       | Some k => {[ k := {[eid]}]}
-                                       | None => ∅
-                                       end ∪ₘ acc) (event_list cd) ∅.
-    #[global] Typeclasses Opaque gather_by_key.
-
-    Global Instance set_elem_of_gather_by_key_lookup `{Countable K} (cd : t)
-      (get_key : EID.t → iEvent → option K) (k: K) (eid : EID.t):
-      SetUnfoldElemOf eid (gather_by_key cd get_key !!! k)
-        (∃ E, cd !! eid = Some E ∧ get_key eid E = Some k).
-    Proof.
-      tcclean.
-      unfold gather_by_key.
-      orewrite* (fold_left_inv_ND
-        (λ map tl, ∀ eid k,
-           eid ∈ map !!! k ↔
-             ∃ ev, cd !! eid = Some ev
-                   ∧ (eid, ev) ∉ tl
-                   ∧ get_key eid ev = Some k)).
-      - apply event_list_NoDup.
-      - clear eid k. intros eid k.
-        rewrite lookup_total_unfold.
-        setoid_rewrite event_list_match.
-        set_solver.
-      - clear eid k. intros map [eid ev] tl Hel Hntl Hinv eid' k.
-        rewrite <- event_list_match in Hel.
-        destruct (get_key eid ev) as [k' |] eqn:Hgk.
-        1: destruct decide subst k k'.
-        all: destruct decide subst eid eid'.
-        all: rewrite lookup_total_unfold.
-        all: set_unfold.
-        all: rewrite Hinv.
-        all: set_solver - Hinv.
-      - set_solver.
-    Qed.
-
-    Global Instance lookup_total_unfold_gather_by_key `{Countable K} (cd : t)
-        (get_key : EID.t → iEvent → option K) (k: K):
-      LookupTotalUnfold k (gather_by_key cd get_key)
-        (collect_all (λ eid event, get_key eid event = Some k) cd).
-    Proof. tcclean. set_solver. Qed.
-
-
-    Lemma gather_by_key_None `{Countable K} (cd : t)
-        (get_key : EID.t → iEvent → option K) (k : K):
-      gather_by_key cd get_key !! k = None ↔
-      ∀ eid ev, (eid, ev) ∈ event_list cd → get_key eid ev ≠ Some k.
-    Proof.
-      unfold gather_by_key.
-      orewrite* (fold_left_inv_ND
-        (λ map tl, ∀ k,
-           map !! k = None ↔
-             ∀ eid ev, (eid, ev) ∈ event_list cd →
-           (eid, ev) ∈ tl ∨ get_key eid ev ≠ Some k)).
-      - apply event_list_NoDup.
-      - clear k.
-        intro k.
-        rewrite lookup_unfold.
-        hauto lq:on.
-      - clear k. intros map [eid ev] tl Hel Hntl Hinv k.
-        destruct (get_key eid ev) as [k' |] eqn:Hgk.
-        1: destruct decide subst k k'.
-        all: rewrite lookup_unfold.
-        all: rewrite option_union_None.
-        all: rewrite Hinv; clear Hinv.
-        all: set_solver.
-      - set_solver.
-    Qed.
-
-    (** If there is an event with key [k], then [k] must in the gathered map *)
-    Lemma lookup_is_Some_gather_by_key `{Countable K} (cd : t)
-        (get_key : EID.t → iEvent → option K) (k: K):
-      (∃ eid event, (eid, event) ∈ event_list cd ∧ get_key eid event = Some k) →
-       is_Some (gather_by_key cd get_key !! k).
-    Proof.
-      destruct (gather_by_key cd get_key !! k) eqn:Heqn.
-      - done.
-      - rewrite gather_by_key_None in Heqn.
-        naive_solver.
-    Qed.
-
-    (** Returns an equivalence relation, such that two events are in the relation
-        iff they have the same key computed with [get_key] *)
-    Definition same_key `{Countable K} (get_key : EID.t -> iEvent -> option K)
-        (cd : t) :=
-      finmap_reduce_union (λ k s, s × s) (gather_by_key cd get_key).
-
-    (** An unfold instance for [same_key] *)
-    Global Instance set_elem_of_same_key `{Countable K} cd
-      get_key eids :
-      SetUnfoldElemOf eids
-        (same_key get_key cd)
-        (∃ E1 E2 (k: K), cd !! eids.1 = Some E1 ∧ cd !! eids.2 = Some E2
-                         ∧ get_key eids.1 E1 = Some k ∧ get_key eids.2 E2 = Some k).
-    Proof.
-      tcclean. destruct eids.
-      set_unfold.
-      split.
-      - intros (?&?&?&?).
-        lookup_lookup_total; set_solver.
-      - intros (?&?&k&?). destruct_and!.
-        opose proof* (lookup_is_Some_gather_by_key cd get_key k) as [? HSome].
-        { set_solver. }
-        do 2 eexists.
-        repeat split_and; first eassumption.
-        all: lookup_lookup_total; set_solver.
-    Qed.
-    #[global] Typeclasses Opaque same_key.
-
-
-    (** ** Thread and instruction based orders and relations *)
-
-    (** Equivalence relation relating events from the same thread *)
-    Definition same_thread : t → grel EID.t :=
-      same_key (λ eid _, Some (eid.(EID.tid))).
-    #[global] Typeclasses Opaque same_thread.
-    #[global] Instance set_elem_of_same_thread (cd : t) eids:
-      SetUnfoldElemOf eids (same_thread cd)
-        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-           eids.1.(EID.tid) = eids.2.(EID.tid)).
-    Proof.
-      tcclean.
-      destruct eids.
-      unfold same_thread.
-      set_unfold.
-      hauto q:on.
-    Qed.
-
-
-    (** Equivalence relation relating events from the same instruction instance *)
-    Definition same_instruction_instance : t → grel EID.t :=
-      same_key (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
-    #[global] Typeclasses Opaque same_instruction_instance.
-    #[global] Instance set_elem_of_same_instruction_instance (cd : t) eids:
-      SetUnfoldElemOf eids (same_instruction_instance cd)
-        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
-           eids.1.(EID.iid) = eids.2.(EID.iid)).
-    Proof.
-      tcclean.
-      destruct eids.
-      unfold same_instruction_instance.
-      set_unfold.
-      hauto q:on.
-    Qed.
-
-    (** Equivalence relation relating bytes event from the same memory access *)
-    Definition same_access : t → grel EID.t :=
-      same_key
-        (λ eid _, Some (eid.(EID.tid), eid.(EID.iid), eid.(EID.ieid))).
-    #[global] Typeclasses Opaque same_access.
-    #[global] Instance set_elem_of_same_access (cd : t) eids:
-      SetUnfoldElemOf eids (same_access cd)
-        (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
-           eids.1.(EID.iid) = eids.2.(EID.iid) ∧
-           eids.1.(EID.ieid) = eids.2.(EID.ieid)).
-    Proof.
-      tcclean.
-      destruct eids.
-      unfold same_access.
-      set_unfold.
-      hauto q:on.
-    Qed.
-
-    (** Intra Instruction Order: The order in which events ran inside an
-        instruction
-
-        This is intended to disappear in future versions,
-        try not to depend on it *)
-    Definition iio (cd : t) :=
-      same_instruction_instance cd
-      |> filter (λ eids, eids.1.(EID.ieid) < eids.2.(EID.ieid)).
-    #[global] Typeclasses Opaque iio.
-    #[global] Instance set_elem_of_iio (cd : t) eids:
-    SetUnfoldElemOf eids (iio cd)
-      (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-         eids.1.(EID.tid) = eids.2.(EID.tid) ∧
-         eids.1.(EID.iid) = eids.2.(EID.iid) ∧
-         eids.1.(EID.ieid) < eids.2.(EID.ieid)).
-    Proof.
-      tcclean.
-      destruct eids.
-      unfold iio.
-      set_unfold.
-      naive_solver lia.
-    Qed.
-
-    (** Order in which the instructions architecturally ran. This does not mean
-        they micro-architecturally run in that specific order. This is an inter
-        instruction order, it does not order the events inside an instructions
-        (see [iio] for that) *)
-    Definition instruction_order (cd : t) :=
-      same_thread cd
-      |> filter (λ eids, eids.1.(EID.iid) < eids.2.(EID.iid)).
-    #[global] Typeclasses Opaque instruction_order.
-    #[global] Instance set_elem_of_instruction_order (cd : t) eids:
-    SetUnfoldElemOf eids (instruction_order cd)
-      (is_Some (cd !! eids.1) ∧ is_Some (cd !! eids.2) ∧
-         eids.1.(EID.tid) = eids.2.(EID.tid) ∧
-         eids.1.(EID.iid) < eids.2.(EID.iid)).
-    Proof.
-      tcclean.
-      destruct eids.
-      unfold instruction_order.
-      set_unfold.
-      naive_solver lia.
-    Qed.
-
-    (** Complete thread order. This is a strict partial order on each thread
-        events denoting event that happened sequentially before other according
-        to the program and instruction semantics. This does NOT means that this
-        order implies any kind of weak memory ordering *)
-    Definition full_instruction_order (cd : t) := instruction_order cd ∪ iio cd.
-
 
 
     (** ** Memory based relations *)
 
-    Implicit Type ev : iEvent.
-
-    (** Equivalence relation relating memory events that have the same physical
-        address. In an [MixedSize] model which splits reads but not write, this
-        is based on the pa of the whole read *)
-    Definition same_pa : t → grel EID.t :=
-      same_key (λ _, get_pa).
-    Typeclasses Opaque same_pa.
-
-    Definition get_pa_footprint (eid : EID.t) ev : option (pa * N) :=
-      pa ← get_pa ev;
-      match eid.(EID.byte) with
-      | None => get_size ev |$> (pa,.)
-      | Some n => Some (pa_addN pa n, 1%N)
-      end.
-    Typeclasses Opaque get_pa_footprint.
-
-    (** Equivalence relation relating memory events that have the same size. *)
-    Definition same_size : t → grel EID.t :=
-      same_key (λ _, get_size).
-    Typeclasses Opaque same_size.
-
-    Definition same_footprint cd := same_pa cd ∩ same_size cd.
-
-    (** Equivalence relation relating memory event that have the same size and value *)
-    Definition same_mem_value : t → grel EID.t :=
-      same_key (λ _, get_mem_value).
-    Typeclasses Opaque same_mem_value.
-
-    Lemma same_mem_value_size (cd : t) :
-      same_mem_value cd ⊆ same_size cd.
-    Proof.
-      unfold same_mem_value,same_size.
-      set_unfold.
-      hauto lq:on rew:off use:get_mem_value_size.
-    Qed.
 
     (** The set of initial memory reads *)
     Definition init_mem_reads cd :=
@@ -875,29 +985,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     (** ** Register based relations *)
 
 
-
-    (** Equivalence relation relating register events referring to the same
-    register *)
-    Definition same_reg : t →  grel EID.t :=
-      same_key (λ eid ev, get_reg ev |$> (EID.tid eid,.)).
-    Typeclasses Opaque same_reg.
-
-    (** Equivalence relation relating register events refering to the same
-    register with the same value *)
-    Definition same_reg_val : t →  grel EID.t :=
-      same_key (λ eid ev, get_reg_val ev |$> (EID.tid eid,.)).
-    Typeclasses Opaque same_reg_val.
-
-    Lemma same_reg_val_same_reg (cd : t) :
-      same_reg_val cd ⊆ same_reg cd.
-    Proof.
-      unfold same_reg,same_reg_val.
-      set_unfold.
-      cdestruct_intros #CDestrCbnSubst #CDestrEqSome.
-      setoid_rewrite eq_some_unfold.
-      hauto lq:on rew:off use:get_reg_val_get_reg.
-    Qed.
-
     (** The set of initial register reads *)
     Definition initial_reg_reads cd :=
       reg_reads cd ∖ grel_rng (reg_reads_from cd).
@@ -910,44 +997,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       ⦗reg_reads cd⦘⨾ same_reg cd ⨾⦗reg_writes cd⦘
         ∖ ((instruction_order cd ∪ ⦗reg_writes cd⦘)⨾ reg_reads_from cd)⁻¹.
     #[global] Typeclasses Opaque reg_from_reads.
-
-
-
-    Definition is_valid_init_reg_read (cd : t) (eid : EID.t) : iEvent → Prop :=
-      is_reg_readP (λ reg _ rv,
-          match cd.(init).(MState.regs) !! eid.(EID.tid) with
-          | Some regmap => rv = regmap reg
-          | None => False
-          end).
-
-    Definition is_valid_init_reg_read_spec (cd : t) (eid : EID.t) (ev : iEvent):
-      is_valid_init_reg_read cd eid ev ↔
-        ∃ reg reg_acc rv,
-          (ev = RegRead reg reg_acc &→ rv) ∧
-            ∃ H : eid.(EID.tid) < nmth,
-              (cd.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
-    Proof.
-      unfold is_valid_init_reg_read.
-      split; cdestruct_intros #CDestrCbnSubst #CDestrMatch #CDestrEqSome.
-      - naive_solver.
-      - cbn. by erewrite vec_lookup_nat_in.
-    Qed.
-    Definition is_valid_init_reg_read_cdestr cd eid ev :=
-      cdestr_simpl (is_valid_init_reg_read_spec cd eid ev).
-    #[global] Existing Instance is_valid_init_reg_read_cdestr.
-
-    Definition possible_initial_reg_reads cd :=
-      collect_all (is_valid_init_reg_read cd) cd.
-    #[global] Typeclasses Opaque possible_initial_reg_reads.
-
-    Lemma possible_initial_reg_reads_ok cd :
-      possible_initial_reg_reads cd ⊆ reg_reads cd.
-    Proof.
-      unfold possible_initial_reg_reads.
-      set_unfold.
-      cdestruct_intros # CDestrCbnSubst.
-      naive_solver.
-    Qed.
 
     Definition pc_reads_from cd := ⦗pc_writes cd⦘⨾ reg_reads_from cd ⨾⦗pc_reads cd⦘.
     Definition reg_reads_from_data cd := reg_reads_from cd ∖ pc_reads_from cd.
@@ -979,13 +1028,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
              that both accesses are the same size *)
       end.
 
-    Definition is_valid_init_mem_read (cd : t) (eid : EID.t) :=
-      is_Some $
-      read ← cd !! eid;
-      guard (is_mem_read read);;
-      pa ← get_pa read;
-      val ← get_mem_value read;
-      guard' (val = memoryMap_read cd.(init).(MState.memory) pa (bvn_n val / 8)).
+
 
     Record reads_from_wf {cd : t} :=
       {
@@ -1059,7 +1102,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     Lemma rrf_same_reg (cd : t) :
       reg_reads_from_wf cd → reg_reads_from cd ⊆ same_reg cd.
-    Proof. intros []. set_solver use same_reg_val_same_reg. Qed.
+    Proof. intros []. set_solver use (@same_reg_val_same_reg et). Qed.
 
     Lemma rrf_reg_reads_decomp (cd : t) :
       reg_reads_from_wf cd →
