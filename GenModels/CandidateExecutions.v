@@ -745,6 +745,43 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         hauto lq:on rew:off use:get_mem_value_size.
       Qed.
 
+      (** Decide if two memory event are overlapping. False is either of them is
+      not a memory event *)
+      Definition is_overlapping pe (eid1 eid2 : EID.t) : Prop :=
+        is_Some $
+          e1 ← pe !! eid1;
+          '(pa1, size1) ← get_pa_footprint eid1 e1;
+          e2 ← pe !! eid2;
+          '(pa2, size2) ← get_pa_footprint eid2 e2;
+          guard' (pa_overlap pa1 size1 pa2 size2).
+
+      Lemma is_overlapping_sym pe eid1 eid2 :
+        is_overlapping pe eid1 eid2 → is_overlapping pe eid2 eid1.
+      Proof.
+        unfold is_overlapping, is_Some in *.
+        cdestruct |- ? # CDestrEqSome.
+        typeclasses eauto with core pa option.
+      Qed.
+
+      Lemma is_overlapping_sym_iff pe eid1 eid2 :
+        is_overlapping pe eid1 eid2 ↔ is_overlapping pe eid2 eid1.
+      Proof. split; apply is_overlapping_sym. Qed.
+
+      (** Relates overlapping memory event *)
+      Definition overlapping pe :=
+        mem_events pe × mem_events pe
+        |> filter (λ '(eid1, eid2), is_overlapping pe eid1 eid2).
+
+      Lemma overlapping_sym pe : grel_symmetric (overlapping pe).
+      Proof.
+        rewrite grel_symmetric_spec.
+        use is_overlapping_sym.
+        set_solver.
+      Qed.
+
+      (** Decide if a pre-execution does not involve mixed size accesses *)
+      Definition is_nms pe := overlapping pe ⊆ same_footprint pe.
+
       (** ** Register based relations *)
 
       (** Equivalence relation relating register events referring to the same
@@ -932,42 +969,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Definition init_mem_reads cd :=
       mem_reads cd ∖ grel_rng (reads_from cd).
     #[global] Typeclasses Opaque init_mem_reads.
-
-    (** Decide if two memory event are overlapping. False is either of them is
-        not a memory event *)
-    Definition is_overlapping (cd : t) (eid1 eid2 : EID.t) : Prop :=
-      is_Some $
-        e1 ← cd !! eid1;
-        '(pa1, size1) ← get_pa_footprint eid1 e1;
-        e2 ← cd !! eid2;
-        '(pa2, size2) ← get_pa_footprint eid2 e2;
-        guard' (pa_overlap pa1 size1 pa2 size2).
-
-    Lemma is_overlapping_sym cd eid1 eid2 :
-      is_overlapping cd eid1 eid2 → is_overlapping cd eid2 eid1.
-    Proof.
-      unfold is_overlapping, is_Some in *.
-      cdestruct |- ? # CDestrEqSome.
-      typeclasses eauto with core pa option.
-    Qed.
-    Lemma is_overlapping_sym_iff cd eid1 eid2 :
-      is_overlapping cd eid1 eid2 ↔ is_overlapping cd eid2 eid1.
-    Proof. split; apply is_overlapping_sym. Qed.
-
-    (** Relates overlapping memory event *)
-    Definition overlapping (cd : t) :=
-      mem_events cd × mem_events cd
-      |> filter (λ '(eid1, eid2), is_overlapping cd eid1 eid2).
-
-    Lemma overlapping_sym cd : grel_symmetric (overlapping cd).
-    Proof.
-      rewrite grel_symmetric_spec.
-      use is_overlapping_sym.
-      set_solver.
-    Qed.
-
-    (** Decide if a candidate does not involve mixed size accesses *)
-    Definition is_nms cd := overlapping cd ⊆ same_footprint cd.
 
     (** The definition of [from_reads] is a bit unusual, because initial
         memory/initial writes are not represented as events. A write event is
