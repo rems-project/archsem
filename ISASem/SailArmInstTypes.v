@@ -78,15 +78,15 @@ Open Scope Z.
 
 Inductive Access_strength := AS_normal | AS_rel_or_acq | AS_acq_rcpc.
 Scheme Equality for Access_strength.
-#[export] Instance Decidable_eq_Access_strength :
-forall (x y : Access_strength), Decidable (x = y) :=
-Decidable_eq_from_dec Access_strength_eq_dec.
+(* #[export] Instance Decidable_eq_Access_strength : *)
+(* forall (x y : Access_strength), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Access_strength_eq_dec. *)
 
 Inductive Access_variety := AV_plain | AV_exclusive | AV_atomic_rmw.
 Scheme Equality for Access_variety.
-#[export] Instance Decidable_eq_Access_variety :
-forall (x y : Access_variety), Decidable (x = y) :=
-Decidable_eq_from_dec Access_variety_eq_dec.
+(* #[export] Instance Decidable_eq_Access_variety : *)
+(* forall (x y : Access_variety), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Access_variety_eq_dec. *)
 
 Definition bits (n : Z) :=
   match n with
@@ -113,75 +113,74 @@ Inductive Access_kind {arch_ak : Type} :=
   | AK_arch : arch_ak -> Access_kind.
 Arguments Access_kind : clear implicits.
 
-Record Mem_read_request {n : Z} {vasize : Z} {pa : Type} {ts : Type} {arch_ak : Type}`{ArithFact (n >?
-  0)} :=
-  { Mem_read_request_access_kind : Access_kind arch_ak;
-    Mem_read_request_va : option (bits vasize);
-    Mem_read_request_pa : pa;
-    Mem_read_request_translation : ts;
-    Mem_read_request_size : Z;
-    Mem_read_request_tag : bool; }.
-Arguments Mem_read_request _ _ _ _ _ {_}.
-Notation "{[ r 'with' 'Mem_read_request_access_kind' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ _ f1 f2 f3 f4 f5 =>
-    Build_Mem_read_request _ _ _ _ _ e f1 f2 f3 f4 f5 end.
-Notation "{[ r 'with' 'Mem_read_request_va' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ f0 _ f2 f3 f4 f5 =>
-    Build_Mem_read_request _ _ _ _ _ f0 e f2 f3 f4 f5 end.
-Notation "{[ r 'with' 'Mem_read_request_pa' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 _ f3 f4 f5 =>
-    Build_Mem_read_request _ _ _ _ _ f0 f1 e f3 f4 f5 end.
-Notation "{[ r 'with' 'Mem_read_request_translation' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 _ f4 f5 =>
-    Build_Mem_read_request _ _ _ _ _ f0 f1 f2 e f4 f5 end.
-Notation "{[ r 'with' 'Mem_read_request_size' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 f3 _ f5 =>
-    Build_Mem_read_request _ _ _ _ _ f0 f1 f2 f3 e f5 end.
-Notation "{[ r 'with' 'Mem_read_request_tag' := e ]}" :=
-  match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 f3 f4 _ =>
-    Build_Mem_read_request _ _ _ _ _ f0 f1 f2 f3 f4 e end.
+(* Record Mem_read_request {n : Z} {vasize : Z} {pa : Type} {ts : Type} {arch_ak : Type:= *)
+(*   { Mem_read_request_access_kind : Access_kind arch_ak; *)
+(*     Mem_read_request_va : option (bits vasize); *)
+(*     Mem_read_request_pa : pa; *)
+(*     Mem_read_request_translation : ts; *)
+(*     Mem_read_request_size : Z; *)
+(*     Mem_read_request_tag : bool; }. *)
+(* Arguments Mem_read_request _ _ _ _ _ {_}. *)
+(* Notation "{[ r 'with' 'Mem_read_request_access_kind' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ _ f1 f2 f3 f4 f5 => *)
+(*     Build_Mem_read_request _ _ _ _ _ e f1 f2 f3 f4 f5 end. *)
+(* Notation "{[ r 'with' 'Mem_read_request_va' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ f0 _ f2 f3 f4 f5 => *)
+(*     Build_Mem_read_request _ _ _ _ _ f0 e f2 f3 f4 f5 end. *)
+(* Notation "{[ r 'with' 'Mem_read_request_pa' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 _ f3 f4 f5 => *)
+(*     Build_Mem_read_request _ _ _ _ _ f0 f1 e f3 f4 f5 end. *)
+(* Notation "{[ r 'with' 'Mem_read_request_translation' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 _ f4 f5 => *)
+(*     Build_Mem_read_request _ _ _ _ _ f0 f1 f2 e f4 f5 end. *)
+(* Notation "{[ r 'with' 'Mem_read_request_size' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 f3 _ f5 => *)
+(*     Build_Mem_read_request _ _ _ _ _ f0 f1 f2 f3 e f5 end. *)
+(* Notation "{[ r 'with' 'Mem_read_request_tag' := e ]}" := *)
+(*   match r with Build_Mem_read_request _ _ _ _ _ _ f0 f1 f2 f3 f4 _ => *)
+(*     Build_Mem_read_request _ _ _ _ _ f0 f1 f2 f3 f4 e end. *)
 
-Record Mem_write_request {n : Z} {vasize : Z} {pa : Type} {ts : Type} {arch_ak : Type}`{ArithFact (n >?
-  0)} :=
-  { Mem_write_request_access_kind : Access_kind arch_ak;
-    Mem_write_request_va : option (bits vasize);
-    Mem_write_request_pa : pa;
-    Mem_write_request_translation : ts;
-    Mem_write_request_size : Z;
-    Mem_write_request_value : option (bits (8 * n));
-    Mem_write_request_tag : option bool; }.
-Arguments Mem_write_request _ _ _ _ _ {_}.
-Notation "{[ r 'with' 'Mem_write_request_access_kind' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ _ f1 f2 f3 f4 f5 f6 =>
-    Build_Mem_write_request _ _ _ _ _ e f1 f2 f3 f4 f5 f6 end.
-Notation "{[ r 'with' 'Mem_write_request_va' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 _ f2 f3 f4 f5 f6 =>
-    Build_Mem_write_request _ _ _ _ _ f0 e f2 f3 f4 f5 f6 end.
-Notation "{[ r 'with' 'Mem_write_request_pa' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 _ f3 f4 f5 f6 =>
-    Build_Mem_write_request _ _ _ _ _ f0 f1 e f3 f4 f5 f6 end.
-Notation "{[ r 'with' 'Mem_write_request_translation' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 _ f4 f5 f6 =>
-    Build_Mem_write_request _ _ _ _ _ f0 f1 f2 e f4 f5 f6 end.
-Notation "{[ r 'with' 'Mem_write_request_size' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 _ f5 f6 =>
-    Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 e f5 f6 end.
-Notation "{[ r 'with' 'Mem_write_request_value' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 f4 _ f6 =>
-    Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 f4 e f6 end.
-Notation "{[ r 'with' 'Mem_write_request_tag' := e ]}" :=
-  match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 f4 f5 _ =>
-    Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 f4 f5 e end.
+(* Record Mem_write_request {n : Z} {vasize : Z} {pa : Type} {ts : Type} {arch_ak : Type}`{ArithFact (n >? *)
+(*   0)} := *)
+(*   { Mem_write_request_access_kind : Access_kind arch_ak; *)
+(*     Mem_write_request_va : option (bits vasize); *)
+(*     Mem_write_request_pa : pa; *)
+(*     Mem_write_request_translation : ts; *)
+(*     Mem_write_request_size : Z; *)
+(*     Mem_write_request_value : option (bits (8 * n)); *)
+(*     Mem_write_request_tag : option bool; }. *)
+(* Arguments Mem_write_request _ _ _ _ _ {_}. *)
+(* Notation "{[ r 'with' 'Mem_write_request_access_kind' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ _ f1 f2 f3 f4 f5 f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ e f1 f2 f3 f4 f5 f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_va' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 _ f2 f3 f4 f5 f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 e f2 f3 f4 f5 f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_pa' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 _ f3 f4 f5 f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 f1 e f3 f4 f5 f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_translation' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 _ f4 f5 f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 f1 f2 e f4 f5 f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_size' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 _ f5 f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 e f5 f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_value' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 f4 _ f6 => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 f4 e f6 end. *)
+(* Notation "{[ r 'with' 'Mem_write_request_tag' := e ]}" := *)
+(*   match r with Build_Mem_write_request _ _ _ _ _ _ f0 f1 f2 f3 f4 f5 _ => *)
+(*     Build_Mem_write_request _ _ _ _ _ f0 f1 f2 f3 f4 f5 e end. *)
 
-Record Mem_write_announce_address {n : Z} {vasize : Z} {pa : Type} :=
-  { Mem_write_announce_address_pa : pa; Mem_write_announce_address_size : Z; }.
-Arguments Mem_write_announce_address : clear implicits.
-Notation "{[ r 'with' 'Mem_write_announce_address_pa' := e ]}" :=
-  match r with Build_Mem_write_announce_address _ _ _ _ f1 =>
-    Build_Mem_write_announce_address _ _ _ e f1 end.
-Notation "{[ r 'with' 'Mem_write_announce_address_size' := e ]}" :=
-  match r with Build_Mem_write_announce_address _ _ _ f0 _ =>
-    Build_Mem_write_announce_address _ _ _ f0 e end.
+(* Record Mem_write_announce_address {n : Z} {vasize : Z} {pa : Type} := *)
+(*   { Mem_write_announce_address_pa : pa; Mem_write_announce_address_size : Z; }. *)
+(* Arguments Mem_write_announce_address : clear implicits. *)
+(* Notation "{[ r 'with' 'Mem_write_announce_address_pa' := e ]}" := *)
+(*   match r with Build_Mem_write_announce_address _ _ _ _ f1 => *)
+(*     Build_Mem_write_announce_address _ _ _ e f1 end. *)
+(* Notation "{[ r 'with' 'Mem_write_announce_address_size' := e ]}" := *)
+(*   match r with Build_Mem_write_announce_address _ _ _ f0 _ => *)
+(*     Build_Mem_write_announce_address _ _ _ f0 e end. *)
 
 Inductive Exception :=
   Exception_Uncategorized
@@ -224,15 +223,15 @@ Inductive Exception :=
   | Exception_MemCpyMemSet
   | Exception_FIQ.
 Scheme Equality for Exception.
-#[export] Instance Decidable_eq_Exception :
-forall (x y : Exception), Decidable (x = y) :=
-Decidable_eq_from_dec Exception_eq_dec.
+(* #[export] Instance Decidable_eq_Exception : *)
+(* forall (x y : Exception), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Exception_eq_dec. *)
 
 Inductive PASpace := PAS_NonSecure | PAS_Secure | PAS_Root | PAS_Realm.
 Scheme Equality for PASpace.
-#[export] Instance Decidable_eq_PASpace :
-forall (x y : PASpace), Decidable (x = y) :=
-Decidable_eq_from_dec PASpace_eq_dec.
+(* #[export] Instance Decidable_eq_PASpace : *)
+(* forall (x y : PASpace), Decidable (x = y) := *)
+(* Decidable_eq_from_dec PASpace_eq_dec. *)
 
 Record FullAddress  := { FullAddress_paspace : PASpace; FullAddress_address : bits 52; }.
 Arguments FullAddress : clear implicits.
@@ -282,9 +281,9 @@ Notation "{[ r 'with' 'ExceptionRecord_trappedsyscallinst' := e ]}" :=
 
 Inductive SecurityState := SS_NonSecure | SS_Root | SS_Realm | SS_Secure.
 Scheme Equality for SecurityState.
-#[export] Instance Decidable_eq_SecurityState :
-forall (x y : SecurityState), Decidable (x = y) :=
-Decidable_eq_from_dec SecurityState_eq_dec.
+(* #[export] Instance Decidable_eq_SecurityState : *)
+(* forall (x y : SecurityState), Decidable (x = y) := *)
+(* Decidable_eq_from_dec SecurityState_eq_dec. *)
 
 Inductive AccType :=
   AccType_NORMAL
@@ -317,9 +316,9 @@ Inductive AccType :=
   | AccType_ATPAN
   | AccType_AT.
 Scheme Equality for AccType.
-#[export] Instance Decidable_eq_AccType :
-forall (x y : AccType), Decidable (x = y) :=
-Decidable_eq_from_dec AccType_eq_dec.
+(* #[export] Instance Decidable_eq_AccType : *)
+(* forall (x y : AccType), Decidable (x = y) := *)
+(* Decidable_eq_from_dec AccType_eq_dec. *)
 
 Inductive Fault :=
   Fault_None
@@ -346,15 +345,15 @@ Inductive Fault :=
   | Fault_Exclusive
   | Fault_ICacheMaint.
 Scheme Equality for Fault.
-#[export] Instance Decidable_eq_Fault :
-forall (x y : Fault), Decidable (x = y) :=
-Decidable_eq_from_dec Fault_eq_dec.
+(* #[export] Instance Decidable_eq_Fault : *)
+(* forall (x y : Fault), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Fault_eq_dec. *)
 
 Inductive GPCF := GPCF_None | GPCF_AddressSize | GPCF_Walk | GPCF_EABT | GPCF_Fail.
 Scheme Equality for GPCF.
-#[export] Instance Decidable_eq_GPCF :
-forall (x y : GPCF), Decidable (x = y) :=
-Decidable_eq_from_dec GPCF_eq_dec.
+(* #[export] Instance Decidable_eq_GPCF : *)
+(* forall (x y : GPCF), Decidable (x = y) := *)
+(* Decidable_eq_from_dec GPCF_eq_dec. *)
 
 Record GPCFRecord  := { GPCFRecord_gpf : GPCF; GPCFRecord_level : Z; }.
 Arguments GPCFRecord : clear implicits.
@@ -424,9 +423,9 @@ Notation "{[ r 'with' 'FaultRecord_debugmoe' := e ]}" :=
 
 Inductive DeviceType := DeviceType_GRE | DeviceType_nGRE | DeviceType_nGnRE | DeviceType_nGnRnE.
 Scheme Equality for DeviceType.
-#[export] Instance Decidable_eq_DeviceType :
-forall (x y : DeviceType), Decidable (x = y) :=
-Decidable_eq_from_dec DeviceType_eq_dec.
+(* #[export] Instance Decidable_eq_DeviceType : *)
+(* forall (x y : DeviceType), Decidable (x = y) := *)
+(* Decidable_eq_from_dec DeviceType_eq_dec. *)
 
 Record MemAttrHints  :=
   { MemAttrHints_attrs : bits 2; MemAttrHints_hints : bits 2; MemAttrHints_transient : bool; }.
@@ -440,15 +439,15 @@ Notation "{[ r 'with' 'MemAttrHints_transient' := e ]}" :=
 
 Inductive MemType := MemType_Normal | MemType_Device.
 Scheme Equality for MemType.
-#[export] Instance Decidable_eq_MemType :
-forall (x y : MemType), Decidable (x = y) :=
-Decidable_eq_from_dec MemType_eq_dec.
+(* #[export] Instance Decidable_eq_MemType : *)
+(* forall (x y : MemType), Decidable (x = y) := *)
+(* Decidable_eq_from_dec MemType_eq_dec. *)
 
 Inductive Shareability := Shareability_NSH | Shareability_ISH | Shareability_OSH.
 Scheme Equality for Shareability.
-#[export] Instance Decidable_eq_Shareability :
-forall (x y : Shareability), Decidable (x = y) :=
-Decidable_eq_from_dec Shareability_eq_dec.
+(* #[export] Instance Decidable_eq_Shareability : *)
+(* forall (x y : Shareability), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Shareability_eq_dec. *)
 
 Record MemoryAttributes  :=
   { MemoryAttributes_memtype : MemType;
@@ -483,15 +482,15 @@ Notation "{[ r 'with' 'MemoryAttributes_xs' := e ]}" :=
 
 Inductive Regime := Regime_EL3 | Regime_EL30 | Regime_EL2 | Regime_EL20 | Regime_EL10.
 Scheme Equality for Regime.
-#[export] Instance Decidable_eq_Regime :
-forall (x y : Regime), Decidable (x = y) :=
-Decidable_eq_from_dec Regime_eq_dec.
+(* #[export] Instance Decidable_eq_Regime : *)
+(* forall (x y : Regime), Decidable (x = y) := *)
+(* Decidable_eq_from_dec Regime_eq_dec. *)
 
 Inductive TGx := TGx_4KB | TGx_16KB | TGx_64KB.
 Scheme Equality for TGx.
-#[export] Instance Decidable_eq_TGx :
-forall (x y : TGx), Decidable (x = y) :=
-Decidable_eq_from_dec TGx_eq_dec.
+(* #[export] Instance Decidable_eq_TGx : *)
+(* forall (x y : TGx), Decidable (x = y) := *)
+(* Decidable_eq_from_dec TGx_eq_dec. *)
 
 Record PhysMemRetStatus  :=
   { PhysMemRetStatus_statuscode : Fault;
@@ -764,9 +763,9 @@ Notation "{[ r 'with' 'S2TTWParams_vm' := e ]}" :=
 
 Inductive CacheOp := CacheOp_Clean | CacheOp_Invalidate | CacheOp_CleanInvalidate.
 Scheme Equality for CacheOp.
-#[export] Instance Decidable_eq_CacheOp :
-forall (x y : CacheOp), Decidable (x = y) :=
-Decidable_eq_from_dec CacheOp_eq_dec.
+(* #[export] Instance Decidable_eq_CacheOp : *)
+(* forall (x y : CacheOp), Decidable (x = y) := *)
+(* Decidable_eq_from_dec CacheOp_eq_dec. *)
 
 Inductive CacheOpScope :=
   CacheOpScope_SetWay
@@ -777,9 +776,9 @@ Inductive CacheOpScope :=
   | CacheOpScope_ALLU
   | CacheOpScope_ALLUIS.
 Scheme Equality for CacheOpScope.
-#[export] Instance Decidable_eq_CacheOpScope :
-forall (x y : CacheOpScope), Decidable (x = y) :=
-Decidable_eq_from_dec CacheOpScope_eq_dec.
+(* #[export] Instance Decidable_eq_CacheOpScope : *)
+(* forall (x y : CacheOpScope), Decidable (x = y) := *)
+(* Decidable_eq_from_dec CacheOpScope_eq_dec. *)
 
 Inductive CachePASpace :=
   CPAS_NonSecure
@@ -790,15 +789,15 @@ Inductive CachePASpace :=
   | CPAS_SecureNonSecure
   | CPAS_Secure.
 Scheme Equality for CachePASpace.
-#[export] Instance Decidable_eq_CachePASpace :
-forall (x y : CachePASpace), Decidable (x = y) :=
-Decidable_eq_from_dec CachePASpace_eq_dec.
+(* #[export] Instance Decidable_eq_CachePASpace : *)
+(* forall (x y : CachePASpace), Decidable (x = y) := *)
+(* Decidable_eq_from_dec CachePASpace_eq_dec. *)
 
 Inductive CacheType := CacheType_Data | CacheType_Tag | CacheType_Data_Tag | CacheType_Instruction.
 Scheme Equality for CacheType.
-#[export] Instance Decidable_eq_CacheType :
-forall (x y : CacheType), Decidable (x = y) :=
-Decidable_eq_from_dec CacheType_eq_dec.
+(* #[export] Instance Decidable_eq_CacheType : *)
+(* forall (x y : CacheType), Decidable (x = y) := *)
+(* Decidable_eq_from_dec CacheType_eq_dec. *)
 
 Record CacheRecord  :=
   { CacheRecord_acctype : AccType;
@@ -877,15 +876,15 @@ Notation "{[ r 'with' 'CacheRecord_cpas' := e ]}" :=
 
 Inductive TLBILevel := TLBILevel_Any | TLBILevel_Last.
 Scheme Equality for TLBILevel.
-#[export] Instance Decidable_eq_TLBILevel :
-forall (x y : TLBILevel), Decidable (x = y) :=
-Decidable_eq_from_dec TLBILevel_eq_dec.
+(* #[export] Instance Decidable_eq_TLBILevel : *)
+(* forall (x y : TLBILevel), Decidable (x = y) := *)
+(* Decidable_eq_from_dec TLBILevel_eq_dec. *)
 
 Inductive TLBIMemAttr := TLBI_AllAttr | TLBI_ExcludeXS.
 Scheme Equality for TLBIMemAttr.
-#[export] Instance Decidable_eq_TLBIMemAttr :
-forall (x y : TLBIMemAttr), Decidable (x = y) :=
-Decidable_eq_from_dec TLBIMemAttr_eq_dec.
+(* #[export] Instance Decidable_eq_TLBIMemAttr : *)
+(* forall (x y : TLBIMemAttr), Decidable (x = y) := *)
+(* Decidable_eq_from_dec TLBIMemAttr_eq_dec. *)
 
 Inductive TLBIOp :=
   TLBIOp_DALL
@@ -907,9 +906,9 @@ Inductive TLBIOp :=
   | TLBIOp_RPA
   | TLBIOp_PAALL.
 Scheme Equality for TLBIOp.
-#[export] Instance Decidable_eq_TLBIOp :
-forall (x y : TLBIOp), Decidable (x = y) :=
-Decidable_eq_from_dec TLBIOp_eq_dec.
+(* #[export] Instance Decidable_eq_TLBIOp : *)
+(* forall (x y : TLBIOp), Decidable (x = y) := *)
+(* Decidable_eq_from_dec TLBIOp_eq_dec. *)
 
 Record TLBIRecord  :=
   { TLBIRecord_op : TLBIOp;
@@ -968,15 +967,15 @@ Inductive MBReqDomain :=
   | MBReqDomain_OuterShareable
   | MBReqDomain_FullSystem.
 Scheme Equality for MBReqDomain.
-#[export] Instance Decidable_eq_MBReqDomain :
-forall (x y : MBReqDomain), Decidable (x = y) :=
-Decidable_eq_from_dec MBReqDomain_eq_dec.
+(* #[export] Instance Decidable_eq_MBReqDomain : *)
+(* forall (x y : MBReqDomain), Decidable (x = y) := *)
+(* Decidable_eq_from_dec MBReqDomain_eq_dec. *)
 
 Inductive MBReqTypes := MBReqTypes_Reads | MBReqTypes_Writes | MBReqTypes_All.
 Scheme Equality for MBReqTypes.
-#[export] Instance Decidable_eq_MBReqTypes :
-forall (x y : MBReqTypes), Decidable (x = y) :=
-Decidable_eq_from_dec MBReqTypes_eq_dec.
+(* #[export] Instance Decidable_eq_MBReqTypes : *)
+(* forall (x y : MBReqTypes), Decidable (x = y) := *)
+(* Decidable_eq_from_dec MBReqTypes_eq_dec. *)
 
 Inductive MemBarrierOp :=
   MemBarrierOp_DSB
@@ -986,11 +985,11 @@ Inductive MemBarrierOp :=
   | MemBarrierOp_PSSBB
   | MemBarrierOp_SB.
 Scheme Equality for MemBarrierOp.
-#[export] Instance Decidable_eq_MemBarrierOp :
-forall (x y : MemBarrierOp), Decidable (x = y) :=
-Decidable_eq_from_dec MemBarrierOp_eq_dec.
+(* #[export] Instance Decidable_eq_MemBarrierOp : *)
+(* forall (x y : MemBarrierOp), Decidable (x = y) := *)
+(* Decidable_eq_from_dec MemBarrierOp_eq_dec. *)
 
-Definition Level  : Type := {rangevar : Z & ArithFact ((-1 <=? rangevar) && (rangevar <=? 4))}.
+Definition Level  : Type := {rangevar : Z | ((-1 <=? rangevar) && (rangevar <=? 4))}.
 
 Record TranslationInfo  :=
   { TranslationInfo_regime : Regime;
@@ -1155,7 +1154,7 @@ Definition set_regval (reg_name : string) (v : register_value) (s : regstate) : 
 Definition register_accessors := (get_regval, set_regval).
 
 
-Definition MR a r := monadR register_value a r unit.
-Definition M a := monad register_value a unit.
-Definition returnM {A:Type} := @returnm register_value A unit.
-Definition returnR {A:Type} (R:Type) := @returnm register_value A (R + unit).
+(* Definition MR a r := monadR register_value a r unit. *)
+(* Definition M a := monad register_value a unit. *)
+(* Definition returnM {A:Type} := @returnm register_value A unit. *)
+(* Definition returnR {A:Type} (R:Type) := @returnm register_value A (R + unit). *)

@@ -41,14 +41,16 @@ opam install dune
 
 ### Coq
 
-This project was tested with Coq 8.18.0. If you want exactly that version do:
+This project was tested with Coq 8.19.1. If you want exactly that version do:
 ```
-opam pin coq 8.18.0
+opam pin coq 8.19.2
 ```
 otherwise you can install it with `opam install coq`
 
-Until recently it was working on 8.14 and 8.16, but no guarantees are made to keep
-supporting them.
+Due to Ltac2 version we don't think it will work with lower version of Coq such
+as 8.18* and below. However modifications needed are probably minimal if you do
+need it. At the time of writing some dependencies are not ported yet to Coq 8.20
+and later.
 
 
 ### Sail
@@ -109,7 +111,7 @@ git clone https://github.com/rems-project/coq-sail
 
 Then (optionally), in that repository, if you want the version used for development, do:
 ```
-git checkout 51506978
+git checkout 562597f
 ```
 
 Then you can install `coq-sail-stdpp` with `opam pin coq-sail-stdpp .` in the

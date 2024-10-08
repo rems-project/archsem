@@ -308,14 +308,8 @@ Proof. solve_decision. Defined.
 #[global] Instance S2TTWParams_eq_dec : EqDecision S2TTWParams.
 Proof. solve_decision. Defined.
 
-Definition sigT_ArithFactP_eq_dec `{EqDecision A} (P : A → Prop) : EqDecision {x : A & ArithFactP (P x)}.
-Proof.
-  intros [x ?] [y ?]. destruct decide (x = y).
-  - left. abstract (subst; f_equal; apply proof_irrelevance).
-  - right. abstract naive_solver.
-Defined.
-
-#[global] Instance Level_eq_dec : EqDecision Level := sigT_ArithFactP_eq_dec _.
+#[global] Instance Level_eq_dec : EqDecision Level.
+Proof. solve_decision. Defined.
 
 #[global] Instance Regime_eq_dec : EqDecision Regime.
 Proof. solve_decision. Defined.

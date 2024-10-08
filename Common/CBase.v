@@ -159,26 +159,26 @@ Notation "(.× x )" := (λ y, cprod y x) (only parsing) : stdpp_scope.
 (** * Constrained quantifiers ***)
 
 #[local] Notation "∀in x ∈ b , P" := (∀ x, x ∈ b → P)
-  (at level 200, x binder, right associativity, only parsing) : type_scope.
+  (at level 10, x binder, only parsing, P at level 200) : type_scope.
 
 Notation "∀ x .. y ∈ b , P" := (∀in x ∈ b, .. (∀in y ∈ b, P) ..)
-  (at level 200, x binder, y binder, right associativity, only parsing) : type_scope.
+  (at level 10, x binder, y binder, only parsing, P at level 200) : type_scope.
 
 (* Due to https://github.com/coq/coq/issues/18318, We only reprint constrained
    quantifiers one by one, and not as a group. This allows to specify the proper
    "closed binder" printing specification *)
 Notation "∀ x ∈ b , P" := (∀ x, x ∈ b → P)
-  (at level 200, x closed binder, right associativity, only printing,
+  (at level 200, x closed binder, only printing,
     format "'[  ' '[  ' ∀  x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
 #[local] Notation "∃in x ∈ b , P" := (∃ x, x ∈ b ∧ P)
-  (at level 200, x binder, right associativity , only parsing) : type_scope.
+  (at level 10, x binder, only parsing, P at level 200) : type_scope.
 
 Notation "∃ x .. y ∈ b , P" := (∃in x ∈ b, .. (∃in y ∈ b, P) ..)
-  (at level 200, x binder, y binder, right associativity, only parsing) : type_scope.
+  (at level 10, x binder, y binder, only parsing, P at level 200) : type_scope.
 
 Notation "∃ x ∈ b , P" := (∃ x, x ∈ b ∧ P)
-  (at level 200, x closed binder, right associativity, only printing,
+  (at level 10, x closed binder, only printing,
     format "'[  ' '[  ' ∃  x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
 
@@ -257,7 +257,7 @@ Ltac2 revert_until (clr : bool) (p : pattern) :=
          | [] => if match_pat p c then [h] else []
          | l => h :: l
          end
-      ) (Control.hyps ()) []
+      ) [] (Control.hyps ())
 
   with
   | [] => Control.zero Not_found
