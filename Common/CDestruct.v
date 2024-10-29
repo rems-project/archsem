@@ -213,9 +213,11 @@ Class CDestrMatchNoEq (T : Type) := {}.
     [{| ... |} = {| ... |}] in a group of field-wise equality. One must specify
     the constructor term for internal reasons (it's hard to guess). The record
     must implement [Settable] *)
-(* TODO not implemented *)
 Class CDestrRecInj (rec_type : Type) {constr_type : Type}
   (constr : constr_type) := {}.
+
+(** Directed rewriting. Declares that if A = B, then rewriting A to B is a good idea *)
+Class CDestrDRew {T} (A : T) (B : T) := {}.
 
 
 (** If the provided constr is a variable, calls subst on it, otherwise
@@ -256,10 +258,10 @@ Ltac2 cdestruct_step0 () :=
   let clean_up_eq h x y :=
     match get_var x, get_var y with
     | Some x, Some y =>
-        (* If it's a variable equality, subst the lastest variable *)
+        (* If it's a variable equality, subst the lowest context variable *)
         if hyp_before x y
-        then assert_bt (can_subst y); subst_clean h y
-        else assert_bt (can_subst x); subst_clean h x
+        then (assert_bt (can_subst y); subst_clean h y)
+        else (assert_bt (can_subst x); subst_clean h x)
     | Some x, None => assert_bt (can_subst x); subst_clean h x
     | None, Some y => assert_bt (can_subst y); subst_clean h y
     | None, None => Control.zero Match_failure
@@ -285,6 +287,12 @@ Ltac2 cdestruct_step0 () :=
       assert_bt (Constr.is_var x || Constr.is_var y);
       let h := intro_get_name () in
       clean_up_eq h x y
+  | [|- ∀ _ : ?x = ?y, _ ] => (* Directed rewrite *)
+      assert_option (CDestrDRew $x $y);
+      let h := intro_get_name () in
+      let t := Control.hyp h in
+      progress (setoid_rewrite $t);
+      revert $h
   | [|- ∀ _ : _, _ ] => (* Cbn *)
       let h := intro_get_name () in
       progress (cbn in $h);
@@ -527,3 +535,12 @@ Proof. tcclean. sfirstorder use:dec_stable. Qed.
 Instance cdestruct_not_not P :
   CDestrSimpl (¬ ¬ P) P | 20.
 Proof. tcclean. use NNPP. naive_solver. Qed.
+
+(* TODO: Maybe try with Decision instead of directly the axiom *)
+Instance cdestruct_not_and_or P Q :
+  CDestrSimpl (¬ (P ∧ Q)) (¬ P ∨ ¬ Q).
+Proof. tcclean. use not_and_or. naive_solver. Qed.
+
+Instance cdestruct_not_or_and P Q :
+  CDestrSimpl (¬ (P ∨ Q)) (¬ P ∧ ¬ Q).
+Proof. tcclean. naive_solver. Qed.
