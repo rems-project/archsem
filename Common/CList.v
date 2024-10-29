@@ -18,21 +18,6 @@ Qed.
 
 (** * List simplification *)
 
-(* TODO all list simplification about x ∈ l should be superseded by set_unfold *)
-
-(** Automation for list simplifications *)
-Tactic Notation "list_simp" "in" "|-*" :=
-  rewrite_strat topdown hints list.
-
-Tactic Notation "list_simp" "in" hyp(H) :=
-  rewrite_strat topdown hints list in H.
-
-Tactic Notation "list_simp" :=
-  progress (try list_simp in |-*;
-  repeat match goal with
-         | [H : _ |- _ ] => rewrite_strat topdown hints list in H
-         end).
-
 #[global] Hint Rewrite <- app_assoc : list.
 #[global] Hint Rewrite map_app : list.
 
