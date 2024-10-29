@@ -604,11 +604,14 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
       (** ** Thread and instruction based orders and relations *)
 
+      Class UnfoldEidRels := {}.
+      #[local] Instance unfold_eid_rels : UnfoldEidRels := ltac:(constructor).
+
       (** Equivalence relation relating events from the same thread *)
       Definition same_thread : (pre et nmth) → grel EID.t :=
         same_key (λ eid _, Some (eid.(EID.tid))).
       #[global] Typeclasses Opaque same_thread.
-      #[global] Instance set_elem_of_same_thread pe eids:
+      #[global] Instance set_elem_of_same_thread `{UnfoldEidRels} pe eids:
         SetUnfoldElemOf eids (same_thread pe)
           (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
             eids.1.(EID.tid) = eids.2.(EID.tid)).
@@ -624,7 +627,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition same_instruction_instance : (pre et nmth) → grel EID.t :=
         same_key (λ eid _, Some (eid.(EID.tid), eid.(EID.iid))).
       #[global] Typeclasses Opaque same_instruction_instance.
-      #[global] Instance set_elem_of_same_instruction_instance pe eids:
+      #[global] Instance set_elem_of_same_instruction_instance `{UnfoldEidRels} pe eids:
         SetUnfoldElemOf eids (same_instruction_instance pe)
           (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
             eids.1.(EID.tid) = eids.2.(EID.tid) ∧
@@ -642,7 +645,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         same_key
           (λ eid _, Some (eid.(EID.tid), eid.(EID.iid), eid.(EID.ieid))).
       #[global] Typeclasses Opaque same_access.
-      #[global] Instance set_elem_of_same_access pe eids:
+      #[global] Instance set_elem_of_same_access `{UnfoldEidRels} pe eids:
         SetUnfoldElemOf eids (same_access pe)
           (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
             eids.1.(EID.tid) = eids.2.(EID.tid) ∧
@@ -665,7 +668,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         same_instruction_instance pe
         |> filter (λ eids, eids.1.(EID.ieid) < eids.2.(EID.ieid)).
       #[global] Typeclasses Opaque iio.
-      #[global] Instance set_elem_of_iio pe eids:
+      #[global] Instance set_elem_of_iio`{UnfoldEidRels} pe eids:
       SetUnfoldElemOf eids (iio pe)
         (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
@@ -687,7 +690,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         same_thread pe
         |> filter (λ eids, eids.1.(EID.iid) < eids.2.(EID.iid)).
       #[global] Typeclasses Opaque instruction_order.
-      #[global] Instance set_elem_of_instruction_order pe eids:
+      #[global] Instance set_elem_of_instruction_order`{UnfoldEidRels} pe eids:
       SetUnfoldElemOf eids (instruction_order pe)
         (is_Some (pe !! eids.1) ∧ is_Some (pe !! eids.2) ∧
           eids.1.(EID.tid) = eids.2.(EID.tid) ∧
@@ -959,7 +962,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Definition cd_to_MState_final (cd : t) (term : terminationCondition nmth) :
         option (MState.final nmth) :=
       MState.finalize (MState.MakeI (cd_to_MState cd) term).
-
 
 
     (** ** Memory based relations *)
