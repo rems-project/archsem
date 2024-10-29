@@ -364,6 +364,24 @@ Section GRel.
     induction path; sauto lq:on rew:off.
   Qed.
 
+  Lemma is_path_start_dom r x y path :
+    is_path r x y path → x ∈ grel_dom r.
+  Proof. destruct path; set_solver. Qed.
+
+  Lemma is_path_path_dom r x y path :
+    is_path r x y path → ∀ x ∈ path, x ∈ grel_dom r.
+  Proof.
+    generalize dependent x. induction path; set_solver ##is_path_start_dom.
+  Qed.
+
+  Lemma is_path_rng r x y path :
+    is_path r x y path → ∀ x ∈ path, x ∈ grel_rng r.
+  Proof. generalize dependent x. induction path; set_solver. Qed.
+
+  Lemma is_path_end_rng r x y path :
+    is_path r x y path → y ∈ grel_rng r.
+  Proof. generalize dependent x. induction path; set_solver. Qed.
+
   (** Equivalent definition of exists_path using is_path, and in Prop *)
   Definition exists_path' (r : grel) (l : list A) (x y : A) :=
     exists path : list A,
@@ -487,7 +505,7 @@ Section GRel.
     induction l; cbn; setoid_rewrite bool_unfold; set_unfold; naive_solver.
   Qed.
 
-  (* Implementation of computation transitive closure using Floyd-Warshall
+  (* Implementation of computational transitive closure using Floyd-Warshall
      algorithm *)
   Definition grel_plus (r : grel) :=
     let lA := elements (grel_dom r ∪ grel_rng r) in
@@ -586,6 +604,19 @@ Section GRel.
         * set_solver.
         * exists npath. set_unfold. qauto.
   Qed.
+
+  Lemma grel_plus_path_spec (r : grel) x y :
+    (x, y) ∈ r⁺ ↔ ∃ path, is_path r x y path.
+  Proof using.
+    rewrite grel_plus_spec'.
+    rewrite exists_path_spec.
+    unfold exists_path'.
+    split.
+    - naive_solver.
+    - intros [path [npath (?&?&?)]%is_path_NoDup].
+      set_solver ##is_path_path_dom.
+  Qed.
+
 
 
   Typeclasses Opaque grel_plus.
@@ -691,6 +722,13 @@ Section GRel.
     - hauto lq:on db:grel.
   Qed.
   Hint Rewrite grel_rng_plus: grel.
+
+  Lemma grel_plus_subseteq (r r' : grel) : r ⊆ r' → r⁺ ⊆ r'⁺.
+  Proof.
+    set_unfold.
+    intros ??? H.
+    cinduction H; set_solver ##grel_plus_trans ##grel_plus_once.
+  Qed.
 
 
   (*** Symmetric ***)
