@@ -203,20 +203,51 @@ Proof. tcclean. apply elem_of_filter. Qed.
     (x,y) ∈ X  <-> (x,y) ∈ Y if X and Y are sets of pairs *)
 (* TODO use a tactic option instead of a module *)
 Module SetUnfoldPair.
+Section SUP.
+  Context `{SS: SemiSet (A * B) C}.
+  Variable (P Q : A → B → Prop).
+  Variable (X Y : C).
 
-  #[export] Instance set_unfold_equiv_pair `{ElemOf (A * B) C}
-  (P Q : A -> B → Prop) (X Y : C) :
-  (∀ x y, SetUnfoldElemOf (x, y) X (P x y)) →
-  (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
-  SetUnfold (X ≡ Y) (∀ x y, P x y ↔ Q x y) | 9.
-  Proof. tcclean. set_unfold. hauto. Qed.
+  #[export] Instance set_unfold_equiv_pair:
+    (∀ x y, SetUnfoldElemOf (x, y) X (P x y)) →
+    (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
+    SetUnfold (X ≡ Y) (∀ x y, P x y ↔ Q x y) | 9.
+  Proof using SS. tcclean. set_unfold. hauto. Qed.
 
-  #[export] Instance set_unfold_equiv_L_pair `{ElemOf (A * B) C} {l : LeibnizEquiv C}
-  (P Q : A -> B → Prop) (X Y : C) :
-  (∀ x y, SetUnfoldElemOf (x, y) X (P x y)) →
-  (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
-  SetUnfold (X = Y) (∀ x y, P x y ↔ Q x y) | 9.
-  Proof. tcclean. unfold_leibniz. set_unfold. hauto. Qed.
+  #[export] Instance set_unfold_subseteq_pair :
+    (∀ x y, SetUnfoldElemOf (x, y) X (P x y)) →
+    (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
+    SetUnfold (X ⊆ Y) (∀ x y, P x y → Q x y) | 1.
+  Proof using SS. tcclean. set_unfold. hauto. Qed.
+
+  #[export] Instance set_unfold_equiv_empty_r_pair:
+    (∀ x y, SetUnfoldElemOf (x,y) X (P x y)) →
+    SetUnfold (X ≡ ∅) (∀ x y, ¬P x y) | 4.
+  Proof using SS. clear Q. tcclean. set_unfold. hauto. Qed.
+
+  #[export] Instance set_unfold_equiv_empty_l_pair:
+    (∀ x y, SetUnfoldElemOf (x,y) X (P x y)) →
+    SetUnfold (∅ ≡ X) (∀ x y, ¬P x y) | 4.
+  Proof using SS. clear Q. tcclean. set_unfold. hauto. Qed.
+
+  Context {l : LeibnizEquiv C}.
+  #[export] Instance set_unfold_equiv_L_pair:
+    (∀ x y, SetUnfoldElemOf (x, y) X (P x y)) →
+    (∀ x y, SetUnfoldElemOf (x, y) Y (Q x y)) →
+    SetUnfold (X = Y) (∀ x y, P x y ↔ Q x y) | 9.
+  Proof using SS l. tcclean. set_unfold. hauto. Qed.
+
+  #[export] Instance set_unfold_equiv_empty_r_L_pair:
+    (∀ x y, SetUnfoldElemOf (x,y) X (P x y)) →
+    SetUnfold (X = ∅) (∀ x y, ¬P x y) | 4.
+  Proof using SS l. clear Q. tcclean. set_unfold. hauto. Qed.
+
+  #[export] Instance set_unfold_equiv_empty_l_L_pair:
+    (∀ x y, SetUnfoldElemOf (x,y) X (P x y)) →
+    SetUnfold (∅ = X) (∀ x y, ¬P x y) | 4.
+  Proof using SS l. clear Q. tcclean. set_unfold. hauto. Qed.
+
+End SUP.
 End SetUnfoldPair.
 
 
