@@ -161,6 +161,7 @@ Module Interface (A : Arch).
   (** ** Memory utility *)
   (** Virtual address are tag-less bitvectors *)
   Definition va := bv va_size.
+  #[global] Typeclasses Transparent va.
 
   (** Memory access kind *)
   Notation accessKind := mem_acc.
@@ -200,6 +201,9 @@ Module Interface (A : Arch).
     is_Some $
       diff ← pa_diffN pa' pa;
     guard' (diff < size)%N.
+  #[global] Instance pa_in_range_dec pa size pa' :
+    Decision (pa_in_range pa size pa').
+  Proof. unfold pa_in_range. tc_solve. Defined.
 
   Lemma pa_in_range_spec pa size pa':
     pa_in_range pa size pa' ↔ ∃ n, pa_addN pa n = pa' ∧ n < size.
@@ -216,6 +220,7 @@ Module Interface (A : Arch).
 
   Definition pa_overlap pa1 size1 pa2 size2 : Prop :=
     pa_in_range pa1 size1 pa2 ∨ pa_in_range pa2 size2 pa1.
+  #[global] Typeclasses Transparent pa_overlap.
 
   Lemma pa_overlap_spec pa1 size1 pa2 size2 :
     pa_overlap pa1 size1 pa2 size2 ∧ 0 < size1 ∧ 0 < size2 ↔
@@ -406,6 +411,7 @@ Module Interface (A : Arch).
   (** An instruction semantic is a non-deterministic program using the
       uninterpreted effect type [outcome] *)
   Definition iMon := cMon outcome.
+  #[global] Typeclasses Transparent iMon.
 
   (** The semantics of an complete instruction. A full definition of
       instruction semantics is allowed to have an internal state that gets
@@ -429,9 +435,11 @@ Module Interface (A : Arch).
   (** A single event in an instruction execution. Events cannot contain
       termination outcome (outcomes of type `outcome False`) *)
   Definition iEvent := fEvent outcome.
+  #[global] Typeclasses Transparent iEvent.
 
   (** An execution trace for a single instruction. *)
   Definition iTrace := fTrace outcome.
+  #[global] Typeclasses Transparent iTrace.
 
   (** * Event accessors
 
@@ -564,7 +572,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ reg racc rval, Decision (P reg racc rval)}.
     #[global] Instance is_reg_readP_dec ev: Decision (is_reg_readP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
 
     (** ** Register writes *)
     Definition is_reg_writeP ev : Prop :=
@@ -585,7 +593,7 @@ Module Interface (A : Arch).
     #[global] Existing Instance is_reg_writeP_cdestr.
 
     #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
 
   End isReg.
   Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
@@ -616,7 +624,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec : ∀ n rr rres, Decision (P n rr rres)}.
     #[global] Instance is_mem_read_reqP_dec ev : Decision (is_mem_read_reqP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemReadReq.
   Notation is_mem_read_req := (is_mem_read_reqP (λ _ _ _, True)).
 
@@ -677,7 +685,7 @@ Module Interface (A : Arch).
     Context `{Pdec: ∀ n pa acc trans, Decision (P n pa acc trans)}.
     #[global] Instance is_mem_write_addr_announceP_dec ev:
       Decision (is_mem_write_addr_announceP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemWriteAddrAnnounce.
   Notation is_mem_write_addr_announce :=
     (is_mem_write_addr_announceP (λ _ _ _ _, True)).
@@ -706,7 +714,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ n wr wres, Decision (P n wr wres)}.
     #[global] Instance is_mem_write_reqP_dec ev: Decision (is_mem_write_reqP ev).
-    Proof using Pdec. destruct ev as [[] ?]; tc_solve. Defined.
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemWriteReq.
   Notation is_mem_write_req := (is_mem_write_reqP (λ _ _ _, True)).
 
@@ -731,6 +739,8 @@ Module Interface (A : Arch).
       is_mem_writeP ev ↔
         ∃ n wr, ev = MemWrite n wr &→ inl true ∧ P n wr.
     Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
+    Definition is_mem_writeP_cdestr ev := cdestr_simpl (is_mem_writeP_spec ev).
+    #[global] Existing Instance is_mem_writeP_cdestr.
 
     Context `{Pdec: ∀ n wr, Decision (P n wr)}.
     #[global] Instance is_mem_writeP_dec ev: Decision (is_mem_writeP ev).
@@ -740,6 +750,7 @@ Module Interface (A : Arch).
 
   Definition is_mem_event (ev : iEvent) :=
     is_mem_read ev \/ is_mem_write ev.
+  #[global] Typeclasses Transparent is_mem_event.
 
   (** ** Allow filtering memory events by kind more easily *)
   Section MemEventByKind.
@@ -749,8 +760,10 @@ Module Interface (A : Arch).
 
     Definition is_mem_read_kindP :=
       is_mem_readP (λ _ rr _ _, P rr.(ReadReq.access_kind)).
+    #[global] Typeclasses Transparent is_mem_read_kindP.
     Definition is_mem_write_kindP :=
       is_mem_writeP (λ _ wr, P wr.(WriteReq.access_kind)).
+    #[global] Typeclasses Transparent is_mem_write_kindP.
 
     Definition is_mem_event_kindP (ev : iEvent) :=
       if get_access_kind ev is Some acc then P acc else False.
@@ -777,7 +790,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ b, Decision (P b)}.
     #[global] Instance is_barrierP_dec ev: Decision (is_barrierP ev).
-    Proof using Pdec. unfold is_barrierP. solve_decision. Defined.
+    Proof using Pdec. unfold_decide. Defined.
   End isBarrier.
   Notation is_barrier := (is_barrierP (λ _, True)).
 
@@ -799,7 +812,7 @@ Module Interface (A : Arch).
 
     Context `{Pdec: ∀ c, Decision (P c)}.
     #[global] Instance is_cacheopP_dec ev: Decision (is_cacheopP ev).
-    Proof using Pdec. unfold is_cacheopP. solve_decision. Defined.
+    Proof using Pdec. unfold_decide. Defined.
   End isCacheop.
   Notation is_cacheop := (is_cacheopP (λ _, True)).
 

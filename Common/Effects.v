@@ -16,6 +16,7 @@ From stdpp Require Import vector.
 Universe e.
 Definition eff := Type@{e}.
 Bind Scope type_scope with eff.
+#[global] Typeclasses Transparent eff.
 
 Set Typeclasses Unique Instances.
 (** The effect typeclass, declares a type as an effect and provide [eff_ret],

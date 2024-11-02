@@ -160,7 +160,9 @@ Module Gen (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         settable! @Make <istates;tstates;initmem;events>.
 
       Definition istate tid := ((.!!! tid) ∘ istates).
+      #[global] Typeclasses Transparent istate.
       Definition tstate tid := ((.!!! tid) ∘ tstates).
+      #[global] Typeclasses Transparent tstate.
     End PS.
     Arguments t : clear implicits.
 

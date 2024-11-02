@@ -91,6 +91,7 @@ Defined.
 
 Definition mset_omap {E} `{MonadSet E} {A B} (f : A → option B) (S : E A) : E B :=
   x ← S; othrow () (f x).
+#[global] Typeclasses Transparent mset_omap.
 
 (** * Simplification ***)
 

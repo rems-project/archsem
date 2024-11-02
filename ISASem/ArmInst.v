@@ -19,6 +19,8 @@ From Equations Require Import Equations.
 Require Import stdpp.decidable.
 Require Import stdpp.list.
 
+#[global] Typeclasses Transparent bits.
+
 Unset Elimination Schemes.
 Inductive regval :=
   | Regval_unknown
@@ -233,6 +235,7 @@ Definition regval_bv (n : N) (rv : regval) : option (bv n) :=
 
 #[global] Instance PASpace_eq_dec : EqDecision PASpace.
 Proof. solve_decision. Defined.
+
 #[global] Instance FullAddress_eq_dec : EqDecision FullAddress.
 Proof. solve_decision. Defined.
 
@@ -309,7 +312,7 @@ Proof. solve_decision. Defined.
 Proof. solve_decision. Defined.
 
 #[global] Instance Level_eq_dec : EqDecision Level.
-Proof. solve_decision. Defined.
+Proof. unfold Level. solve_decision. Defined.
 
 #[global] Instance Regime_eq_dec : EqDecision Regime.
 Proof. solve_decision. Defined.
@@ -390,10 +393,12 @@ Module Arm.
 
   Module Arch <: Arch.
     Definition reg := string.
+    #[export] Typeclasses Transparent reg.
     Definition reg_eq : EqDecision reg := _.
     Definition reg_countable : Countable reg := _.
 
     Definition reg_type (_ : reg) := regval.
+    #[export] Typeclasses Transparent reg_type.
 
     Definition reg_type_eq (r : reg) : EqDecision (reg_type r) := _.
     Definition reg_type_countable (r : reg) : Countable (reg_type r) := _.
@@ -409,12 +414,14 @@ Module Arm.
     (** None means default access (strict or relaxed is up to the concurrency model).
         Some s, means access with a MSR/MRS with name "s" *)
     Definition reg_acc := option string.
+    #[export] Typeclasses Transparent reg_acc.
     Definition reg_acc_eq : EqDecision reg_acc := _.
 
     Definition pc_reg := "_PC".
 
     Definition va_size := 64%N.
     Definition pa := FullAddress.
+    #[export] Typeclasses Transparent pa.
     Definition pa_eq : EqDecision pa := _.
     Definition pa_countable : Countable pa := _.
     Definition pa_addZ pa z :=
@@ -458,6 +465,7 @@ Module Arm.
 
 
     Definition mem_acc := Access_kind arm_acc_type.
+    #[export] Typeclasses Transparent mem_acc.
     Definition mem_acc_eq : EqDecision mem_acc := _.
     Definition is_explicit (acc : mem_acc) :=
       if acc is AK_explicit _ then true else false.

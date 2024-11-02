@@ -25,7 +25,7 @@ Definition has_error `(e : t E A) :=
   | _ => True
   end.
 #[global] Instance has_error_dec `(e : t E A): Decision (has_error e).
-Proof. destruct e as [? []]; tc_solve. Qed.
+Proof. unfold_decide. Qed.
 
 (** Create an execution from a set of results, e.g. to convert from pure
     non-determinism to Exec *)
@@ -128,6 +128,10 @@ Proof. tcclean. apply unfold_elem_of. Qed.
   UnfoldElemOf x (make l l' : t E A) P.
 Proof. tcclean. naive_solver. Qed.
 
+#[global] Instance unfold_elem_of_mret {E A} x y:
+  UnfoldElemOf x (mret y : t E A) (x = y).
+Proof. tcclean. unfold mret, mret_inst. set_solver. Qed.
+
 #[global] Instance unfold_elem_of_merge {E A} x (e e' : t E A) P Q:
   UnfoldElemOf x e P →
   UnfoldElemOf x e' Q →
@@ -208,7 +212,9 @@ Proof.
   clear H0.
   destruct e as [l e]; cbn.
   setoid_rewrite unfold_elem_of.
-  induction l; try rewrite unfold_has_error; set_solver.
+  induction l.
+  - set_solver.
+  - cbn. rewrite unfold_has_error. set_solver.
 Qed.
 
 #[global] Instance unfold_has_error_bind_guard `{Decision P} {E A} (e : t E A)

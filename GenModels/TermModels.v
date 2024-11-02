@@ -29,12 +29,14 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
   Definition memoryMap := pa → bv 8.
+  #[global] Typeclasses Transparent memoryMap.
 
   (** Read a sequence of bytes from  a [memoryMap]:  *)
   Definition memoryMap_read (mm : memoryMap) (pa : pa) (n : N) : bv (8 * n) :=
     pa_range pa n |$> mm |> bv_of_bytes (8 * n).
 
   Definition registerMap := ∀ r : reg, reg_type r.
+  #[global] Typeclasses Transparent registerMap.
 
   (** A termination condition that define when each thread should stop.
 
@@ -72,6 +74,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
     Definition is_terminated (s : init) :=
       ∀ tid, s.(termCond) tid (s.(regs) !!! tid).
+    Typeclasses Transparent is_terminated.
 
     (** A final state for a machine model test. This means that the machine has
         stopped at the required termination condition *)
@@ -164,18 +167,22 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         mset_omap (λ x, match x with | Error us => Some us | _ => None end) ts.
 
       Definition no_error (ts : E t) := errors ts ⊆ ∅.
+      #[global] Typeclasses Transparent no_error.
+
+      (* TODO SetUnfold instances for othrow *)
+      #[local] Typeclasses Transparent othrow.
 
       #[global] Instance set_unfold_elem_of_unspecifieds ts us P:
         SetUnfoldElemOf (Unspecified us) ts P →
         SetUnfoldElemOf us (unspecifieds ts) P.
-      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      Proof using. tcclean. unfold unspecifieds. hauto l:on simp+:set_unfold simp+:eexists. Qed.
       #[global] Instance set_unfold_elem_of_finalStates ts fs P:
         SetUnfoldElemOf (FinalState fs) ts P →
         SetUnfoldElemOf fs (finalStates ts) P.
-      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      Proof using. tcclean. unfold finalStates. hauto l:on simp+:set_unfold simp+:eexists. Qed.
       #[global] Instance set_unfold_elem_of_errors ts msg P:
         SetUnfoldElemOf (Error msg) ts P → SetUnfoldElemOf msg (errors ts) P.
-      Proof using. tcclean. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      Proof using. tcclean. unfold errors. hauto l:on simp+:set_unfold simp+:eexists. Qed.
       #[global] Typeclasses Opaque finalStates.
       #[global] Typeclasses Opaque unspecifieds.
       #[global] Typeclasses Opaque errors.

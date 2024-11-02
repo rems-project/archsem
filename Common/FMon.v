@@ -224,6 +224,7 @@ Section FMon.
 
   (** A trace is a list of events and an end. *)
   Definition fTrace A : Type := list fEvent * fTraceEnd A.
+  #[global] Typeclasses Transparent fTrace.
   Notation FTRet a := ([], FTERet a).
   Notation FTStop call := ([], FTEStop call).
   Notation FTNothing := ([], FTENothing).
@@ -437,7 +438,8 @@ Section CMon.
   Qed.
 
   (* Useful in the following definition for typeclass search *)
-  #[local] Hint Extern 10 (Decision _) => cbn in * : typeclass_instances.
+  #[local] Hint Extern 5 (EqDecision (eff_ret _)) => (progress (cbn)) : typeclass_instances.
+  #[local] Hint Extern 5 (Finite (eff_ret _)) => (progress (cbn)) : typeclass_instances.
 
   (** Decide a cmatch: This is a bit dumb, it will try every possible
       non-deterministic choice until one match succeeded or all failed. However
@@ -457,7 +459,7 @@ Section CMon.
       | None eq: _ => right _
       } ;
     cmatch_dec (Nextr (ChooseFin n) k) tr :=
-      dec_if (decide (∃x : fin n, cmatch (k x) tr));
+      dec_if (@decide (∃x : fin n, cmatch (k x) tr) (@exists_dec _ _ _ _ (λ x, cmatch_dec (k x) tr)));
     cmatch_dec _ _ := right _.
   Solve All Obligations with
     cbn;
@@ -508,6 +510,7 @@ Section CMon.
     @cequiv A (Next call k) (Next call k').
   Proof using.
     intros H trc.
+    unfold pointwise_relation in H.
     destruct call;
       split;
       intro Hc;

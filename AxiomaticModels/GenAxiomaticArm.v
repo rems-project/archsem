@@ -134,12 +134,16 @@ Module AxArmNames.
   Definition ERET := collect_all (λ _ event, is_return_exception event) cd.
 
   Definition is_msr := is_reg_writeP (λ _ o _, is_Some o).
+  #[export] Typeclasses Transparent is_msr.
   Definition MSR := collect_all (λ _, is_msr) cd.
 
 
   (* A MemRead with ttw and value 0 *)
   Definition is_translation_read_fault :=
     is_mem_readP (λ n rr val _, is_ttw rr.(ReadReq.access_kind) ∧ bv_extract 0 1 val = 0%bv).
+  #[export] Instance is_translation_read_fault_dec ev :
+    Decision (is_translation_read_fault ev).
+  Proof. unfold_decide. Defined.
 
   (* translation-common.cat#L10 *)
   Definition T_f := collect_all (λ _ event, is_translation_read_fault event) cd.

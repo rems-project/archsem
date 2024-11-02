@@ -30,6 +30,7 @@ Module Loc := UMPromising.Loc.
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
 Definition val := bv 64.
+#[global] Typeclasses Transparent val.
 
 (** We also reuse the Msg object from the User-Mode Promising Model. *)
 Module Msg := UMPromising.Msg.
@@ -115,6 +116,7 @@ Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
 
 (** A view is just a natural *)
 Definition view := nat.
+#[export] Typeclasses Transparent view.
 Bind Scope nat_scope with view.
 Global Hint Transparent view : core.
 Global Hint Unfold view : core.
@@ -133,6 +135,7 @@ Module Memory.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
+  #[export] Typeclasses Transparent t.
 
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
@@ -272,8 +275,10 @@ End FwdItem.
 
 
 Definition EL := (fin 4).
+#[export] Typeclasses Transparent EL.
 Bind Scope fin_scope with EL.
 Definition ELp := (fin 3).
+#[export] Typeclasses Transparent ELp.
 Bind Scope fin_scope with ELp.
 
 Definition ELp_to_EL : ELp -> EL := FS.
@@ -664,6 +669,7 @@ End TState.
 (*** VA helper ***)
 
 Definition Level := fin 4.
+#[export] Typeclasses Transparent Level.
 
 (* It is important to be consistent on "level_length" and not write it as 9 *
    lvl + 9, otherwise some term won't type because the equality is only
@@ -671,6 +677,7 @@ Definition Level := fin 4.
 Definition level_length (lvl : Level) : N := 9 * (lvl + 1).
 
 Definition prefix (lvl : Level) := bv (level_length lvl).
+#[export] Typeclasses Transparent prefix.
 
 Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
   bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
@@ -809,19 +816,23 @@ Module TLB.
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
     Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
   End Ctxt.
+  #[export] Typeclasses Transparent Ctxt.t.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
   End Entry.
+  #[export] Typeclasses Transparent Entry.t.
 
   (* Full Entry *)
   Module FE.
     Definition t := { ctxt : Ctxt.t & Entry.t (Ctxt.lvl ctxt) }.
   End FE.
+  #[export] Typeclasses Transparent FE.t.
 
   Module VATLB.
     Definition T (lvl : Level) := gmap (NDCtxt.t lvl) (gset (Entry.t lvl)).
+    #[global] Typeclasses Transparent T.
     Definition t := hvec T.
 
     Definition init : t := hvec_func (fun lvl => ∅).

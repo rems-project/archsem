@@ -170,7 +170,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         cmatch isem trc.
 
       #[global] Instance ISA_match_dec pe isem : Decision (ISA_match pe isem).
-      Proof using. solve_decision. Qed.
+      Proof using. unfold ISA_match. solve_decision. Qed.
 
       (** Asserts that all the trace in an execution are complete and not partial traces *)
       Definition ISA_complete pe :=
@@ -249,7 +249,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         setoid_rewrite eq_some_unfold.
         setoid_rewrite instruction_list_match.
         repeat setoid_rewrite exists_pair.
-        naive_solver.
+        set_solver.
       Qed.
       #[global] Typeclasses Opaque lookup_iEvent.
       Opaque lookup_iEvent.
@@ -292,11 +292,14 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         SetUnfoldElemOf x (event_list pe) (pe !! x.1 = Some x.2).
       Proof using . tcclean. destruct x. symmetry. apply event_list_match. Qed.
 
+      (* Hint Constants Transparent : typeclass_instances. *)
+      (* Typeclasses Opaque elem_of. *)
       Lemma event_list_NoDup1 pe : NoDup (event_list pe).*1.
       Proof using.
         unfold event_list.
         unfold iEvent_list.
         unfold instruction_list.
+        unfold EID_list_from_iEvent.
         rewrite fmap_unfold #FMapUnfoldFmap.
         solve_NoDup; set_unfold; cdestruct |- **; congruence.
       Qed.
@@ -332,7 +335,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Global Instance set_elem_of_collect_all eid P
         `{∀ eid event, Decision (P eid event)} pe :
         SetUnfoldElemOf eid (collect_all P pe) (∃x, pe !! eid = Some x ∧ P eid x).
-      Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+      Proof using. tcclean. unfold collect_all. set_unfold. hauto db:pair. Qed.
       Global Typeclasses Opaque collect_all.
 
       (** Get the set of all valid EID for that candidate *)
@@ -341,7 +344,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
       Global Instance set_elem_of_valid_eids eid pe :
         SetUnfoldElemOf eid (valid_eids pe) (is_Some (pe !! eid)).
-      Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+      Proof using. tcclean. unfold valid_eids. set_unfold. hauto db:pair. Qed.
       Global Typeclasses Opaque valid_eids.
 
       (** Get the set of all register reads *)
@@ -463,6 +466,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition unsupported_event (ev : iEvent) : Prop :=
         is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
         is_mem_write_reqP (λ n wr r, is_Some (wr.(WriteReq.tag))) ev.
+      #[global] Typeclasses Transparent unsupported_event.
 
       Definition has_only_supported_events pe : Prop :=
         iEvent_list pe |> filter (λ '(_,ev), unsupported_event ev) = [].
@@ -595,7 +599,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           (∃ E1 E2 (k: K), pe !! eids.1 = Some E1 ∧ pe !! eids.2 = Some E2
                           ∧ get_key eids.1 E1 = Some k ∧ get_key eids.2 E2 = Some k).
       Proof.
-        tcclean. destruct eids.
+        tcclean. destruct eids. unfold same_key.
         set_unfold.
         split.
         - intros (?&?&?&?).
@@ -766,6 +770,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           '(pa2, size2) ← get_pa_footprint eid2 e2;
           guard' (pa_overlap pa1 size1 pa2 size2).
 
+      #[global] Instance is_overlapping_dec pa eid1 eid2 : Decision (is_overlapping pa eid1 eid2).
+      Proof. unfold is_overlapping. tc_solve. Qed.
+
       Lemma is_overlapping_sym pe eid1 eid2 :
         is_overlapping pe eid1 eid2 → is_overlapping pe eid2 eid1.
       Proof.
@@ -782,11 +789,13 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition overlapping pe :=
         mem_events pe × mem_events pe
         |> filter (λ '(eid1, eid2), is_overlapping pe eid1 eid2).
+      #[global] Typeclasses Transparent overlapping.
 
       Lemma overlapping_sym pe : grel_symmetric (overlapping pe).
       Proof.
         rewrite grel_symmetric_spec.
         use is_overlapping_sym.
+        set_unfold.
         set_solver.
       Qed.
 
@@ -823,6 +832,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
             | Some regmap => rv = regmap reg
             | None => False
             end).
+      #[global] Instance is_valid_init_reg_read_dec pe eid ev :
+        Decision (is_valid_init_reg_read pe eid ev).
+      Proof. unfold is_valid_init_reg_read. tc_solve. Defined.
 
       Definition is_valid_init_reg_read_spec pe (eid : EID.t) (ev : iEvent):
         is_valid_init_reg_read pe eid ev ↔
@@ -847,7 +859,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Lemma possible_initial_reg_reads_ok pe :
         possible_initial_reg_reads pe ⊆ reg_reads pe.
       Proof.
-        unfold possible_initial_reg_reads.
+        unfold possible_initial_reg_reads, reg_reads.
         set_unfold.
         cdestruct |- **.
         naive_solver.
@@ -1103,6 +1115,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       intros eid H.
       assert (eid ∈ reg_writes cd) as Hw by set_solver.
       assert (eid ∈ reg_reads cd) as Hr by set_solver.
+      unfold reg_reads, reg_writes in Hr, Hw.
       set_unfold.
       cdestruct Hw, Hr.
       congruence.
@@ -1313,6 +1326,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
                ∧ ISA_match cd isem
                ∧ to_ModelResult ax cd initSt.(MState.termCond) = Some mr
           ]}.
+      #[global] Typeclasses Transparent to_Modelnc.
 
       Lemma wider_Model (isem : iMon ()) (ax ax' : t) :
         wider ax ax' → Model.wider (to_Modelnc isem ax) (to_Modelnc isem ax').

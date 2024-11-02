@@ -1,4 +1,4 @@
-Require Import CBase CBool CMaps.
+Require Import CBase CBool CMaps CArith.
 Require Import Options.
 From stdpp Require Import base.
 From stdpp Require Export list.
@@ -13,6 +13,16 @@ Proof.
   unfold pointwise_relation in H.
   induction l; hauto q:on.
 Qed.
+
+#[global] Instance set_unfold_list_map
+  {A B : Type} (f : A → B) (l : list A) (P : A → Prop) (y : B) :
+  (∀ x : A, SetUnfoldElemOf x l (P x)) →
+  SetUnfoldElemOf y (map f l) (∃ x : A, y = f x ∧ P x) := ltac:(apply set_unfold_list_fmap).
+
+#[global] Instance set_unfold_list_mret {A : Type} x y :
+  SetUnfoldElemOf x (mret y : list A) (x = y).
+Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
+
 
 #[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
 

@@ -66,7 +66,7 @@ Global Instance lookup_unfold_pointwise_union `{FinMap K M} `{Union A}
    (k : K) (m1 m2 : M A) (o1 o2 : option A) :
   LookupUnfold k m1 o1 -> LookupUnfold k m2 o2 ->
   LookupUnfold k (m1 ∪ₘ m2) (o1 ∪ₒ o2).
-Proof. tcclean. rewrite lookup_unfold. reflexivity. Qed.
+Proof. tcclean. unfold pointwise_union. by rewrite lookup_unfold. Qed.
 
 Global Instance lookup_total_unfold_pointwise_union `{FinMap K M} `{SemiSet A C}
   {lei : LeibnizEquiv C} (k : K) (m1 m2 : M C) (s1 s2 : C) :
@@ -108,10 +108,12 @@ Section GRel.
   Context {countA : Countable A}.
 
   Definition grel := gset (A * A).
+  #[global] Typeclasses Transparent grel.
 
   Definition grel_to_relation (r : grel) : relation A := fun x y => (x, y) ∈ r.
 
   Definition grel_map := gmap A (gset A).
+  #[global] Typeclasses Transparent grel_map.
 
   Definition grel_to_map (r : grel) : grel_map :=
     set_fold (fun '(e1, e2) res => res ∪ₘ {[e1 := {[e2]}]}) ∅ r.
@@ -243,12 +245,12 @@ Section GRel.
   Global Instance set_unfold_elem_of_grel_dom (r : grel) (x : A) P:
     (forall y, SetUnfoldElemOf (x, y) r (P y)) ->
     SetUnfoldElemOf x (grel_dom r) (exists z, P z).
-  Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+  Proof using. tcclean. unfold grel_dom. set_unfold. hauto db:pair. Qed.
 
   Global Instance set_unfold_elem_of_grel_rng (r : grel) (x : A) P:
     (forall y, SetUnfoldElemOf (y, x) r (P y)) ->
     SetUnfoldElemOf x (grel_rng r) (exists z, P z).
-  Proof using. tcclean. set_unfold. hauto db:pair. Qed.
+  Proof using. tcclean. unfold grel_rng. set_unfold. hauto db:pair. Qed.
 
   Typeclasses Opaque grel_dom.
   Typeclasses Opaque grel_rng.
@@ -598,11 +600,11 @@ Section GRel.
       eapply is_path_tc.
       eassumption.
     - induction 1.
-      + exists []. set_unfold. sauto lq:on.
+      + exists []. cbn.  set_solver ## @NoDup_nil_2.
       + destruct IHtc as [path ?].
         destruct (is_path_NoDup r x z (y :: path)) as [npath ?].
         * set_solver.
-        * exists npath. set_unfold. qauto.
+        * exists npath. set_unfold. intuition. naive_solver.
   Qed.
 
   Lemma grel_plus_path_spec (r : grel) x y :
@@ -736,7 +738,7 @@ Section GRel.
   Definition grel_symmetric (r : grel) : Prop := r⁻¹ = r.
 
   #[export] Instance grel_symmtric_decision r : Decision (grel_symmetric r).
-  Proof using. solve_decision. Qed.
+  Proof using. unfold grel_symmetric. solve_decision. Qed.
 
   Definition grel_symmetric_spec (r : grel) :
     grel_symmetric r ↔ ∀ x y, (x, y) ∈ r → (y, x) ∈ r.
@@ -778,7 +780,7 @@ Section GRel.
   Qed.
 
   Global Instance grel_transitive_decision r : Decision (grel_transitive r).
-  Proof using. solve_decision. Qed.
+  Proof using. unfold grel_transitive. solve_decision. Qed.
 
   Lemma grel_transitive_rew (r : grel) :
     grel_transitive r → r⁺ = r.
@@ -832,6 +834,11 @@ Section GRel.
 
   Lemma grel_rc_spec (r : grel) x y : (x, y) ∈ r? ↔ (x, y) ∈ r ∨ x = y.
   Proof using. unfold grel_rc. set_solver. Qed.
+
+  Global Instance set_unfold_elem_of_grel_rc r x P :
+    SetUnfoldElemOf x r P ->
+    SetUnfoldElemOf x (r?) (P ∨ x.1 = x.2).
+  Proof using. tcclean. destruct x. apply grel_rc_spec. Qed.
 
   Definition grel_reflexive (r : grel) := ∀ x, (x, x) ∈ r.
 

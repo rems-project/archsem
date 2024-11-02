@@ -24,6 +24,9 @@ Import ArmGP.
 Module Loc.
   Definition t := bv 49.
 
+  #[global] Instance dec : EqDecision t.
+  Proof. unfold t. solve_decision. Defined.
+
   (** Convert a location into an ARM physical address *)
   Definition to_pa (loc : t) : FullAddress :=
     {|FullAddress_paspace := PAS_NonSecure;
@@ -81,6 +84,7 @@ Module Loc.
   Lemma from_pa_in_to_pas loc :
     ∀ pa ∈ to_pas loc, from_pa_in pa = Some loc.
   Proof.
+    unfold from_pa_in, to_pas, pa_range.
     set_unfold.
     cdestruct |- **.
     cbn.
@@ -102,6 +106,7 @@ End Loc.
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
 Definition val := bv 64.
+#[export] Typeclasses Transparent val.
 
 (** This is an message in the promising model memory. The location is a physical
     address as virtual memory is ignored by this model *)
@@ -118,6 +123,7 @@ End Msg.
 
 (** A view is just a natural *)
 Definition view := nat.
+#[export] Typeclasses Transparent view.
 Bind Scope nat_scope with view.
 Global Hint Transparent view : core.
 Global Hint Unfold view : core.
@@ -136,6 +142,7 @@ Module Memory.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
+  #[export] Typeclasses Transparent t.
 
   Definition cut_after : nat -> t -> t := @cut_after Msg.t.
   Definition cut_before : nat -> t -> t := @cut_before Msg.t.

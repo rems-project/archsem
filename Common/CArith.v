@@ -5,6 +5,12 @@ From stdpp Require Export numbers fin.
 
 (** This file is about arithmetic helpers and tactic. Concerned types are nat, N, Z and fin *)
 
+(** * Decision instances *)
+(** Those instances are defined by stdpp on opaque aliases that this development
+doesn't use. *)
+#[global] Instance lt_dec : RelDecision lt := Nat.lt_dec.
+#[global] Instance le_dec : RelDecision le := Nat.le_dec.
+
 (** * Integer lattice
 
     [n ⊔ n'] means max and [n ⊓ n'] means min *)
@@ -201,6 +207,7 @@ Global Instance fin_unfold_L1 (n : nat) p q :
   FinUnfold n p q -> FinUnfold (S n) (fin_L1 p) q.
 Proof.
   tcclean.
+  unfold fin_L1.
   by rewrite fin_unfold.
 Qed.
 Opaque fin_L1.
@@ -220,6 +227,7 @@ Global Instance fin_unfold_last (n : nat) :
   FinUnfold (S n) (fin_last n) n.
 Proof.
   tcclean.
+  unfold fin_last.
   by rewrite fin_unfold.
 Qed.
 Opaque fin_last.

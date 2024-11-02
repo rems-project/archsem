@@ -56,11 +56,18 @@ Section UMSeqArm.
 
   Definition is_illegal_reg_write (regs : gset reg) :=
     is_reg_writeP (λ reg acc _, reg ∉ regs ∨ acc ≠ None).
+  #[export] Instance is_illegal_reg_write_dec regs ev :
+    Decision (is_illegal_reg_write regs ev).
+  Proof. unfold_decide. Defined.
 
   Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
 
   Definition is_illegal_reg_read (regs : gset reg) :=
     is_reg_writeP (λ reg acc _, acc ≠ None).
+  #[export] Instance is_illegal_reg_read_dec regs ev :
+    Decision (is_illegal_reg_read regs ev).
+  Proof. unfold_decide. Defined.
+
 
   Definition Illegal_RR := collect_all (λ _, is_illegal_reg_read regs_whitelist) cd.
 

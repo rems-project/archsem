@@ -68,7 +68,7 @@ Proof. tcclean. sfirstorder. Qed.
 Global Instance lookup_unfold_merge_simpl `{FinMap K M} A B C
   (f : option A -> option B -> option C) (ma : M A) (mb : M B)
   (oa : option A) (ob : option B) (k : K) :
-  TCEq (f None None) None -> LookupUnfold k ma oa -> LookupUnfold k mb ob ->
+  TCSimpl (f None None) None -> LookupUnfold k ma oa -> LookupUnfold k mb ob ->
   LookupUnfold k (merge f ma mb) (f oa ob) | 10.
 Proof.
   tcclean.
@@ -131,6 +131,12 @@ Proof.
   rewrite lookup_unfold.
   naive_solver.
 Qed.
+
+(* TODO remove and instances in LookupUnfold *)
+#[global] Typeclasses Transparent map_singleton.
+#[global] Typeclasses Transparent singletonM.
+#[global] Typeclasses Transparent insert.
+#[global] Typeclasses Transparent map_insert.
 
 Global Instance lookup_total_unfold_singleton_same
   `{FinMap K M} `{Empty A} (k : K) (a : A) :

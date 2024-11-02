@@ -107,12 +107,11 @@ Proof. tcclean. destruct r; naive_solver. Qed.
 
 (** * Decidable propositions ***)
 
-(** Mark decidable Proposition a Irrelevant
-
-TODO: Mark all proposition as irrelevant? *)
-#[global] Instance proof_irrel_eq_decision (P : Prop) (PI : ProofIrrel P):
-  EqDecision P :=
-  λ x y, left (PI x y).
+Ltac unfold_decide :=
+  match goal with
+    |- Decision ?t =>
+      let h := get_head t in unfold h; apply _
+  end.
 
 Section ProperDecision.
   Import CMorphisms.
@@ -162,7 +161,11 @@ Class EqDepDecision {A} (P : A → Type) :=
   eqdep_decide : ∀ {a b : A} (H : a = b) (x : P a) (y : P b), Decision (x =ⱼ y).
 
 #[global] Instance eq_dep_decision_f_equal A `{EqDepDecision B P} (f : A → B) :
-  `{EqDepDecision (P ∘ f)} := λ a b H x y, eqdep_decide (f_equal f H) x y.
+  EqDepDecision (λ x, P (f x)) :=  λ a b H x y, eqdep_decide (f_equal f H) x y.
+
+(* compose is opaque, hence we need another instance *)
+#[global] Instance eq_dep_decision_compose A `{EqDepDecision B P} (f : A → B) :
+  EqDepDecision (P ∘ f) := eq_dep_decision_f_equal A f.
 
 #[global] Instance eq_dep_decision_dec `{EqDepDecision A P}
   (a b : A) {H : TCFindEq a b} (x : P a) (y : P b) : Decision (x =ⱼ y) :=
@@ -241,12 +244,12 @@ Proof. intros [] []. decide_eq. Defined.
 
 
 (* Add a hint for resolving Decision of matches*)
-#[export] Hint Extern 10 (Decision match ?x with _ => _ end) =>
+#[export] Hint Extern 1 (Decision match ?x with _ => _ end) =>
   destruct x : typeclass_instances.
 
 #[export] Hint Extern 3 (Decision _) => progress cbn : typeclass_instances.
 
-#[export] Hint Extern 1 (Decision (?a = ?b)) => eunify a b; left;reflexivity : typeclass_instances.
+#[export] Hint Extern 1 (Decision (?a = ?b)) => eunify a b; left; reflexivity : typeclass_instances.
 
 (** Equality with pattern. Decide equation of the form [a = Constr b c d] where
     the entire type might not have EqDecision Such as [x =@{bool + R} inl true] *)

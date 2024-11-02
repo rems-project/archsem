@@ -19,6 +19,24 @@ From Hammer Require Export Tactics.
 
 Require Import Options.
 
+
+(** * Default Typeclass opaque
+
+  By default we make all constants opaque in typeclass resolution. This make
+  typeclass search much faster on average, at the cost of requiring more
+  instances or transparency annotations. In general for most type definitions,
+  one need either to declare it transparent, or define all the required
+  typeclasses on it. Same for decidable predicates as this development use
+  stdpp's [Decision] *)
+#[global] Hint Constants Opaque : typeclass_instances.
+#[global] Typeclasses Transparent relation.
+
+(** This is needed to fix the behaviour or setoid rewriting under opaque typeclasses *)
+Hint Extern 0 (ProperProxy _ _) =>
+       simple apply @eq_proper_proxy || simple apply @reflexive_proper_proxy : typeclass_instances.
+
+
+
 (** * Axioms
 
    We want to work in classical logic with extensional equality.
@@ -127,7 +145,7 @@ Definition is_inl `(x : A + B) : Prop :=
   | inr _ => False
   end.
 #[global] Instance is_inl_dec `(x : A + B) : Decision (is_inl x).
-Proof. destruct x; solve_decision. Qed.
+Proof. destruct x; unfold is_inl; solve_decision. Qed.
 
 Definition is_inr `(x : A + B) : Prop :=
   match x with
@@ -135,7 +153,7 @@ Definition is_inr `(x : A + B) : Prop :=
   | inr _ => True
   end.
 #[global] Instance is_inr_dec `(x : A + B) : Decision (is_inr x).
-Proof. destruct x; solve_decision. Qed.
+Proof. destruct x; unfold is_inr; solve_decision. Qed.
 
 Notation guard' P := (guard P;; mret ()).
 
