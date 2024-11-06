@@ -88,13 +88,13 @@ Proof. tcclean. set_solver. Qed.
 
 (** * List lookup with different keys *)
 
-Global Instance list_lookupPos {A} : Lookup positive A (list A) :=
+Global Instance list_lookupPos {A} : Lookup positive A (list A) | 100 :=
   fun p l => l !! (Pos.to_nat p).
 
-Global Instance list_lookupN {A} : Lookup N A (list A) :=
+Global Instance list_lookupN {A} : Lookup N A (list A) | 100 :=
   fun n l => l !! (N.to_nat n).
 
-Global Instance list_lookupZ {A} : Lookup Z A (list A) :=
+Global Instance list_lookupZ {A} : Lookup Z A (list A) | 100 :=
   fun z l =>
     match z with
     | Zpos p => l !! p

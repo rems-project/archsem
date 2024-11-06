@@ -318,14 +318,10 @@ Ltac2 cdestruct_step0 () :=
       | context [match ?b with _ => _ end] =>
           let t := Constr.type b in
           assert_option (CDestrMatchT $t);
-          match get_var b with
-          | Some x => Std.case false (b, Std.NoBindings); clear $x
-          | None =>
-              if has_option (CDestrMatchNoEq $t)
-              then Std.case false (b, Std.NoBindings)
-              else
-                ltac1:(b |- case_eq b) (Ltac1.of_constr b)
-          end
+          if has_option (CDestrMatchNoEq $t)
+          then Std.case false (b, Std.NoBindings)
+          else
+            ltac1:(b |- case_eq b) (Ltac1.of_constr b)
       end
   | [|- ∀ _, _] => intro
   end.
