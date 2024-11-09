@@ -1134,11 +1134,10 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition iio_addr :=
         iio cd ⨾⦗mem_reads cd⦘ ∪
           iio cd ⨾
-            (⦗mem_write_addr_announces cd⦘⨾ iio cd ⨾⦗mem_write_reqs cd⦘ ∩
-               same_footprint cd).
+            ((⦗mem_write_addr_announces cd⦘⨾ iio cd ⨾⦗mem_write_reqs cd⦘ ∩
+               same_footprint cd) ∪ ⦗mem_reads cd⦘).
 
-      (** NOTE: make the dependencies opaque, and directly define wellformedness conditions for them for now *)
-      (* TODO prove all of the wellformedness properties directly from the definition *)
+      (* TODO prove wellformedness properties from the definition *)
       Definition addr :=
         ⦗mem_reads cd⦘⨾
           (⦗mem_reads cd⦘ ∪ (iio cd ⨾ reg_reads_from_data cd)⁺)⨾
