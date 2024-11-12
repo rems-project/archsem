@@ -172,6 +172,14 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       #[global] Instance ISA_match_dec pe isem : Decision (ISA_match pe isem).
       Proof using. solve_decision. Qed.
 
+      (** Asserts that all the trace in an execution are complete and not partial traces *)
+      Definition ISA_complete pe :=
+        ∀ thread ∈ (vec_to_list pe.(events)),
+        ∀ instr ∈ thread,
+        instr.2 = FTERet ().
+
+      #[global] Instance ISA_complete_dec pe : Decision (ISA_complete pe).
+      Proof using. unfold ISA_complete. tc_solve. Defined.
 
       (** This true if one of the instruction had an ISA model failure like a
           Sail assertion or an Isla assumption that failed. Due to out of order
