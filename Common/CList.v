@@ -112,6 +112,16 @@ Global Instance list_lookupZ {A} : Lookup Z A (list A) | 100 :=
     | Zneg _ => None
     end.
 
+
+(** * List lookup unfold *)
+
+Global Instance list_lookup_nil {A} (i : nat) : LookupUnfold i (@nil A) None.
+Proof. tcclean. apply lookup_nil. Qed.
+
+Global Instance list_lookup_cons {A} (i : nat) (x : A) l o :
+  TCFastDone (0 < i) → LookupUnfold (pred i) l o →  LookupUnfold i (x :: l) o.
+Proof. tcclean. apply lookup_cons_ne_0. lia. Qed.
+
 (** * List boolean unfolding *)
 
 Global Instance bool_unfold_existsb A (f : A -> bool) (l : list A) (P : A -> Prop) :
