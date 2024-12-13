@@ -726,8 +726,7 @@ Module Interface (A : Arch).
     Implicit Type ev : iEvent.
 
     (** Filters memory writes that are successful (that did not get a physical
-        memory abort). This might still not have written in case of exclusive
-        failure *)
+        memory abort, or an exclusive failure).*)
     Definition is_mem_writeP ev: Prop :=
       is_mem_write_reqP (λ n wr wres,
           match wres with
@@ -838,7 +837,27 @@ Module Interface (A : Arch).
   End isTlbop.
   Notation is_tlbop := (is_tlbopP (λ _, True)).
 
-  Notation is_take_exception ev := (is_Some (get_fault ev)).
+  Section isTakeException.
+    Context (P : fault → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_take_exceptionP ev: Prop :=
+      if ev is TakeException c &→ _ then P c else False.
+    Typeclasses Opaque is_take_exceptionP.
+
+    Definition is_take_exceptionP_spec ev:
+      is_take_exceptionP ev ↔ ∃ take_exception, ev = TakeException take_exception &→ () ∧ P take_exception.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct |- ?; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_take_exceptionP_dec ev: Decision (is_take_exceptionP ev).
+    Proof using Pdec. unfold is_take_exceptionP. solve_decision. Defined.
+  End isTakeException.
+  Notation is_take_exception := (is_take_exceptionP (λ _, True)).
+
   Definition is_return_exception ev := ev = ReturnException &→ ().
   #[global] Instance is_return_exception_dec ev :
     Decision (is_return_exception ev).
