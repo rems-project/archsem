@@ -16,38 +16,95 @@ Section VMSAArm.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
   Context (cd : Candidate.t NMS nmth).
-  Import AxArmNames.
-
 
   (** * Arm standard notations *)
-  Notation F := (F cd).
-  Notation W := (W cd).
-  Notation R := (R cd).
-  Notation M := (mem_events cd).
-  Notation Wx := (Wx cd).
-  Notation Rx := (Rx cd).
-  Notation L := (L cd).
-  Notation A := (A cd).
-  Notation Q := (Q cd).
-  Notation T := (T cd).
-  Notation T_f := (T_f cd).
-  Notation C := (C cd).
-  Notation TLBI := (TLBI cd).
-  Notation TE := (TE cd).
-  Notation ERET := (ERET cd).
-  Notation MSR := (MSR cd).
-  Notation int := (same_thread cd).
-  Notation loc := (same_pa cd).
-  Notation iio := (iio cd).
-  Notation instruction_order := (instruction_order cd).
-  Notation rmw := (rmw cd).
+  Import AxArmNames.
+
+  (** ** Thread relations *)
+  Notation pe := (pre_exec cd).
+  Notation int := (same_thread pe).
+  Notation si := (same_instruction_instance cd).
+  Notation sca := (same_access cd).
+  Notation instruction_order := (instruction_order pe).
+  Notation full_instruction_order := (full_instruction_order pe).
+  Notation iio := (iio pe).
+
+  (** ** Dependencies *)
   Notation addr := (addr cd).
   Notation data := (data cd).
   Notation ctrl := (ctrl cd).
 
+  (** ** Registers *)
+  Notation RR := (reg_reads pe).
+  Notation RW := (reg_writes pe).
+  Notation RE := (RE cd).
+  Notation rrf := (reg_reads_from cd).
+  Notation rfr := (reg_from_reads cd).
+  Notation MSR := (MSR cd).
+  Notation MRS := (MRS cd).
+
+  (** ** Barriers *)
+  Notation F := (barriers cd).
   Notation ISB := (isb cd).
-  Notation IF := (ifetch_reads cd).
+
+  (** ** Memory *)
+  Notation W := (explicit_writes pe).
+  Notation R := (explicit_reads pe).
+  Notation M := (mem_explicit pe).
+  Notation Wx := (exclusive_writes pe).
+  Notation Rx := (exclusive_writes pe).
+  Notation L := (rel_acq_writes pe).
+  Notation A := (rel_acq_reads pe).
+  Notation Q := (acq_rcpc_reads pe).
+  Notation T := (ttw_reads pe).
+  Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
+
+  Notation lxsx := (lxsx cd).
+  Notation amo := (atomic_update cd).
+  Notation rmw := (rmw cd).
+
+  Notation co := (co cd).
+  Notation coi := (coi cd).
+  Notation coe := (coe cd).
+
+  Notation rf := (rf cd).
+  Notation rfi := (rfi cd).
+  Notation rfe := (rfe cd).
+  Notation fr := (fr cd).
+  Notation fri := (fri cd).
+  Notation fre := (fre cd).
+
+  Notation frf := (frf cd).
+  Notation frfi := (frfi cd).
+
+  Notation trf := (trf cd).
+  Notation trfi := (trfi cd).
+  Notation trfe := (trfe cd).
+  Notation tfr := (tfr cd).
+  Notation tfri := (tfri cd).
+  Notation tfre := (tfre cd).
+
+  Notation irf := (irf cd).
+  Notation irfi := (irfi cd).
+  Notation irfe := (irfe cd).
+  Notation ifr := (ifr cd).
+  Notation ifri := (ifri cd).
+  Notation ifre := (ifre cd).
+
+  (** ** Caches *)
+  Notation ICDC := (ICDC cd).
+  Notation TLBI := (TLBI cd).
+  Notation C := (C cd).
+
+  (** ** Exceptions *)
+  Notation TE := (TE cd).
+  Notation ERET := (ERET cd).
+
+  (** ** Explicit events *)
+  Notation Exp := (Exp cd).
+  Notation po := (po cd).
+  (* End of copy paste section*)
 
   (** * Registers
 
@@ -57,10 +114,6 @@ Section VMSAArm.
 
    *)
 
-  Notation RW := (reg_writes cd).
-  Notation RR := (reg_reads cd).
-  Notation RE := (RW ∪ RR).
-
   Definition is_illegal_reg_write (regs : gset reg) :=
     is_reg_writeP (λ reg acc _, reg ∉ regs ∨ acc ≠ None).
   #[export] Instance is_illegal_reg_write_dec regs ev :
@@ -68,16 +121,6 @@ Section VMSAArm.
   Proof. unfold_decide. Defined.
 
   Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
-
-  Definition Rpo := ⦗RE⦘⨾instruction_order⨾⦗RE⦘.
-  Notation Rloc := (same_reg cd).
-
-  Definition Rpo_loc := Rpo ∩ Rloc.
-
-  Notation rrf := (reg_reads_from cd).
-
-  Notation rfr := (reg_from_reads cd).
-
 
   Notation "'id'" := ⦗valid_eids cd⦘.
 
@@ -100,40 +143,40 @@ Section VMSAArm.
       [coherence] however can also contain cache operations. *)
 
   (* po orders memory events between instructions *)
-  Definition po := ⦗M ∪ F ∪ C⦘⨾instruction_order⨾⦗M ∪ F ∪ C⦘.
+  (* Definition po := ⦗M ∪ F ∪ C⦘⨾instruction_order⨾⦗M ∪ F ∪ C⦘. *)
 
   (* other shared relations *)
-  Definition po_loc := po ∩ loc.
+  (* Definition po_loc := po ∩ loc. *)
 
   (* wco orders tlbi and writes *)
   Definition wco := (coherence cd).
-  Definition co := ⦗W⦘⨾wco⨾⦗W⦘.
-  Definition coi := co ∩ int.
-  Definition coe := co ∖ coi.
+  (* Definition co := ⦗W⦘⨾wco⨾⦗W⦘. *)
+  (* Definition coi := co ∩ int. *)
+  (* Definition coe := co ∖ coi. *)
 
   (* rf orders explicit writes and reads *)
-  Definition rf := reads_from cd ⨾⦗R⦘.
-  Definition rfi := rf ∩ int.
-  Definition rfe := rf ∖ rfi.
+  (* Definition rf := reads_from cd ⨾⦗R⦘. *)
+  (* Definition rfi := rf ∩ int. *)
+  (* Definition rfe := rf ∖ rfi. *)
 
-  (* armv9-interface/translation.cat#L35 *)
-  Definition trf := reads_from cd ⨾⦗T⦘.
-  Definition trfi := trf ∩ int.
-  Definition trfe := trf ∖ trfi.
+  (* (* armv9-interface/translation.cat#L35 *) *)
+  (* Definition trf := reads_from cd ⨾⦗T⦘. *)
+  (* Definition trfi := trf ∩ int. *)
+  (* Definition trfe := trf ∖ trfi. *)
 
   (* rf orders explicit reads and writes,
     is unusual because of the handle of initial writes *)
-  Definition fr := ⦗R⦘⨾ from_reads cd.
-  Definition fri := fr ∩ int.
-  Definition fre := fr ∖ fri.
+  (* Definition fr := ⦗R⦘⨾ from_reads cd. *)
+  (* Definition fri := fr ∩ int. *)
+  (* Definition fre := fr ∖ fri. *)
 
   (* armv9-interface/translation.cat#L46 *)
   (* Definition tfr := ((trf⁻¹⨾co) ∖ id ) ∩ overlap_loc. *)
   (* NOTE: To take initial writes under consideration, we have another
       implementation for tfr *)
-  Definition tfr := ⦗T⦘⨾ from_reads cd.
-  Definition tfri := tfr ∩ int.
-  Definition tfre := tfr ∖ tfr.
+  (* Definition tfr := ⦗T⦘⨾ from_reads cd. *)
+  (* Definition tfri := tfr ∩ int. *)
+  (* Definition tfre := tfr ∖ tfr. *)
 
   #[local] Hint Extern 10 (Decision (?x _)) => unfold x : typeclass_instances.
   #[local] Hint Extern 10 (Decision (?x _ _)) => unfold x : typeclass_instances.
@@ -292,60 +335,72 @@ Section VMSAArm.
   (*** exceptions *)
   (* armv9-interface/exceptions.cat *)
 
-  (* A Fault is an exception with a FaultRecord *)
-  Definition has_fault_P P `{forall f, Decision (P f)} (event : iEvent) :=
-    match event with
-    | TakeException exn &→ _ => match (exn : Exn).(Exn_fault) with
-                                      | Some fault => P fault
-                                      | _ => False
-                                      end
-    | _ => False
-    end.
+  Section isFault.
+    Context (P : FaultRecord → Prop).
+    Implicit Type ev : iEvent.
 
-  Global Instance has_fault_P_dec P `{forall f, Decision (P f)} event :
-    Decision (has_fault_P P event).
-  Proof. apply _. Qed.
+    Definition is_faultP :=
+      is_take_exceptionP (λ e, if e.(Exn_fault) is Some f then P f else False).
+    Typeclasses Opaque is_faultP.
+
+    Definition is_faultP_spec ev:
+      is_faultP ev ↔
+        ∃ exn flt, ev = TakeException (Build_Exn exn (Some flt)) &→ () ∧ P flt.
+    Proof.
+      clear - P ev.
+      destruct ev as [[] fret];
+        split; cdestruct |- ? #CDestrMatch; destruct fret; sauto lq:on dep:on.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_faultP_dec ev: Decision (is_faultP ev).
+    Proof using Pdec. unfold is_faultP. solve_decision. Defined.
+  End isFault.
+  Notation is_fault := (is_faultP (λ _, True)).
 
   (* armv9-interface/exceptions.cat#L84 *)
-  Definition Fault := collect_all (λ _ event, has_fault_P (λ _, True) event) cd.
+  Definition Fault := collect_all (λ _ event, is_fault event) cd.
   (* armv9-interface/exceptions.cat#L94 *)
   Definition Fault_T :=
     collect_all
       (λ _ event,
-          has_fault_P
+          is_faultP
             (λ fault, fault.(FaultRecord_statuscode) = Fault_Translation) event) cd.
   (* armv9-interface/exceptions.cat#L95 *)
   Definition Fault_P :=
     collect_all
       (λ _ event,
-          has_fault_P
+          is_faultP
             (λ fault, fault.(FaultRecord_statuscode) = Fault_Permission) event) cd.
   (* armv9-interface/exceptions.cat#L97 *)
   Definition FaultFromR :=
     collect_all
       (λ _ event,
-          has_fault_P (λ fault, fault.(FaultRecord_write) = false) event) cd.
+          is_faultP (λ fault, fault.(FaultRecord_write) = false) event) cd.
   (* armv9-interface/exceptions.cat#L97 *)
   Definition FaultFromW :=
     collect_all
       (λ _ event,
-          has_fault_P (λ fault, fault.(FaultRecord_write) = true) event) cd.
+          is_faultP (λ fault, fault.(FaultRecord_write) = true) event) cd.
   (* armv9-interface/exceptions.cat#L103 *)
   Definition FaultFromAquireR :=
     collect_all
       (λ _ event,
-          has_fault_P
+          is_faultP
             (λ fault, fault.(FaultRecord_write) = false
                       ∧ fault.(FaultRecord_acctype) = AccType_ORDERED) event) cd.
   (* armv9-interface/exceptions.cat#L106 *)
   Definition FaultFromReleaseW :=
     collect_all
       (λ _ event,
-          has_fault_P
+          is_faultP
             (λ fault, fault.(FaultRecord_write) = true
                       ∧ fault.(FaultRecord_acctype) = AccType_ORDERED) event) cd.
 
   (*** translation-common *)
+
+  Notation T_f := (T_f cd).
+
   Definition has_translationinfo_P P `{forall ti, Decision (P ti)} (event : iEvent) :=
     match event with
     | MemRead _ rreq &→ _ => P (rreq.(ReadReq.translation))
@@ -404,7 +459,7 @@ Section VMSAArm.
   (* translation-common.cat#L31 *)
   Definition speculative := ctrl ∪ (addr⨾po) ∪ (⦗T⦘⨾instruction_order).
   (* translation-common.cat#L37 *)
-  Definition po_pa := (instruction_order ∪ iio) ∩ loc.
+  (* Definition po_pa := (instruction_order ∪ iio) ∩ loc. *)
   (* translation-common.cat#L42 *)
   Definition ContextChange := MSR ∪ TE ∪ ERET.
   (* translation-common.cat#L46 *)
@@ -523,6 +578,12 @@ Section VMSAArm.
     ((obfault⨾⦗Fault_T⦘)⨾iio⁻¹⨾⦗T_f⦘)
       ∪ ((⦗TLBI⦘⨾po⨾⦗dsbsy cd⦘⨾instruction_order⨾⦗T⦘) ∩ tlb_affects).
 
+  (* WIP new FEAT_ETS2 definition, very tentative *)
+  Definition obETS2 :=
+    ⦗M⦘⨾po⨾⦗T_f⦘
+      ∪ ⦗dsbsy cd⦘⨾instruction_order⨾⦗IF⦘⨾iio⨾⦗T⦘.
+
+
   (* aarch64_mmu_strong_ETS.cat#L7 *)
   Definition obs  := rfe ∪ fr ∪ wco ∪ trfe.
 
@@ -530,7 +591,6 @@ Section VMSAArm.
   Definition dob :=
     addr ∪ data
       ∪ (speculative⨾⦗W⦘)
-      ∪ (addr⨾po⨾⦗W⦘)
       ∪ ((addr ∪ data)⨾rfi)
       ∪ ((addr ∪ data)⨾trfi).
 
@@ -539,37 +599,37 @@ Section VMSAArm.
     rmw
       ∪ (⦗grel_rng rmw⦘⨾rfi⨾(⦗A⦘∪⦗Q⦘)).
 
-  (* aarch64_mmu_strong_ETS.cat#L26 *)
   Definition bob :=
     (⦗R⦘⨾po⨾⦗dmb_load cd⦘)
-      ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
-      ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
-      ∪ (⦗dmb_load cd⦘⨾po⨾⦗R ∪ W⦘)
-      ∪ (⦗L⦘⨾po⨾⦗A⦘)
-      ∪ (⦗A ∪ Q⦘⨾po⨾⦗R ∪ W⦘)
-      ∪ (⦗R ∪ W⦘⨾po⨾⦗L⦘)
-      ∪ (⦗F ∪ C⦘⨾po⨾⦗dsbsy cd⦘)
-      ∪ (⦗dsb cd⦘⨾po).
+    ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
+    ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
+    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R⦘)
+    ∪ (⦗L⦘⨾po⨾⦗A⦘)
+    ∪ (⦗A ∪ Q⦘⨾po⨾⦗M⦘)
+    ∪ (⦗M⦘⨾po⨾⦗L⦘)
+    ∪ (⦗dsb cd⦘⨾po⨾⦗MSR ∪ M ∪ F ∪ C ∪ TE ∪ ERET⦘) (* Maybe MSR => RW??*)
+    ∪ (⦗ISB⦘⨾ instruction_order).
 
 
   (* aarch64_mmu_strong_ETS.cat#L37 *)
   (* Ordered-before *)
-  Definition ob1 := obs ∪ dob ∪ aob ∪ bob  ∪ iio ∪ tob ∪ obtlbi ∪ ctxob
+  Definition ob1 := obs ∪ dob ∪ aob ∪ bob ∪ iio ∪ tob ∪ obtlbi ∪ ctxob
                       ∪ obfault ∪ obETS.
   (* aarch64_mmu_strong_ETS.cat#L38 *)
   Definition ob := ob1⁺.
 
   Record consistent := {
-      internal : grel_acyclic (po_loc ∪ fr ∪ co ∪ rf);
-      reg_internal : grel_acyclic (Rpo_loc ∪ rfr ∪ rrf);
-      translation_internal : (grel_acyclic (po_pa ∪ trfi));
+      internal :> exp_internal cd;
+      reg_internal' :> reg_internal cd;
+      translation_internal : trfi ⊆ not_after cd;
       external : grel_irreflexive ob;
-      atomic : (aob ∩ (fre⨾ coe)) = ∅;
-      initial_reads : (T ∪ IF) ⊆ IR;
+      atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+      initial_reads : IF ⊆ IR;
+      initial_reads_not_delayed : IF ## grel_rng (coherence cd);
       register_write_permitted : Illegal_RW = ∅;
       memory_events_permitted : (mem_events cd) ⊆ M ∪ T ∪ IF;
       is_nms' : is_nms cd;
-      no_cacheop : C = ∅;
+      no_cacheop : ICDC = ∅;
       co_contains_TBLI_writes:
       ∀ weid ∈ mem_writes cd, ∀ teid ∈ TLBI,
         (weid, teid) ∈ coherence cd ∨ (teid, weid) ∈ coherence cd

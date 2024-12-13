@@ -203,6 +203,25 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         traces ← pe.(events) !! tid;
         traces !! iid.
 
+      Lemma ISA_complete_use pe tid iid tr :
+        ISA_complete pe → lookup_instruction pe tid iid = Some tr →
+        tr.2 = FTERet ().
+      Proof.
+        unfold ISA_complete, lookup_instruction.
+        cdestruct |- ** as H Ht He # CDestrEqSome.
+        eapply H; [rewrite elem_of_vlookup | by eapply elem_of_list_lookup_2].
+        naive_solver.
+      Qed.
+
+      Lemma ISA_match_use pe isem tid iid tr :
+        ISA_match pe isem → lookup_instruction pe tid iid = Some tr →
+        cmatch isem tr.
+      Proof.
+        unfold ISA_match, lookup_instruction.
+        cdestruct |- ** as H Ht He # CDestrEqSome.
+        eapply H. by eapply elem_of_list_lookup_2.
+      Qed.
+
       Definition instruction_list pe : list (nat * nat * iTrace ()) :=
         '(tid, traces) ← enumerate pe.(events);
         '(iid, trace) ← enumerate traces;
@@ -720,6 +739,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           to the program and instruction semantics. This does NOT means that this
           order implies any kind of weak memory ordering *)
       Definition full_instruction_order pe := instruction_order pe ∪ iio pe.
+      #[global] Typeclasses Transparent full_instruction_order.
 
       (** ** Memory based relations *)
 
@@ -887,7 +907,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Record t {et : exec_type} {nmth : nat} :=
       make {
           (** The preexecution this candidate is based on *)
-          pre_exec :> pre et nmth;
+          pre_exec : pre et nmth;
           (** Relate a memory read with the write it gets it's value from *)
           reads_from : grel EID.t;
           (** Register read from (needed because of potentially relaxed
@@ -908,6 +928,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           (** Load-reserve/store conditional pair (exclusives in Arm speak) *)
           lxsx : grel EID.t
         }.
+    #[global] Coercion pre_exec : t >-> pre.
     Arguments t : clear implicits.
     Arguments make _ {_}.
 
@@ -1082,8 +1103,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     Record lxsx_wf {cd : t} :=
       {
-        lxsx_from_reads : grel_dom (lxsx cd) ⊆ mem_reads cd ∩ mem_exclusive cd;
-        lxsx_to_writes : grel_rng (lxsx cd) ⊆ mem_writes cd ∩ mem_exclusive cd;
+        lxsx_from_reads : grel_dom (lxsx cd) ⊆ exclusive_reads cd;
+        lxsx_to_writes : grel_rng (lxsx cd) ⊆ exclusive_writes cd;
         lxsx_instruction_order : lxsx cd ⊆ instruction_order cd;
         lxsx_same_pa : lxsx cd ⊆ same_pa cd
       }.

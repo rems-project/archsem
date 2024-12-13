@@ -18,41 +18,96 @@ Section UMSeqArm.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
   Context (cd : Candidate.t NMS nmth).
+
+  (** * Arm standard notations *)
   Import AxArmNames.
 
-  Notation W := (W cd).
-  Notation R := (R cd).
-  Notation M := (W ∪ R).
-  Notation A := (A cd).
-  Notation Q := (Q cd).
-  Notation L := (L cd).
-  Notation T := (T cd).
-  Notation TE := (TE cd).
-  Notation ERET := (ERET cd).
-  Notation int := (same_thread cd).
-  Notation loc := (same_pa cd).
+  (** ** Thread relations *)
+  Notation pe := (pre_exec cd).
+  Notation int := (same_thread pe).
+  Notation si := (same_instruction_instance cd).
+  Notation sca := (same_access cd).
+  Notation instruction_order := (instruction_order pe).
+  Notation full_instruction_order := (full_instruction_order pe).
+  Notation iio := (iio pe).
+
+  (** ** Dependencies *)
+  Notation addr := (addr cd).
+  Notation data := (data cd).
+  Notation ctrl := (ctrl cd).
+
+  (** ** Registers *)
+  Notation RR := (reg_reads pe).
+  Notation RW := (reg_writes pe).
+  Notation RE := (RE cd).
+  Notation rrf := (reg_reads_from cd).
+  Notation rfr := (reg_from_reads cd).
+  Notation MSR := (MSR cd).
+  Notation MRS := (MRS cd).
+
+  (** ** Barriers *)
+  Notation F := (barriers cd).
+  Notation ISB := (isb cd).
+
+  (** ** Memory *)
+  Notation W := (explicit_writes pe).
+  Notation R := (explicit_reads pe).
+  Notation M := (mem_explicit pe).
+  Notation Wx := (exclusive_writes pe).
+  Notation Rx := (exclusive_writes pe).
+  Notation L := (rel_acq_writes pe).
+  Notation A := (rel_acq_reads pe).
+  Notation Q := (acq_rcpc_reads pe).
+  Notation T := (ttw_reads pe).
+  Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
+
+  Notation lxsx := (lxsx cd).
+  Notation amo := (atomic_update cd).
   Notation rmw := (rmw cd).
 
-  Notation iio := (iio cd).
-  Notation instruction_order := (instruction_order cd).
+  Notation co := (co cd).
+  Notation coi := (coi cd).
+  Notation coe := (coe cd).
 
-  Notation IF := (ifetch_reads cd).
+  Notation rf := (rf cd).
+  Notation rfi := (rfi cd).
+  Notation rfe := (rfe cd).
+  Notation fr := (fr cd).
+  Notation fri := (fri cd).
+  Notation fre := (fre cd).
 
-  (* Registers *)
+  Notation frf := (frf cd).
+  Notation frfi := (frfi cd).
 
-  Notation RW := (reg_writes cd).
-  Notation RR := (reg_reads cd).
-  Notation RE := (RW ∪ RR).
+  Notation trf := (trf cd).
+  Notation trfi := (trfi cd).
+  Notation trfe := (trfe cd).
+  Notation tfr := (tfr cd).
+  Notation tfri := (tfri cd).
+  Notation tfre := (tfre cd).
 
-  Definition Rpo := ⦗RE⦘⨾instruction_order⨾⦗RE⦘.
-  Notation Rloc := (same_reg cd).
+  Notation irf := (irf cd).
+  Notation irfi := (irfi cd).
+  Notation irfe := (irfe cd).
+  Notation ifr := (ifr cd).
+  Notation ifri := (ifri cd).
+  Notation ifre := (ifre cd).
 
-  Definition Rpo_loc := Rpo ∩ Rloc.
+  (** ** Caches *)
+  Notation ICDC := (ICDC cd).
+  Notation TLBI := (TLBI cd).
+  Notation C := (C cd).
 
-  Notation rrf := (reg_reads_from cd).
+  (** ** Exceptions *)
+  Notation TE := (TE cd).
+  Notation ERET := (ERET cd).
 
-  Notation rfr := (reg_from_reads cd).
+  (** ** Explicit events *)
+  Notation Exp := (Exp cd).
+  Notation po := (po cd).
+  (* End of copy paste section*)
+
 
   Definition is_illegal_reg_write (regs : gset reg) :=
     is_reg_writeP (λ reg acc _, reg ∉ regs ∨ acc ≠ None).
@@ -71,23 +126,10 @@ Section UMSeqArm.
 
   Definition Illegal_RR := collect_all (λ _, is_illegal_reg_read regs_whitelist) cd.
 
-  (* po orders memory events between instructions *)
-  Definition po := ⦗M⦘⨾instruction_order⨾⦗M⦘.
-
-  (* other shared relations *)
-  Definition po_loc := po ∩ loc.
-
-  Definition co := ⦗W⦘⨾(coherence cd)⨾⦗W⦘.
-
-  (* rf orders explicit writes and reads *)
-  Definition rf := ⦗W⦘⨾(reads_from cd)⨾⦗R⦘.
-
-  Definition fr := ⦗W⦘⨾(from_reads cd)⨾⦗R⦘.
-
   (* TODO This does not distinguishes UB conditions from invalid conditions *)
   Record consistent := {
-      total : grel_acyclic (full_instruction_order cd ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
-      atomic : (rmw ∩ (fr⨾ co)) = ∅;
+      total : grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
+      atomic : (rmw ∩ (fre⨾ coe)) = ∅;
       initial_reads : (T ∪ IF) ⊆ IR;
       register_write_permitted : Illegal_RW = ∅;
       register_read_permitted : Illegal_RR = ∅;
