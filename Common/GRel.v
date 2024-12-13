@@ -737,12 +737,17 @@ Section GRel.
 
   Definition grel_symmetric (r : grel) : Prop := r⁻¹ = r.
 
-  #[export] Instance grel_symmtric_decision r : Decision (grel_symmetric r).
-  Proof using. unfold grel_symmetric. solve_decision. Qed.
+  #[export] Instance grel_symmetric_decision r : Decision (grel_symmetric r).
+  Proof. unfold_decide. Defined.
+
+  #[export] Instance grel_symmetric_unfold r P:
+    (∀ x y, SetUnfoldElemOf (x, y) r (P x y)) →
+    SetUnfold (grel_symmetric r) (∀ x y, P x y ↔ P y x).
+  Proof. tcclean. unfold grel_symmetric. set_solver. Qed.
 
   Definition grel_symmetric_spec (r : grel) :
     grel_symmetric r ↔ ∀ x y, (x, y) ∈ r → (y, x) ∈ r.
-  Proof using. unfold grel_symmetric. set_solver. Qed.
+  Proof. set_solver. Qed.
 
   (*** Irreflexive ***)
 
