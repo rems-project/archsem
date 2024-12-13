@@ -8,6 +8,7 @@ Require Import CBool.
 Require Import COption.
 Require Import CList.
 Require Import CInduction.
+Require Import CDestruct.
 
 (** This file provide utility for dealing with sets. *)
 
@@ -250,6 +251,17 @@ Section SUP.
 
 End SUP.
 End SetUnfoldPair.
+
+(** Import this module to make CDestruct do set unfolding automatically. For now
+    only in the [x ∈ C] case *)
+Module CDestrUnfoldElemOf.
+  Instance cdestr_unfold_elem_of `{ElemOf A C} (x : A) (S : C) P:
+    SetUnfoldElemOf x S P →
+    Unconvertible Prop (x ∈ S) P →
+    CDestrSimpl (x ∈ S) P.
+  Proof. by tcclean. Qed.
+End CDestrUnfoldElemOf.
+
 
 
 (** * Set Induction ***)
