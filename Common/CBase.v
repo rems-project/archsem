@@ -390,6 +390,7 @@ Ltac2 Notation "assert_option" c(constr) := assert_bt (has_option0 c).
 Tactic Notation (at level 4) tactic4(tac) "#" constr(opt) :=
   let Opt := fresh "Opt" in
   assert opt as Opt by (intros; constructor);
+  move Opt at top;
   tac;
   clear Opt.
 
