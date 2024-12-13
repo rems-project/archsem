@@ -443,7 +443,7 @@ Module Reg.
     | _ => None
     end.
 
-  Definition to_arch (reg : t) : Arm.reg :=
+  Definition to_arch (reg : t) : Arm.Arch.reg :=
     match reg with
     | PC => "PC_"
     | App (R n) => "R" ++ (pretty n)

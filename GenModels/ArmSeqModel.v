@@ -48,7 +48,7 @@ Fixpoint write_mem_seq_state (pa : pa) (bytes : list (bv 8)) : seqmon unit :=
   if bytes is byte :: bytes
   then
     msetv (lookup pa ∘ mem) (Some byte);;
-    write_mem_seq_state (Arch.pa_addZ pa 1) bytes
+    write_mem_seq_state (pa_addZ pa 1) bytes
   else mret ().
 
 (** Combines a gmap with a registerMap to a new registerMap that was updated

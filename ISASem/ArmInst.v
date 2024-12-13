@@ -508,17 +508,14 @@ Module Arm.
     Definition fault := Exn.
     Definition fault_eq : EqDecision Exn := _.
   End Arch.
-  Include Arch.
-
   Module Interface := Interface Arch.
-  Include Interface.
-  Module IWA <: InterfaceWithArch.
-    Module Arch := Arch.
-    Module Interface := Interface.
-  End IWA.
+  (* Module IWA <: InterfaceWithArch. *)
+  (*   Module Arch := Arch. *)
+  (*   Module Interface := Interface. *)
+  (* End IWA. *)
 End Arm.
 
-Bind Scope string_scope with Arm.reg.
+Bind Scope string_scope with Arm.Arch.reg.
 
-
-Export Arm.
+Export Arm.Arch.
+Export Arm.Interface.
