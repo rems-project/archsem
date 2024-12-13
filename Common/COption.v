@@ -75,3 +75,7 @@ Proof. sfirstorder. Qed.
 (** * Hint database for options *)
 Hint Extern 5 (_ = Some _) => progress (apply eq_some_unfold) : option.
 Hint Extern 5 (Some _ = _) => progress (apply eq_some_unfold) : option.
+
+Global Instance incomptible_None_Some {A} (a : option A) (b : A) :
+  Incompatible (a = None) (a = Some b).
+Proof. tcclean. cdestruct a |- **. Qed.

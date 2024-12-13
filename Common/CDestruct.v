@@ -155,6 +155,24 @@ Global Hint Extern 8 (ObvFalse (¬ _)) =>
   let H := fresh "H" in
   constructor; intro H; contradiction H : typeclass_instances.
 
+(** ** Incompatible
+
+This typeclass is to flag mutually exclusive properties of an object, like
+discriminate but for non inductives. If there are n incompatible statements this
+setup still requires [n(n-1)/2] Instances. TODO improve that *)
+Class Incompatible (P : Prop) (Q : Prop) := {incompatible : P → Q → False}.
+#[global] Hint Mode Incompatible + - : typeclass_instances.
+#[global] Hint Mode Incompatible - + : typeclass_instances.
+
+#[global] Instance obv_false_incompatible_l `{Incompatible P Q} :
+  TCFastDone P → ObvFalse Q.
+Proof. deintro. tcclean. naive_solver. Qed.
+
+#[global] Instance obv_false_incompatible_r `{Incompatible P Q} :
+  TCFastDone Q → ObvFalse P.
+Proof. deintro. tcclean. naive_solver. Qed.
+
+
 (** * CDestruct
 
 [cdestruct] is a custom destruction tactic. The goal is to recursively destruct
