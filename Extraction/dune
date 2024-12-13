@@ -2,7 +2,7 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories ISASem SSCCommon stdpp SailStdpp Hammer RecordUpdate Equations
+  (theories ISASem ASCommon stdpp SailStdpp Hammer RecordUpdate Equations
             GenModels Ltac2)
   (extracted_modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
@@ -15,6 +15,6 @@
 )
 
 (library
-  (name System_semantics_ocaml)
-  (public_name coq-system-semantics)
+  (name Archsem_ocaml) ; TODO might change
+  (public_name coq-archsem)
   (libraries zarith))

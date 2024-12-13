@@ -1,11 +1,11 @@
 (coq.theory
  (name GenModels)
- (package coq-system-semantics)
+ (package coq-archsem)
  (modules TermModels CandidateExecutions ArmInst ArmSeqModel)
- (theories ISASem SSCCommon)
+ (theories ISASem ASCommon)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
-               --external ../../Common/SSCCommon.html SSCCommon
+               --external ../../Common/ASCommon.html ASCommon
                --external ../../ISASem/ISASem.html ISASem
                --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
  )

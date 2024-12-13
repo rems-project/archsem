@@ -4,12 +4,12 @@
     manipulate promising models in a first order manner.
 *)
 
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.Exec.
-Require Import SSCCommon.Effects.
-Require Import SSCCommon.FMon.
-Require Import SSCCommon.StateT.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.Exec.
+Require Import ASCommon.Effects.
+Require Import ASCommon.FMon.
+Require Import ASCommon.StateT.
 
 Require Import Relations.
 Require Import Program.

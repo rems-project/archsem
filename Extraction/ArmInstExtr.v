@@ -1,4 +1,4 @@
-Require Import SSCCommon.CExtraction.
+Require Import ASCommon.CExtraction.
 Require Import GenModels.ArmSeqModel.
 
 Unset Extraction SafeImplicits.

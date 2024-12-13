@@ -15,12 +15,12 @@ Require Import Strings.String.
 From stdpp Require Export listset.
 From stdpp Require Export gmap.
 
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.Exec.
-Require Import SSCCommon.GRel.
-Require Import SSCCommon.FMon.
-Require Import SSCCommon.StateT.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.Exec.
+Require Import ASCommon.GRel.
+Require Import ASCommon.FMon.
+Require Import ASCommon.StateT.
 
 Require Import ISASem.Interface.
 Require Import TermModels.

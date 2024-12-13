@@ -1,8 +1,8 @@
 Require Import Strings.String.
 
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.FMon.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.FMon.
 
 (** * The architecture requirements
 

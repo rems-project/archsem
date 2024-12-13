@@ -2,9 +2,9 @@
 
 Require Import Strings.String.
 
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.Exec.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.Exec.
 
 Require Import Relations.
 Require Import Program.

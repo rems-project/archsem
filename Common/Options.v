@@ -1,9 +1,9 @@
-(** Coq configuration for system-semantic-coq (not meant to leak to clients).
+(** Coq configuration for ArchSem (not meant to leak to clients).
 
 Any downstream project should have its own options file as this might change at
 any time without notice.
 
-All SSC files should Import (but not Export) this. *)
+All ArchSem files should Import (but not Export) this. *)
 (* Everything here should be [#[export] Set], which means when this
 file is *imported*, the option will only apply on the import site
 but not transitively. *)
@@ -34,4 +34,4 @@ Export IfNotations.
 
 (* TODO automatically check that all file in the project import this file.
    This might be done with a text checker that there exists a
-   [Require Import Options.] or [Require Import SSCCommon.Options] *)
+   [Require Import Options.] or [Require Import ASCommon.Options] *)

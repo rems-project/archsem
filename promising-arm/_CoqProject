@@ -1,4 +1,4 @@
 -Q ../_build/default/ISASem ISASem
--Q ../_build/default/Common SSCCommon
+-Q ../_build/default/Common ASCommon
 -Q ../_build/default/GenModels GenModels
 -R ../_build/default/promising-arm PromisingArm

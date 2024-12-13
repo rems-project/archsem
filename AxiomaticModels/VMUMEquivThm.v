@@ -2,11 +2,11 @@ Require Import Strings.String.
 
 From stdpp Require Import decidable.
 
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.GRel.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.GRel.
 
-Require Import SSCCommon.FMon.
+Require Import ASCommon.FMon.
 Require Import ISASem.ArmInst.
 Require Import GenModels.ArmInst.
 Require Import GenAxiomaticArm.

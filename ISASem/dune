@@ -1,16 +1,16 @@
 (coq.theory
  (name ISASem)
- (package coq-system-semantics)
+ (package coq-archsem)
  (modules
    Interface
    ; SailArmInst
    ; SailArmInst_types
    SailArmInstTypes
    ArmInst)
- (theories SailStdpp SSCCommon)
+ (theories SailStdpp ASCommon)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
-               --external ../../Common/SSCCommon.html SSCCommon
+               --external ../../Common/ASCommon.html ASCommon
                --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
  )
 )

@@ -1,6 +1,6 @@
 (coq.theory
- (name SSCCommon)
- (package coq-system-semantics)
+ (name ASCommon)
+ (package coq-archsem)
  (modules
    Common
    CBase

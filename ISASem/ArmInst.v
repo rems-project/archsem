@@ -4,13 +4,13 @@ Require Import stdpp.strings.
 Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import stdpp.vector.
-Require Import SSCCommon.Options.
+Require Import ASCommon.Options.
 Require Import Interface.
 Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
-From SSCCommon Require Import Common Effects CDestruct.
+From ASCommon Require Import Common Effects CDestruct.
 
 
 From Equations Require Import Equations.

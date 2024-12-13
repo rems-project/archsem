@@ -1,9 +1,9 @@
 Require Import ArmInst.
-Require Import SSCCommon.Options.
-Require Import SSCCommon.Common.
-Require Import SSCCommon.Exec.
-Require Import SSCCommon.StateT.
-Require Import SSCCommon.Effects.
+Require Import ASCommon.Options.
+Require Import ASCommon.Common.
+Require Import ASCommon.Exec.
+Require Import ASCommon.StateT.
+Require Import ASCommon.Effects.
 
 Section Seq.
 

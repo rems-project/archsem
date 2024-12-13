@@ -1,5 +1,5 @@
-(** This file is the top level of the SSCCommon library. Users should just
-    Require Import SSCCommon.Common.
+(** This file is the top level of most the ASCommon library. Most users should
+    just Require Import ASCommon.Common.
  *)
 
 From Hammer Require Export Tactics.
