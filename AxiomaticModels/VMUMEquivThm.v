@@ -81,8 +81,8 @@ Section Phase1.
   Import CDestrUnfoldElemOf.
 
   (** Take the candidate as a parameter *)
-  Context (nmth : nat).
-  Context (cd : Candidate.t NMS nmth).
+  Variable nmth : nat.
+  Variable cd : Candidate.t NMS nmth.
 
   (** * Arm standard notations *)
 
@@ -181,32 +181,32 @@ Section Phase1.
 
   (** Those are the registers that can be written, the theorem is generic over
       them, suprisingly, no hypotheses on them were required *)
-  Parameter regs_whitelist : gset reg.
+  Variable regs_whitelist : gset reg.
 
   (** The candidate must we wellformed *)
-  Hypothesis (cd_wf: wf cd).
-  Hypothesis (cd_complete : ISA_complete cd).
+  Hypothesis cd_wf: wf cd.
+  Hypothesis cd_complete : ISA_complete cd.
 
   (** We also take an instruction semantic [isem] as a parameter that must
       accept the candidate execution *)
-  Context (isem : iMon ()).
-  Hypothesis (cd_isem_match : ISA_match cd isem).
+  Variable isem : iMon ().
+  Hypothesis cd_isem_match : ISA_match cd isem.
 
   (** This instruction semantic must have the property that any translation is
       followed by a PC write, in other-words, an instruction cannot commit on
       not taking an exception before finishing all translations. *)
-  Hypothesis (isem_trans_can_fail : ISA_trans_can_fail isem).
+  Hypothesis isem_trans_can_fail : ISA_trans_can_fail isem.
 
   (** In addition we require that translation read from initial memory *)
-  Hypothesis (initial_TTW_reads : T ⊆ init_mem_reads cd).
-  Hypothesis (TTW_reads_not_delayed : T ## grel_rng (coherence cd)).
+  Hypothesis initial_TTW_reads : T ⊆ init_mem_reads cd.
+  Hypothesis TTW_reads_not_delayed : T ## grel_rng (coherence cd).
 
   (** And we require that there is no fault, TLBIs or MSRs, those can be deduce
       from a more high-level hypotheses such that "pure EL0 execution" later. *)
-  Hypothesis (no_exceptions : TE ∪ ERET = ∅).
-  Hypothesis (no_tf : T_f = ∅).
-  Hypothesis (no_tlbi : TLBI = ∅).
-  Hypothesis (no_msr : MSR = ∅).
+  Hypothesis no_exceptions : TE ∪ ERET = ∅.
+  Hypothesis no_tf : T_f = ∅.
+  Hypothesis no_tlbi : TLBI = ∅.
+  Hypothesis no_msr : MSR = ∅.
 
 
 
