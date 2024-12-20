@@ -2,7 +2,7 @@
 
 ArchSem is a Rocq framework to define the semantics of CPU architectures
 such as Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set semantics.
-The framework is designed to be generic, but so far is only instantiated it for Arm-A.
+The framework is designed to be generic, but so far is only instantiated for Arm-A.
 
 
 ## General goals and organization
@@ -69,10 +69,10 @@ instructions.
 
 ## Rocq automation
 
-There is some powerful custom tactics in `Common`. TODO write documentation for
+There are some powerful custom tactics in `Common`. TODO write documentation for
 them.
 
-## What is done now: Directory structure
+## The current state and directory structure
 
 The directory structure is intended to change soon, so don't rely on it too much
 
@@ -112,6 +112,8 @@ will be generated in:
 
 ## Current limitations
 
+Developing complete architectural models is an ambitious long-term goal.  The curent state takes many important steps towards that, but there is still much to do. In the short term, this includes:
+
 ### Connection to Sail
 
 We have almost all of the pipeline to import a Sail model into ArchSem done, but
@@ -126,7 +128,7 @@ tests.
 ### Partiality handling
 
 In order to allow partial models and execution traces that contain partially
-executed instruction, we need more support from the Interface to bound what a
+executed instructions, we need more support from the interface to bound what a
 partially executed instruction can do next. Concurrency models must therefore correctly
 understand this information to handle undefined behaviour properly.
 
