@@ -69,8 +69,8 @@ instructions.
 
 ## Rocq automation
 
-There are some powerful custom tactics in `Common`. TODO write documentation for
-them.
+There are some powerful custom tactics in `Common`, as well as useful but
+generic library. See the [README](Common/README.md) there for more details.
 
 ## The current state and directory structure
 
