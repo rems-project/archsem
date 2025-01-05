@@ -70,7 +70,8 @@ instructions.
 ## Rocq automation
 
 There are some powerful custom tactics in `Common`, as well as useful but
-generic library. See the [README](Common/README.md) there for more details.
+generic library. See the [README](Common/README.md) there for more details. In
+particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
 
 ## The current state and directory structure
 

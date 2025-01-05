@@ -67,7 +67,7 @@ Class CTrans {T : Type} (F : T → Type) :=
 
 The main automation tactic specific to this project so far is
 [`cdestruct`](CDestruct.v) which is an extensible variant of Rocq's `intuition`
-or Isabelle's `clarify`. See the file for details, but it performs the job of
+or Isabelle's `clarify`. See the file for details. Roughly, it performs the job of
 `intuition`, `discriminate`, `contradiction`, `simplify_eq`, `case_split`
 all-in-one in an extensible manner.
 
