@@ -5,7 +5,7 @@ all:
 	dune build
 
 TARBALL=ArchSem.tar.gz
-PREFIX=AS
+PREFIX=ArchSem
 GIT_ARCHIVE=git archive
 
 clean:
