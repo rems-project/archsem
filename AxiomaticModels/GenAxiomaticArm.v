@@ -293,7 +293,7 @@ Module AxArmNames.
     - intros Ha [x y] Hrel.
       apply NNPP. intro Hna.
       set_unfold in Hna.
-      cdestruct Hna ##cdestruct_or.
+      cdestruct Hna # CDestrSplitGoal.
       1: assert ((y, x) ∈ instruction_order) by (set_unfold #UnfoldEidRels; hauto l:on).
       all: set_solver.
     - intros Hr x Hc.

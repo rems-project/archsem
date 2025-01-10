@@ -254,7 +254,7 @@ Module Interface (A : Arch).
   Proof.
     unfold pa_in_range, is_Some.
     split.
-    - cdestruct |- ? #CDestrEqSome.
+    - cdestruct |- ? #CDestrEqOpt.
       eauto with pa.
     - cdestruct |- ?.
       odestruct pa_diffN_existN; first eassumption.
@@ -274,7 +274,7 @@ Module Interface (A : Arch).
     setoid_rewrite pa_in_range_spec.
     split.
     (* TODO broken *)
-    - cdestruct pa1,pa2 |- ? ## cdestruct_or;
+    - cdestruct pa1,pa2 |- ? # CDestrSplitGoal;
       setoid_rewrite pa_addN_assoc;
       typeclasses eauto with core lia pa.
     - cdestruct |- ** as n1 n2 H1 H2 H.
@@ -611,7 +611,7 @@ Module Interface (A : Arch).
       is_reg_readP ev ↔
         ∃ reg racc rval, ev = RegRead reg racc &→ rval ∧ P reg racc rval.
     Proof. destruct ev as [[] ?]; split; cdestruct |- **;naive_solver. Qed.
-    Definition is_reg_readP_cdestr ev := cdestr_simpl (is_reg_readP_spec ev).
+    Definition is_reg_readP_cdestr ev := cdestr_simpl false (is_reg_readP_spec ev).
     #[global] Existing Instance is_reg_readP_cdestr.
 
     Context `{Pdec: ∀ reg racc rval, Decision (P reg racc rval)}.
@@ -633,7 +633,7 @@ Module Interface (A : Arch).
       destruct ev as [[] fret];
         split; cdestruct |- ?; destruct fret; naive_solver.
     Qed.
-    Definition is_reg_writeP_cdestr ev := cdestr_simpl (is_reg_writeP_spec ev).
+    Definition is_reg_writeP_cdestr ev := cdestr_simpl false (is_reg_writeP_spec ev).
     #[global] Existing Instance is_reg_writeP_cdestr.
 
     #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
@@ -663,7 +663,7 @@ Module Interface (A : Arch).
     Definition is_mem_read_reqP_spec ev:
       is_mem_read_reqP ev ↔ ∃ n rr rres, ev = MemRead n rr &→ rres ∧ P n rr rres.
     Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
-    Definition is_mem_read_reqP_cdestr ev := cdestr_simpl (is_mem_read_reqP_spec ev).
+    Definition is_mem_read_reqP_cdestr ev := cdestr_simpl false (is_mem_read_reqP_spec ev).
     #[global] Existing Instance is_mem_read_reqP_cdestr.
 
     Context `{Pdec : ∀ n rr rres, Decision (P n rr rres)}.
@@ -690,7 +690,7 @@ Module Interface (A : Arch).
       is_mem_readP ev ↔
         ∃ n rr rval otag, ev = MemRead n rr &→ inl (rval, otag) ∧ P n rr rval otag.
     Proof. unfold is_mem_readP. rewrite is_mem_read_reqP_spec. hauto l:on. Qed.
-    Definition is_mem_readP_cdestr ev := cdestr_simpl (is_mem_readP_spec ev).
+    Definition is_mem_readP_cdestr ev := cdestr_simpl false (is_mem_readP_spec ev).
     #[global] Existing Instance is_mem_readP_cdestr.
 
     Context `{Pdec: ∀ n rr rval otag, Decision (P n rr rval otag)}.
@@ -723,7 +723,7 @@ Module Interface (A : Arch).
     Qed.
     Typeclasses Opaque is_mem_write_addr_announceP.
     Definition is_mem_write_addr_announceP_cdestr ev :=
-      cdestr_simpl (is_mem_write_addr_announceP_spec ev).
+      cdestr_simpl false (is_mem_write_addr_announceP_spec ev).
     #[global] Existing Instance is_mem_write_addr_announceP_cdestr.
 
     Context `{Pdec: ∀ n pa acc trans, Decision (P n pa acc trans)}.
@@ -753,7 +753,7 @@ Module Interface (A : Arch).
     Definition is_mem_write_reqP_spec ev:
       is_mem_write_reqP ev ↔ ∃ n wr wres, ev = MemWrite n wr &→ wres ∧ P n wr wres.
     Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
-    Definition is_mem_write_reqP_cdestr ev := cdestr_simpl (is_mem_write_reqP_spec ev).
+    Definition is_mem_write_reqP_cdestr ev := cdestr_simpl false (is_mem_write_reqP_spec ev).
     #[global] Existing Instance is_mem_write_reqP_cdestr.
 
     Context `{Pdec: ∀ n wr wres, Decision (P n wr wres)}.
@@ -782,7 +782,7 @@ Module Interface (A : Arch).
       is_mem_writeP ev ↔
         ∃ n wr, ev = MemWrite n wr &→ inl true ∧ P n wr.
     Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
-    Definition is_mem_writeP_cdestr ev := cdestr_simpl (is_mem_writeP_spec ev).
+    Definition is_mem_writeP_cdestr ev := cdestr_simpl false (is_mem_writeP_spec ev).
     #[global] Existing Instance is_mem_writeP_cdestr.
 
     Context `{Pdec: ∀ n wr, Decision (P n wr)}.

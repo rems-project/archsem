@@ -299,10 +299,10 @@ End SetUnfoldPair.
 (** Import this module to make CDestruct do set unfolding automatically. For now
     only in the [x ∈ C] case *)
 Module CDestrUnfoldElemOf.
-  Instance cdestr_unfold_elem_of `{ElemOf A C} (x : A) (S : C) P:
+  Instance cdestr_unfold_elem_of b `{ElemOf A C} (x : A) (S : C) P:
     SetUnfoldElemOf x S P →
     Unconvertible Prop (x ∈ S) P →
-    CDestrSimpl (x ∈ S) P.
+    CDestrSimpl b (x ∈ S) P.
   Proof. by tcclean. Qed.
 End CDestrUnfoldElemOf.
 

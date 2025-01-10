@@ -252,7 +252,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tr.2 = FTERet ().
       Proof.
         unfold ISA_complete, lookup_instruction.
-        cdestruct |- ** as H Ht He # CDestrEqSome.
+        cdestruct |- ** as H Ht He # CDestrEqOpt.
         eapply H; [rewrite elem_of_vlookup | by eapply elem_of_list_lookup_2].
         naive_solver.
       Qed.
@@ -262,7 +262,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         cmatch isem tr.
       Proof.
         unfold ISA_match, lookup_instruction.
-        cdestruct |- ** as H Ht He # CDestrEqSome.
+        cdestruct |- ** as H Ht He # CDestrEqOpt.
         eapply H. by eapply elem_of_list_lookup_2.
       Qed.
 
@@ -434,9 +434,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Proof.
         unfold mem_reads, mem_read_reqs, mem_read_aborts.
         set_unfold.
-        split;
-          cdestruct |- ** ##cdestruct_or ##cdestruct_sum;
-          naive_solver.
+        cdestruct |- *** #CDestrSplitGoal; naive_solver.
       Qed.
 
       (** Get the set of all memory writes *)
@@ -456,7 +454,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         unfold mem_writes, mem_write_reqs, mem_write_aborts.
         set_unfold.
         split;
-          cdestruct |- ** ##cdestruct_or ##cdestruct_sum # (CDestrCase bool);
+          cdestruct |- ** #CDestrSplitGoal # (CDestrCase bool);
           naive_solver.
       Qed.
 
@@ -841,7 +839,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         is_overlapping pe eid1 eid2 → is_overlapping pe eid2 eid1.
       Proof.
         unfold is_overlapping, is_Some in *.
-        cdestruct |- ? # CDestrEqSome.
+        cdestruct |- ? # CDestrEqOpt.
         typeclasses eauto with core pa option.
       Qed.
 
@@ -885,7 +883,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Proof.
         unfold same_reg,same_reg_val.
         set_unfold.
-        cdestruct |- ** #CDestrEqSome.
+        cdestruct |- ** #CDestrEqOpt.
         setoid_rewrite eq_some_unfold.
         hauto lq:on rew:off use:get_reg_val_get_reg.
       Qed.
@@ -908,12 +906,12 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
                 (pe.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
       Proof.
         unfold is_valid_init_reg_read.
-        split; cdestruct ev |- ** #CDestrMatch #CDestrEqSome.
+        split; cdestruct ev |- ** #CDestrMatch #CDestrEqOpt.
         - naive_solver.
         - cbn. by erewrite vec_lookup_nat_in.
       Qed.
       Definition is_valid_init_reg_read_cdestr pe eid ev :=
-        cdestr_simpl (is_valid_init_reg_read_spec pe eid ev).
+        cdestr_simpl false (is_valid_init_reg_read_spec pe eid ev).
       #[global] Existing Instance is_valid_init_reg_read_cdestr.
 
       Definition possible_initial_reg_reads pe :=
@@ -1182,8 +1180,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       assert (eid ∈ reg_reads cd) as Hr by set_solver.
       unfold reg_reads, reg_writes in Hr, Hw.
       set_unfold.
-      cdestruct Hw, Hr.
-      congruence.
+      cdestruct Hw, Hr #CDestrEqOpt.
     Qed.
 
     Lemma rrf_same_reg (cd : t) :

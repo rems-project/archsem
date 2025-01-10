@@ -227,7 +227,7 @@ Section Phase1.
   Instance ContextChange_obv_false x : ObvFalse (x ∈ VMSA.ContextChange cd).
   Proof using no_msr no_exceptions.
     tcclean. unfold VMSA.ContextChange.
-    cdestruct |- ** ## cdestruct_or.
+    cdestruct |- ** # CDestrSplitGoal.
   Qed.
 
   (** Since Translations read from initial memory, all trf related relations are
@@ -275,7 +275,7 @@ Section Phase1.
     cdestruct Ht.
     destruct teid as [tid iid ieid byte].
     unfold lookup, lookup_eid_pre, lookup_iEvent in H.
-    cdestruct byte, H as tr tre ?? # CDestrEqSome.
+    cdestruct byte, H as tr tre ?? # CDestrEqOpt.
     opose proof* ISA_complete_use; [eassumption .. | deintro; cdestruct tre |- ?].
     opose proof* ISA_match_use as Hc; [eassumption .. |].
     opose proof* (isem_trans_can_fail _ Hc ieid) as H'; [eassumption .. |].
@@ -440,7 +440,7 @@ Section Phase1.
       rewrite UM_VMSA_obs, UM_VMSA_aob, UM_to_VM_speculative.
       apply set_unfold_2.
       split.
-      all: cdestruct |- ** ## cdestruct_or.
+      all: cdestruct |- ** # CDestrSplitGoal.
       all: cbn.
       all: hauto lq:on rew:off.
       (* alternative *)

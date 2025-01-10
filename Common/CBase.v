@@ -256,6 +256,16 @@ Ltac2 Notation x(self) "|>" f(self) : 4 := f x.
 (** Fix up the do notation. The default one doesn't work *)
 Ltac2 Notation terminal("do") n(thunk(tactic(0))) t(thunk(self)) := do0 n t.
 
+(** or else notation, same as [||] in Ltac1. Due to parser limitations this is a
+    the same level as [;] and also right associative, so [a ; b ||ₜ c] is
+    [a ; (b ||ₜ c)] but [a ||ₜ b ; c] is [a ||ₜ (b ; c)]*)
+Ltac2 Notation a(thunk(self)) "||ₜ" b(thunk(self)) : 6 :=
+  orelse a (fun _ => b ()).
+
+(** Throw a [Tactic_failure] with the provided formated message *)
+Ltac2 throw_tacticf fmt := Message.Format.kfprintf (fun m => Control.throw (Tactic_failure (Some m))) fmt.
+Ltac2 Notation "throw_tacticf" fmt(format) := throw_tacticf fmt.
+
 (** Get the name of the last hypothesis *)
 Ltac2 last_hyp_name () := let (h, _, _) := List.last (Control.hyps ()) in h.
 (** Introduce an hypothesis and get the automatically generated name *)
@@ -424,6 +434,7 @@ Ltac has_option opt := assert_succeeds (eassert opt; first tc_solve).
 Ltac2 has_option0 c := succeeds (assert $c by ltac1:(tc_solve)).
 Ltac2 Notation "has_option" c(constr) := has_option0 c.
 Ltac2 Notation "assert_option" c(constr) := assert_bt (has_option0 c).
+Ltac use_option opt := assert opt by constructor.
 
 
 (** To enable an option locally, one can either do it at Section/Module scope
