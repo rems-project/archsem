@@ -48,7 +48,9 @@ From stdpp Require Export fin_maps.
 Require Import CBase.
 Require Import Options.
 Require Import CBool.
+Require Import COption.
 Require Import CInduction.
+Require Import CDestruct.
 
 (** This file provide utilities to deal with stdpp maps.
 
@@ -120,6 +122,25 @@ Proof.
   hauto unfold:diag_None lq:on.
 Qed.
 
+(** Use [LookupUnfold] with [EqSomeUnfold] and [EqNoneUnfold] *)
+Module LookupUnfoldEqOpt.
+  #[export] Instance lookup_unfold_eq_some {K A M : Type} {lk : Lookup K A M}
+    (k : K) (m : M) (oa : option A) (a : A) P :
+  LookupUnfold k m oa →
+  Unconvertible _ (m !! k) oa →
+  EqSomeUnfold oa a P →
+  EqSomeUnfold (m !! k) a P.
+  Proof. by tcclean. Qed.
+
+  #[export] Instance lookup_unfold_eq_none {K A M : Type} {lk : Lookup K A M}
+    (k : K) (m : M) (oa : option A) P :
+    LookupUnfold k m oa →
+    Unconvertible _ (m !! k) oa →
+    EqNoneUnfold oa P →
+    EqNoneUnfold (m !! k) P.
+  Proof. by tcclean. Qed.
+End LookupUnfoldEqOpt.
+
 
 
 (** * Lookup Total Unfold ***)
@@ -181,6 +202,8 @@ Qed.
 #[global] Typeclasses Transparent singletonM.
 #[global] Typeclasses Transparent insert.
 #[global] Typeclasses Transparent map_insert.
+#[global] Typeclasses Transparent delete.
+#[global] Typeclasses Transparent map_delete.
 
 Global Instance lookup_total_unfold_singleton_same
   `{FinMap K M} `{Empty A} (k : K) (a : A) :
@@ -327,7 +350,7 @@ End FinMapReduce.
 (** * FinMap setter *)
 
 #[global] Instance Setter_finmap `{FinMap K M} {A} (k : K) :
-    @Setter (M A) _ (lookup k) := λ f, partial_alter f k.
+  @Setter (M A) _ (lookup k) := λ f, partial_alter f k.
 
 #[global] Program Instance Setter_finmap_wf `{FinMap K M} {A} (k : K) :
   @SetterWf (M A) _ (lookup k) :=
@@ -341,3 +364,135 @@ Next Obligation.
   intro i.
   destruct decide subst i k; sauto.
 Qed.
+
+
+(** * DMap : Dependant map *)
+
+
+Section DMap.
+  Context {K : Type}.
+  Context {K_eq_dec : EqDecision K}.
+  Context {K_countable : Countable K}.
+  Context {F : K → Type}.
+  Context {ctrans_F : CTrans F}.
+  Context {ctrans_F_simpl : CTransSimpl F}.
+
+  Definition gmap_is_dmap (g : gmap K (sigT F)):=
+    ∀ k f, g !! k = Some f → f.T1 = k.
+
+  (* TODO should I hide dmap_wf in a bool like bv? *)
+  Record dmap :=
+    {dmap_carrier : gmap K (sigT F); dmap_wf : gmap_is_dmap dmap_carrier}.
+
+  (** ** DMap methods *)
+
+  #[export] Program Instance dmap_empty : Empty dmap :=
+    {|dmap_carrier := ∅|}.
+  Next Obligation.
+    unfold gmap_is_dmap.
+    setoid_rewrite lookup_unfold.
+    cdestruct |- **.
+  Qed.
+
+  Definition dmap_lookup (k : K) (m : dmap) : option (F k) :=
+    match inspect ((dmap_carrier m) !! k) with
+    | Some f eq:e => Some (ctrans (dmap_wf m k f e) f.T2)
+    | None eq:_ => None
+    end.
+  #[global] Arguments dmap_lookup : simpl never.
+  Notation "m !d! k" := (dmap_lookup k m) (at level 20).
+
+  Program Definition dmap_insert (k : K) (f : F k) (m : dmap) :=
+    {|dmap_carrier := insert k (existT k f) (dmap_carrier m)|}.
+  Next Obligation.
+    unfold gmap_is_dmap.
+    setoid_rewrite lookup_unfold.
+    cdestruct |- *** # CDestrMatch.
+    naive_solver ## dmap_wf.
+  Qed.
+
+  Program Definition dmap_delete (k : K) (m : dmap) :=
+    {|dmap_carrier := delete k (dmap_carrier m)|}.
+  Next Obligation.
+    unfold gmap_is_dmap.
+    setoid_rewrite lookup_delete_Some.
+    cdestruct |- *** # CDestrMatch.
+    naive_solver ## dmap_wf.
+  Qed.
+
+  Definition dmap_singleton k f := dmap_insert k f ∅.
+
+  Definition dmap_alter (k : K) (f : F k → F k) (m : dmap) :=
+    match dmap_lookup k m with
+    | Some fk => dmap_insert k (f fk) m
+    | None => m
+    end.
+
+  Definition dmap_partial_alter (k : K) (f : option (F k) → option (F k))
+    (m : dmap) :=
+    match f (dmap_lookup k m) with
+    | Some fk => dmap_insert k fk m
+    | None => dmap_delete k m
+    end.
+
+  #[export] Instance dmap_dom : Dom dmap (gset K) := λ m, dom (dmap_carrier m).
+
+
+  (** ** DMap lemmas *)
+
+  Lemma dmap_eq m m': (∀ k : K, m !d! k = m' !d! k) → m = m'.
+  Proof using ctrans_F_simpl.
+    intro H.
+    destruct m as [m Wfm].
+    destruct m' as [m' Wfm'].
+    enough (m = m') as -> by (f_equal; apply proof_irrelevance).
+    apply map_eq.
+    intros i.
+    specialize (H i).
+    unfold dmap_lookup in H.
+    cdestruct H |- *** # CDestrMatch # CDestrSplitGoal # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_empty k : ∅ !d! k = None.
+  Proof. reflexivity. Qed.
+
+  Import LookupUnfoldEqOpt.
+
+  Lemma dmap_lookup_insert m k v : dmap_insert k v m !d! k = Some v.
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_insert.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_insert_ne m k k' v : k ≠ k' → dmap_insert k v m !d! k' = m !d! k'.
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_insert.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_delete m k : dmap_delete k m !d! k = None.
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_delete.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_delete_ne m k k' : k ≠ k' → dmap_delete k m !d! k' = m !d! k'.
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_delete.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_partial_alter m k f : dmap_partial_alter k f m !d! k = f (m !d! k).
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_partial_alter, dmap_insert, dmap_delete.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+  Lemma dmap_lookup_partial_alter_ne m k k' f : k ≠ k' → dmap_partial_alter k f m !d! k' = m !d! k'.
+  Proof using ctrans_F_simpl.
+    unfold dmap_lookup, dmap_partial_alter, dmap_insert, dmap_delete.
+    cdestruct |- *** # CDestrMatch # CDestrEqOpt.
+  Qed.
+
+End DMap.
+Arguments dmap _ {_ _} _.
