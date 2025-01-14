@@ -61,6 +61,10 @@ This is a custom implementation of a free monad, which is basically a finite
 itree (thus inductive, not coinductive). Therefore, it cannot represent
 non-termination. *)
 
+(*** Rationale: it's ok to do that, and later to consider only finite traces because the intended use is for the semantics of single instructions. ***)
+                            
+
+
 Section FMon.
   Context {Eff : eff}.
   Context {ER : Effect Eff}.
@@ -138,9 +142,14 @@ Section FMon.
   One can see a free monad (or an itree) as a state transtion system where the
   free monad value itself is the state and events are transitions. *)
 
-  (** [fsteps] describe the result of list of transitions labelled by events in
-      the list applied on the monad. There is a [fstep] notation instead of a
-      separate predicate for a single transition *)
+  (** [fsteps] describe the result of a list of transitions, labelled by events in
+      the list, allowed by the monad.  For a single transition, there is an [fstep] notation that uses that on a singleton list, instead of a separate predicate. 
+
+      [fsteps f evs f']  iff free monad value [f] can do a sequence of transitions, labelled by the events of the list [evs], to  free monad value [f'].
+
+      In the rhs of the body of [FMCons], the monadic value [Next call k] can do a transition with label [call &→ ret], with the same [call] and an arbitrary return value [ret], and then the rest of the events [tl], to reach monadic value [f'], reached by applying the continuation [k] to that return value [ret]. 
+
+ *)
   Inductive fsteps {A : Type} : fMon A → list fEvent → fMon A → Prop :=
   | FMNil f : fsteps f [] f
   | FMCons call k ret tl f' :
@@ -227,17 +236,19 @@ Section FMon.
 
   (** ** Free monad traces
 
-  The type of trace over fMon. Those trace are partial and can stop
+  The type of finite traces over fMon. These traces are partial and can stop
   anywhere, including having or not an incomplete next event. *)
+
+  (*** Rationale: we define traces as a pair of a list of events and a trace end, rather than defining a new list type with the trace ends in place of Nil, as otherwise we need to redefine all the standard list things. ***) 
 
   (** *** Trace ends *)
 
   (** A trace end is either nothing, a return value or an incomplete event i.e a
       call without a return value *)
   Inductive fTraceEnd {A : Type} :=
-  | FTENothing
-  | FTERet (a : A)
-  | FTEStop (call : Eff).
+  | FTERet (a : A)                     (* Terminated            *)
+  | FTENothing                         (* PartialClean          *)
+  | FTEStop (call : Eff).              (* PartialIncompleteCall *)
   Arguments fTraceEnd : clear implicits.
 
   #[export] Instance fTraceEnd_eqdec `{EqDecision A} : EqDecision (fTraceEnd A).
@@ -268,6 +279,7 @@ Section FMon.
 
   (** A trace is a list of events and an end. *)
   Definition fTrace A : Type := list fEvent * fTraceEnd A.
+                                                                             
   #[global] Typeclasses Transparent fTrace.
   Notation FTRet a := ([], FTERet a).
   Notation FTStop call := ([], FTEStop call).
@@ -282,7 +294,7 @@ Section FMon.
   | FTMNext call k ret tl tre :
     fmatch (k ret) (tl, tre) → fmatch (Next call k) ((call &→ ret) :: tl, tre).
 
-  (** Matching a whole trace is the same as running all the transition and then
+  (** Matching a whole trace is the same as running all the transitions and then
       matching the end of the trace *)
   Lemma fmatch_fsteps {A} (f : fMon A) tr :
     fmatch f tr ↔ ∃ f', fsteps f tr.1 f' ∧ fmatch_end f' tr.2.
@@ -293,7 +305,7 @@ Section FMon.
       induction FS; sauto.
   Qed.
 
-  (** [fmatch] is decidable which is very import for the rest of this project *)
+  (** [fmatch] is decidable which is very important for the rest of this project *)
   Equations fmatch_dec `{EqDecision A}
     (f : fMon A) tr : Decision (fmatch f tr) :=
     fmatch_dec f (l, tre)
@@ -318,6 +330,7 @@ Section FMon.
 
   (** *** Full traces *)
 
+    (** TP: deprecated notion **)
   (** Full trace are traces that only stop on a non returning effect *)
   Definition ftfull {A} (ft : fTrace A) :=
     match ft.2 with
@@ -359,7 +372,7 @@ Section FMon.
       + repeat (eexists || split || auto with fmon || cbn).
   Qed.
 
-  (** Two value of the free monad that generate the same set of full traces are
+  (** Two values of the free monad that generate the same sets of full traces are
       equal *)
   Theorem fmon_eq_via_ftrace_ftfull A m1 m2:
     (∀ trc : fTrace A, ftfull trc → fmatch m1 trc ↔ fmatch m2 trc) → m1 = m2.
@@ -391,7 +404,7 @@ Section FMon.
 
   (** ** Free monad effect handling *)
 
-  (** A handler is a function that decribe how to interpret all effects of [Eff]
+  (** A handler is a function that describes how to interpret all effects of [Eff]
       in a monad [M] *)
   Definition fHandler (M : Type → Type) := ∀ call : Eff, M (eff_ret call).
 
@@ -399,7 +412,7 @@ Section FMon.
       handler *)
   Definition mcall_fHandler `{MC : !MCall Eff M} : fHandler M := mcallM M.
 
-  (** Free monad interpret: Interprets a monad using a handler *)
+  (** Free monad interpret: Interprets a free monad over Eff in an arbitrary monad, using a handler *)
   Fixpoint finterp `{MR: MRet M, MB: MBind M} (handler : fHandler M)
     [A] (mon : fMon A) : M A :=
     match mon with
