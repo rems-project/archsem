@@ -465,37 +465,46 @@ Section DMap.
 
   Import LookupUnfoldEqOpt.
 
-  Lemma dmap_lookup_insert m k v : dmap_insert k v m !d! k = Some v.
+  Lemma dmap_lookup_insert m k v :
+    dmap_insert k v m !d! k = Some v.
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_insert.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
-  Lemma dmap_lookup_insert_ne m k k' v : k ≠ k' → dmap_insert k v m !d! k' = m !d! k'.
+  Lemma dmap_lookup_insert_ne m k k' v :
+    k ≠ k' →
+    dmap_insert k v m !d! k' = m !d! k'.
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_insert.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
-  Lemma dmap_lookup_delete m k : dmap_delete k m !d! k = None.
+  Lemma dmap_lookup_delete m k :
+    dmap_delete k m !d! k = None.
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_delete.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
-  Lemma dmap_lookup_delete_ne m k k' : k ≠ k' → dmap_delete k m !d! k' = m !d! k'.
+  Lemma dmap_lookup_delete_ne m k k' :
+    k ≠ k' →
+    dmap_delete k m !d! k' = m !d! k'.
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_delete.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
-  Lemma dmap_lookup_partial_alter m k f : dmap_partial_alter k f m !d! k = f (m !d! k).
+  Lemma dmap_lookup_partial_alter m k f :
+    dmap_partial_alter k f m !d! k = f (m !d! k).
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_partial_alter, dmap_insert, dmap_delete.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
-  Lemma dmap_lookup_partial_alter_ne m k k' f : k ≠ k' → dmap_partial_alter k f m !d! k' = m !d! k'.
+  Lemma dmap_lookup_partial_alter_ne m k k' f :
+    k ≠ k' →
+    dmap_partial_alter k f m !d! k' = m !d! k'.
   Proof using ctrans_F_simpl.
     unfold dmap_lookup, dmap_partial_alter, dmap_insert, dmap_delete.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
