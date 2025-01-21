@@ -98,6 +98,13 @@ Global Instance lookup_unfold_fmap `{FinMap K M} A B
   LookupUnfold k (f <$> m) (f <$> o).
 Proof. tcclean. sfirstorder. Qed.
 
+Global Instance lookup_unfold_difference `{FinMap K M} A
+  (m1 m2 : M A) (o o' : option A) (k : K) :
+  LookupUnfold k m1 o ->
+  LookupUnfold k m2 o' ->
+  LookupUnfold k (m1 ∖ m2) (if o' is Some _ then None else o).
+Proof. tcclean. apply lookup_difference. Qed.
+
 Global Instance lookup_unfold_omap `{FinMap K M} A B
     (f : A -> option B) (m : M A) (o : option A) (k : K) :
   LookupUnfold k m o ->
