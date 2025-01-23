@@ -55,63 +55,67 @@ Require Import Effects.
 Module Exec.
 
 (** * Base definitions *)
-Record t {E A : Type} := make {
-    results: list A;
-    errors: list E;
+Record t {St E A : Type} := make {
+    results: list (St * A);
+    errors: list (St * E);
   }.
 Arguments t : clear implicits.
-Arguments make {_ _}.
+Arguments make {_ _ _}.
 
-(** Decide if a execution has errors *)
-Definition has_error `(e : t E A) :=
+(** Decide if an execution has errors *)
+Definition has_error `(e : t St E A) :=
   match e with
   | make _ [] => False
   | _ => True
   end.
-#[global] Instance has_error_dec `(e : t E A): Decision (has_error e).
+#[global] Instance has_error_dec `(e : t St E A): Decision (has_error e).
 Proof. unfold_decide. Qed.
 
 (** Create an execution from a set of results, e.g. to convert from pure
     non-determinism to Exec *)
-Definition Results {E A C} `{Elements A C} (s : C) : t E A := make (elements s) [].
+Definition Results {E A C} `{Elements A C} (s : C) : t () E A := make (map ((),.) (elements s)) [].
 
 (** Merge the results of two executions *)
-Definition merge {E A} (e1 e2 : t E A) :=
+Definition merge {St E A} (e1 e2 : t St E A) :=
   make (e1.(results) ++ e2.(results)) (e1.(errors) ++ e2.(errors)).
 #[global] Typeclasses Opaque merge.
 Arguments merge : simpl never.
 
 (** Convert an execution into a list of results *)
-Definition to_result_list `(e : t E A) : list (result E A) :=
+Definition to_result_list `(e : t St E A) : list (result (St * E) (St * A)) :=
   map Ok e.(results) ++ map Error e.(errors).
 
-#[global] Instance mret_inst {E} : MRet (t E) := λ _ v, make [v] [].
+Definition s {St E A} := St → t St E A.
+Arguments s : clear implicits.
+Arguments make {_ _ _}.
 
-#[global] Instance mbind_inst {E} : MBind (t E) :=
-  λ _ _ f e, foldr merge (make [] e.(errors)) (map f e.(results)).
+#[global] Instance mret_inst {St E} : MRet (s St E) := λ _ v st, make [(st,v)] [].
+
+#[global] Instance mbind_inst {St E} : MBind (s St E) :=
+  λ _ _ f e st, foldr merge (make [] (e st).(errors)) (map (λ '(st', r), f r st') (e st).(results)).
 #[global] Typeclasses Opaque mbind_inst.
 
-#[global] Instance fmap_inst {E} : FMap (t E) :=
-  λ _ _ f e, make (map f e.(results)) e.(errors).
+#[global] Instance fmap_inst {St E} : FMap (s St E) :=
+  λ _ _ f e st, make (map (λ '(st', r), (st', f r)) (e st).(results)) (e st).(errors).
 #[global] Typeclasses Opaque fmap_inst.
 
-#[global] Instance throw_inst {E} : MThrow E (t E) := λ _ e, make [] [e].
+#[global] Instance throw_inst {St E} : MThrow E (s St E) := λ _ e st, make [] [(st,e)].
 
-#[global] Instance choose_inst {E} : MChoose (t E) :=
-  λ '(ChooseFin n), make (enum (fin n)) [].
+#[global] Instance choose_inst {St E} : MChoose (s St E) :=
+  λ '(ChooseFin n) st, make (map (st,.) (enum (fin n))) [].
 #[global] Typeclasses Opaque choose_inst.
 
-Lemma mdiscard_eq {E A} : mdiscard =@{t E A} make [] [].
+Lemma mdiscard_eq {St E A} : mdiscard =@{s St E A} (λ st, make [] []).
 Proof. reflexivity. Qed.
 
-#[global] Instance elem_of_results {E A} : ElemOf A (t E A) :=
-  λ x e, x ∈ e.(results).
+#[global] Instance elem_of_results {E A} : ElemOf A (s () E A) :=
+  λ x e, x ∈ (map snd (e ()).(results)).
 #[global] Typeclasses Opaque elem_of_results.
 
-#[global] Instance elem_of_result {E A} : ElemOf (result E A) (t E A) :=
+#[global] Instance elem_of_result {E A} : ElemOf (result E A) (s () E A) :=
   λ x e, match x with
          | Ok v => v ∈ e
-         | Error err => err ∈ e.(errors)
+         | Error err => err ∈ (map snd (e ()).(errors))
          end.
 #[global] Typeclasses Opaque elem_of_result.
 
