@@ -11,7 +11,7 @@
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
                --external ../../Common/ASCommon.html ASCommon
-               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
  )
 )
 

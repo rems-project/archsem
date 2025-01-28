@@ -8,7 +8,7 @@
                --external ../../Common/ASCommon.html ASCommon
                --external ../../ISASem/ISASem.html ISASem
                --external ../../GenModels/GenModels.html GenModels
-               --coqlib_url https://coq.inria.fr/doc/V8.17.1/stdlib
+               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
  )
 )
 
