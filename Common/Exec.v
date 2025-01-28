@@ -87,16 +87,15 @@ Definition to_result_list `(e : res St E A) : list (result (St * E) (St * A)) :=
 
 Definition t {St E A} := St → res St E A.
 Arguments t : clear implicits.
-Arguments make {_ _ _}.
 
 #[global] Instance mret_inst {St E} : MRet (t St E) := λ _ v st, make [(st,v)] [].
 
 #[global] Instance mbind_inst {St E} : MBind (t St E) :=
-  λ _ _ f e st, foldr merge (make [] (e st).(errors)) (map (λ '(st', r), f r st') (e st).(results)).
+  λ _ _ f e st, let est := e st in foldr merge (make [] est.(errors)) (map (λ '(st', r), f r st') est.(results)).
 #[global] Typeclasses Opaque mbind_inst.
 
 #[global] Instance fmap_inst {St E} : FMap (t St E) :=
-  λ _ _ f e st, make (map (λ '(st', r), (st', f r)) (e st).(results)) (e st).(errors).
+  λ _ _ f e st, let est := e st in make (map (λ '(st', r), (st', f r)) est.(results)) est.(errors).
 #[global] Typeclasses Opaque fmap_inst.
 
 #[global] Instance throw_inst {St E} : MThrow E (t St E) := λ _ e st, make [] [(st,e)].
@@ -108,20 +107,32 @@ Arguments make {_ _ _}.
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
 Proof. reflexivity. Qed.
 
-#[global] Instance elem_of_results {E A} : ElemOf A (t () E A) :=
-  λ x e, x ∈ (map snd (e ()).(results)).
+#[global] Instance mret_inst_res {E} : MRet (res () E) := λ _ v, (mret v : t () E _) ().
+
+#[global] Instance mbind_inst_res {E} : MBind (res () E) :=
+  λ _ _ f e, (v ←@{t () E} (λ _, e); λ _, f v) ().
+#[global] Typeclasses Opaque mbind_inst_res.
+
+#[global] Instance fmap_inst_res {E} : FMap (res () E) :=
+  λ _ _ f e, (f <$>@{t () E} (λ _, e)) ().
+#[global] Typeclasses Opaque fmap_inst_res.
+
+#[global] Instance throw_inst_res {E} : MThrow E (res () E) := λ _ e, make [] [((),e)].
+
+#[global] Instance choose_inst_res {E} : MChoose (res () E) :=
+  λ '(ChooseFin n), (mchoose n : t () E _) ().
+#[global] Typeclasses Opaque choose_inst_res.
+
+Lemma mdiscard_res_eq {E A} : mdiscard =@{res () E A} (make [] []).
+Proof. reflexivity. Qed.
+
+#[global] Instance elem_of_results {St E A} : ElemOf (St * A) (res St E A) :=
+  λ x r, x ∈ r.(results).
 #[global] Typeclasses Opaque elem_of_results.
 
-#[global] Instance elem_of_results_pair {E A} : ElemOf (() * A) (t () E A) :=
-  λ x e, x ∈ (e ()).(results).
+#[global] Instance elem_of_results_unit_state {E A} : ElemOf A (res () E A) :=
+  λ x r, x ∈ (map snd r.(results)).
 #[global] Typeclasses Opaque elem_of_results.
-
-#[global] Instance elem_of_result {E A} : ElemOf (result E A) (t () E A) :=
-  λ x e, match x with
-         | Ok v => v ∈ e
-         | Error err => err ∈ (map snd (e ()).(errors))
-         end.
-#[global] Typeclasses Opaque elem_of_result.
 
 (** Takes an option but convert None into an error *)
 Definition error_none {St E A} (e : E) : option A -> t St E A :=
@@ -133,17 +144,17 @@ Definition discard_none {St E A} : option A -> t St E A :=
 
 (** Maps the error to another error type. *)
 Definition map_error {St E E' A} (f : E -> E') (e : t St E A) : t St E' A :=
-  λ st, make (e st).(results) (map (λ '(st', r), (st', f r)) (e st).(errors)).
+  λ st, let est := e st in make est.(results) (map (λ '(st', r), (st', f r)) est.(errors)).
 (** Merge the results of two executions *)
 
 (** * Unfold typeclass for results *)
 
-Class UnfoldElemOf {A E} (x : A) (e : t () E A) (Q : Prop) :=
+Class UnfoldElemOf {St A E} (x : St * A) (e : res St E A) (Q : Prop) :=
   {unfold_elem_of : x ∈ e ↔ Q}.
-#[global] Hint Mode UnfoldElemOf + + - + - : typeclass_instances.
+#[global] Hint Mode UnfoldElemOf + + + - + - : typeclass_instances.
 
-#[global] Instance unfold_elem_of_default {A E} (x : A) (e : t () E A) :
-  UnfoldElemOf x e (x ∈ e) | 1000.
+#[global] Instance unfold_elem_of_default {St A E} (x : St * A) (r : res St E A) :
+  UnfoldElemOf x r (x ∈ r) | 1000.
 Proof. done. Qed.
 
 #[export] Hint Extern 5 (UnfoldElemOf ?x (match ?b with _ => _ end) ?G) =>
@@ -159,14 +170,14 @@ Proof. done. Qed.
   [intros; destruct b; shelve | ..];
   destruct b; cbn zeta match : typeclass_instances.
 
-#[global] Instance UnfoldElemOf_proper {A E} :
-  Proper (@eq A ==> @eq (t () E A) ==> iff ==> iff) UnfoldElemOf.
+#[global] Instance UnfoldElemOf_proper {St A E} :
+  Proper (@eq (St * A) ==> @eq (res St E A) ==> iff ==> iff) UnfoldElemOf.
 Proof. solve_proper2_tc. Qed.
 
 (** Enables Exec unfolding in regular set_unfold *)
 Class Unfold := unfold {}.
 
-#[global] Instance UnfoldElemOfSetUnfoldElemOf `{UnfoldElemOf E A x e P} `{Unfold} :
+#[global] Instance UnfoldElemOfSetUnfoldElemOf `{UnfoldElemOf St E A x e P} `{Unfold} :
   SetUnfoldElemOf x e P.
 Proof. tcclean. apply unfold_elem_of. Qed.
 
@@ -175,72 +186,57 @@ Proof. tcclean. apply unfold_elem_of. Qed.
 
 (** ** Actual unfolding lemmas *)
 
-#[global] Instance unfold_elem_of_make {E A} x l l' P:
-  SetUnfoldElemOf x (map snd l) P →
-  UnfoldElemOf x ((λ _, make l l') : t () E A) P.
+#[global] Instance unfold_elem_of_make {St E A} x l l' P:
+  SetUnfoldElemOf x l P →
+  UnfoldElemOf x (make l l' : res St E A) P.
 Proof. tcclean. naive_solver. Qed.
 
 #[global] Instance unfold_elem_of_mret {E A} x y:
-  UnfoldElemOf x (mret y : t () E A) (x = y).
-Proof. tcclean. unfold mret, mret_inst, elem_of, elem_of_results. cbn in *. set_solver. Qed.
+  UnfoldElemOf x (mret y : res () E A) (x = ((), y)).
+Proof. tcclean. unfold mret, mret_inst_res, mret, mret_inst. set_solver. Qed.
 
-#[global] Instance unfold_elem_of_merge {E A} x (e e' : t () E A) P Q:
+#[global] Instance unfold_elem_of_merge {E A} x (e e' : res () E A) P Q:
   UnfoldElemOf x e P →
   UnfoldElemOf x e' Q →
-  UnfoldElemOf x (λ _, merge (e ()) (e' ())) (P ∨ Q).
-Proof. tcclean. unfold merge, elem_of, elem_of_results. destruct e. destruct e'. set_solver. Qed.
+  UnfoldElemOf x (merge e e') (P ∨ Q).
+Proof. tcclean. unfold merge. destruct e. destruct e'. set_solver. Qed.
 
-#[global] Instance unfold_elem_of_mbind {E A B} (x : B) (e : t () E A) (f : A → t () E B) P:
+#[global] Instance unfold_elem_of_mbind {E A B} (x : () * B) (e : res () E A) (f : A → res () E B) P:
   (∀ y, UnfoldElemOf y e (P y)) →
-  UnfoldElemOf x (e ≫= f) (∃ y, P y ∧ x ∈ f y) | 20.
+  UnfoldElemOf x (e ≫= f) (∃ y, P ((), y) ∧ x ∈ f y) | 20.
 Proof.
-  tcclean. deintro. intros _.
-  unfold mbind, mbind_inst, elem_of, elem_of_results.
-  destruct (e ()) as [l es].
-  cbn.
+  tcclean. deintro. intros _. destruct e as [l es]. cbn.
+  unfold mbind, mbind_inst. cbn.
   setoid_rewrite unfold_elem_of.
-  induction l as [|[[] a ] lr [H H0]].
-  1: set_solver.
-  do 2 set_unfold.
-  split.
-  {
-    cdestruct |- *** as Hres ## cdestruct_or.
-    1: eexists a; unfold elem_of at 2, elem_of_results; set_unfold; split; eexists (_,_); split; last eapply Hres.
-    1-3: try reflexivity; now left.
-    enough (∃ x0 : A, (∃ x1 : () * A, x0 = x1.2 ∧ x1 ∈ lr) ∧ x ∈ f x0) by naive_solver.
-    eapply H.
-    eexists (_,_).
-    naive_solver.
-  }
-  {
-    cdestruct |- *** as Hres ## cdestruct_or.
-    1: eexists (_,_); split; [|left]; cbn; try reflexivity.
-    1: unfold elem_of, elem_of_results in * |-; set_unfold in Hres; cbn in *; cdestruct Hres; eauto.
-    cdestruct |- ***.
-    enough (∃ x0 : A, (∃ x : () * A, x0 = x.2 ∧ x ∈ lr) ∧ x ∈ f x0) by naive_solver.
-    eexists _; split; try eassumption; eexists (_,_); naive_solver.
-  }
+  assert (x ∈ foldr merge {| results := []; errors := es |} (map (λ r, f r) (snd <$> l)) ↔ ∃ y ∈ l, (x ∈ f y.2))
+  by (induction l; set_solver).
+  rewrite map_map in H.
+  assert ((map (λ '(_, r), f r) l) = (map (λ x : () * A, f x.2) l)) as -> by (apply map_ext; now intros []).
+  enough ((∃ y ∈ l, (x ∈ f y.2)) ↔ ∃ y : A, ((), y) ∈ l ∧ x ∈ f y) by intuition.
+  split; cdestruct |- ***; naive_solver.
 Qed.
 
-#[global] Instance unfold_elem_of_bind_guard `{Decision P} {E A} (e : t () E A)
+#[global] Instance unfold_elem_of_bind_guard `{Decision P} {E A} (e : res () E A)
     (err : E) a Q:
   UnfoldElemOf a e Q →
   UnfoldElemOf a (guard_or err P;; e) (P ∧ Q) | 10.
 Proof. tcclean. case_guard; set_solver. Qed.
 
-#[global] Instance unfold_elem_of_bind_guard_discard `{Decision P} {E A} (e : t () E A) a Q:
+#[global] Instance unfold_elem_of_bind_guard_discard `{Decision P} {E A} (e : res () E A) a Q:
   UnfoldElemOf a e Q →
   UnfoldElemOf a (guard_discard P;; e) (P ∧ Q) | 10.
 Proof. tcclean. case_guard_discard; set_solver. Qed.
 
-#[global] Instance unfold_elem_of_fmap {E A B} (x : B) (e : t () E A) (f : A → B) P:
+#[global] Instance unfold_elem_of_fmap {E A B} (x : () * B) (e : res () E A) (f : A → B) P:
   (∀ y, UnfoldElemOf y e (P y)) →
-  UnfoldElemOf x (f <$> e) (∃ y, P y ∧ x = f y).
-Proof. tcclean. unfold elem_of, elem_of_results, fmap, fmap_inst.
- destruct (e ()) as [l es]. cbn. set_unfold. set_solver. Qed.
+  UnfoldElemOf x (f <$> e) (∃ y, P ((), y) ∧ x = ((), f y)).
+Proof. tcclean. cbn. unfold elem_of, elem_of_results, fmap, fmap_inst_res, fmap, fmap_inst.
+  destruct e as [l es]. cbn. set_unfold.
+  split; cdestruct |- ***; set_solver.
+Qed.
 
 #[global] Instance unfold_elem_of_mdiscard {E A} (x : A) :
-  UnfoldElemOf x (mdiscard : t E A) False.
+  UnfoldElemOf x (mdiscard : res () E A) False.
 Proof. tcclean. unfold mdiscard. set_solver. Qed.
 
 
