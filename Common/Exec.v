@@ -71,10 +71,6 @@ Definition has_error `(e : res St E A) :=
 #[global] Instance has_error_dec `(e : res St E A): Decision (has_error e).
 Proof. unfold_decide. Qed.
 
-(** Create an execution from a set of results, e.g. to convert from pure
-    non-determinism to Exec *)
-Definition Results {E A C} `{Elements A C} (s : C) : res () E A := make (map ((),.) (elements s)) [].
-
 (** Merge the results of two executions *)
 Definition merge {St E A} (e1 e2 : res St E A) :=
   make (e1.(results) ++ e2.(results)) (e1.(errors) ++ e2.(errors)).
@@ -82,11 +78,15 @@ Definition merge {St E A} (e1 e2 : res St E A) :=
 Arguments merge : simpl never.
 
 (** Convert an execution into a list of results *)
-Definition to_result_list `(e : res St E A) : list (result (St * E) (St * A)) :=
-  map Ok e.(results) ++ map Error e.(errors).
+Definition to_result_list `(e : res St E A) : list (St * result E A) :=
+  map (λ '(st,r), (st, Ok r)) e.(results) ++ map (λ '(st,err), (st, Error err)) e.(errors).
 
 Definition t {St E A} := St → res St E A.
 Arguments t : clear implicits.
+
+(** Create an execution from a set of results, e.g. to convert from pure
+    non-determinism to Exec *)
+Definition Results {St E A C} `{Elements A C} (s : C) : t St E A := λ st, make (map (st,.) (elements s)) [].
 
 #[global] Instance mret_inst {St E} : MRet (t St E) := λ _ v st, make [(st,v)] [].
 
@@ -101,7 +101,8 @@ Arguments t : clear implicits.
 #[global] Instance throw_inst {St E} : MThrow E (t St E) := λ _ e st, make [] [(st,e)].
 
 #[global] Instance choose_inst {St E} : MChoose (t St E) :=
-  λ '(ChooseFin n) st, make (map (st,.) (enum (fin n))) [].
+λ '(ChooseFin n), @Results _ _ (Fin.t n) _ _ (enum (fin n)).
+
 #[global] Typeclasses Opaque choose_inst.
 
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
@@ -189,12 +190,7 @@ Proof.
   tcclean. deintro. intros _.
   unfold mbind, mbind_inst.
   destruct (e st) as [l es].
-  setoid_rewrite unfold_elem_of. cbn.
-  change (∃ (st' : St) (y : A), (st', y) ∈ l ∧ x ∈ f y st') with (∃ (st' : St) (y : A), (st', y) ∈ l ∧ x ∈ (λ '(st', r), f r st') (st',y)).
-  generalize ((λ '(st'0, r), f r st'0)); intros.
-  enough (x ∈ foldr merge {| results := []; errors := es |} (map r l) ↔ ∃ p ∈ l, x ∈ r p) as H
-    by (cdestruct x |- *** as ?? H; setoid_rewrite H; cdestruct |- *** #CDestrSplitGoal; repeat eexists; sauto).
-  induction l; set_solver.
+  elim l; cdestruct |- ***; set_solver.
 Qed.
 
 #[global] Instance unfold_elem_of_bind_guard `{Decision P} {St E A} st (e : t St E A)
