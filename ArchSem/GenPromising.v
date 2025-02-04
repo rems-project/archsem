@@ -140,13 +140,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       tState_init : (* tid *) nat → memoryMap → registerMap → tState;
       tState_regs : tState → registerMap;
       tState_nopromises : tState → bool;
-      (** Intra instruction thread, reset after each instruction *)
+      (** Intra instruction state, reset after each instruction *)
       iis : Type;
       iis_init : iis;
       mEvent : Type;
       handler : (* tid *) nat → memoryMap →
                 fHandler outcome
-                  (stateT (tState * PromMemory.t mEvent * iis) (Exec.t string));
+                  (Exec.t (tState * PromMemory.t mEvent * iis) string);
       allowed_promises : (* tid *) nat → memoryMap → tState →
                          PromMemory.t mEvent → propset mEvent;
       (** I'm not considering that emit_promise can fail or have a
@@ -169,17 +169,17 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           set.*)
       promise_select :
         (* fuel *) nat -> (* tid *) nat → memoryMap → pModel.(tState) →
-        PromMemory.t pModel.(mEvent) → Exec.t string pModel.(mEvent);
+        PromMemory.t pModel.(mEvent) → Exec.t (pModel.(tState) * PromMemory.t pModel.(mEvent) * pModel.(iis)) string pModel.(mEvent);
 
       promise_select_sound :
-      ∀ n tid initMem ts mem,
-        ∀ ev ∈ (promise_select n tid initMem ts mem),
+      ∀ n tid initMem ts mem iis,
+        ∀ '(st, ev) ∈ (promise_select n tid initMem ts mem (ts, mem, iis)),
           ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
-      ∀ n tid initMem ts mem,
-        ¬ Exec.has_error (promise_select n tid initMem ts mem) →
+      ∀ n tid initMem ts mem iis,
+        ¬ Exec.has_error (promise_select n tid initMem ts mem (ts, mem, iis)) →
         ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem,
-          ev ∈ promise_select n tid initMem ts mem
+          ∃ st, (st, ev) ∈ promise_select n tid initMem ts mem (ts, mem, iis)
     }.
   Arguments BasicExecutablePM : clear implicits.
 
@@ -239,11 +239,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         let handler := prom.(handler) tid st.(initmem) in
         let sem := (isem.(semantic) (istate tid st)) in
         let init := (tstate tid st, st.(events), prom.(iis_init)) in
-        '(ts, mem, iis, ist) ← cinterp handler sem init;
-        st |> setv (tstate tid) ts
-           |> setv (istate tid) ist
-           |> setv events mem
-           |> mret.
+        init |>
+          (ist ←@{(Exec.t (tState * PromMemory.t mEvent * iis prom) string)} cinterp handler sem;
+          λ '(ts, mem, iis),
+          st |> setv (tstate tid) ts
+             |> setv (istate tid) ist
+             |> setv events mem
+             |> λ st', (mret st' : Exec.t (tState * PromMemory.t mEvent * Gen.iis prom) string t) (ts, mem, iis)).
 
       (** Compute the set of allowed promises by a thread indexed by tid *)
       Definition allowed_promises_tid (st : t) (tid : fin n) :=
@@ -320,14 +322,14 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Local Notation iState := isem.(isa_state).
     Local Notation t := (t iState tState mEvent n).
 
-    (** Get a list of possible promising for a thread by tid *)
+    (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
-        (tid : fin n) : Exec.t string mEvent :=
+        (tid : fin n) : Exec.t (Gen.tState prom * PromMemory.t (Gen.mEvent prom) * iis prom) string mEvent :=
       prom.(promise_select) n tid (initmem st) (tstate tid st) (events st).
 
     (** Take any promising step for that tid and promise it *)
     Definition cpromise_tid (fuel : nat) (st : t) (tid : fin n)
-      : Exec.t string t :=
+      : Exec.t (Gen.tState prom * PromMemory.t (Gen.mEvent prom) * iis prom) string t :=
       ev ← promise_select_tid fuel st tid;
       mret $ promise_tid isem prom st tid ev.
 
@@ -335,10 +337,10 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         search but it is obviously correct. If a thread has reached termination
         no progress is made in the thread (either instruction running or
         promises *)
-    Definition run_step (fuel : nat) (st : t) :=
-      tid ← mchoose n;
+    Program Definition run_step (fuel : nat) (st : t) :=
+      tid ←@{Exec.t (Gen.tState prom * PromMemory.t (Gen.mEvent prom) * iis prom) string} mchoose n;
       if terminated_tid isem prom term st tid then mdiscard
-      else Exec.merge (run_tid isem prom st tid) (cpromise_tid fuel st tid).
+      else λ state, Exec.merge (run_tid isem prom st tid) (cpromise_tid fuel st tid state).
 
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated isem prom term x }.
@@ -356,7 +358,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
     (** Computational evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
-    Program Fixpoint run (fuel : nat) (st : t) : Exec.t string final :=
+    Program Fixpoint run (fuel : nat) (st : t) : Exec.t (Gen.tState prom * PromMemory.t (Gen.mEvent prom) * iis prom) string final :=
       match fuel with
       | 0%nat => mthrow "not enough fuel"
       | S fuel =>
@@ -373,13 +375,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 
   (** Create a computational model from an ISA model and promising model *)
-    Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
+(* TODO: Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
       (fuel : nat) : Model.c ∅ :=
       fun n (initMs : MState.init n) =>
         let initPs := PState.from_MState isem prom initMs in
         Model.Res.from_exec
           $ CPState.to_final_MState
-          <$> CPState.run isem prom initMs.(MState.termCond) fuel initPs.
+          <$> CPState.run isem prom initMs.(MState.termCond) fuel initPs. *)
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)
