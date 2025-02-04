@@ -281,9 +281,9 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       End MR.
       Arguments t : clear implicits.
 
-      Definition from_exec {n} (e : Exec.t string (MState.final n)) :
+      Definition from_exec {St n} (e : Exec.t St string (MState.final n)) (st : St) :
           listset (t ∅ n) :=
-        e |> Exec.to_result_list |$> from_result |> Listset.
+        e st |> Exec.to_result_list |$> snd |$> from_result |> Listset.
 
     End Res.
 
