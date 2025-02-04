@@ -105,6 +105,12 @@ Definition Results {St E A C} `{Elements A C} (s : C) : t St E A := λ st, make 
 
 #[global] Typeclasses Opaque choose_inst.
 
+#[global] Instance st_call_MState {St E} : MCall (MState St) (t St E) | 10 := λ eff,
+match eff with
+| MSet s => λ _, (mret () : t St E ()) s
+| MGet => λ s, (mret s : t St E St) s
+end.
+
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
 Proof. reflexivity. Qed.
 
@@ -112,9 +118,17 @@ Proof. reflexivity. Qed.
   λ x r, x ∈ r.(results).
 #[global] Typeclasses Opaque elem_of_results.
 
-(* #[global] Instance elem_of_results_unit_state {E A} : ElemOf A (res () E A) :=
+#[global] Instance elem_of_results_no_state {St E A} : ElemOf A (res St E A) :=
   λ x r, x ∈ (map snd r.(results)).
-#[global] Typeclasses Opaque elem_of_results. *)
+#[global] Typeclasses Opaque elem_of_results_no_state.
+
+
+#[global] Instance elem_of_result {St E A} : ElemOf (result E A) (res St E A) :=
+  λ x e, match x with
+         | Ok v => v ∈ e
+         | Error err => err ∈ (map snd e.(errors))
+         end.
+#[global] Typeclasses Opaque elem_of_result.
 
 (** Takes an option but convert None into an error *)
 Definition error_none {St E A} (e : E) : option A -> t St E A :=
