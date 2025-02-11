@@ -51,10 +51,10 @@ Require Import ASCommon.Exec.
 Require Import Relations.
 Require Import Program.
 
-Open Scope Z_scope.
-Open Scope stdpp_scope.
+#[local] Open Scope Z_scope.
+#[local] Open Scope stdpp_scope.
 
-Require Import ISASem.Interface.
+Require Import Interface.
 
 
 (** This module specify general definitions of hardware models over finite

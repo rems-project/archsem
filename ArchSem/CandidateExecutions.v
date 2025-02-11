@@ -66,7 +66,7 @@ Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
 Require Import ASCommon.StateT.
 
-Require Import ISASem.Interface.
+Require Import Interface.
 Require Import TermModels.
 
 Open Scope Z_scope.

@@ -46,7 +46,7 @@ Require Import ASCommon.Options.
 Require Import ASCommon.Common.
 Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
-Require Import GenModels.ArmInst.
+Require Import ArmInst.
 Require Import GenAxiomaticArm.
 
 (** This is an implementation of a user-mode Axiomatic model for ARM. It does

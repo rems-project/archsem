@@ -49,12 +49,12 @@ Require Import stdpp.base.
 Require Import stdpp.countable.
 Require Import stdpp.vector.
 Require Import ASCommon.Options.
-Require Import Interface.
 Require Import SailStdpp.Base.
 Require Export SailArmInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
 From ASCommon Require Import Common Effects CDestruct.
+From ArchSem Require Import Interface TermModels CandidateExecutions GenPromising.
 
 
 From Equations Require Import Equations.
@@ -62,6 +62,8 @@ From Equations Require Import Equations.
 
 Require Import stdpp.decidable.
 Require Import stdpp.list.
+
+#[global] Open Scope stdpp.
 
 #[global] Typeclasses Transparent bits.
 
@@ -561,5 +563,13 @@ End Arm.
 
 Bind Scope string_scope with Arm.Arch.reg.
 
+Module ArmTM := TermModels Arm.
+Module ArmCand := CandidateExecutions Arm ArmTM.
+Module ArmGenPro := GenPromising Arm ArmTM.
+
 Export Arm.Arch.
 Export Arm.Interface.
+Export ArmTM.
+Export ArmCand.
+Export ArmGenPro.
+

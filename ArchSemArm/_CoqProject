@@ -1,0 +1,3 @@
+-Q ../_build/default/Common ASCommon
+-Q ../_build/default/ArchSem ArchSem
+-R ../_build/default/ArchSemArm ArchSemArm

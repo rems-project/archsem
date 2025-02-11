@@ -1,16 +1,21 @@
 (coq.theory
- (name GenModels)
+ (name ArchSem)
  (package coq-archsem)
- (modules TermModels CandidateExecutions ArmInst ArmSeqModel)
- (theories ISASem ASCommon)
+ (modules
+   Interface
+   TermModels
+   CandidateExecutions
+   GenPromising
+ )
+ (theories SailStdpp ASCommon)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
                --external ../../Common/ASCommon.html ASCommon
-               --external ../../ISASem/ISASem.html ISASem
                --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
  )
 )
 
+; This alias is useful to build all the coq libaries without extraction
 (alias
  (name coq)
  (deps (alias_rec all))

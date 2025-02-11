@@ -42,19 +42,18 @@
 (*                                                                            *)
 (******************************************************************************)
 
+Require Import Coq.Program.Equality.
+From stdpp Require Import decidable.
 Require Import ASCommon.Options.
 Require Import ASCommon.Common.
 Require Import ASCommon.Exec.
 Require Import ASCommon.StateT.
 Require Import ASCommon.FMon.
-Require Import Coq.Program.Equality.
 
-From stdpp Require Import decidable.
+Require Import ArchSem.GenPromising.
+Require Import ArmInst.
 
-Require Import GenModels.ArmInst.
-Require Import GenPromising.
-Module ArmGP := Gen Arm ArmTM.
-Import ArmGP.
+
 
 (** The goal of this module is to define an User-mode promising model,
     without mixed-size on top of the new interface *)
@@ -75,6 +74,7 @@ Module Loc.
     {|FullAddress_paspace := PAS_NonSecure;
       FullAddress_address := bv_concat 52 loc (bv_0 3)
     |}.
+
 
   (** Recover a location from an ARM physical address. *)
   Definition from_pa (pa : FullAddress) : option t :=

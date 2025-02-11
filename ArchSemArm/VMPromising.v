@@ -55,9 +55,8 @@ From stdpp Require Import pretty.
 
 Require UMPromising.
 
-Require Import GenModels.ArmInst.
-Require Import GenPromising.
-Import UMPromising.ArmGP.
+Require Import ArchSem.GenPromising.
+Require Import ArmInst.
 
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)

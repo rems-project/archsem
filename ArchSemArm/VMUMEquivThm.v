@@ -51,8 +51,7 @@ Require Import ASCommon.Common.
 Require Import ASCommon.GRel.
 
 Require Import ASCommon.FMon.
-Require Import ISASem.ArmInst.
-Require Import GenModels.ArmInst.
+Require Import ArmInst.
 Require Import GenAxiomaticArm.
 Require UMArm.
 Module UM := UMArm.

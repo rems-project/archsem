@@ -60,12 +60,11 @@ Require Import Program.
 
 From stdpp Require Import relations.
 
-Open Scope Z_scope.
-Open Scope stdpp_scope.
+#[local] Open Scope Z_scope.
+#[local] Open Scope stdpp_scope.
 
-Require Import ISASem.Interface.
-
-Require Import GenModels.TermModels.
+Require Import Interface.
+Require Import TermModels.
 
 
 
@@ -131,7 +130,7 @@ Arguments t : clear implicits.
 End PromMemory.
 
 (* to be imported *)
-Module Gen (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
+Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   Import IWA.Arch.
   Import IWA.Interface.
   Import TM.
@@ -385,8 +384,8 @@ Module Gen (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)
 
-End Gen.
+End GenPromising.
 
-Module Type GenT (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
-  Include Gen IWA TM.
-End GenT.
+Module Type GenPromisingT (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
+  Include GenPromising IWA TM.
+End GenPromisingT.

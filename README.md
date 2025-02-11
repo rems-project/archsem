@@ -27,7 +27,7 @@ In order to build an architecture model one needs two components:
   memory tools such as [Herd](https://github.com/herd/herdtools7) or
   [Isla Axiomatic](https://github.com/rems-project/isla).
 
-ArchSem defines an [_Interface_](ISASem/Interface.v) between the two so
+ArchSem defines an [_Interface_](ArchSem/Interface.v) between the two so
 that they can interoperate properly. It is based on free monads (which are finite
 itrees, because the semantics of a single instruction cannot diverge). The interface is
 therefore mainly defined by the set of effects an instruction can call. This is
@@ -79,22 +79,23 @@ The directory structure is intended to change soon, so don't rely on it too much
 
 - `Common` (Rocq module name `ASCommon`) is the "utils" library. It contains all
   non-ArchSem-specific Rocq lemmas and automation, as well as required theories
-  such that executable relational algebra or effects and free monads
-- `ISASem` The definition of the interface between ISA model and concurrency
-  models generically, as well as the definition of the module type an
-  architecture must instantiate to work with this framework. This also contain
-  our current hackish Arm Instantiation (to be replaced soon)
-- `GenModels` The definition of what a CPU architecture model is, as well as the
-  definition of what an execution trace is over multiple CPU core (Candidate
-  executions). This also contains a definition of a sequential model for Arm
-- `promising-arm` The definition of a User-mode Promising model for Arm (from
-  [the PLDI19 paper](https://sf.snu.ac.kr/publications/promising-arm-riscv.pdf),
-  as well as a WIP VM Promising model.
-- `AxiomaticModels` This defines 3 axiomatic models for Arm: Sequential
-  Consistent (unsound for more than 1 thread but useful for comparisons), a
-  regular User-mode only model and the VMSA model from [the ESOP22
-  paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf). We also have
-  the core part of the proof of equivalence between the last 2 models.
+  such that executable relational algebra or effects and free monads.
+  This includes:
+  - `CDestruct.v` The implementation of the `cdestruct` tactic
+- `ArchSem` The architecture generic part of the projects, this includes
+  - `Interface.v` The definition of the interface between ISA models and
+    concurency models
+  - `CandidateExecution.v` The definition of candidate executions for weak
+    memory model
+- `ArchSemArm` The Armv9-A instantiation of the previous library. This includes
+  - A sequential operational model (`ArmSeqModel.v`)
+  - A User-mode promising model (`UMPromising.v`), similar to 
+    [the PLDI19 paper](https://sf.snu.ac.kr/publications/promising-arm-riscv.pdf)
+  - A very WIP VMSA promising model (`VMPromising.v`)
+  - A User-mode axiomatic model (`UMArm.v`)
+  - An SC model for Arm (`UMSeqArm.v`) that is unsound for >1 thread
+  - The VMSA model from [the ESOP22
+  paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
 - `Extraction` contains machinery to extract the code to OCaml, for now it is
   mainly use to check that the code _can_ be extracted rather than as an
   actually usable OCaml library
@@ -105,10 +106,8 @@ To build the documentation call `dune build @doc` and then the documentation
 will be generated in:
 
 - `_build/default/Common/ASCommon.html/toc.html`
-- `_build/default/ISASem/ISASem.html/toc.html`
-- `_build/default/GenModels/GenModels.html/toc.html`
-- `_build/default/AxiomaticModels/AxiomaticModels.html/toc.html`
-- `_build/default/promising-arm/PromisingArm.html/toc.html`
+- `_build/default/ArchSem/ArchSem.html/toc.html`
+- `_build/default/ArchSemArm/ArchSemArm.html/toc.html`
 
 
 ## Current limitations

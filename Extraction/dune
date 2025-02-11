@@ -2,9 +2,9 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories ISASem ASCommon stdpp SailStdpp Hammer RecordUpdate Equations
-            GenModels Ltac2)
-  (extracted_modules ArmInst0 ArmInst ArmSeqModel Ascii base Basics BinInt
+  (theories Ltac2 stdpp SailStdpp Hammer RecordUpdate Equations
+            ASCommon ArchSem ArchSemArm)
+  (extracted_modules ArmInst ArmSeqModel Ascii base Basics BinInt
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
                      CList CMaps COption countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin

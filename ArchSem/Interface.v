@@ -200,7 +200,7 @@ End Arch.
 
 Module Interface (A : Arch).
   Import A.
-  Open Scope N.
+  #[local] Open Scope N.
 
   (** ** Memory utility *)
   (** Virtual address are tag-less bitvectors *)

@@ -20,7 +20,8 @@
    StateT
    Effects
    FMon
-   Exec)
+   Exec
+ )
  (theories stdpp Hammer RecordUpdate Equations Ltac2)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
