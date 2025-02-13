@@ -169,7 +169,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           set.*)
       promise_select :
         (* fuel *) nat -> (* tid *) nat → memoryMap → pModel.(tState) →
-        PromMemory.t pModel.(mEvent) → Exec.res () string pModel.(mEvent);
+        PromMemory.t pModel.(mEvent) → Exec.res string pModel.(mEvent);
 
       promise_select_sound :
       ∀ n tid initMem ts mem,
@@ -237,26 +237,17 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       (* Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A. *)
 
       (** Run on instruction in specific thread by tid *)
-      Definition run_tid (tid : fin n) : Exec.t t string ().
-      Admitted.
-        (* st ← mGet; *)
-        (* let handler := prom.(handler) tid st.(initmem) in *)
-        (* let sem := (isem.(semantic) (istate tid st)) in *)
-        (* let init := (tstate tid st, st.(events), prom.(iis_init)) in *)
-        (* (* ist ← Exec.liftSt_full (λ st, (tstate tid st, st.(events), prom.(iis_init))) (λ '(ts, mem, _) st, st |> setv (tstate tid) ts |> setv events mem) *) *)
-        (* (*      (cinterp handler sem); *) *)
-
-        (* ist ← Exec.liftSt (tstate tid ×× events ×× (const_getter prom.(iis_init))) *)
-        (*         (cinterp handler sem); *)
-        (* msetv (istate tid) ist *)
-
-        (* init |> *)
-        (*   (ist ←@{(Exec.t (tState * PromMemory.t mEvent * iis prom) string)} cinterp handler sem; *)
-        (*   λ '(ts, mem, iis), *)
-        (*   st |> setv (tstate tid) ts *)
-        (*      |> setv (istate tid) ist *)
-        (*      |> setv events mem *)
-        (*      |> λ st', (mret st' : Exec.t (tState * PromMemory.t mEvent * Gen.iis prom) string t) (ts, mem, iis)). *)
+      Program Definition run_tid (tid : fin n) : Exec.t t string () :=
+        st ←@{Exec.t t string} mGet;
+        let handler := prom.(handler) tid (st.(initmem)) in
+        let sem := (isem.(semantic) (istate tid st)) in
+        let init := (tstate tid st, st.(events), prom.(iis_init)) in
+        ist ← @Exec.liftSt _ (tState * PromMemory.t mEvent * iis prom)%type _ _
+              (λ st : t, (tstate tid st, events st, (* const_getter *) prom.(iis_init))) _
+              (cinterp handler sem);
+        msetv (istate tid) ist.
+        Next Obligation.
+        Admitted.
 
       (** Compute the set of allowed promises by a thread indexed by tid *)
       Definition allowed_promises_tid (st : t) (tid : fin n) :=
@@ -335,19 +326,18 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
-        (tid : fin n) : Exec.res () string mEvent :=
+        (tid : fin n) : Exec.res string mEvent :=
       prom.(promise_select) n tid (initmem st) (tstate tid st) (events st).
 
     (** Take any promising step for that tid and promise it *)
-    Definition cpromise_tid (fuel : nat) (tid : fin n)
-      : Exec.t t string ().
-      (* ev ← promise_select_tid fuel st tid; *)
-      (* mret $ promise_tid isem prom st tid ev. *)
-    Admitted.
-
-    Check mchoosel (enum bool).
-
-
+    Program Definition cpromise_tid (fuel : nat) (tid : fin n)
+      : Exec.t t string () :=
+    λ st,
+      let res_st :=
+        ev ← promise_select_tid fuel st tid;
+        mret $ promise_tid isem prom st tid ev
+      in
+        Exec.make ((.,()) <$> res_st.(Exec.results)) ((st,.) <$> res_st.(Exec.errors)).
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
