@@ -1,6 +1,6 @@
 (coq.theory
  (name ArchSemArm)
- (package coq-archsem)
+ (package coq-archsem-arm)
  (modules
    SailArmInstTypes
    ArmInst
@@ -13,7 +13,7 @@
    VMSA22Arm
    VMUMEquivThm
  )
- (theories ASCommon ArchSem)
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
                --external ../../Common/ASCommon.html ASCommon

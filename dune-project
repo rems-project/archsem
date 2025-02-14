@@ -17,8 +17,8 @@
 (maintainers "Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>")
 
 (package
- (name coq-archsem)
- (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics")
+ (name coq-archsem-common)
+ (synopsis "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library")
  (depends
   (coq (>= 8.19.2))
    coq-stdlib
@@ -27,8 +27,25 @@
   (coq-hammer-tactics (>= 1.3.2))
   (coq-stdpp (= 1.10.0))
   (coq-stdpp-bitvector (= 1.10.0))
+ )
+)
+
+(package
+ (name coq-archsem)
+ (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part")
+ (depends
+   coq-archsem-common ; need same commit
   (coq-sail-stdpp :dev) ; See INSTALL.md for the commit number
  )
 )
+
+(package
+ (name coq-archsem-arm)
+ (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
+ (depends
+   coq-archsem
+ )
+)
+
 
 (generate_opam_files)

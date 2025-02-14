@@ -1,6 +1,6 @@
 (coq.theory
  (name ASCommon)
- (package coq-archsem)
+ (package coq-archsem-common)
  (modules
    Common
    CBase

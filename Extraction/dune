@@ -16,5 +16,4 @@
 
 (library
   (name Archsem_ocaml) ; TODO might change
-  (public_name coq-archsem)
   (libraries zarith))
