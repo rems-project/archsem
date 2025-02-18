@@ -691,7 +691,7 @@ Solve All Obligations with sauto lq:on.
 (** ** Getter and setter horizontal merging *)
 Definition getter_merge {R T T'} (proj : R → T) (proj' : R → T') : R → T * T' :=
   λ r, (proj r, proj' r).
-Infix "××" := getter_merge (at level 40).
+#[global] Infix "××" := getter_merge (at level 40).
 
 Global Instance Setter_merge `{SRT : Setter R T proj} `{SRT' : Setter R T' proj'}
   : Setter (proj ×× proj') :=
