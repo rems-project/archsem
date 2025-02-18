@@ -472,6 +472,8 @@ Module Arm.
     Definition pa_countable : Countable pa := _.
     Definition pa_addZ pa z :=
       set FullAddress_address (λ addr, addr `+Z` z)%bv pa.
+    Arguments pa_addZ !pa z /.
+
     Lemma pa_addZ_assoc pa z z' :
       pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
     Proof. record_eq; cbn; [reflexivity | bv_solve]. Qed.

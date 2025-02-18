@@ -653,21 +653,32 @@ Global Instance SetUnfoldElemOf_proper `{ElemOf A C}  :
 Proof. solve_proper2_tc. Qed.
 
 
-(** * Record management ***)
+(** * Record management and lenses
+
+We somewhat hack [coq-record-update] to provide a lens-like system with vertical
+composition and horizontal merges. We basically have standard way to compose
+record fields and more generic getters that can then be used to infer a setter
+using coq-record-update mechanisms. *)
+
+Hint Mode Setter + + + : typeclass_instances.
+Hint Mode SetterWf + + + : typeclass_instances.
 
 (** Remove the [set_wf] instance because it make the search for a Setter much
-    slower in the general case. Keep it as an immediate instance for parametric
-    [SetterWf] instance such as [Setter_compose_wf] *)
+    slower in the general case. Just allow to use it if there is a [SetterWf]
+    in the immediate (or section) context, like in [Setter_compose_wf] *)
 #[export] Remove Hints RecordSet.set_wf : typeclass_instances.
-Hint Immediate RecordSet.set_wf : typeclass_instances.
+Hint Extern 100 (Setter _) =>
+       class_apply (RecordSet.set_wf) ; assumption : typeclass_instances.
 
-Definition setv {R T} (proj : R -> T) {_ : Setter proj} ( v: T) : R -> R :=
+(** Set a value without looking at the previous value *)
+Definition setv {R T} (proj : R -> T) `{!Setter proj} (v: T) : R -> R :=
   set proj (fun _ => v).
 
 (** This allows to use set fst and set snd on pairs *)
 Global Instance eta_pair A B : Settable (A * B) :=
   settable! (@pair A B) <fst;snd>.
 
+(** ** Getter and setter vertical composition *)
 Global Instance Setter_compose `{SRT : Setter R T proj}
   `{STT : Setter T T' proj'} :
   Setter (proj' ∘ proj) := fun x => SRT (STT x).
@@ -677,6 +688,58 @@ Global Program Instance Setter_compose_wf `{SRT : SetterWf R T proj}
   { set_wf := Setter_compose }.
 Solve All Obligations with sauto lq:on.
 
+(** ** Getter and setter horizontal merging *)
+Definition getter_merge {R T T'} (proj : R → T) (proj' : R → T') : R → T * T' :=
+  λ r, (proj r, proj' r).
+Infix "××" := getter_merge (at level 40).
+
+Global Instance Setter_merge `{SRT : Setter R T proj} `{SRT' : Setter R T' proj'}
+  : Setter (proj ×× proj') :=
+  λ f r,
+    let t := proj r in
+    let t' := proj' r in
+    let (nt, nt') := f (t, t') in
+    r |> setv proj nt |> setv proj' nt'.
+
+Class Separated `{SRT : Setter R T proj} `{SRT' : Setter R T' proj'} :=
+  separated : ∀ f r, proj' (set proj f r) = proj' r.
+Arguments Separated {_ _} _ {_ _} _ {_}.
+Hint Mode Separated + + + + + + + : typeclass_instances.
+(* This should find most trivial instances automatically *)
+Hint Extern 10 (Separated _ _) =>
+       unfold Separated; reflexivity : typeclass_instances.
+
+(* We can't make this an instance directly because [class_apply] shelves the
+   [SetterWf] instances. Instead we add a [Hint Extern] with
+   [unshelve (class_apply _)] instead *)
+Definition Setter_merge_wf `{SRT : SetterWf R T proj}
+  `{SRT' : SetterWf R T' proj'} `{!Separated proj' proj} :
+    SetterWf (proj ×× proj').
+  esplit;
+    abstract(
+        intros;
+        unfold set, Setter_merge, getter_merge, setv in *;
+        case_match;
+        f_equal;
+        simplify_eq;
+        try rewrite separated;
+        by (rewrite set_get || (repeat rewrite RecordSet.set_eq))).
+Defined.
+Hint Extern 10 (SetterWf (_ ×× _)) =>
+       unshelve (class_apply @Setter_merge_wf) : typeclass_instances.
+
+
+(** ** Constants getter *)
+
+(** Sometimes it is useful to have a fake constant getter to merge with other
+getters. It will not be well formed *)
+Definition const_getter {R T} (t : T) : R → T := λ r, t.
+
+Global Instance Setter_const {R T} t :
+  @Setter R T (const_getter t) := λ f r, r.
+
+
+(** ** Record equality unfolding *)
 
 (** For a record type A, this typeclass provides an output predicate Q that is a
     conjunction of field_wise equality that is equivalent to the record
