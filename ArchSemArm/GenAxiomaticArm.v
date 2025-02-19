@@ -274,63 +274,22 @@ Module AxArmNames.
   Qed.
 
 
-  (* #[export] Typeclasses Transparent not. *)
-
   (** ** Internal coherence *)
-
-  (** Internal check for explicit accesses. This is equivalent to
-      grel_acyclic (po ∩ overlapping ∪ fr ∪ co ∪ rf) *)
-  Definition not_after := instruction_order ∪ (si ∖ iio⁻¹).
-  #[export] Typeclasses Transparent not_after.
-  (** Arm expresses their constraints as an irreflexive with po. This proves
-      the same by being included in [not_after] *)
-  Lemma not_after_spec_gen rel ov :
-    grel_symmetric ov →
-    rel ⊆ int ∩ ov → grel_irreflexive ((full_instruction_order ∩ ov)⨾ rel) ↔ rel ⊆ not_after.
-  Proof.
-    intros Hov Hin.
-    split.
-    - intros Ha [x y] Hrel.
-      apply NNPP. intro Hna.
-      set_unfold in Hna.
-      cdestruct Hna # CDestrSplitGoal.
-      1: assert ((y, x) ∈ instruction_order) by (set_unfold #UnfoldEidRels; hauto l:on).
-      all: set_solver.
-    - intros Hr x Hc.
-      set_unfold in Hc.
-      cdestruct Hc as y Hi Ho Hxyr.
-      set_unfold in Hr.
-      apply Hr in Hxyr.
-      intuition (set_unfold #UnfoldEidRels; lia).
-  Qed.
-
-  Lemma not_after_spec_po rel :
-    rel ⊆ int → grel_irreflexive (full_instruction_order⨾ rel) ↔ rel ⊆ not_after.
-  Proof.
-    intros Hin.
-    opose proof* (not_after_spec_gen rel int).
-    - set_solver#UnfoldEidRels.
-    - set_solver.
-    - by assert (full_instruction_order = full_instruction_order ∩ int)
-         as -> by set_solver#UnfoldEidRels.
-  Qed.
-  Definition not_after_spec_po_loc rel := not_after_spec_gen rel (overlapping cd) (overlapping_sym cd).
 
   (** Statement of internal for explicit memory accesses. This ignores the
   existence of implicit writes as none of our model allows them for now *)
   Record exp_internal := {
-      rfi_internal : rfi ⊆ not_after; (* CoRW1: important, rfi not in ob *)
-      coi_internal : coi ⊆ not_after; (* CoWW: Also in ob via lws ∪ co*)
-      fri_internal : fri ⊆ not_after; (* CoWR0: Also in ob via lrs ∪ fr*)
-      frfi_internal : frfi ⊆ not_after; (* CoRR: important R;po-loc;R not in ob *)
+      rfi_internal : rfi ⊆ not_after cd; (* CoRW1: important, rfi not in ob *)
+      coi_internal : coi ⊆ not_after cd; (* CoWW: Also in ob via lws ∪ co*)
+      fri_internal : fri ⊆ not_after cd; (* CoWR0: Also in ob via lrs ∪ fr*)
+      frfi_internal : frfi ⊆ not_after cd; (* CoRR: important R;po-loc;R not in ob *)
       (* CoRW2: not here as implied by ob (with co⨾rfe⨾lws) *)
     }.
 
   Record reg_internal := {
       rrf_internal : rrf ⊆ full_instruction_order;
-      rfr_internal : rfr ⊆ not_after
+      rfr_internal : rfr ⊆ not_after cd
     }.
-
 
 
   End ArmNames.

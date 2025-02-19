@@ -678,7 +678,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       (** ** Thread and instruction based orders and relations *)
 
       Class UnfoldEidRels := {}.
-      #[local] Instance unfold_eid_rels : UnfoldEidRels := ltac:(constructor).
 
       (** Equivalence relation relating events from the same thread *)
       Definition same_thread : (pre et nmth) → grel EID.t :=
@@ -692,7 +691,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tcclean.
         destruct eids.
         unfold same_thread.
-        set_unfold.
+        set_unfold #UnfoldEidRels.
         hauto q:on.
       Qed.
 
@@ -709,7 +708,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tcclean.
         destruct eids.
         unfold same_instruction_instance.
-        set_unfold.
+        set_unfold #UnfoldEidRels.
         hauto q:on.
       Qed.
 
@@ -728,7 +727,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tcclean.
         destruct eids.
         unfold same_access.
-        set_unfold.
+        set_unfold #UnfoldEidRels.
         hauto q:on.
       Qed.
 
@@ -751,7 +750,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tcclean.
         destruct eids.
         unfold iio.
-        set_unfold.
+        set_unfold #UnfoldEidRels.
         naive_solver lia.
       Qed.
 
@@ -772,7 +771,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         tcclean.
         destruct eids.
         unfold instruction_order.
-        set_unfold.
+        set_unfold #UnfoldEidRels.
         naive_solver lia.
       Qed.
 
@@ -934,6 +933,55 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         pa ← get_pa read;
         val ← get_mem_value read;
         guard' (val = memoryMap_read pe.(init).(MState.memory) pa (bvn_n val / 8)).
+
+
+      (** ** Not after
+
+         The [not_after] relation assert that two event or not ordered the wrong
+         way. This is used for internal coherence checks. *)
+
+      Definition not_after pe :=
+        instruction_order pe ∪ (same_instruction_instance pe ∖ (iio pe)⁻¹).
+      #[export] Typeclasses Transparent not_after.
+
+      (** A relation [rel] being irreflexive when join with a subset of program
+          order is the same as being in not_after, under some condition on the
+          notion of "subset" and on [rel].*)
+      Lemma not_after_spec_gen pe rel ov :
+        grel_symmetric ov →
+        rel ⊆ same_thread pe ∩ ov →
+        grel_irreflexive ((full_instruction_order pe ∩ ov)⨾ rel)
+          ↔ rel ⊆ not_after pe.
+      Proof.
+        intros Hov Hin.
+        split.
+        - intros Ha [x y] Hrel.
+          apply NNPP. intro Hna.
+          set_unfold in Hna.
+          cdestruct Hna # CDestrSplitGoal.
+          1: assert ((y, x) ∈ instruction_order pe) by (set_unfold #UnfoldEidRels; hauto l:on).
+          all: set_solver.
+        - intros Hr x Hc.
+          set_unfold in Hc.
+          cdestruct Hc as y Hi Ho Hxyr.
+          set_unfold in Hr.
+          apply Hr in Hxyr.
+          intuition (set_unfold #UnfoldEidRels; lia).
+      Qed.
+
+      Lemma not_after_spec_po pe rel :
+        rel ⊆ same_thread pe →
+        grel_irreflexive (full_instruction_order pe⨾ rel) ↔ rel ⊆ not_after pe.
+      Proof.
+        intros Hin.
+        opose proof* (not_after_spec_gen pe rel (same_thread pe)).
+        - set_solver #UnfoldEidRels.
+        - set_solver.
+        - by assert (full_instruction_order pe = full_instruction_order pe ∩ same_thread pe)
+            as -> by set_solver#UnfoldEidRels.
+      Qed.
+      Definition not_after_spec_po_loc pe rel := not_after_spec_gen pe rel (overlapping pe) (overlapping_sym pe).
+      Check not_after_spec_po_loc.
 
     End Pre.
 

@@ -4,6 +4,7 @@
  (modules
    SailRiscVInstTypes
    RiscVInst
+   GenAxiomaticRiscV
  )
  (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem)
  (coqdoc_flags :standard --utf8
