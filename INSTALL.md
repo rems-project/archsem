@@ -41,7 +41,7 @@ opam install dune
 
 ### Coq
 
-This project was tested with Coq 8.19.1. If you want exactly that version do:
+This project was tested with Coq 8.19.2. If you want exactly that version do:
 ```
 opam pin coq 8.19.2
 ```
@@ -111,7 +111,7 @@ git clone https://github.com/rems-project/coq-sail
 
 Then (optionally), in that repository, if you want the version used for development, do:
 ```
-git checkout 562597f
+git checkout  bf4178d
 ```
 
 Then you can install `coq-sail-stdpp` with `opam pin coq-sail-stdpp .` in the

@@ -1,0 +1,21 @@
+(coq.theory
+ (name ArchSemRiscV)
+ (package coq-archsem-riscv)
+ (modules
+   SailRiscVInstTypes
+   RiscVInst
+ )
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
+               --external ../../Common/ASCommon.html ASCommon
+               --external ../../ArchSem/ArchSem.html ArchSem
+               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
+ )
+)
+
+; This alias is useful to build all the coq libaries without extraction
+(alias
+ (name coq)
+ (deps (alias_rec all))
+)

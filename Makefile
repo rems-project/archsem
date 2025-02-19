@@ -16,10 +16,9 @@ doc:
 	dune build @doc
 
 DIRS=Common
-DIRS+=ISASem
-DIRS+=GenModels
-DIRS+=AxiomaticModels
-DIRS+=promising-arm
+DIRS+=ArchSem
+DIRS+=ArchSemArm
+DIRS+=ArchSemRiscV
 
 TARFILES=$(DIRS)
 TARFILES+=dune-project Makefile LICENSE
@@ -33,6 +32,7 @@ archive: $(TARBALL)
 
 BSD2-SRC=$(foreach dir, $(DIRS), $(wildcard $(dir)/*.v))
 BSD2-SRC:=$(filter-out %/SailArmInstTypes.v, $(BSD2-SRC))
+BSD2-SRC:=$(filter-out %/SailRiscVInstTypes.v, $(BSD2-SRC))
 
 headers:
 	headache -c etc/head_config -h etc/header ${BSD2-SRC}

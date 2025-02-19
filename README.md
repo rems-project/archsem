@@ -2,7 +2,7 @@
 
 ArchSem is a Rocq framework to define the semantics of CPU architectures
 such as Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set semantics.
-The framework is designed to be generic, but so far is only instantiated for Arm-A.
+The framework is designed to be generic, but so far is only instantiated for Arm-A and RISC-V.
 
 
 ## General goals and organization
@@ -75,8 +75,6 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
 
 ## The current state and directory structure
 
-The directory structure is intended to change soon, so don't rely on it too much
-
 - `Common` (Rocq module name `ASCommon`) is the "utils" library. It contains all
   non-ArchSem-specific Rocq lemmas and automation, as well as required theories
   such that executable relational algebra or effects and free monads.
@@ -87,7 +85,7 @@ The directory structure is intended to change soon, so don't rely on it too much
     concurency models
   - `CandidateExecution.v` The definition of candidate executions for weak
     memory model
-- `ArchSemArm` The Armv9-A instantiation of the previous library. This includes
+- `ArchSemArm` The Armv9-A instantiation of the library. This includes
   - A sequential operational model (`ArmSeqModel.v`)
   - A User-mode promising model (`UMPromising.v`), similar to 
     [the PLDI19 paper](https://sf.snu.ac.kr/publications/promising-arm-riscv.pdf)
@@ -96,6 +94,8 @@ The directory structure is intended to change soon, so don't rely on it too much
   - An SC model for Arm (`UMSeqArm.v`) that is unsound for >1 thread
   - The VMSA model from [the ESOP22
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
+- `ArchSemRiscV` The RISC-V instantiation of the library. This is barebones for
+  now, but will be improved upon later
 - `Extraction` contains machinery to extract the code to OCaml, for now it is
   mainly use to check that the code _can_ be extracted rather than as an
   actually usable OCaml library
@@ -108,11 +108,14 @@ will be generated in:
 - `_build/default/Common/ASCommon.html/toc.html`
 - `_build/default/ArchSem/ArchSem.html/toc.html`
 - `_build/default/ArchSemArm/ArchSemArm.html/toc.html`
+- `_build/default/ArchSemRiscV/ArchSemRiscV.html/toc.html`
 
 
 ## Current limitations
 
-Developing complete architectural models is an ambitious long-term goal.  The curent state takes many important steps towards that, but there is still much to do. In the short term, this includes:
+Developing complete architectural models is an ambitious long-term goal. The
+curent state takes many important steps towards that, but there is still much to
+do. In the short term, this includes:
 
 ### Connection to Sail
 

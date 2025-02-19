@@ -47,5 +47,14 @@
  )
 )
 
+(package
+ (name coq-archsem-riscv)
+ (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
+ (depends
+   coq-archsem
+ )
+)
+
+
 
 (generate_opam_files)
