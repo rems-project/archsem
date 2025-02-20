@@ -140,6 +140,10 @@ Module Type Arch.
   Parameter is_ifetch : mem_acc → bool.
   (** Is this access a translation table walk *)
   Parameter is_ttw : mem_acc → bool.
+
+  (** All the access type classifiers below are for explicit accesses.
+      Therefore, they must all imply [is_explicit] *)
+
   (** Is this access relaxed, aka. no acquire or release strength *)
   Parameter is_relaxed : mem_acc → bool.
   (** Is this an acquire or a release access (Depending on whether this is a

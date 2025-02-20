@@ -344,8 +344,14 @@ Module RiscV.
     Definition mem_acc := Access_kind RISCV_strong_access.
     #[export] Typeclasses Transparent mem_acc.
     Definition mem_acc_eq : EqDecision mem_acc := _.
+    (* Current sail-riscv mismaps RCpc accesses to AV_rel_or_acq, and
+       the then use AK_arch for RCsc accesses, so we fix that here *)
     Definition is_explicit (acc : mem_acc) :=
-      if acc is AK_explicit _ then true else false.
+      match acc with
+      | AK_explicit _ => true
+      | AK_arch _ => true
+      | _ => false
+      end.
     Definition is_ifetch (acc : mem_acc) :=
       if acc is AK_ifetch _ then true else false.
     Definition is_ttw (acc : mem_acc) :=
@@ -354,21 +360,28 @@ Module RiscV.
       if acc is AK_explicit eak then
         eak.(Explicit_access_kind_strength) =? AS_normal else false.
     Definition is_rel_acq (acc : mem_acc) :=
-      if acc is AK_explicit eak then
-        eak.(Explicit_access_kind_strength) =? AS_rel_or_acq else false.
+      if acc is AK_arch _ then true else false.
     Definition is_acq_rcpc (acc : mem_acc) :=
       if acc is AK_explicit eak then
-        eak.(Explicit_access_kind_strength) =? AS_acq_rcpc else false.
+        eak.(Explicit_access_kind_strength) =? AS_rel_or_acq else false.
     Definition is_standalone (acc : mem_acc) :=
-      if acc is AK_explicit eak then
-        eak.(Explicit_access_kind_variety) =? AV_plain else false.
+      match acc with
+      | AK_explicit eak => eak.(Explicit_access_kind_variety) =? AV_plain
+      | AK_arch rsa => rsa.(RISCV_strong_access_variety) =? AV_plain
+      | _ => false
+      end.
     Definition is_exclusive (acc : mem_acc) :=
-      if acc is AK_explicit eak then
-        eak.(Explicit_access_kind_variety) =? AV_exclusive else false.
+      match acc with
+      | AK_explicit eak => eak.(Explicit_access_kind_variety) =? AV_exclusive
+      | AK_arch rsa => rsa.(RISCV_strong_access_variety) =? AV_exclusive
+      | _ => false
+      end.
     Definition is_atomic_rmw (acc : mem_acc) :=
-      if acc is AK_explicit eak then
-        eak.(Explicit_access_kind_variety) =? AV_atomic_rmw else false.
-
+      match acc with
+      | AK_explicit eak => eak.(Explicit_access_kind_variety) =? AV_atomic_rmw
+      | AK_arch rsa => rsa.(RISCV_strong_access_variety) =? AV_atomic_rmw
+      | _ => false
+      end.
 
     Definition translation := unit.
     #[export] Typeclasses Transparent translation.

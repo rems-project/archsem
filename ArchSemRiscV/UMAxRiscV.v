@@ -46,73 +46,27 @@ Require Import ASCommon.Options.
 Require Import ASCommon.Common.
 Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
-Require Import SailStdpp.ConcurrencyInterfaceTypes.
 Require Import RiscVInst.
+Require Import GenAxiomaticRiscV.
 
-(** * Definition of barriers categories and barrier sets
+(** This is an implementation of a user-mode Axiomatic model for ARM. It does
+    not support mixed-size accesses, but does support dsb barriers, unlike usual
+    Arm user mode models. This model has been written to look like the VMSA ESOP
+    22 Arm model to simplify the proof. It is not up to date with change added
+    the model by Arm after the ESOP 22 Paper by Ben Simner et al.
 
-      This section defines the event sets of RISC-V barrier and the corresponding
-      classification.
-
-      This development assumes that all hardware threads are in the same inner
-      shareability domain, therefore we identify barriers that are:
-      - Full system
-      - Outer shareable
-      - Inner shareable
-      This might need to change when considering device interaction later *)
-Section Barriers.
+    This model used the "pa" part of the interface as the main address and does
+    not check that that translation makes sense if there is one. However it will
+    (TODO) check that translations read from initial memory if they exist, and
+    that no writes are made to the address used for translation *)
+Section UMArm.
   Import Candidate.
-  Context {et : exec_type} {nmth : nat}.
-  Implicit Type cd : (pre et nmth).
-  Implicit Type b : barrier.
-  #[local] Hint Extern 10 (Decision (?x _)) => unfold x : typeclass_instances.
-  #[local] Hint Extern 10 (Decision (?x _ _)) => unfold x : typeclass_instances.
-  #[local] Hint Extern 10 (Decision (?x _ _ _)) => unfold x : typeclass_instances.
+  Context (regs_whitelist : gset reg).
+  Context {nmth : nat}.
+  Context (cd : Candidate.t NMS nmth).
 
-  Inductive fenced_accesses := FA_read | FA_write | FA_readwrite.
-  #[export] Instance fenced_accesses_eq_dec : EqDecision fenced_accesses.
-  (* Import ListNotations. *)
-  Proof. solve_decision. Defined.
-  #[export, refine] Instance fenced_accesses_fin : Finite fenced_accesses := { enum := _}.
-  Proof.
-    all:clear et.
-    - exact [FA_read ; FA_write ; FA_readwrite].
-    - sauto q:on.
-    - sauto lq:on.
-  Qed.
-
-  Definition fence_from (input output : fenced_accesses) : barrier_kind :=
-    match input, output with
-    | FA_read, FA_read => Barrier_RISCV_r_r
-    | FA_read, FA_write => Barrier_RISCV_r_w
-    | FA_read, FA_readwrite => Barrier_RISCV_r_rw
-    | FA_write, FA_read => Barrier_RISCV_w_r
-    | FA_write, FA_write => Barrier_RISCV_w_w
-    | FA_write, FA_readwrite => Barrier_RISCV_w_rw
-    | FA_readwrite, FA_read => Barrier_RISCV_rw_r
-    | FA_readwrite, FA_write => Barrier_RISCV_rw_w
-    | FA_readwrite, FA_readwrite => Barrier_RISCV_rw_rw
-    end.
-
-  Definition fences (input output : fenced_accesses) cd :=
-    collect_all (λ _, is_barrierP (.= fence_from input output)) cd.
-
-  Definition fences_tso cd :=
-    collect_all (λ _, is_barrierP (.= Barrier_RISCV_tso)) cd.
-
-  Definition fences_i cd :=
-    collect_all (λ _, is_barrierP (.= Barrier_RISCV_i)) cd.
-
-End Barriers.
-
-
-(** * Standard names and definitions for RISC-V axiomatic models *)
-Module AxRiscVNames.
-  Import Candidate.
-  Section RiscVNames.
-
-  Context {et : exec_type} {nmth : nat}.
-  Context `(cd : t et nmth).
+  (** * Arm standard notations *)
+  Import AxRiscVNames.
 
   (** ** Thread relations *)
   Notation pe := (pre_exec cd).
@@ -123,12 +77,22 @@ Module AxRiscVNames.
   Notation full_instruction_order := (full_instruction_order pe).
   Notation iio := (iio pe).
 
+  (** ** Dependencies *)
+  Notation addr := (addr cd).
+  Notation data := (data cd).
+  Notation ctrl := (ctrl cd).
+
   (** ** Registers *)
   Notation RR := (reg_reads pe).
   Notation RW := (reg_writes pe).
-  Definition RE := RR ∪ RW.
+  Notation RE := (RE cd).
   Notation rrf := (reg_reads_from cd).
   Notation rfr := (reg_from_reads cd).
+
+  (** ** Barriers *)
+  Notation fences a b := (fences a b pe).
+  Notation fences_tso := (fences_tso pe).
+  Notation fences_i := (fences_i pe).
 
   (** ** Memory *)
   Notation W := (explicit_writes pe).
@@ -137,44 +101,100 @@ Module AxRiscVNames.
   Notation Wx := (exclusive_writes pe).
   Notation Rx := (exclusive_writes pe).
   Notation X := (mem_exclusive pe).
-  Definition RL := (acq_rcpc_writes pe) ∪ (rel_acq_writes pe).
-  Definition AQ := (acq_rcpc_reads pe) ∪ (rel_acq_reads pe).
+  Notation RL := (RL cd).
+  Notation AQ := (AQ cd).
   Notation RCsc := (mem_rel_acq pe).
   Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
 
   Notation lxsx := (lxsx cd).
   Notation amo := (atomic_update cd).
-  Definition rmw := lxsx ∪ amo.
+  Notation rmw := (rmw cd).
 
-  (* Not necessarily transitive in mixed-size contexts *)
-  Definition co := ⦗W⦘⨾coherence cd⨾⦗W⦘ ∩ overlapping cd.
-  Definition coi := co ∩ int.
-  Definition coe := co ∖ coi.
+  Notation co := (co cd).
+  Notation coi := (coi cd).
+  Notation coe := (coe cd).
 
-  Definition rf := reads_from cd⨾⦗R⦘.
-  Definition rfi := rf ∩ int.
-  Definition rfe := rf ∖ rfi.
-  Definition fr := ⦗R⦘⨾from_reads cd.
-  Definition fri := fr ∩ int.
-  Definition fre := fr ∖ fri.
+  Notation rf := (rf cd).
+  Notation rfi := (rfi cd).
+  Notation rfe := (rfe cd).
+  Notation fr := (fr cd).
+  Notation fri := (fri cd).
+  Notation fre := (fre cd).
 
-  (** Reading same write *)
-  Definition rsw := (rf ⁻¹⨾rf).
 
-  Definition irf := reads_from cd⨾⦗IF⦘.
-  Definition irfi := irf ∩ int.
-  Definition irfe := irf ∖ rfi.
-  Definition ifr := ⦗IF⦘⨾from_reads cd.
-  Definition ifri := ifr ∩ int.
-  Definition ifre := ifr ∖ fri.
+  Notation rsw := (rsw cd).
 
-  (** ** Internal coherence *)
+  Notation irf := (irf cd).
+  Notation irfi := (irfi cd).
+  Notation irfe := (irfe cd).
+  Notation ifr := (ifr cd).
+  Notation ifri := (ifri cd).
+  Notation ifre := (ifre cd).
 
-  Record reg_coherence := {
-      rrf_internal : rrf ⊆ full_instruction_order;
-      rfr_internal : rfr ⊆ not_after cd
+
+  (* End of copy paste section*)
+
+
+  Definition is_illegal_reg_write (regs : gset reg) :=
+    is_reg_writeP (λ reg acc _, reg ∉ regs).
+  #[export] Instance is_illegal_reg_write_dec regs ev :
+    Decision (is_illegal_reg_write regs ev).
+  Proof. unfold_decide. Defined.
+
+  Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
+
+  (** * Fence relation *)
+
+  Definition fenced_acc_set fa :=
+    match fa with
+    | FA_read => R
+    | FA_write => W
+    | FA_readwrite => M
+    end.
+  Check map.
+  Check uncurry.
+  Definition fence_base :=
+    ⋃ (input ←@{list} enum fenced_accesses;
+       output ←@{list} enum fenced_accesses;
+       [⦗fenced_acc_set input⦘⨾po⨾⦗fences input output⦘⨾po⨾⦗fenced_acc_set output⦘]).
+
+  Definition fence :=
+    fence_base
+    ∪ ⦗W⦘⨾po⨾⦗fences_tso⦘⨾po⨾⦗W⦘
+    ∪ ⦗R⦘⨾po⨾⦗fences_tso⦘⨾po⨾⦗M⦘.
+
+  (** * Preserved program order *)
+
+  Definition po_loc := po ∩ same_pa cd.
+  Definition po_loc_no_w := po_loc ∖ (po_loc⨾⦗W⦘⨾po_loc).
+
+  Definition ppo :=
+    ⦗M⦘⨾po_loc⨾⦗W⦘ (* r1 *)
+    ∪ (⦗R⦘⨾po_loc_no_w⨾⦗R⦘)∖rsw (* r2 *)
+    ∪ ⦗grel_rng rmw ∪ Wx⦘⨾rfi⨾⦗R⦘ (* r3 *)
+    ∪ fence (* r4 *)
+    ∪ ⦗AQ⦘⨾po⨾⦗M⦘ (* r5 *)
+    ∪ ⦗M⦘⨾po⨾⦗RL⦘ (* r6 *)
+    ∪ ⦗RCsc⦘⨾po⨾⦗RCsc⦘ (* r7 *)
+    ∪ rmw (* r8 *)
+    ∪ ⦗M⦘⨾addr⨾⦗M⦘ (* r9 *)
+    ∪ ⦗M⦘⨾data⨾⦗W⦘ (* r10 *)
+    ∪ ⦗M⦘⨾ctrl⨾⦗W⦘ (* r11 *)
+    ∪ ⦗M⦘⨾(addr ∪ data)⨾⦗W⦘⨾rfi⨾⦗R⦘ (* r12 *)
+    ∪ ⦗M⦘⨾addr⨾⦗M⦘⨾po⨾⦗W⦘ (* r13 *).
+
+  (* TODO This does not distinguishes UB conditions from invalid conditions. *)
+  Record consistent := {
+      memory_coherence : grel_acyclic (co ∪ rf ∪ fr ∪ po_loc);
+      register_coherence : reg_coherence cd;
+      main_model : grel_acyclic (co ∪ rfe ∪ fr ∪ ppo);
+      atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+      initial_reads : IF ⊆ IR;
+      initial_reads_not_delayed : IF ## grel_rng (coherence cd);
+      register_write_permitted : Illegal_RW = ∅;
+      memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
+      is_nms' : is_nms cd;
     }.
 
-  End RiscVNames.
-End AxRiscVNames.
+End UMArm.
