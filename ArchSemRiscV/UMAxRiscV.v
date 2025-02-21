@@ -152,8 +152,7 @@ Section UMArm.
     | FA_write => W
     | FA_readwrite => M
     end.
-  Check map.
-  Check uncurry.
+
   Definition fence_base :=
     ⋃ (input ←@{list} enum fenced_accesses;
        output ←@{list} enum fenced_accesses;

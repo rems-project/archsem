@@ -981,7 +981,6 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
             as -> by set_solver#UnfoldEidRels.
       Qed.
       Definition not_after_spec_po_loc pe rel := not_after_spec_gen pe rel (overlapping pe) (overlapping_sym pe).
-      Check not_after_spec_po_loc.
 
     End Pre.
 
