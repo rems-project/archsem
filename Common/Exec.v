@@ -92,6 +92,7 @@ Definition to_state_result_list `(e : res (St * E) (St * A)) : list (result St S
 
 Definition t {St E A} := St → res (St * E) (St * A).
 Arguments t : clear implicits.
+#[global] Typeclasses Transparent t.
 
 (** Create an execution from a set of results, e.g. to convert from pure
     non-determinism to Exec *)
@@ -157,7 +158,7 @@ Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St �
          ((λ '(st',a), (setter st' st, a)) <$> inner_res.(errors)).
 
 Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A :=
-  liftSt_full getter (@setv _ _ _ _) inner.
+  liftSt_full getter (@setv _ _ getter _) inner.
 
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).
