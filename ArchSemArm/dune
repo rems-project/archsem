@@ -5,6 +5,7 @@
    SailArmInstTypes
    ArmInst
    ArmSeqModel
+   ArmSeqAxOpEq
    UMPromising
    VMPromising
    GenAxiomaticArm
