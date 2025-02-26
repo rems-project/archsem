@@ -243,13 +243,9 @@ Proof. by tcclean. Qed.
 Global Instance obv_false_neq A (x : A) : ObvFalse (x ≠ x).
 Proof. by tcclean. Qed.
 
-Global Hint Extern 10 (ObvFalse _) =>
+Global Hint Extern 8 (ObvFalse _) =>
   let H := fresh "H" in
-  constructor; intro H; discriminate H : typeclass_instances.
-
-Global Hint Extern 8 (ObvFalse (¬ _)) =>
-  let H := fresh "H" in
-  constructor; intro H; contradiction H : typeclass_instances.
+  constructor; intro H; (contradiction H || discriminate H) : typeclass_instances.
 
 (** ** Incompatible
 
