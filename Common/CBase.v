@@ -590,6 +590,27 @@ Tactic Notation "destruct" "decide" "subst" constr(x) constr (y)
     "as" simple_intropattern(pat) :=
   destruct decide (x = y) as [? | pat]; [subst y |].
 
+(** ** Evar blocking *)
+
+(** Yet another block like marker for blocking evar, mainly for typeclass resolution *)
+Definition blocked_evar {A} (a : A) := a.
+#[global] Opaque blocked_evar.
+
+Ltac block_evar t := change t with (blocked_evar t) in *.
+Ltac unblock_evars := cbv [blocked_evar] in *.
+
+(** Take a term as a parameter and blocks one evar from it *)
+Ltac block_one_evar t :=
+  match t with
+  | context [ ?e ] =>
+      is_evar e;
+      assert_fails (idtac; lazymatch t with context [blocked_evar e] => idtac end);
+      block_evar e
+  end.
+(** Take a tactic looking up the context to find a term  *)
+Ltac block_all_evars tac :=
+  repeat (let t := tac () in block_one_evar t).
+
 
 (** * Proof search ***)
 

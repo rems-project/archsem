@@ -83,11 +83,23 @@ Proof. destruct b; naive_solver. Qed.
 
 Class BoolUnfold (b : bool) (P : Prop) :=
   {bool_unfold : b <-> P }.
-Global Hint Mode BoolUnfold + - : typeclass_instances.
+Global Hint Mode BoolUnfold ! - : typeclass_instances.
 
 Global Instance BoolUnfold_proper :
   Proper (eq ==> iff ==> iff) BoolUnfold.
 Proof. solve_proper2_tc. Qed.
+
+Ltac get_bool_unfold_evars _ :=
+  lazymatch goal with
+  | |- BoolUnfold ?G _ => G
+  end.
+
+Tactic Notation "bool_unfold" :=
+  rewrite @bool_unfold; [ | block_all_evars get_bool_unfold_evars; tc_solve];
+  unblock_evars.
+Tactic Notation "bool_unfold" "in" ident(h) :=
+  rewrite @bool_unfold in h; [ | block_all_evars get_bool_unfold_evars; tc_solve];
+  unblock_evars.
 
 
 (* Explain to coq hammer tactic how to use Is_true and BoolUnfold *)
@@ -147,6 +159,7 @@ Proof. tcclean. destruct r; naive_solver. Qed.
 
 #[global] Instance bool_unfold_Z_le z z' :
   BoolUnfold (z <? z')%Z (z < z')%Z := bool_unfold_reflect (Z.ltb_spec0 z z').
+
 
 
 (** * Decidable propositions ***)
