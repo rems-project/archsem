@@ -36,13 +36,13 @@ Proof.
   destruct st'; cdestruct Hst' #CDestrSplitGoal.
   - (* Success *)
     eapply (IH x1 x0).
-    2: {set_solver.}
+    2: { set_solver. }
     eapply (Hstep initSt call).
-    2: { set_solver.}
+    2: { set_solver. }
     assumption.
   - (* Error in handling of call *)
     eapply (Hstep initSt call).
-    2: { set_solver.}
+    2: set_solver.
     assumption.
   - (* Error in handling of continuation k *)
     eapply (IH x1 x0).
@@ -120,12 +120,7 @@ Lemma trace_find_cons (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)
 Proof.
   (* TODO TP: Fix cdestruct for contradiction and i *)
   destruct itrs. all: cdestruct |- *** #CDestrMatch #CDestrEqOpt.
-  1: contradiction.
-  1: contradiction.
-  1: { cdestruct i, f1 |- *** #CDestrEqOpt. }
-  1: { cdestruct i. }
-  1: contradiction.
-  1: { cdestruct i. }
+  all: cdestruct i |- *** #CDestrEqOpt.
 Qed.
 
 Arguments trace_find : simpl never.
@@ -230,14 +225,6 @@ Proof.
   cdestruct |- *** as st call H_st st' H_st' pa.
   unfold Exec.to_state_result_list in *.
   cdestruct H_st' as r H_st' v #CDestrSplitGoal.
-  (* destruct call as [|[]]; cbn in *. *)
-  (* 2:{ *)
-  (*   cbn in *. *)
-  (*   assert (st' = st) as -> *)
-  (*   by (unfold Exec.Results in *; set_unfold; now cdestruct H_st'). *)
-  (*   eapply H_st; *)
-  (*   cdestruct |- ***. *)
-  (* } *)
   destruct (decide (is_mem_write (call &→ r))).
   2: {
     destruct call.
