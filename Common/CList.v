@@ -199,9 +199,6 @@ Global Existing Instance list_exist_dec.
 
 (** * List cartesian product *)
 
-#[export] Instance list_cprod A B : CProd (list A) (list B) (list (A * B)) :=
-  @list_prod A B.
-
 Lemma list_cprod_spec A B a b (la : list A) (lb : list B):
   (a,b) ∈ la × lb ↔ a ∈ la ∧ b ∈ lb.
 Proof.

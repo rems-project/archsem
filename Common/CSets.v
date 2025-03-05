@@ -365,9 +365,6 @@ Section GSetCProd.
   Context `{Countable A}.
   Context `{Countable B}.
 
-  #[global] Instance gset_cprod : CProd (gset A) (gset B) (gset (A * B)) :=
-    λ sa sb, set_fold (fun e1 res => res ∪ set_map (e1,.) sb) ∅ sa.
-
   Lemma gset_cprod_spec (sa : gset A) (sb : gset B) a b :
     (a, b) ∈ sa × sb ↔ a ∈ sa ∧ b ∈ sb.
   Proof. unfold cprod, gset_cprod. funelim (set_fold _ _ _); set_solver. Qed.
