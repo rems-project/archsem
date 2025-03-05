@@ -20,13 +20,13 @@
  (name coq-archsem-common)
  (synopsis "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library")
  (depends
-  (coq (>= 8.19.2))
+  (coq (= 8.19.2))
    coq-stdlib
   (coq-equations (>= 1.3))
   (coq-record-update (>= 0.3.4))
   (coq-hammer-tactics (>= 1.3.2))
-  (coq-stdpp (= 1.10.0))
-  (coq-stdpp-bitvector (= 1.10.0))
+  (coq-stdpp (= 1.11.0))
+  (coq-stdpp-bitvector (= 1.11.0))
  )
 )
 

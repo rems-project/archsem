@@ -197,25 +197,6 @@ Qed.
 Global Existing Instance list_forall_dec.
 Global Existing Instance list_exist_dec.
 
-(** * List cartesian product *)
-
-#[export] Instance list_cprod A B : CProd (list A) (list B) (list (A * B)) :=
-  @list_prod A B.
-
-Lemma list_cprod_spec A B a b (la : list A) (lb : list B):
-  (a,b) ∈ la × lb ↔ a ∈ la ∧ b ∈ lb.
-Proof.
-  setoid_rewrite elem_of_list_In.
-  unfold cprod, list_cprod.
-  apply in_prod_iff.
-Qed.
-
-#[export] Instance set_unfold_elem_of_list_cprod A B x (la : list A) (lb : list B) Pa Pb:
-  SetUnfoldElemOf x.1 la Pa →
-  SetUnfoldElemOf x.2 lb Pb →
-  SetUnfoldElemOf x (la × lb) (Pa ∧ Pb).
-Proof. tcclean. destruct x. apply list_cprod_spec. Qed.
-
 (** * List utility functions *)
 
 Fixpoint list_from_func_aux {A} (f : nat -> A) (len : nat) (acc : list A) :=

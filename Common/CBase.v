@@ -203,12 +203,7 @@ Notation guard' P := (guard P;; mret ()).
 
 (** * Cartesian product *)
 
-(** Typeclass for definition of cartesian product on sets and lists.
-    For list we expect lexicographic order see [list_prod] *)
-Class CProd A B C := cprod : A → B → C.
-Global Hint Mode CProd ! ! - : typeclass_instances.
-Global Instance: Params (@cprod) 4 := {}.
-
+(** Notation for cartesian product on sets and lists. *)
 (** × must be left associative because the * of types is left associative.
       Thus if you have sa : set A, sb : set B and sc : set C, then
       sa × sb × sc : set (A * B * C) *)

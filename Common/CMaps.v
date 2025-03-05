@@ -300,7 +300,7 @@ Lemma map_fold_ind' `{FinMap K M} {A B}
   (f : K → A → B → B) (b : B) (P : M A → B → Prop) :
   P ∅ b → (∀ i x m r, m !! i = None → P m r → P (<[i:=x]> m) (f i x r)) →
   ∀ m, P m (map_fold f b m).
-Proof. eapply (map_fold_ind (flip P)). Qed.
+Proof. eapply (map_fold_weak_ind (flip P)). Qed.
 
 (* Same Warning as set_unfold: FinMap needs to be resolvable from global context
 or section variable, not local variable *)
