@@ -356,21 +356,3 @@ WARN: FinSet (and LeibnizEquiv) typeclass needs to be either resolvable from
   `{FinSet A C} `{!LeibnizEquiv C} {B} f b :
   FunctionalElimination (@set_fold A C _ B f b) _ 3 :=
   set_fold_ind_L' (A := A) (C := C) f b.
-
-
-(** * GSet Cartesian product ***)
-
-
-Section GSetCProd.
-  Context `{Countable A}.
-  Context `{Countable B}.
-
-  Lemma gset_cprod_spec (sa : gset A) (sb : gset B) a b :
-    (a, b) ∈ sa × sb ↔ a ∈ sa ∧ b ∈ sb.
-  Proof. unfold cprod, gset_cprod. funelim (set_fold _ _ _); set_solver. Qed.
-
-  Global Instance set_unfold_gset_cprod (sa : gset A) (sb : gset B) x P Q :
-    SetUnfoldElemOf x.1 sa P -> SetUnfoldElemOf x.2 sb Q ->
-    SetUnfoldElemOf x (sa × sb) (P ∧ Q).
-  Proof using. tcclean. destruct x. apply gset_cprod_spec. Qed.
-End GSetCProd.
