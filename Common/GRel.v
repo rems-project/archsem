@@ -483,7 +483,7 @@ Section GRel.
     destruct (decide (a ∈ path)).
     - apply list_split in e as (left & right & ->).
       rewrite is_path_split in IP.
-      opose proof (H (a :: right) _) as H'. {rewrite app_length. cbn. lia. }
+      opose proof (H (a :: right) _) as H'. {rewrite length_app. cbn. lia. }
       destruct (H' x) as [npath H'']. { naive_solver. }
       exists npath. set_solver.
     - opose proof (H path _) as H'; [lia |].

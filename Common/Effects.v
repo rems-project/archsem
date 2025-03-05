@@ -142,7 +142,7 @@ Definition MCall_SubEff Eff Eff'
 (** ** Effect wellformedness
 
 An effect is wellformed if we have DecisionT for all type that it could ask as
-return type. In other words if for all effects we can decide if has an empty
+return type. In other String.words if for all effects we can decide if has an empty
 return type or not *)
 Class EffWf `{Effect Eff} := eff_wf : ∀ call : Eff, DecisionT (eff_ret call).
 #[global] Arguments EffWf _ {_}.
