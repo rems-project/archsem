@@ -148,7 +148,7 @@ Create HintDb vec discriminated.
 #[global] Hint Rewrite @vlookup_alter : vec.
 #[global] Hint Rewrite @vlookup_insert_self : vec.
 #[global] Hint Rewrite @valter_eq using done : vec.
-#[global] Hint Rewrite @vec_to_list_length : vec.
+#[global] Hint Rewrite @length_vec_to_list : vec.
 
 
 (** ** Vector partial lookup *)
@@ -171,7 +171,7 @@ Section VecLookup.
     - apply vlookup_lookup'.
       naive_solver.
     - apply lookup_ge_None.
-      rewrite vec_to_list_length.
+      rewrite length_vec_to_list.
       lia.
   Qed.
 

@@ -12,10 +12,10 @@ The `Makefile` just calls dune directly.
 
 (2) Call `opam pin .` This should make the library available as 4 top-level modules for any other
 projects or coq file (assuming you are using a Coq setup from opam):
- - SSCCommon (this project extra standard library, basically a stdpp extension)
- - ISASem (The ISA Model interface)
- - GenModels (Generic model definitions)
- - PromisingArm (The promising Arm models)
+ - ASCommon (Common infrastructure and definition)
+ - ArchSem (Architecture generic part)
+ - ArchSemArm (Arm instantiation)
+ - ArchSemRiscV (RISC-V instantiation)
 
 
 ## Software Dependencies
@@ -49,8 +49,7 @@ otherwise you can install it with `opam install coq`
 
 Due to Ltac2 version we don't think it will work with lower version of Coq such
 as 8.18* and below. However modifications needed are probably minimal if you do
-need it. At the time of writing some dependencies are not ported yet to Coq 8.20
-and later.
+need it. 
 
 
 ### Sail
@@ -94,11 +93,10 @@ git clone https://gitlab.mpi-sws.org/iris/stdpp
 Then, if you want the precise version of stdpp this project was tested
 against, do:
 ```
-git checkout coq-stdpp-1.10.0
+git checkout coq-stdpp-1.11.0
 ```
 
-Then you can install stdpp with `opam pin .` in the `stdpp` directory. Opam will
-also propose to install `coq-stdpp-unstable` which you should accept.
+Then you can install stdpp with `opam pin .` in the `stdpp` directory. 
 
 
 #### Coq Sail (stdpp version)
