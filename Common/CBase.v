@@ -351,6 +351,7 @@ Ltac2 Notation unblock_goal := unblock_goal0 ().
 
 (** Ltac2 conversions that throw on error *)
 Ltac2 ltac1_to_ident x := Option.get (Ltac1.to_ident x).
+Ltac2 ltac1_to_constr x := Option.get (Ltac1.to_constr x).
 Ltac2 ltac1_to_list (f : Ltac1.t -> 'a) (t : Ltac1.t) :=
   t |> Ltac1.to_list |> Option.get |> List.map f.
 
@@ -405,6 +406,19 @@ Ltac2 prt_opt (printer : unit -> 'a -> message) () (o : 'a option) :=
 Ltac2 prt_hyp () (x : ident) := fprintf "%I:%t" x (Constr.type (Control.hyp x)).
 
 
+(** *** Ltac2 goal printer
+
+   Allow to print the current goal anywhere *)
+Ltac2 print_goal0 () :=
+  List.iter (fun (name, body, type) =>
+               match body with
+               | None => printf "%I: %t" name type
+               | Some b => printf "%I: %t := %t" name type b
+               end) (Control.hyps ());
+  printf "--------------------------------------------------------------";
+  printf "%t" (Control.goal ()).
+Ltac2 Notation print_goal := print_goal0 ().
+Ltac print_goal := ltac2:(print_goal).
 
 (** * Tactic options
 
@@ -598,6 +612,8 @@ Definition blocked_evar {A} (a : A) := a.
 
 Ltac block_evar t := change t with (blocked_evar t) in *.
 Ltac unblock_evars := cbv [blocked_evar] in *.
+Ltac2 unblock_evars0 () := cbv [blocked_evar] in *.
+Ltac2 Notation unblock_evars := unblock_evars0 ().
 
 (** Take a term as a parameter and blocks one evar from it *)
 Ltac block_one_evar t :=

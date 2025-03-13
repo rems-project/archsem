@@ -107,6 +107,18 @@ Section FMon.
   Record fEvent := FEvent {fcall : Eff; fret : eff_ret fcall}.
   Infix "&→" := FEvent (at level 45, no associativity).
 
+  Lemma fEvent_call_eq `{Effect Eff} (call call' : Eff) ret ret' :
+    call &→ ret = call' &→ ret' → call = call'.
+  Proof. cdestruct call |- ***. Qed.
+
+  Lemma fEvent_ret_JMeq `{Effect Eff} (call call' : Eff) ret ret' :
+    call &→ ret = call' &→ ret' → ret =ⱼ ret'.
+  Proof. cdestruct call |- ***. Qed.
+
+  Lemma fEvent_eq_spec_JMeq `{Effect Eff} (call call' : Eff) ret ret' :
+    call &→ ret = call' &→ ret' ↔ call = call' ∧ ret =ⱼ ret'.
+  Proof. cdestruct call |- *** #CDestrSplitGoal. Qed.
+
   (** Decide if a [call] matches an event [ev] and return the return value with
       the correct type if it matches *)
   Definition event_extract (ev : fEvent) (call : Eff) : option (eff_ret call) :=
@@ -441,6 +453,27 @@ Notation fstep f ev f' := (fsteps f [ev] f').
 Notation FTRet a := ([], FTERet a).
 Notation FTStop call := ([], FTEStop call).
 Notation FTNothing := ([], FTENothing).
+
+
+(** Helper for the following Hint Extern. The goal is that in case of an fEvent
+    equality, where the return values happen to be of the same type, then
+    [call &→ ret = call' &→ ret'] can be simplified to
+    [call = call' ∧ ret = ret'] *)
+Lemma fEvent_eq_helper `{Effect Eff} (call call' : Eff) ret ret' P :
+  ret =ⱼ ret' ↔ P →
+  call &→ ret = call' &→ ret' ↔ call = call' ∧ P.
+Proof. intros <-. apply fEvent_eq_spec_JMeq. Qed.
+
+(** Perform the CDestruct simplification described above *)
+#[export]
+Hint Extern 2
+  (CDestrSimpl _
+     (@FEvent ?Eff ?ER ?call ?ret = @FEvent ?Eff ?ER ?call' ?ret') ?Q) =>
+       eunify Q (call = call' ∧ ret = ret'); (* we want to unify without typeclass opacity *)
+       constructor;
+       refine (@fEvent_eq_helper Eff ER call call' ret ret' _ _);
+       exact (JMeq_simpl _ ret ret') : typeclass_instances.
+
 
 (** Create a handler for a sum of effects from handler for each individual
     effects *)
