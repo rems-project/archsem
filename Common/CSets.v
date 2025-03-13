@@ -304,6 +304,7 @@ Module CDestrUnfoldElemOf.
     Unconvertible Prop (x ∈ S) P →
     CDestrSimpl b (x ∈ S) P.
   Proof. by tcclean. Qed.
+  Hint Mode SetUnfoldElemOf + + + + ! - : typeclass_instances.
 End CDestrUnfoldElemOf.
 
 
