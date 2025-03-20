@@ -154,11 +154,11 @@ Program Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret c
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   end.
 
+Definition trace_cons (x : FMon.fEvent outcome) (itrs : list (iTrace ())) :=
+  (set fst (cons x) (hd FMon.FTNothing itrs) :: tail itrs).
+
 Definition sequential_model_outcome_logged : ∀ call : outcome, seqmon (eff_ret call) :=
-  (λ ev,
-    mset itrs (λ l, (hd FMon.FTNothing l |> set fst (cons ev)) :: tl l);;
-    mret ())
-  |> FMon.fHandler_logger sequential_model_outcome.
+  FMon.fHandler_logger sequential_model_outcome (λ ev, mset itrs (trace_cons ev)).
 
 (** Run instructions until a final state has been reached or fuel is depleted *)
 Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
