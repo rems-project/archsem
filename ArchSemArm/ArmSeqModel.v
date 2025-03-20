@@ -164,12 +164,12 @@ Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
   if fuel is S fuel
   then
     mset itrs (cons FMon.FTNothing);;
-    FMon.cinterp (sequential_model_outcome) isem;;
-    mset itrs (λ l, (List.rev (hd FMon.FTNothing l).1, FMon.FTERet ()) :: tl l);;
+    FMon.cinterp (sequential_model_outcome_logged) isem;;
+    mset itrs (λ l, ((* List.rev *) (hd FMon.FTNothing l).1, FMon.FTERet ()) :: tl l);;
     st ← mget seq_state_to_init;
     if MState.finalize st is Some final
     then
-      mset itrs (@List.rev _);;
+      (* mset itrs (@List.rev _);; *)
       mret final
     else sequential_model_seqmon fuel isem
   else mthrow "Out of fuel".
