@@ -62,7 +62,7 @@ itree (thus inductive, not coinductive). Therefore, it cannot represent
 non-termination. *)
 
 (*** Rationale: it's ok to do that, and later to consider only finite traces because the intended use is for the semantics of single instructions. ***)
-                            
+
 
 
 Section FMon.
@@ -155,11 +155,11 @@ Section FMon.
   free monad value itself is the state and events are transitions. *)
 
   (** [fsteps] describe the result of a list of transitions, labelled by events in
-      the list, allowed by the monad.  For a single transition, there is an [fstep] notation that uses that on a singleton list, instead of a separate predicate. 
+      the list, allowed by the monad.  For a single transition, there is an [fstep] notation that uses that on a singleton list, instead of a separate predicate.
 
       [fsteps f evs f']  iff free monad value [f] can do a sequence of transitions, labelled by the events of the list [evs], to  free monad value [f'].
 
-      In the rhs of the body of [FMCons], the monadic value [Next call k] can do a transition with label [call &→ ret], with the same [call] and an arbitrary return value [ret], and then the rest of the events [tl], to reach monadic value [f'], reached by applying the continuation [k] to that return value [ret]. 
+      In the rhs of the body of [FMCons], the monadic value [Next call k] can do a transition with label [call &→ ret], with the same [call] and an arbitrary return value [ret], and then the rest of the events [tl], to reach monadic value [f'], reached by applying the continuation [k] to that return value [ret].
 
  *)
   Inductive fsteps {A : Type} : fMon A → list fEvent → fMon A → Prop :=
@@ -251,7 +251,7 @@ Section FMon.
   The type of finite traces over fMon. These traces are partial and can stop
   anywhere, including having or not an incomplete next event. *)
 
-  (*** Rationale: we define traces as a pair of a list of events and a trace end, rather than defining a new list type with the trace ends in place of Nil, as otherwise we need to redefine all the standard list things. ***) 
+  (*** Rationale: we define traces as a pair of a list of events and a trace end, rather than defining a new list type with the trace ends in place of Nil, as otherwise we need to redefine all the standard list things. ***)
 
   (** *** Trace ends *)
 
@@ -291,7 +291,7 @@ Section FMon.
 
   (** A trace is a list of events and an end. *)
   Definition fTrace A : Type := list fEvent * fTraceEnd A.
-                                                                             
+
   #[global] Typeclasses Transparent fTrace.
   Notation FTRet a := ([], FTERet a).
   Notation FTStop call := ([], FTEStop call).
@@ -419,6 +419,13 @@ Section FMon.
   (** A handler is a function that describes how to interpret all effects of [Eff]
       in a monad [M] *)
   Definition fHandler (M : Type → Type) := ∀ call : Eff, M (eff_ret call).
+
+  (** Given a handler and a logging function we can define a new handler  that logs all events *)
+  Definition fHandler_logger `{MRet M, MBind M} (handler : fHandler M) (logger : fEvent → M ()%type) : fHandler M :=
+    λ call,
+      ret ← handler call;
+      logger (FEvent call ret);;
+      mret ret.
 
   (** If the target monad already supports the effect, then there is a trivial
       handler *)

@@ -59,10 +59,11 @@ Record seq_state := {
   initSt : MState.init 1;
   mem : gmap pa (bv 8);
   regs : gmap reg (bv 64);
+  itrs : list (iTrace ())
 }.
 
 Global Instance eta_seq_state : Settable seq_state :=
-  settable! Build_seq_state <initSt;mem;regs>.
+  settable! Build_seq_state <initSt;mem;regs;itrs>.
 
 Notation seqmon := (Exec.t seq_state string).
 
@@ -151,15 +152,25 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   end.
 
+Definition sequential_model_outcome_logged : ∀ call : outcome, seqmon (eff_ret call) :=
+  (λ ev,
+    mset itrs (λ l, (hd FMon.FTNothing l |> set fst (cons ev)) :: tl l);;
+    mret ())
+  |> FMon.fHandler_logger sequential_model_outcome.
+
 (** Run instructions until a final state has been reached or fuel is depleted *)
 Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
   : seqmon (MState.final 1) :=
   if fuel is S fuel
   then
-    FMon.cinterp sequential_model_outcome isem;;
+    mset itrs (cons FMon.FTNothing);;
+    FMon.cinterp (sequential_model_outcome) isem;;
+    mset itrs (λ l, (List.rev (hd FMon.FTNothing l).1, FMon.FTERet ()) :: tl l);;
     st ← mget seq_state_to_init;
     if MState.finalize st is Some final
-    then mret final
+    then
+      mset itrs (@List.rev _);;
+      mret final
     else sequential_model_seqmon fuel isem
   else mthrow "Out of fuel".
 
@@ -170,11 +181,11 @@ Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   λ n,
   match n with
   | 1 => λ initSt : MState.init 1,
-            Listset
-            (sequential_model_seqmon fuel isem {| initSt := initSt; regs := ∅; mem := ∅ |}
-              |> Exec.to_stateful_result_list
-              |$> snd
-              |$> Model.Res.from_result)
+           Listset
+            (sequential_model_seqmon fuel isem {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |}
+             |> Exec.to_stateful_result_list
+             |$> snd
+             |$> Model.Res.from_result)
   | _ => λ _, mret (Model.Res.Error "Exptected one thread")
   end.
 
