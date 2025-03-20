@@ -44,6 +44,7 @@
 
 Require Import CBase.
 Require Import Options.
+Require Import CDestruct.
 From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to
@@ -134,6 +135,16 @@ Section Result.
       unfold is_Ok;
       naive_solver.
   Defined.
+
+  #[export] Instance cdestruct_is_Ok r :
+    CDestrSimpl false (is_Ok r) (∃ o, r = Ok o).
+  Proof. tcclean. now unfold is_Ok. Qed.
+
+  #[export] Instance obv_true_is_Ok_Ok x : ObvTrue (is_Ok (Ok x)).
+  Proof. tcclean. unfold is_Ok. eauto. Qed.
+
+  #[export] Instance obv_false_is_Ok_Error x : ObvFalse (is_Ok (Error x)).
+  Proof. tcclean. unfold is_Ok. naive_solver. Qed.
 
   (** Unpack a result into any monad that supports that error type *)
   Definition unpack_result `{MThrow E M, MRet M} (r : result) : M A :=
