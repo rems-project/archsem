@@ -883,3 +883,19 @@ Proof. tcclean. tauto. Qed.
 Instance cdestruct_not_or_and b P Q :
   CDestrSimpl b (¬ (P ∨ Q)) (¬ P ∧ ¬ Q).
 Proof. tcclean. naive_solver. Qed.
+
+Instance cdestruct_or_False_l b P :
+  CDestrSimpl b (False ∨ P) P.
+Proof. tcclean. naive_solver. Qed.
+
+Instance cdestruct_or_False_r b P :
+  CDestrSimpl b (P ∨ False) P.
+Proof. tcclean. naive_solver. Qed.
+
+Instance cdestruct_and_True_l b P :
+  CDestrSimpl b (True ∧ P) P.
+Proof. tcclean. naive_solver. Qed.
+
+Instance cdestruct_and_True_r b P :
+  CDestrSimpl b (P ∧ True) P.
+Proof. tcclean. naive_solver. Qed.
