@@ -291,6 +291,9 @@ Global Hint Extern 3 (ObvTrue _) =>
 Global Hint Extern 4 (ObvTrue _) =>
          constructor; symmetry; assumption : typeclass_instances.
 
+#[global] Instance obv_true_not_False : ObvTrue (¬ False).
+Proof. now tcclean. Qed.
+
 (** * CDestruct
 
 See the top of the file comment for details about what [cdestruct] does. *)
@@ -882,6 +885,10 @@ Proof. tcclean. tauto. Qed.
 
 Instance cdestruct_not_or_and b P Q :
   CDestrSimpl b (¬ (P ∨ Q)) (¬ P ∧ ¬ Q).
+Proof. tcclean. naive_solver. Qed.
+
+Instance cdestruct_is_Some {A} (x : option A) :
+  CDestrSimpl false (is_Some x) (∃ y, x = Some y).
 Proof. tcclean. naive_solver. Qed.
 
 Instance cdestruct_or_False_l b P :
