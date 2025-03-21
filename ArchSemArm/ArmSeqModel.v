@@ -51,7 +51,7 @@ Require Import ASCommon.Effects.
 
 Section Seq.
 
-Context (regs_whitelist : option (gset reg)).
+Context (regs_whitelist : option (gset reg)) (max_mem_acc_size : N).
 
 (** A sequential state for bookkeeping reads and writes to registers/memory in
     gmaps, as well as, the initial state *)
@@ -119,7 +119,7 @@ Definition seq_state_to_init (seqs : seq_state) : MState.init 1 :=
      MState.termCond := seqs.(initSt).(MState.termCond) |}.
 
 (** This is the effect handler for the outcome effect in the sequential model *)
-Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
+Program Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   match call with
   | RegRead reg racc => mget (read_reg_seq_state reg)
   | RegWrite reg racc val =>
@@ -129,6 +129,7 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       else mthrow "Write to illegal register"
     else msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
   | MemRead n rr =>
+    guard_or "Read exceeds max size" (n < max_mem_acc_size)%N;;
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then
       '(read, flag) ← mget (read_mem_seq_state_flag n rr.(ReadReq.pa));
@@ -140,6 +141,7 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       mret (inl (read, None))
   | MemWriteAddrAnnounce _ _ _ _ => mret ()
   | MemWrite n wr =>
+    guard_or "Write exceeds max size" (n < max_mem_acc_size)%N;;
     write_mem_seq_state wr.(WriteReq.pa) (wr.(WriteReq.value) |> bv_to_bytes 8);;
     mret (inl true)
   | Barrier _ => mret ()
