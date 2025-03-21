@@ -3,44 +3,93 @@ Require Import ArmInst.
 From ASCommon Require Import Exec FMon Common Options.
 
 Import CDestrUnfoldElemOf.
+#[local] Existing Instance Exec.unfold.
 
-Lemma finterp_inv_induct `{Effect Eff} {St E A}
-    (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
-    (P : result St St → Prop) (st : St)
-  : P (Ok st)
-  → (∀ st call, P (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, P st')
-  → ∀ st' ∈ (Exec.to_state_result_list $ FMon.finterp handler mon st), P st'.
+Instance Exec_to_state_result_list_Ok {St E A} st (e : Exec.res (St * E) (St * A)) P:
+  (∀ v, SetUnfoldElemOf (st, v) e (P v)) →
+  SetUnfoldElemOf (Ok st) (Exec.to_state_result_list e) (∃ v, P v).
 Proof.
-  induction mon as [|? ? IH] in st |- *; cdestruct |- *** as Hbase Hstep st' Hst'.
-  unfold Exec.to_state_result_list in *.
-  set_unfold.
-  cdestruct Hst' |- *** #CDestrSplitGoal; subst.
-  - eapply IH.
-    2: cdestruct |- *** #CDestrSplitGoal; eapply Hstep; eauto;
-       solve[ltac:(left + right); eexists (_,_); eauto].
-    2: left; eexists (_,_); eauto.
-    eapply Hstep.
-    2: left; eexists (_,_); cbn; split; eauto.
-    done.
-  - eapply Hstep.
-    2: right; eexists (_,_); cbn; split; eauto.
-    easy.
-  - eapply IH.
-    2: cdestruct |- *** #CDestrSplitGoal; eapply Hstep; eauto;
-       solve[ltac:(left + right); eexists (_,_); eauto].
-    2: right; eexists (_,_); eauto.
-    eapply Hstep.
-    2: left; eexists (_,_); cbn; split; eauto.
-    done.
+  tcclean.
+  unfold Exec.to_state_result_list.
+  set_unfold. autorewrite with pair. naive_solver.
 Qed.
 
+Instance Exec_to_state_result_list_Error {St E A} st (e : Exec.res (St * E) (St * A)) P:
+  (∀ v, SetUnfoldElemOf (st, v) e.(Exec.errors) (P v)) →
+  SetUnfoldElemOf (Error st) (Exec.to_state_result_list e) (∃ v, P v).
+Proof.
+  tcclean.
+  unfold Exec.to_state_result_list.
+  set_unfold. autorewrite with pair. naive_solver.
+Qed.
+
+Lemma finterp_inv_induct `{Effect Eff} {St E A}
+  (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
+  (I : result St St → Prop) (initSt : St)
+  : I (Ok initSt)
+    → (∀ st call, I (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, I st')
+    → ∀ st' ∈ (Exec.to_state_result_list $ FMon.finterp handler mon initSt), I st'.
+Proof.
+  intros Hinit Hstep.
+  induction mon as [|? ? IH] in initSt, Hinit |- *;
+    cdestruct |- *** as st' Hst'.
+  destruct st'; cdestruct Hst' #CDestrSplitGoal.
+  - (* Success *)
+    eapply (IH x1 x0).
+    2: {set_solver.}
+    eapply (Hstep initSt call).
+    2: { set_solver.}
+    assumption.
+  - (* Error in handling of call *)
+    eapply (Hstep initSt call).
+    2: { set_solver.}
+    assumption.
+  - (* Error in handling of continuation k *)
+    eapply (IH x1 x0).
+    2:set_solver.
+    eapply (Hstep initSt call).
+    2:set_solver.
+    assumption.
+Qed.
+
+Instance Exec_mcall_MChoice {St E A} st (e : Exec.res (St * E) (St * A)) P:
+  (∀ v, SetUnfoldElemOf (st, v) e.(Exec.errors) (P v)) →
+  SetUnfoldElemOf (Error st) (Exec.to_state_result_list e) (∃ v, P v).
+Proof.
+  tcclean.
+  unfold Exec.to_state_result_list.
+  set_unfold. autorewrite with pair. naive_solver.
+Qed.
+
+Arguments Exec.to_state_result_list : simpl never.
+
 Lemma cinterp_inv_induct `{Effect Eff} {St E A}
-    (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
-    (P : result St St → Prop) (st : St)
-  : P (Ok st)
-  → (∀ st call, P (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ (handler +ₕ mcall_fHandler) call st, P st')
-  → ∀ st' ∈ (Exec.to_state_result_list $ FMon.cinterp handler mon st), P st'.
-Proof. cdestruct |- ***. eapply finterp_inv_induct; done. Qed.
+  (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
+  (I : result St St → Prop) (initSt : St)
+  : I (Ok initSt)
+    → (∀ st call, I (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, I st')
+    → ∀ st' ∈ (Exec.to_state_result_list $ FMon.cinterp handler mon initSt), I st'.
+Proof.
+  intros Hinit HIpreserve st' Hst'.
+  eapply finterp_inv_induct; [eassumption | | eassumption].
+  clear initSt Hinit st' Hst'.
+  intros st [|[]] Hst st' Hst'.
+  - cbn in Hst'. naive_solver.
+  - destruct st'.
+    + cdestruct Hst'.
+      unfold Exec.Results in H0.
+      cdestruct val |- ***.
+    + cdestruct Hst'.
+Qed.
+
+(* TODO:
+   TP: set_unfold on evars
+   TP: MemRead and MemWrite supersubst
+
+   NL: Unfold instances on mcallM of MChoice and Exec.Results.
+   NL: Keep up the good work
+
+*)
 
 Fixpoint trace_find_indexed (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
   (itrs : list (iTrace ())) : option (nat * nat * FMon.fEvent outcome) :=
@@ -61,7 +110,6 @@ Fixpoint trace_find (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
     else trace_find P itrr
   | [] => None
   end.
-Arguments trace_find : simpl never.
 
 Lemma trace_find_cons (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
     (itrs : list (iTrace ())) (x : FMon.fEvent outcome)
@@ -70,10 +118,17 @@ Lemma trace_find_cons (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)
     then Some x
     else trace_find P itrs.
 Proof.
-  destruct itrs; unfold trace_find at 1; cbn;
-  case_bool_decide; case_decide; cdestruct |- ***; try easy.
-  now destruct i.
+  (* TODO TP: Fix cdestruct for contradiction and i *)
+  destruct itrs. all: cdestruct |- *** #CDestrMatch #CDestrEqOpt.
+  1: contradiction.
+  1: contradiction.
+  1: { cdestruct i, f1 |- *** #CDestrEqOpt. }
+  1: { cdestruct i. }
+  1: contradiction.
+  1: { cdestruct i. }
 Qed.
+
+Arguments trace_find : simpl never.
 
 Print Coercions.
 Context (regs_whitelist : option (gset reg)) (fuel : nat) (isem : iMon ()).
@@ -103,7 +158,6 @@ Definition op_mem_wf (str : result seq_state seq_state) : Prop :=
   | Error _ => False
   end.
 
-#[local] Existing Instance Exec.unfold.
 
 Definition result_same_type_proj {T} (r : result T T) :=
   match r with
@@ -126,9 +180,7 @@ Lemma div_round_up_divisible n m :
 Proof.
   intro.
   unfold div_round_up.
-  rewrite N.mul_comm.
-  rewrite N.div_add_l; last done.
-  rewrite N.div_small; lia.
+  nia.
 Qed.
 
 Lemma pa_not_in_range_write size pa pa' st st' (l : list (bv 8)) :
@@ -178,18 +230,18 @@ Proof.
   cdestruct |- *** as st call H_st st' H_st' pa.
   unfold Exec.to_state_result_list in *.
   cdestruct H_st' as r H_st' v #CDestrSplitGoal.
-  destruct call as [|[]]; cbn in *.
-  2:{
-    cbn in *.
-    assert (st' = st) as ->
-    by (unfold Exec.Results in *; set_unfold; now cdestruct H_st').
-    eapply H_st;
-    cdestruct |- ***.
-  }
-  destruct (decide (is_mem_write (o &→ r))).
+  (* destruct call as [|[]]; cbn in *. *)
+  (* 2:{ *)
+  (*   cbn in *. *)
+  (*   assert (st' = st) as -> *)
+  (*   by (unfold Exec.Results in *; set_unfold; now cdestruct H_st'). *)
+  (*   eapply H_st; *)
+  (*   cdestruct |- ***. *)
+  (* } *)
+  destruct (decide (is_mem_write (call &→ r))).
   2: {
-    destruct o.
-    all: do 8 deintro.
+    destruct call.
+    all: do 7 deintro.
     all: cdestruct |- *** #CDestrMatch.
     all: rewrite trace_find_cons.
     all: cdestruct |- *** #CDestrMatch.
@@ -197,13 +249,13 @@ Proof.
     all: eapply H_st.
     all: cdestruct |- ***.
   }
-  destruct o; try easy.
+  destruct call; try easy.
   do 9 deintro.
   cdestruct |- *** #CDestrMatch.
   rewrite trace_find_cons.
   inversion H0.
   do 11 deintro;
-  cdestruct |- *** as ?? st' pa H_st' ?? #CDestrMatch.
+  cdestruct |- *** as ?? st' Hst' pa ?? #CDestrMatch.
   2: {
     assert (mem st' !! pa = mem st !! pa) as ->.
     {
