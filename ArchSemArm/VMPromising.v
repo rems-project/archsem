@@ -580,6 +580,8 @@ Module TState.
            the timestamp and post-view of the load exclusive*)
         xclb : option (nat * view);
 
+
+        (* TODO: Remove this and add CSE events *)
         (* Position in sregs of the last CSE event *)
         scse : nat;
 
@@ -592,13 +594,14 @@ Module TState.
     settable! make <prom;pc;regs;regs_init;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb;scse;tlbscses>.
 
+  (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
       pc := iregs (Reg.to_arch Reg.PC);
       regs := fun reg => (iregs (Reg.to_arch reg), 0);
       regs_init := iregs;
-      sregs := [];
+      sregs := []; (* latest event at the top of the list *)
       coh := fun loc => 0;
       vrd := 0;
       vwr := 0;
@@ -825,6 +828,7 @@ Next Obligation.
 Defined.
 
 Module TLB.
+  (* TODO: pair programming to switch to dmaps. *)
 
   Module NDCtxt.
     Record t (lvl : Level) :=
@@ -1031,6 +1035,10 @@ Module VATLB := TLB.VATLB.
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
+  (* TODO Fixup this type to contain:
+     - Translation parameters
+     - whether we're in the middle or after the end
+     - If after the end: The results: pa + attributes *)
   (* Translation Results *)
   Module TransRes.
     Record t :=
@@ -1055,6 +1063,8 @@ Module IIS.
     make {
         strict : view;
         (* The translations whose results were already selected *)
+        (* TODO: only the latest translation,
+                 crash if pas don't match *)
         trs : gmap (bv 36) TransRes.t
       }.
 
