@@ -176,7 +176,7 @@ Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (in
          end.
 #[global] Typeclasses Opaque elem_of_result.
 
-#[global] Instance elem_of_result_state {St E A} : ElemOf (result E A) (res (St * E) (St * A)) :=
+#[global] Instance elem_of_result_no_state {St E A} : ElemOf (result E A) (res (St * E) (St * A)) :=
   λ x e, match x with
          | Ok v => v ∈ e
          | Error err => err ∈ (snd <$> e.(errors))
