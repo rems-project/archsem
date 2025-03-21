@@ -4,6 +4,7 @@
  (modules
    ArmInst
    ArmSeqModel
+   ArmSeqAxOpEq
    UMPromising
    VMPromising
    GenAxiomaticArm
