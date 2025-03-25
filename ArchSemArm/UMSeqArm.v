@@ -183,3 +183,21 @@ Section UMSeqArm.
     }.
 
 End UMSeqArm.
+
+(* #[global] Instance consistent_Decision rwl nmth cd :
+  Decision (consistent (nmth := nmth) rwl cd).
+Proof.
+  destruct cd as [[]].
+  Set Printing Implicit.
+  unfold Decision.
+
+  tcclean.
+  constructor; cbn.
+  1: tc_solve.
+  destruct consistent.
+  unfold consistent.
+
+About consistent.
+Program Definition AxUMSeqArm rwl et : Ax.t et ∅ :=
+λ nmth cd, if decide (consistent rwl cd) then _ else _.
+Next Obligation. *)
