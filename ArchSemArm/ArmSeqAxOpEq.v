@@ -180,7 +180,6 @@ Qed.
 Arguments trace_find : simpl never.
 
 Section Proof.
-Search bv_modulus.
 Context (regs_whitelist : option (gset reg)) (fuel : nat) (isem : iMon ()).
 
 Notation seqmon := (Exec.t seq_state string).
@@ -261,12 +260,42 @@ Proof.
 Admitted.
 
 
-Lemma write_mem_seq_state_itrs bytes  :
+Lemma write_mem_seq_state_itrs bytes :
   ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → itrs st' = itrs st.
 Proof.
   induction bytes; cdestruct |- ***.
   change (itrs st) with (itrs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
   eapply IHbytes, H.
+Qed.
+
+Lemma sequential_model_outcome_itrs st st' call r s :
+  (st', r) ∈ sequential_model_outcome regs_whitelist s call st → itrs st' = itrs st.
+Proof.
+  destruct call;
+  cdestruct |- *** #CDestrMatch;
+  try naive_solver.
+  all: unfold mthrow, Exec.throw_inst in *; try set_solver.
+  eapply write_mem_seq_state_itrs.
+  eauto.
+Qed.
+
+Lemma write_mem_seq_state_initSt bytes :
+  ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → initSt st' = initSt st.
+Proof.
+  induction bytes; cdestruct |- ***.
+  change (initSt st) with (initSt (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
+  eapply IHbytes, H.
+Qed.
+
+Lemma sequential_model_outcome_initSt st st' call r s :
+  (st', r) ∈ sequential_model_outcome regs_whitelist s call st → initSt st' = initSt st.
+Proof.
+  destruct call;
+  cdestruct |- *** #CDestrMatch;
+  try naive_solver.
+  all: unfold mthrow, Exec.throw_inst in *; try set_solver.
+  eapply write_mem_seq_state_initSt.
+  eauto.
 Qed.
 
 Context (max_size : N) {max_size_upper_limit : (max_size < Z.to_N (bv_modulus 52))%N}.
@@ -278,50 +307,35 @@ Definition tr_wf (str : result seq_state seq_state) : Prop :=
   | Error _ => False
   end.
 
-Lemma op_reads st :
+Lemma op_reads st call :
   tr_wf (Ok st) →
   op_mem_wf (Ok st) →
-  ∀ str ∈ (Exec.to_state_result_list $ FMon.cinterp (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52))) isem st),
-  (λ str, is_Ok str → tr_wf str → op_mem_wf str) str.
+  ∀ st' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call st),
+  is_Ok st' → tr_wf st' → op_mem_wf st'.
 Proof.
-  intros Htr Hmem.
-  eapply cinterp_inv_induct; first easy; clear Htr Hmem st.
-  cdestruct |- *** as st call H_st st' H_st' pa.
-  cdestruct H_st' as r H_st' Hsize v #CDestrSplitGoal.
-  (* Case split: Is newest event a memory write? *)
-  destruct (decide (is_mem_write (call &→ r))).
+  intros Htr H_st.
+  cdestruct |- *** as st' r H_st' Hsize pa v.
+  (* Case split: Is event a memory write? *)
+  destruct (decide (is_mem_write (call &→ r))) as [ismw|].
   2: { (* Not mem write: no changes to mem map and remaining trace is still wf *)
     destruct call.
     all: do 7 deintro.
     all: cdestruct |- *** #CDestrMatch.
     all: rewrite trace_find_cons in *.
-    all: cdestruct |- *** #CDestrMatch.
-    all: try easy.
-    all: eapply H_st.
-    all: cdestruct |- ***.
-    all: set_unfold in Hsize.
-    all: naive_solver.
+    all: now cdestruct |- *** #CDestrMatch.
   }
   (* mem write: memory map at pa is exactly written byte and otherwise unchanged *)
-  destruct call; try easy.
-  do 6 deintro.
-  cdestruct |- *** #CDestrMatch.
+  destruct call; try easy; clear ismw.
+  cdestruct st', r, H_st' |- *** as st' ? H_st' Hsize #CDestrMatch.
   rewrite trace_find_cons.
-  inversion H1.
-  do 11 deintro;
-  cdestruct |- *** as st' ? Hst' Hsize pa ?? #CDestrMatch.
+  cdestruct st, H_st |- *** #CDestrMatch.
   2: {
-    assert (mem st' !! pa = mem st !! pa) as ->.
-    {
-      eapply pa_not_in_range_write; eauto.
-      rewrite length_bv_to_bytes.
-      f_equal.
-      now eapply div_round_up_divisible.
-    }
-    erewrite write_mem_seq_state_itrs in Hsize |- *; eauto.
-    eapply H_st;
-    cdestruct |- ***.
-    set_solver.
+    enough (mem st' !! pa = mem st !! pa) as ->
+    by (erewrite write_mem_seq_state_itrs in Hsize |- *; eauto).
+    eapply pa_not_in_range_write; eauto.
+    rewrite length_bv_to_bytes.
+    f_equal.
+    now eapply div_round_up_divisible.
     }
   apply pa_in_range_spec in p.
   cdestruct p as offset H_pa H_offset.
@@ -329,19 +343,12 @@ Proof.
   by (eapply pa_offset_in_range_write; eauto).
   cdestruct |- *** #CDestrSplitGoal.
   - eexists; cdestruct |- *** #CDestrSplitGoal; eauto.
-    eexists offset.
-    cdestruct |- *** #CDestrSplitGoal; lia.
-  - inversion H0; subst.
-    deintro; cdestruct |- ***.
-    f_equal; last naive_solver.
-    subst.
-    destruct x1; cbn in *.
-    unfold pa_addN, pa_addZ in H1; cbv in H1.
-    cdestruct H1.
-    assert (x0 < max_size)%N
-    by (set_unfold in Hsize; opose proof (Hsize _ (or_introl _) _); by eauto).
-    eapply bv_add_Z_inj_l in H1.
-    all: do 2 deintro; cdestruct |- *** #CDestrSplitGoal #CDestrMatch; lia.
+  - cdestruct v, pa |- ***.
+    f_equal.
+    unfold pa_addN, pa_addZ in H0; cbv in H0.
+    destruct wr as [[]].
+    cdestruct H0.
+    eapply bv_add_Z_inj_l in H0; cdestruct H0 |- *** #CDestrSplitGoal #CDestrMatch; lia.
 Admitted.
 
 Context {et : Candidate.exec_type}.
@@ -349,68 +356,98 @@ Context {et : Candidate.exec_type}.
 Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
 
 Record cd_state := {
-  map_acc : gmap pa EID.t;
+  pa_write_map : gmap pa EID.t;
+  reg_write_map : gmap reg EID.t;
   rf_acc : grel EID.t;
   rrf_acc : grel EID.t;
   co_acc : grel EID.t
 }.
 
-#[global] Instance eta_rf_state : Settable rf_state :=
-  settable! Build_rf_state <map_acc;rf_acc;rrf_acc;co_acc>.
+#[global] Instance eta_cd_state : Settable cd_state :=
+  settable! Build_cd_state <pa_write_map;reg_write_map;rf_acc;rrf_acc;co_acc>.
 
-Fixpoint write_eids_to_pa_map (pas : list pa) (st : rf_state) : rf_state :=
-  if pas is pa :: par
-  then
-    st
-    |> setv (lookup pa ∘ map_acc) (Some st.(eid_acc))
-    |> write_eids_to_pa_map par
+Definition mem_write_upd_cd_state (pa : pa) (weid : EID.t) (st : cd_state) : cd_state :=
+  let oprev_weid := st.(pa_write_map) !! pa in
+  (if oprev_weid is Some prev_weid
+  then set co_acc ({[((prev_weid,weid))]} ∪.) st
+  else st)
+  |> setv (lookup pa ∘ pa_write_map) (Some weid).
+
+Definition mem_read_upd_cd_state (pa : pa) (reid : EID.t) (st : cd_state) : cd_state :=
+  let oweid := st.(pa_write_map) !! pa in
+  if oweid is Some weid
+  then set rf_acc ({[((weid,reid))]} ∪.) st
   else st.
 
-Fixpoint read_to_rf_acc (pas : list pa) (st : rf_state) : rf_state :=
-  if pas is pa :: par
-  then
-    let reid := st.(eid_acc) in
-    let oweid := st.(map_acc) !! pa in
-    st
-    |> (if oweid is Some weid
-        then set rf_acc ({[((weid,reid))]} ∪.)
-        else id)
-    |> set (EID.byte ∘ eid_acc) (N.succ <$>.)
-    |> read_to_rf_acc par
+Definition reg_write_upd_cd_state (reg : reg) (weid : EID.t) : cd_state → cd_state :=
+  setv (lookup reg ∘ reg_write_map) (Some weid).
+
+Definition reg_read_upd_cd_state (reg : reg) (reid : EID.t) (st : cd_state) : cd_state :=
+  let oweid := st.(reg_write_map) !! reg in
+  if oweid is Some weid
+  then set rrf_acc ({[((weid,reid))]} ∪.) st
   else st.
 
-Definition construct_rf_fo_itr (itr : iTrace ()) : rf_state → rf_state :=
-  fold_left
-    (λ st ev,
-      match ev with
-      | MemWrite n wr &→ r =>
-        st
-        |> write_eids_to_pa_map
-           (if et is Candidate.NMS
-            then [wr.(WriteReq.pa)]
-            else pa_range wr.(WriteReq.pa) n)
-      | MemRead n rr &→ r =>
-        st
-        |> (if et is Candidate.NMS
-            then id
-            else setv (EID.byte ∘ eid_acc) (Some 0%N))
-        |> read_to_rf_acc (pa_range rr.(ReadReq.pa) n)
-      | _  => st
-      end
-      |> set (EID.ieid ∘ eid_acc) S
-      |> setv (EID.byte ∘ eid_acc) None)
-    itr.1.
+Definition construct_cd_for_pe_fold_aux st '(eid, ev) :=
+  match ev with
+  | MemWrite _ wr &→ inl _ => mem_write_upd_cd_state wr.(WriteReq.pa) eid st
+  | MemRead _ rr &→ _ => mem_read_upd_cd_state rr.(ReadReq.pa) eid st
+  | RegWrite reg _ _ &→ _ => reg_write_upd_cd_state reg eid st
+  | RegRead reg _ &→ _ => reg_read_upd_cd_state reg eid st
+  | _ => st
+  end.
+Arguments construct_cd_for_pe_fold_aux : simpl never.
 
+Definition construct_cd_for_pe (pe : Candidate.pre Candidate.NMS 1) : cd_state → cd_state :=
+  fold_left construct_cd_for_pe_fold_aux (Candidate.event_list pe).
 
-Definition construct_rf_for_pe '(Candidate.make_pre _ init events : Candidate.pre Candidate.NMS 1) : rf_state → rf_state :=
-  fold_left (B := (iTrace ()))
-    (λ st itr,
-      construct_rf_fo_itr itr st
-      |> set (EID.iid ∘ eid_acc) S
-      |> setv (EID.ieid ∘ eid_acc) 0)
-    (events !!! 0%fin).
+Definition seq_state_to_pe (st : seq_state) : Candidate.pre Candidate.NMS 1 :=
+  Candidate.make_pre Candidate.NMS st.(initSt) [# rev st.(itrs)].
+Arguments seq_state_to_pe : simpl never.
 
-Lemma op_model_to_cd
+Definition cd_state_to_cd (cdst : cd_state) (pe : Candidate.pre Candidate.NMS 1) : Candidate.t Candidate.NMS 1 :=
+  Candidate.make _ pe cdst.(rf_acc) cdst.(rrf_acc) cdst.(co_acc) ∅.
+
+Definition seq_cd_states_to_cd (seqst : seq_state) (cdst : cd_state) : Candidate.t Candidate.NMS 1 :=
+  let pe := (seq_state_to_pe seqst) in
+  cd_state_to_cd (construct_cd_for_pe pe cdst) pe.
+
+Lemma seq_state_to_pe_eq st st' :
+  st.(initSt) = st'.(initSt) → st.(itrs) = st'.(itrs) →
+  seq_state_to_pe st = seq_state_to_pe st'.
+Proof. unfold seq_state_to_pe. now intros -> ->. Qed.
+
+Lemma op_model_to_cd seqst cdst call :
+  let rwl := if regs_whitelist is Some rwl then rwl else ∅ in
+  consistent rwl (seq_cd_states_to_cd seqst cdst) →
+  ∀ seqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
+  is_Ok seqst' → consistent rwl (seq_cd_states_to_cd (result_same_type_proj seqst') cdst).
+Proof.
+  cdestruct |- *** as ? seqst' r Hseqst'.
+  unfold sequential_model_outcome_logged, fHandler_logger in *.
+  cdestruct seqst', Hseqst' |- ***.
+  unfold seq_cd_states_to_cd, construct_cd_for_pe in *.
+  repeat orewrite (seq_state_to_pe_eq _ (set itrs (trace_cons (call &→ r)) seqst)); cbn.
+  2: eapply sequential_model_outcome_initSt; eauto.
+  2: f_equal; eapply sequential_model_outcome_itrs; eauto.
+  destruct seqst.
+  cbv [set]; cbn.
+  unfold trace_cons.
+  unfold seq_state_to_pe in *.
+  cbn -[Candidate.event_list] in *.
+
+  pattern (@fold_left cd_state _ construct_cd_for_pe_fold_aux
+  (@Candidate.iEvent_list Candidate.NMS 1
+     (seq_state_to_pe
+        (@set seq_state (list (iTrace ())) itrs
+           (λ (f : list (iTrace ()) → list (iTrace ())) (x0 : seq_state),
+              {| initSt := initSt x0; mem := mem x0; regs := regs x0; itrs := f (itrs x0) |}) (trace_cons (call &→ r)) x))) cdst).
+  unfold seq_state_to_pe. cbn.
+  eapply fold_left_inv_complete_list.
+  Set Printing Implicit.
+  cd_state_to_cd.
+
+  constructor.
 
 Theorem op_model_soundness max_mem_acc_size ax initSt:
   Model.Res.weaker
