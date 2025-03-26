@@ -179,6 +179,10 @@ Qed.
 
 Arguments trace_find : simpl never.
 
+Definition trace_snoc (ev : FMon.fEvent outcome) (itrs : list (iTrace ())) : list (iTrace ()) :=
+  let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing itrs in
+  trs ++ [(last_tr ++ [ev],tr_end)].
+
 Section Proof.
 Context (regs_whitelist : option (gset reg)) (fuel : nat) (isem : iMon ()).
 
@@ -402,7 +406,7 @@ Definition construct_cd_for_pe (pe : Candidate.pre Candidate.NMS 1) : cd_state �
   fold_left construct_cd_for_pe_fold_aux (Candidate.event_list pe).
 
 Definition seq_state_to_pe (st : seq_state) : Candidate.pre Candidate.NMS 1 :=
-  Candidate.make_pre Candidate.NMS st.(initSt) [# rev st.(itrs)].
+  Candidate.make_pre Candidate.NMS st.(initSt) [# trace_rev st.(itrs)].
 Arguments seq_state_to_pe : simpl never.
 
 Definition cd_state_to_cd (cdst : cd_state) (pe : Candidate.pre Candidate.NMS 1) : Candidate.t Candidate.NMS 1 :=
@@ -417,6 +421,17 @@ Lemma seq_state_to_pe_eq st st' :
   seq_state_to_pe st = seq_state_to_pe st'.
 Proof. unfold seq_state_to_pe. now intros -> ->. Qed.
 
+Lemma seq_state_to_pe_trace_cons seqst ev :
+  seq_state_to_pe (set itrs (trace_cons ev) seqst) =
+  set ((.!!! 0%fin) ∘ Candidate.events) (trace_snoc ev) (seq_state_to_pe seqst).
+Proof.
+  unfold seq_state_to_pe; cbv [set]; cbn; unfold Setter_compose; cbn.
+  do 2 f_equal.
+  unfold trace_snoc, unsnoc_total.
+  destruct (itrs seqst); first done.
+  now rewrite unsnoc_snoc.
+Qed.
+
 Lemma op_model_to_cd seqst cdst call :
   let rwl := if regs_whitelist is Some rwl then rwl else ∅ in
   consistent rwl (seq_cd_states_to_cd seqst cdst) →
@@ -430,9 +445,23 @@ Proof.
   repeat orewrite (seq_state_to_pe_eq _ (set itrs (trace_cons (call &→ r)) seqst)); cbn.
   2: eapply sequential_model_outcome_initSt; eauto.
   2: f_equal; eapply sequential_model_outcome_itrs; eauto.
-  destruct seqst.
-  cbv [set]; cbn.
-  unfold trace_cons.
+  rewrite seq_state_to_pe_trace_cons.
+  unfold seq_state_to_pe in *.
+  cbv [set]; cbn -[Candidate.event_list].
+  unfold Setter_compose; cbn -[Candidate.event_list].
+  Set Printing Implicit.
+  pattern (fold_left construct_cd_for_pe_fold_aux
+  (Candidate.event_list (et := Candidate.NMS)
+     {|
+       Candidate.init := initSt seqst;
+       Candidate.events := [#trace_snoc (call &→ r) (trace_rev (itrs seqst))]
+     |}) cdst).
+  eapply fold_left_inv.
+  constructor.
+  - destruct H as [? _ _ _ _ _ _ _].
+
+  unfold cd_state_to_cd in *.
+  unfold Setter_compose; cbn -[Candidate.event_list].
   unfold seq_state_to_pe in *.
   cbn -[Candidate.event_list] in *.
 
