@@ -571,7 +571,32 @@ Proof.
 Qed.
 Global Hint Resolve NoDup_enumerate : nodup.
 
+(** unsnoc *)
 
+Fixpoint unsnoc_aux {A} (acc : list A) (l : list A) : option (list A * A) :=
+  match l with
+  | [] => None
+  | [a] => Some (rev acc, a)
+  | (a :: ar) => unsnoc_aux (a :: acc) ar
+  end.
+
+Definition unsnoc {A} (l : list A) : option (list A * A) :=
+  unsnoc_aux [] l.
+
+Definition unsnoc_total {A} (fallback : A) (l : list A) : list A * A :=
+  if unsnoc l is Some p then p else ([], fallback).
+
+Lemma unsnoc_snoc {A} (a : A) l :
+  unsnoc (l ++ [a]) = Some (l,a).
+Proof.
+  unfold unsnoc.
+  enough (∀ l', unsnoc_aux l' (l ++ [a]) = Some (rev l' ++ l, a)) as -> by done.
+  induction l; cdestruct |- *** #CDestrSplitGoal; first now rewrite app_nil_r.
+  case_match; first now destruct l.
+  erewrite IHl.
+  cbn.
+  now rewrite <- ?app_assoc.
+Qed.
 
 
 (** * InT
