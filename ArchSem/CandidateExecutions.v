@@ -81,7 +81,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
   #[local] Open Scope nat.
 
   Declare Scope eid_scope.
-  #[local] Open Scope eid_scope.
+  Delimit Scope eid_scope with eid.
 
   (** Relational event ID, this might differ from ISA events in certain
       execution types *)
@@ -98,6 +98,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           (** Byte number for events that are split per byte, None for others *)
           byte : option N
           }.
+    Bind Scope eid_scope with t.
+    #[local] Open Scope eid.
 
     #[global] Instance eta : Settable _ :=
         settable! make <tid; iid; ieid; byte>.

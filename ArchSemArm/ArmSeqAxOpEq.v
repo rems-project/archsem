@@ -100,6 +100,8 @@ Proof. induction l; cdestruct |- *** #CDestrMatch. Qed.
 Definition trace_rev (itrs : list (iTrace ())) : list (iTrace ()) :=
   rev (map (set fst (@rev (FMon.fEvent outcome))) itrs).
 
+
+
 Fixpoint find_last_aux {A} (P : A → Prop) `{∀ x, Decision (P x)} (acc : option A) (l : list A) : option A :=
   if l is a :: ar
   then find_last_aux P (if decide (P a) then Some a else acc) ar
@@ -182,6 +184,100 @@ Arguments trace_find : simpl never.
 Definition trace_snoc (ev : FMon.fEvent outcome) (itrs : list (iTrace ())) : list (iTrace ()) :=
   let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing itrs in
   trs ++ [(last_tr ++ [ev],tr_end)].
+
+Lemma trace_ind P :
+  P []
+  → (∀ tr trend, P tr → P (([],trend) :: tr))
+  → (∀ tr ev, P tr → P (trace_cons ev tr))
+  → ∀ tr, P tr.
+Proof.
+  intros Hb Hs1 Hs2 tr.
+  elim tr; cdestruct |- ***; first done.
+  induction l.
+  1: now eapply Hs1.
+  unfold trace_cons in Hs2.
+  specialize (Hs2 ((l, f) :: l0)); cbv [set] in *; cbn in *.
+  now eapply Hs2.
+Qed.
+
+Lemma trace_rev_ind (P : list (iTrace ()) → Prop) :
+  P []
+  → (∀ tr trend, P tr → P (tr ++ [([],trend)]))
+  → (∀ tr ev, tr ≠ [] → P tr → P (trace_snoc ev tr))
+  → ∀ tr, P tr.
+Proof.
+  intros Hb Hs1 Hs2 tr.
+  induction tr using rev_ind; first done.
+  destruct x.
+  induction l using rev_ind.
+  1: now eapply Hs1.
+  opose proof (Hs2 (tr ++ [(l, f)]) x _ IHl).
+  1: destruct tr; done.
+  unfold trace_snoc, unsnoc_total in H.
+  now rewrite unsnoc_snoc in H.
+Qed.
+
+Lemma trace_snoc_app tr tr' ev :
+  tr' ≠ [] →
+  trace_snoc ev (tr ++ tr') = tr ++ trace_snoc ev tr'.
+Proof.
+  revert tr'.
+  induction tr using trace_rev_ind; cdestruct |- ***.
+  - rewrite <- ?app_assoc; cbn.
+    rewrite IHtr; last done.
+    f_equal.
+    pose proof exists_last H as [? [[] ->]].
+    unfold trace_snoc, unsnoc_total.
+    rewrite app_comm_cons.
+    rewrite ?unsnoc_snoc.
+    now rewrite app_comm_cons.
+  - pose proof exists_last H0 as [? [[] ->]].
+    rewrite app_assoc.
+    unfold trace_snoc at 1 4, unsnoc_total.
+    rewrite ?unsnoc_snoc.
+    now rewrite app_assoc.
+Qed.
+
+Lemma trace_snoc_rev_cons itrs ev :
+  trace_snoc ev (trace_rev itrs) = trace_rev (trace_cons ev itrs).
+Proof.
+  pattern itrs.
+  eapply trace_ind; cdestruct |- ***.
+  - cbv [set]; cbn.
+    rewrite trace_snoc_app; last done.
+    reflexivity.
+  - rewrite trace_snoc_app; last done.
+    reflexivity.
+Qed.
+Search last.
+Lemma enumerate_imap {A} (l : list A) :
+  enumerate l = imap pair l.
+Admitted.
+
+(*
+Lemma fold_left (Candidate.event_list)
+*)
+
+Lemma trace_snoc_event_list init tr ev :
+  Candidate.event_list (Candidate.make_pre Candidate.NMS init [#trace_snoc ev tr]) =
+  Candidate.event_list (Candidate.make_pre Candidate.NMS init [#tr]) ++
+  let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing tr in
+  [(EID.make 0 (Nat.pred (length tr)) (length last_tr) None, ev)].
+Proof.
+  assert (tr = [] ∨ tr ≠ []) as [->|] by (destruct tr; naive_solver); first done.
+  pose proof exists_last H as [? [[] ->]].
+  unfold trace_snoc, unsnoc_total.
+  rewrite ?unsnoc_snoc.
+  cbn.
+  repeat rewrite ?enumerate_imap, ?imap_app, ?bind_app.
+  cbn.
+  rewrite ?app_nil_r.
+  rewrite app_assoc.
+  repeat f_equal; last lia.
+  rewrite length_app.
+  cbn.
+  lia.
+Qed.
 
 Section Proof.
 Context (regs_whitelist : option (gset reg)) (fuel : nat) (isem : iMon ()).
@@ -432,13 +528,79 @@ Proof.
   now rewrite unsnoc_snoc.
 Qed.
 
+Definition rel_monotone (rel : grel EID.t) : Prop :=
+  ∀ '(x,y) ∈ rel, EID.full_po_lt x y.
+
+Definition cd_monotone (cd : Candidate.t Candidate.NMS 1) : Prop :=
+  rel_monotone cd.(Candidate.reads_from)
+  ∧ rel_monotone cd.(Candidate.reg_reads_from)
+  ∧ rel_monotone cd.(Candidate.coherence).
+
+Definition cd_state_monotone (cdst : cd_state) : Prop :=
+  rel_monotone cdst.(rf_acc)
+  ∧ rel_monotone cdst.(rrf_acc)
+  ∧ rel_monotone cdst.(co_acc).
+ Arguments Candidate.event_list : simpl never.
+Lemma op_model_cd_monotone seqst cdst call :
+  cd_monotone (seq_cd_states_to_cd seqst cdst) →
+  ∀ seqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
+  is_Ok seqst' → cd_monotone (seq_cd_states_to_cd (result_same_type_proj seqst') cdst).
+Proof.
+  cdestruct |- *** as Hmono seqst' r Hseqst'.
+  unfold sequential_model_outcome_logged, fHandler_logger in *.
+  cdestruct seqst', Hseqst' |- ***.
+  unfold seq_cd_states_to_cd, construct_cd_for_pe in *.
+  repeat orewrite (seq_state_to_pe_eq _ (set itrs (trace_cons (call &→ r)) seqst)); cbn.
+  2: eapply sequential_model_outcome_initSt; eauto.
+  2: f_equal; eapply sequential_model_outcome_itrs; eauto.
+  rewrite seq_state_to_pe_trace_cons.
+  unfold seq_state_to_pe in *.
+  cbv [set]; cbn.
+  unfold Setter_compose; cbn.
+  rewrite trace_snoc_event_list.
+  rewrite fold_left_app.
+  destruct unsnoc_total as [? []] eqn: ?H.
+  cbn.
+  generalize dependent (trace_rev (itrs seqst)).
+  intros.
+  unfold iEvent.
+  generalize dependent (fold_left construct_cd_for_pe_fold_aux
+  (Candidate.event_list (et := Candidate.NMS) {| Candidate.init := initSt seqst; Candidate.events := [#l1] |}) cdst).
+  intros.
+  cbn.
+  destruct call; unfold construct_cd_for_pe_fold_aux at 1; cbn; cdestruct |- ***.
+  - unfold reg_read_upd_cd_state.
+    cdestruct |- *** #CDestrMatch.
+  unfold cd_monotone in *.
+  cdestruct Hmono |- ***.
+  fold_left_inv_pose (λ cdst (evs : list (EID.t * fEvent outcome)), cd_state_monotone cdst) as H_inv.
+  3: { cdestruct H_inv |- ***. }
+  - unfold cd_monotone, seq_cd_states_to_cd in H.
+    unfold
+  }
+
+  cdestruct H_inv |- ***.
+  1: unfold cd_monotone, cd_state_monotone, construct_cd_for_pe in *; cdestruct H |- ***.
+  1:
+
+  1,2: admit.
+
+  unfold cd_state_to_cd.
+  pattern ((fold_left construct_cd_for_pe_fold_aux (Candidate.event_list (seq_state_to_pe x)) cdst)).
+
+  eapply fold_left_inv.
+  intros.
+  destruct call;
+  cdestruct |- ***. *)
+
 Lemma op_model_to_cd seqst cdst call :
+  op_mem_wf (Ok seqst) →
   let rwl := if regs_whitelist is Some rwl then rwl else ∅ in
   consistent rwl (seq_cd_states_to_cd seqst cdst) →
   ∀ seqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
   is_Ok seqst' → consistent rwl (seq_cd_states_to_cd (result_same_type_proj seqst') cdst).
 Proof.
-  cdestruct |- *** as ? seqst' r Hseqst'.
+  cdestruct |- *** as ?? seqst' r Hseqst'.
   unfold sequential_model_outcome_logged, fHandler_logger in *.
   cdestruct seqst', Hseqst' |- ***.
   unfold seq_cd_states_to_cd, construct_cd_for_pe in *.
@@ -449,6 +611,16 @@ Proof.
   unfold seq_state_to_pe in *.
   cbv [set]; cbn -[Candidate.event_list].
   unfold Setter_compose; cbn -[Candidate.event_list].
+  rewrite trace_snoc_event_list.
+  rewrite fold_left_app.
+  destruct unsnoc_total as [? []] eqn: ?H.
+  cbn [fold_left].
+  constructor.
+  destruct call; cbn -[Candidate.event_list] in *.
+unfold construct_cd_for_pe_fold_aux.
+  cdestruct |- ***.
+  rewrite trace_snoc_event_list.
+
   Set Printing Implicit.
   pattern (fold_left construct_cd_for_pe_fold_aux
   (Candidate.event_list (et := Candidate.NMS)
@@ -456,6 +628,7 @@ Proof.
        Candidate.init := initSt seqst;
        Candidate.events := [#trace_snoc (call &→ r) (trace_rev (itrs seqst))]
      |}) cdst).
+
   eapply fold_left_inv.
   constructor.
   - destruct H as [? _ _ _ _ _ _ _].
