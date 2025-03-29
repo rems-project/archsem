@@ -451,8 +451,6 @@ Proof.
     eapply bv_add_Z_inj_l in H0; cdestruct H0 |- *** #CDestrSplitGoal #CDestrMatch; lia.
 Admitted.
 
-Context {et : Candidate.exec_type}.
-
 Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
 
 Record cd_state := {
@@ -462,6 +460,8 @@ Record cd_state := {
   rrf_acc : grel EID.t;
   co_acc : grel EID.t
 }.
+
+#[local] Notation "cd∅" := (Build_cd_state ∅ ∅ ∅ ∅ ∅).
 
 #[global] Instance eta_cd_state : Settable cd_state :=
   settable! Build_cd_state <pa_write_map;reg_write_map;rf_acc;rrf_acc;co_acc>.
@@ -540,11 +540,46 @@ Definition cd_state_monotone (cdst : cd_state) : Prop :=
   rel_monotone cdst.(rf_acc)
   ∧ rel_monotone cdst.(rrf_acc)
   ∧ rel_monotone cdst.(co_acc).
- Arguments Candidate.event_list : simpl never.
-Lemma op_model_cd_monotone seqst cdst call :
-  cd_monotone (seq_cd_states_to_cd seqst cdst) →
+
+Lemma event_list_monotone {nmth} (pe : Candidate.pre Candidate.NMS nmth) l l' :
+  Candidate.event_list pe = l ++ l' →
+  ∀ '(eid1, ev1) ∈ l, ∀ '(eid2, ev2) ∈ l', eid1.(EID.tid) = eid2.(EID.tid) →
+  EID.full_po_lt eid1 eid2.
+Admitted.
+
+Arguments Candidate.event_list : simpl never.
+
+Definition construct_cd_fold_inv_step (l : list (EID.t * (fEvent outcome)))
+    (I : cd_state
+        → list (EID.t * (fEvent outcome)) → list (EID.t * (fEvent outcome))
+        → Prop)
+    : Prop :=
+  (∀ (cdst : cd_state) (x : EID.t * (fEvent outcome)) (unproc proc : list (EID.t * (fEvent outcome))),
+      x ∈ l → x ∉ proc → x ∉ unproc → l = rev proc ++ x :: unproc
+      → I cdst (x :: unproc) proc → I (construct_cd_for_pe_fold_aux cdst x) unproc (x :: proc)).
+
+Lemma construct_cd_fold_inv_step' (pe : Candidate.pre Candidate.NMS 1) :
+  construct_cd_fold_inv_step (Candidate.event_list pe)
+    (λ cdst unproc proc, ∀ '(eid1, ev1) ∈ proc, ∀ '(eid2, ev2) ∈ unproc, EID.full_po_lt eid1 eid2).
+Proof.
+  unfold construct_cd_fold_inv_step.
+  cdestruct |- *** as ???????? Hel IH ?? [|] ???.
+  - replace (rev proc ++ (t, f) :: unproc) with ((rev proc ++ [(t, f)]) ++ unproc) in Hel.
+    2: rewrite <- app_assoc; naive_solver.
+    opose proof (event_list_monotone _ _ _ Hel (t0, f0) _ (t1,f1) _).
+    1,2: set_solver.
+    eapply H3.
+    admit.
+  - opose proof (event_list_monotone _ _ _ Hel (t0, f0) _ (t1,f1) _).
+    1,2: set_solver.
+    eapply H3.
+    admit.
+Admitted.
+
+Lemma op_model_cd_monotone seqst call :
+  cd_monotone (seq_cd_states_to_cd seqst cd∅) →
   ∀ seqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
-  is_Ok seqst' → cd_monotone (seq_cd_states_to_cd (result_same_type_proj seqst') cdst).
+  is_Ok seqst' → cd_monotone (seq_cd_states_to_cd (result_same_type_proj seqst') cd∅).
 Proof.
   cdestruct |- *** as Hmono seqst' r Hseqst'.
   unfold sequential_model_outcome_logged, fHandler_logger in *.
@@ -563,6 +598,24 @@ Proof.
   cbn.
   generalize dependent (trace_rev (itrs seqst)).
   intros.
+  fold_left_inv_complete_ND_pose
+    (λ (cdst : cd_state) (unpro pro : list (EID.t * (fEvent outcome))),
+      ∀ 'memeid ∈ cdst.(pa_write_map),
+      ∀ 'regeid ∈ cdst.(reg_write_map),
+      let hdeid := (hd (EID.make 0 0 0 None) (fst <$> pro)) in
+      (memeid = hdeid ∨ EID.full_po_lt memeid hdeid) ∧ (regeid = hdeid ∨ EID.full_po_lt regeid hdeid)).
+  all: cdestruct |- ***.
+  1: admit.
+  1:{
+    rewrite cons_middle in *.
+    epose proof (event_list_monotone _ _ _ H2 (_,_) _ (_,_)).
+    2: admit.
+    1: cbn; right; eauto.
+  }
+  cbn in *.
+  .
+  fold_left_inv_complete_pose (λ (cdst : cd_state) (unpro pro : list (EID.t * (fEvent outcome))), True). (λ cdst unpro pro, ∀ '(eid1,ev1) ∈ pro, ∀ '(eid2,ev2) ∈ unpro, EID.full_po_lt eid1 eid2).
+
   unfold iEvent.
   generalize dependent (fold_left construct_cd_for_pe_fold_aux
   (Candidate.event_list (et := Candidate.NMS) {| Candidate.init := initSt seqst; Candidate.events := [#l1] |}) cdst).
@@ -572,6 +625,7 @@ Proof.
   - unfold reg_read_upd_cd_state.
     cdestruct |- *** #CDestrMatch.
   unfold cd_monotone in *.
+  Search (_ ++ [_] ++ _).
   cdestruct Hmono |- ***.
   fold_left_inv_pose (λ cdst (evs : list (EID.t * fEvent outcome)), cd_state_monotone cdst) as H_inv.
   3: { cdestruct H_inv |- ***. }
