@@ -134,6 +134,13 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Notation "x <ₚ₊ᵢ y" := (full_po_lt x y) (at level 70, no associativity)
       : eid_scope.
 
+    Lemma full_po_lt_connex x y :
+      x.(tid) = y.(tid) → x.(byte) = None → y.(byte) = None → x = y ∨ x <ₚ₊ᵢ y ∨ y <ₚ₊ᵢ x.
+    Proof.
+      destruct (lt_eq_lt_dec x.(iid) y.(iid)) as [[|]|], (lt_eq_lt_dec x.(ieid) y.(ieid)) as [[|]|];
+      destruct x,y; unfold full_po_lt, po_lt, iio_lt; cbn in *; naive_solver.
+    Qed.
+
   End EID.
 
   (* Namespace *)

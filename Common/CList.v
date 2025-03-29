@@ -139,6 +139,11 @@ Global Instance set_unfold_elem_of_singleton_list {A : Type} (x a : A) :
   SetUnfoldElemOf x [a] (x = a).
 Proof. tcclean. set_solver. Qed.
 
+#[global] Instance set_unfold_elem_of_rev {A : Type} (x : A) l P :
+  SetUnfoldElemOf x l P →
+  SetUnfoldElemOf x (rev l) P.
+Proof. tcclean. setoid_rewrite elem_of_list_In. by setoid_rewrite in_rev at 2. Qed.
+
 
 (** * List lookup with different keys *)
 
@@ -380,23 +385,6 @@ Proof.
   induction l; sauto lq:on.
 Qed.
 
-Lemma fold_left_inv_complete_list {C B} (I : C → list B → list B → Prop) (f : C → B → C)
-    (l l' : list B) (i : C) :
-  (I i l [])
-  → (∀ (a : C) (x : B) (tl strt : list B), x ∈ l → I a (x :: tl) strt → I (f a x) tl (x :: strt))
-  → I (fold_left f l i) [] (rev l).
-Proof.
-  replace (rev l) with (rev l ++ []) by by rewrite app_nil_r.
-  generalize (@nil B) at 1 3.
-  revert dependent i.
-  induction l.
-  1: done.
-  cdestruct |- ***.
-  rewrite <- app_assoc.
-  eapply IHl.
-  all: intros; eapply H0; set_solver.
-Qed.
-
 (** Tries to find a fold_left in the goal and pose the proofs of the
 [fold_left_inv] on that one *)
 Tactic Notation "fold_left_inv_pose" uconstr(I) "as" simple_intropattern(pat) :=
@@ -406,6 +394,35 @@ Tactic Notation "fold_left_inv_pose" uconstr(I) "as" simple_intropattern(pat) :=
   end.
 Tactic Notation "fold_left_inv_pose" uconstr(I) :=
   let H := fresh "H" in fold_left_inv_pose I as H.
+
+Lemma fold_left_inv_complete {C B} (I : C → list B → list B → Prop) (f : C → B → C)
+    (l : list B) (i : C) :
+  (I i l [])
+  → (∀ (a : C) (x : B) (tl strt : list B),
+      x ∈ l → l = rev strt ++ x :: tl → I a (x :: tl) strt → I (f a x) tl (x :: strt))
+  → I (fold_left f l i) [] (rev l).
+Proof.
+  replace (rev l) with (rev l ++ []) by by rewrite app_nil_r.
+  change l with (rev [] ++ l) at 3.
+  generalize (@nil B) at 1 2 4.
+  revert dependent i.
+  induction l.
+  1: done.
+  cdestruct |- ***.
+  rewrite <- app_assoc.
+  eapply IHl.
+  all: intros; eapply H0; try set_solver.
+  rewrite rev_app_distr, <- ?app_assoc in *.
+  naive_solver.
+Qed.
+
+Tactic Notation "fold_left_inv_complete_pose" uconstr(I) "as" simple_intropattern(pat) :=
+  match goal with
+  | |- context [fold_left ?f ?l ?i] =>
+      opose proof (fold_left_inv_complete I f l i _ _) as pat
+  end.
+Tactic Notation "fold_left_inv_complete_pose" uconstr(I) :=
+  let H := fresh "H" in fold_left_inv_complete_pose I as H.
 
 (** The same as [fold_left_inv], but add the assumption that there is no
     duplicate and gives the information that at each loop, the element being
@@ -430,6 +447,40 @@ Tactic Notation "fold_left_inv_ND_pose" uconstr(I) "as" simple_intropattern(pat)
 Tactic Notation "fold_left_inv_ND_pose" uconstr(I) :=
   let H := fresh "H" in fold_left_inv_ND_pose I as H.
 
+Lemma fold_left_inv_complete_ND {C B} (I : C → list B → list B → Prop) (f : C → B → C)
+    (l : list B) (i : C) :
+  NoDup l
+  → (I i l [])
+  → (∀ (a : C) (x : B) (tl strt : list B),
+      x ∈ l → x ∉ strt → x ∉ tl → l = rev strt ++ x :: tl
+      → I a (x :: tl) strt → I (f a x) tl (x :: strt))
+  → I (fold_left f l i) [] (rev l).
+Proof.
+  replace (rev l) with (rev l ++ []) by by rewrite app_nil_r.
+  change l with (rev [] ++ l) at 1 4.
+  generalize (@nil B) at 1 2 3 5.
+  revert dependent i.
+  induction l.
+  1: done.
+  cdestruct |- ***.
+  rewrite <- app_assoc.
+  eapply IHl.
+  1: cbn; now rewrite <- app_assoc.
+  all: intros; eapply H1.
+  1,4,5-8,10: set_solver.
+  3: { cbn in *. now rewrite <- app_assoc in *. }
+  all: apply NoDup_app in H; cdestruct H |- *** as ????.
+  1: apply (H2 a); set_solver.
+  by depelim H3.
+Qed.
+
+Tactic Notation "fold_left_inv_complete_ND_pose" uconstr(I) "as" simple_intropattern(pat) :=
+  match goal with
+  | |- context [fold_left ?f ?l ?i] =>
+      opose proof (fold_left_inv_complete_ND I f l i _ _ _) as pat
+  end.
+Tactic Notation "fold_left_inv_complete_ND_pose" uconstr(I) :=
+  let H := fresh "H" in fold_left_inv_complete_ND_pose I as H.
 
 (** * Fmap Unfold *)
 
