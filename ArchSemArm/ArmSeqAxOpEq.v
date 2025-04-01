@@ -254,16 +254,16 @@ Lemma enumerate_imap {A} (l : list A) :
   enumerate l = imap pair l.
 Admitted.
 
-(*
-Lemma fold_left (Candidate.event_list)
-*)
+Definition intra_trace_eid_succ (tr : list (iTrace ())) : EID.t :=
+  let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing tr in
+  EID.make 0 (Nat.pred (length tr)) (length last_tr) None.
 
 Lemma trace_snoc_event_list init tr ev :
   Candidate.event_list (Candidate.make_pre Candidate.NMS init [#trace_snoc ev tr]) =
   Candidate.event_list (Candidate.make_pre Candidate.NMS init [#tr]) ++
-  let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing tr in
-  [(EID.make 0 (Nat.pred (length tr)) (length last_tr) None, ev)].
+  [(intra_trace_eid_succ tr, ev)].
 Proof.
+  unfold intra_trace_eid_succ.
   assert (tr = [] ∨ tr ≠ []) as [->|] by (destruct tr; naive_solver); first done.
   pose proof exists_last H as [? [[] ->]].
   unfold trace_snoc, unsnoc_total.
@@ -508,6 +508,9 @@ Arguments seq_state_to_pe : simpl never.
 Definition cd_state_to_cd (cdst : cd_state) (pe : Candidate.pre Candidate.NMS 1) : Candidate.t Candidate.NMS 1 :=
   Candidate.make _ pe cdst.(rf_acc) cdst.(rrf_acc) cdst.(co_acc) ∅.
 
+Definition seq_cd_states_to_cd_state (seqst : seq_state) (cdst : cd_state) : cd_state :=
+  (construct_cd_for_pe (seq_state_to_pe seqst) cdst).
+
 Definition seq_cd_states_to_cd (seqst : seq_state) (cdst : cd_state) : Candidate.t Candidate.NMS 1 :=
   let pe := (seq_state_to_pe seqst) in
   cd_state_to_cd (construct_cd_for_pe pe cdst) pe.
@@ -558,7 +561,39 @@ Definition construct_cd_fold_inv_step (l : list (EID.t * (fEvent outcome)))
       x ∈ l → x ∉ proc → x ∉ unproc → l = rev proc ++ x :: unproc
       → I cdst (x :: unproc) proc → I (construct_cd_for_pe_fold_aux cdst x) unproc (x :: proc)).
 
-Lemma construct_cd_fold_inv_step' (pe : Candidate.pre Candidate.NMS 1) :
+
+Lemma op_model_cd_ind_step seqst cdst call (P : cd_state → Prop) :
+  P (seq_cd_states_to_cd_state seqst cdst) →
+  ∀ rseqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
+  ∀ seqst', rseqst' = Ok seqst' →
+  construct_cd_fold_inv_step (Candidate.event_list (seq_state_to_pe seqst')) (λ cdst unproc proc, P cdst) →
+  P (seq_cd_states_to_cd_state seqst' cdst).
+Proof.
+  cdestruct |- *** as HP seqst' r Hseqst' Hfold.
+  unfold sequential_model_outcome_logged, fHandler_logger, construct_cd_fold_inv_step in *.
+  cdestruct seqst', Hseqst' |- ***.
+  unfold seq_cd_states_to_cd_state, construct_cd_for_pe in *.
+  opose proof (seq_state_to_pe_eq (set itrs (trace_cons (call &→ r)) x) (set itrs (trace_cons (call &→ r)) seqst) _ _); cbn.
+  1: eapply sequential_model_outcome_initSt; eauto.
+  1: f_equal; eapply sequential_model_outcome_itrs; eauto.
+  rewrite H0 in *.
+  rewrite seq_state_to_pe_trace_cons in *.
+  unfold seq_state_to_pe in *.
+  cbv [set] in *; cbn in *.
+  unfold Setter_compose in *; cbn in *.
+  rewrite trace_snoc_event_list in *.
+  rewrite fold_left_app.
+  (* unfold intra_trace_eid_succ.
+  destruct unsnoc_total as [? []] eqn: ?H. *)
+  cbn in *.
+  eapply (Hfold _ _ [] (rev (Candidate.event_list {| Candidate.init := initSt seqst; Candidate.events := [#trace_rev (itrs seqst)] |}))).
+  1,3: set_solver.
+  1: admit.
+  1: by erewrite rev_involutive.
+  eapply HP.
+Admitted.
+
+Lemma construct_cd_fold_eids_montone (pe : Candidate.pre Candidate.NMS 1) :
   construct_cd_fold_inv_step (Candidate.event_list pe)
     (λ cdst unproc proc, ∀ '(eid1, ev1) ∈ proc, ∀ '(eid2, ev2) ∈ unproc, EID.full_po_lt eid1 eid2).
 Proof.
@@ -576,12 +611,92 @@ Proof.
     admit.
 Admitted.
 
+Definition mem_reg_maps_wf cdst (unproc proc : list (EID.t * (fEvent outcome))) : Prop :=
+  ∀ pa reg eid,
+  cdst.(pa_write_map) !! pa = Some eid ∨ cdst.(reg_write_map) !! reg = Some eid
+  → eid ∈ proc.*1.
+
+Lemma construct_cd_fold_maps_wf (pe : Candidate.pre Candidate.NMS 1) :
+  construct_cd_fold_inv_step (Candidate.event_list pe) mem_reg_maps_wf.
+Proof.
+  unfold construct_cd_fold_inv_step, mem_reg_maps_wf.
+  cdestruct |- *** as cdst eid [] ?????? Heid ?? eid' Heid'.
+  set_unfold in Heid.
+  destruct fcall; unfold construct_cd_for_pe_fold_aux in Heid';
+  unfold reg_read_upd_cd_state, reg_write_upd_cd_state, mem_read_upd_cd_state, mem_write_upd_cd_state in *;
+  try solve [right; eapply Heid; by cdestruct Heid' #CDestrMatch].
+  - destruct (decide (reg1 = reg0)) as [->|].
+    1: left; admit.
+    right.
+    eapply Heid.
+    admit.
+  - destruct fret; cdestruct Heid' #CDestrMatch.
+    1,2: left; admit.
+    right.
+    eapply Heid.
+    eauto.
+Admitted.
+
+Lemma construct_cd_fold_inv_step_strengthening l I1 I2 :
+  construct_cd_fold_inv_step l I1 →
+  construct_cd_fold_inv_step l (λ cdst unproc proc, I1 cdst unproc proc ∧ I2 cdst unproc proc) →
+  construct_cd_fold_inv_step l I2.
+Proof.
+  unfold construct_cd_fold_inv_step.
+  cdestruct |- *** as HI1 HI12 ??????????.
+  eapply HI12.
+  1,2,3,4: assumption.
+  split; last easy.
+  eapply HI1.
+  try naive_solver.
+
+
 Lemma op_model_cd_monotone seqst call :
   cd_monotone (seq_cd_states_to_cd seqst cd∅) →
   ∀ seqst' ∈ Exec.to_state_result_list (sequential_model_outcome_logged regs_whitelist (Z.to_N (bv_modulus 52)) call seqst),
   is_Ok seqst' → cd_monotone (seq_cd_states_to_cd (result_same_type_proj seqst') cd∅).
 Proof.
   cdestruct |- *** as Hmono seqst' r Hseqst'.
+  unfold seq_cd_states_to_cd.
+  enough (cd_monotone
+  (cd_state_to_cd (construct_cd_for_pe (seq_state_to_pe seqst') cd∅) (seq_state_to_pe seqst')) ∧ mem_reg_maps_wf )
+  pattern (construct_cd_for_pe (seq_state_to_pe seqst') cd∅).
+  enoug
+  pose proof op_model_cd_ind_step.
+  unfold seq_cd_states_to_cd_state in H.
+  eapply H.
+  1: eapply Hmono.
+  2: eauto.
+  1: instantiate (1 := call).
+  1: set_solver.
+  enough
+  (construct_cd_fold_inv_step (Candidate.event_list (seq_state_to_pe seqst'))
+    (λ (cdst : cd_state) (unproc proc : list (EID.t * fEvent outcome)),
+      cd_monotone (cd_state_to_cd cdst (seq_state_to_pe seqst')) ∧
+      mem_reg_maps_wf cdst unproc proc)).
+  {
+    unfold construct_cd_fold_inv_step, mem_reg_maps_wf in *.
+    cdestruct H0 |- ***.
+    eapply H0.
+    4: eassumption.
+    1,2,3: set_solver.
+    split; first assumption.
+    revert H4.
+
+    opose proof construct_cd_fold_maps_wf.
+    5: intros; eapply H6.
+    5: split; first assumption; intros; eapply construct_cd_fold_maps_wf.
+
+    7: { }
+
+  }
+
+  1,2,3: set_solver.
+  1: unfold cd_state_to_cd in *. 1: naive_solver.
+  unfold construct_cd_fold_inv_step.
+  cdestruct |- *** as cdst eid [] ???????.
+  unfold cd_monotone in H4 |- *.
+  eapply construct_cd_fold_inv_step.
   unfold sequential_model_outcome_logged, fHandler_logger in *.
   cdestruct seqst', Hseqst' |- ***.
   unfold seq_cd_states_to_cd, construct_cd_for_pe in *.
