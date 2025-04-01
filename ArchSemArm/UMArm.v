@@ -63,7 +63,7 @@ Section UMArm.
   Import Candidate.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
-  Context (ms: exec_type).
+  Context {ms: exec_type}.
   Context (cd : Candidate.t ms nmth).
 
   (** * Arm standard notations *)
