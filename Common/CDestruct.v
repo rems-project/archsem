@@ -83,8 +83,6 @@ Require Import Program.Equality.
       - discriminate and contradiction
       - [x ≠ x]
     - Clean up [t = t]
-    - If there is an equality with a variable and the variable is part of the
-      processed subset, then do the substitution.
     - Apply all rewritings in [CDestrSimpl false], by default:
       - Simplifying obviously false as defined [ObvFalse] into [False], by default:
         - contradicting hypotheses ([contradiction])
@@ -96,8 +94,13 @@ Require Import Program.Equality.
       - equalities with [bool_decide]
       - Simplifying [ctrans] calls when possible.
     - If an hypothesis implies an equality that is substituable, (as defined by
-      CDestrSuperSubst), then do the substitution. By default:
+      CDestrSubst), then do the substitution. By default:
+      - A plain variable equality [x = expr] or [expr = y]
       - [existsT T x = existsT T' x'] if either T or T' is a variable
+      - The same with constructor nesting:
+        [existsT (existT T x) y = existT (existT T' x') y'),
+        if either T or T' is a variable.
+      - Also by default with other constructors than [existT]
       - [ctrans e f] anywhere if [e] has a variable on either side
     - If a there is a match of a type (or [inspect] of a type), and the type is
       in [CDestrMatchT], then destruct the discriminee (and keep the equality if
@@ -119,12 +122,13 @@ Require Import Program.Equality.
     In addition we have a few immediate improvement plans:
     - Do not reintroduce the same hypothesis twice
     - This would allow to have some basic system of fact saturation
-    - Potentially "super subst" could be replace by plain fact saturation
+    - Potentially the substitution system could be replaced by saturating with
+      the extracted equality
     - Need to think how to do saturation from the goal without doing the same
       things multiple times (e.g. extract [e] from a goal containing [ctrans e f])
 
     Longer term we probably also need to improve the simplification system for
-    performance
+    performance, and make typeclass resolution faster/simpler in general.
 *)
 
 
@@ -234,8 +238,9 @@ This typeclass gathers facts that are obviously false. If you have a
 theory specific way of deriving false, you can add it to this typeclass.
 [cdestruct] will then use this to simplify those fact into [False]
 (and discharge the goal if those are in the context) *)
+#[local] Set Typeclasses Strict Resolution.
 Class ObvFalse (P : Prop) := {obv_false : P → False}.
-Global Hint Mode ObvFalse + : typeclass_instances.
+#[local] Unset Typeclasses Strict Resolution.
 
 Global Instance obv_false_False : ObvFalse False.
 Proof. by tcclean. Qed.
@@ -269,8 +274,10 @@ Proof. deintro. tcclean. naive_solver. Qed.
 This typeclass gathers fact that are obviously true, this allows to solve the
 goal quickly if possible, try to limit the search time though.
 [fast_done] is and example of what it expected to be solved by this typeclass.*)
+
+#[local] Set Typeclasses Strict Resolution.
 Class ObvTrue (P : Prop) := {obv_true : P}.
-Global Hint Mode ObvTrue + : typeclass_instances.
+#[local] Unset Typeclasses Strict Resolution.
 
 (* Global Instance obv_false_False : ObvFalse False. *)
 (* Proof. by tcclean. Qed. *)
@@ -292,64 +299,102 @@ See the top of the file comment for details about what [cdestruct] does. *)
 
 (** If [CDestrCase] is enabled for a type, then [cdestruct] will destruct
     that type when it sees it in an hypothesis *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrCase (T : Type) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 (** If [CDestrSplit] is enabled for a type, then [cdestruct] will split that
     type when it sees it in the goal *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrSplit (T : Type) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 (** [cdestruct] will apply all simplification provided by [CDestrSimpl]
     If is provided by [CDestrSimpl false] it will be an hypothesis
     simplification, otherwise it will be a goal simplification. *)
 Class CDestrSimpl (goal : bool) (P Q : Prop) := cdestr_simpl {cdestruct_simpl : P ↔ Q}.
-Global Hint Mode CDestrSimpl + + - : typeclass_instances.
+Global Hint Mode CDestrSimpl + ! - : typeclass_instances.
 Arguments cdestr_simpl _ {_ _} _.
 Arguments cdestruct_simpl _ _ {_ _}.
+(** Useful for [blocked_evar] resolution in [block_all_evars] *)
+Ltac get_cdestr_simpl_evars _ :=
+  lazymatch goal with
+  | |- CDestrSimpl _ ?G _ => G
+  end.
 
-(** This is used to deal with dependent equality. When having a dependent
-    equality implies simpler equalities. [cdestruct] will try to use the simpler
-    equality to do substitution and therefore make the dependent equality
-    simpler. For example when you have [existT a b = existT c d], one can deduce
-    [a = c]. Then if either [a] or [c] is a variable, we can do a substitution
-    and simplify the existT equality.
 
-    Right now this is limited because if the extracted equality is [S n = S m],
-    [cdestruct] won't perform a substitution with [n] and [m]. TODO fix that *)
-Class CDestrSuperSubst (P : Prop) (T : Type) (a b : T) :=
-  mk_cdestr_supersubst { cdestr_supersubst : P → a = b}.
+(** [CDestrSubst] try to extract a variable substitution from a given
+    proposition [P] that cannot be directly simplified. [CDestrSimpl] is tried
+    before [CDestrSubst]. The output proposition [Q] must have the form
+    [x = expr] or [expr = y] where [x] or [y] respectively is a variable.
+    Otherwise the instance found is rejected (and [cdestruct] wastes time).
 
-(** This is the goal version to extract equalities from the goal that could be
-    used for substitution, like [e] in a goal containing [ctrans e x] *)
-Class CDestrSuperSubstGoal (P : Prop) (T : Type) (a b : T) :=
-  mk_cdestr_supersubst_goal { cdestr_supersubst_goal : a = b}.
-Arguments cdestr_supersubst_goal _ {_ _ _ _}.
+    One simple case is if [P] itself is [x = expr] with x a variable. However
+    more subtle cases are possible such as
+    [P = (existT x expr1 = existT expr2 expr3)]
+
+    There is a [Hint Extern] below that tries to find the simple case of that
+    pattern generically *)
+Class CDestrSubst (P : Prop) (Q : Prop) :=
+  cdestr_subst {cdestruct_subst : P → Q}.
+Global Hint Mode CDestrSubst ! - : typeclass_instances.
+Arguments cdestr_subst {_ _} _.
+Arguments cdestruct_subst _ {_ _}.
+Ltac get_cdestr_subst_evars _ :=
+  lazymatch goal with
+  | |- CDestrSubst ?G _ => G
+  end.
+
+(** This is the goal version of the previous to extract equalities from the goal
+    that could be used for substitution, like [e] in a goal containing
+    [ctrans e x] *)
+Class CDestrSubstGoal (P : Prop) (Q : Prop) :=
+  cdestr_subst_goal {cdestruct_subst_goal : Q}.
+Global Hint Mode CDestrSubstGoal ! - : typeclass_instances.
+Arguments cdestr_subst_goal {_ _} _.
+Arguments cdestruct_subst_goal _ {_ _}.
+Ltac get_cdestr_subst_goal_evars _ :=
+  lazymatch goal with
+  | |- CDestrSubstGoal ?G _ => G
+  end.
+
 
 
 (** If [CDestrMatchT] is enabled for a type, then [cdestruct] will process match
     cases of that type by calling [destruct] on the match discriminee. The value
     will therefore be destructed even if not directly processed by [cdestruct] *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrMatchT (T : Type) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 (** [CDestrMatch] is [CDestrMatch T] for all [T] *)
 Class CDestrMatch := {}.
 Global Instance cdestr_matchT `{CDestrMatch} T : CDestrMatchT T. Qed.
 
 (** If [CDestrMatchNoEq] is enabled for a type, then whenever CDestruct destroy
-    the discriminee of a match with it, it does not generate the corresponding
-    equality, this is intended for types like [{P} + {Q}] or similar *)
+    the discriminee of a match with that type, it does not generate the
+    corresponding equality, this is intended for types like [{P} + {Q}] *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrMatchNoEq (T : Type) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 (** [CDestrRecInj] allow [cdestruct] to blow up record equalities of the form
     [{| ... |} = {| ... |}] in a group of field-wise equality. One must specify
     the constructor term for internal reasons (it's hard to guess). The record
     must implement [Settable] *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrRecInj (rec_type : Type) {constr_type : Type}
   (constr : constr_type) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 (** Directed rewriting. Declares that if A = B, then rewriting A to B is a good
     idea, This is not used by default as it is quite fragile, probably best use
-    only as a local hint *)
+    only as a local hint.
+
+    This is really fragile and might be deleted, use with care *)
+#[local] Set Typeclasses Strict Resolution.
 Class CDestrDRew {T} (A : T) (B : T) := {}.
+#[local] Unset Typeclasses Strict Resolution.
 
 
 (** ** CDestruct helper tactics *)
@@ -388,7 +433,7 @@ Ltac2 subst_clean h x :=
   move $h before $x;
   revert dependent $x;
   intros $x $h;
-  subst $x.
+  Std.subst [x].
 
 (** Decide if [h1] is before [h2] in the current goal *)
 Ltac2 hyp_before h1 h2 :=
@@ -454,8 +499,8 @@ and hypotheses already processed are in the context. *)
 Ltac2 cdestruct_step0 () :=
   match! goal with
   | [|- ∀ _ : ?t, _] => (* Case splitting *)
-      let h := intro_get_name () in
       assert_option (CDestrCase $t);
+      let h := intro_get_name () in
       Std.case false (Control.hyp h, Std.NoBindings);
       clear $h
   (* | [|- ∀ _, _] => (* Obviously false *) *)
@@ -464,13 +509,19 @@ Ltac2 cdestruct_step0 () :=
   (*     Std.case false (Control.hyp h, Std.NoBindings) *)
   | [|- ?t = ?t → _ ] => intros _ (* Reflexive equality cleanup *)
   | [|- ∀ _ : ?t = ?t, _ ] => refine '(simplification_K _ $t _ _)
+  | [|- ∀ _ : _, _ ] => (* Cbn *)
+      let h := intro_get_name () in
+      progress (cbn in $h);
+      revert $h
   | [|- ∀ _ : ?p, _] => (* Rewriting *)
-      let r := constr:(cdestruct_simpl false $p) in
+      let r := '(@cdestruct_simpl false $p _
+                   ltac:(block_all_evars get_cdestr_simpl_evars; tc_solve)) in
+      let r := eval cbv[blocked_evar] in $r in
       let h := intro_get_name () in
       orelse
       (fun () => apply (iffLR $r) in $h; revert $h)
       (fun _ =>
-         (* If the hypotheses can be modified (used somewhere else),
+         (* If the hypotheses can't be modified (used somewhere else),
             we make a copy and block the original, cdestruct removes all
             blocks at the end (and clears unused block hypotheses)*)
          let h' := pose_proof_get (Control.hyp h) in
@@ -478,47 +529,49 @@ Ltac2 cdestruct_step0 () :=
          revert $h';
          change (cblock $p) in $h;
          revert $h)
-  | [|- ∀ _ : ?x = ?y, _ ] => (* Substitution *)
-      assert_bt (Constr.is_var x || Constr.is_var y);
+  | [|- ∀ _ : ?p, _ ] => (* Substitution *)
+      let cds := '(@cdestruct_subst $p _
+                     ltac:(block_all_evars get_cdestr_subst_evars; tc_solve)) in
+      let cds := eval cbv[blocked_evar] in $cds in
       let h := intro_get_name () in
-      clean_up_eq h x y
+      let prf := Control.hyp h in
+      let e := pose_proof_get '($cds $prf) in
+      cbn in $e;
+      lazy_match! Constr.type (Control.hyp e) with
+      | ?x = ?y => clean_up_eq e x y
+      end;
+      try (revert $h)
   | [|- ∀ _ : ?x = ?y, _ ] => (* Directed rewrite *)
-      (* TODO This is bad, it need to back on previous hypotheses too *)
+      (* TODO This is bad, it needs to backtrack on previous hypotheses too *)
       assert_option (CDestrDRew $x $y);
       let h := intro_get_name () in
       let t := Control.hyp h in
       progress (setoid_rewrite $t);
       revert $h
-  | [|- ∀ _ : _, _ ] => (* Cbn *)
-      let h := intro_get_name () in
-      progress (cbn in $h);
-      revert $h
-  | [|- ∀ _, _ ] => (* Supersubst *)
-      let h := intro_get_name () in
-      let p := Control.hyp h in
-      let e := pose_proof_get constr:(cdestr_supersubst $p) in
-      cbn in $e;
-      lazy_match! Constr.type (Control.hyp e) with
-      | ?x = ?y => clean_up_eq e x y
-      end;
-     try (revert $h)
   | [|- ∀ _ : ?p, _ ] => (* Match splitting *) break_match_in p
 
   (* If there is nothing to do, introduce the hypothesis, this commits it as
      being "processed" and we won't go back to it (unless modified) *)
   | [|- ∀ _, _] => intro
 
-  (* If goal is block, we don't do goal clean-up *)
+  (* If the goal is blocked, we don't do goal clean-up *)
   | [|- cblock _] => () (* stop on block: (cdestruct_step) is wrapped in progress*)
 
   (* Goal clean-up *)
   | [|- ?t ] => assert_option (CDestrSplit $t); split
   | [|- _] => apply obv_true
   | [|- _] => progress cbn
-  | [|- _] => (* Goal simpl *)
-      apply (iffRL (cdestruct_simpl true _))
-  | [|- ?p] => (* Goal supersubst *)
-      let e := pose_proof_get constr:(cdestr_supersubst_goal $p) in
+  | [|- ?p] => (* Goal simplification *)
+      let r := '(@cdestruct_simpl true $p _
+                   ltac:(block_all_evars get_cdestr_simpl_evars; tc_solve)) in
+      let r := eval cbv[blocked_evar] in $r in
+      apply (iffRL $r)
+  | [|- ?p] => (* Goal substitution *)
+      let e :=
+        pose_proof_get
+          '(@cdestruct_subst_goal $p _
+              ltac:(block_all_evars get_cdestr_subst_goal_evars; tc_solve)) in
+      unblock_evars;
       cbn in $e;
       lazy_match! Constr.type (Control.hyp e) with
       | ?x = ?y => clean_up_eq e x y
@@ -718,7 +771,38 @@ Proof. constructor. apply (inj4_iff f). Qed.
   cbn;
   reflexivity : typeclass_instances.
 
-(** ** CTrans simplification and supersubst *)
+(** ** Substitution *)
+
+#[global] Hint Extern 10 (CDestrSubst (?x = ?y) _) =>
+  (first [is_var x | is_var y]; assert_fails (unify x y); econstructor; let H := fresh "H" in intro H; exact H)
+  : typeclass_instances.
+
+Ltac cds_by_congruence Ht :=
+  constructor;
+  let Hs := fresh "H" in
+  intro Hs;
+  class_apply (@cdestruct_subst Ht);[clear Hs| congruence].
+
+
+(* TODO make a single Hint Extern *)
+#[global] Hint Extern 5 (CDestrSubst (?f ?x = ?f ?y) _) =>
+  (assert_fails (unify x y);
+   cds_by_congruence (x = y)) : typeclass_instances.
+
+#[global] Hint Extern 4 (CDestrSubst (?f ?x _ = ?f ?y _) _) =>
+  (assert_fails (unify x y);
+   cds_by_congruence (x = y)) : typeclass_instances.
+
+#[global] Hint Extern 3 (CDestrSubst (?f ?x _ _ = ?f ?y _ _) _) =>
+  (assert_fails (unify x y);
+   cds_by_congruence (x = y)) : typeclass_instances.
+
+#[global] Hint Extern 2 (CDestrSubst (?f ?x _ _ _ = ?f ?y _ _ _)) =>
+  (assert_fails (unify x y);
+   cds_by_congruence (x = y)) : typeclass_instances.
+
+
+(** ** CTrans simplification and substitution *)
 Hint Extern 5 (CDestrSimpl _ ?P _) =>
        match P with
        | context [ctrans] =>
@@ -727,21 +811,26 @@ Hint Extern 5 (CDestrSimpl _ ?P _) =>
            reflexivity
        end : typeclass_instances.
 
-Hint Extern 5 (CDestrSuperSubst ?P _ _ _) =>
+Hint Extern 9 (CDestrSubst ?P _) =>
        match P with
        | context [@ctrans _ _ _ ?A ?B ?E _] =>
            assert_fails (unify A B);
            constructor;
-           intro;
-           exact E
+           intros _;
+           let t := type of E in
+           let t' := eval cbn in t in
+           class_apply (@cdestruct_subst t');[ | exact E]
+           (* exact E *)
        end : typeclass_instances.
 
-Hint Extern 5 (CDestrSuperSubstGoal ?P _ _ _) =>
+Hint Extern 9 (CDestrSubstGoal ?P _) =>
        match P with
        | context [@ctrans _ _ _ ?A ?B ?E _] =>
            assert_fails (unify A B);
            constructor;
-           exact E
+           let t := type of E in
+           let t' := eval cbn in t in
+             class_apply (@cdestruct_subst t');[ | exact E]
        end : typeclass_instances.
 
 (** ** JMeq simplification *)
@@ -753,15 +842,6 @@ Proof. constructor. use JMeq_eq. naive_solver. Qed.
 Global Instance cdestruct_neg_JMeq b A (x y : A) :
   CDestrSimpl b (x ≠ⱼ y) (x ≠ y).
 Proof. constructor. use JMeq_eq. naive_solver. Qed.
-
-(** ** sigT SuperSubst *)
-
-#[global] Instance cdestr_supersubst_sigT (T : Type) (P : T → Type) a b c d :
-  CDestrSuperSubst (existT a b =@{sigT P} existT c d) T a c.
-Proof. tcclean. by simplify_dep_elim. Qed.
-
-(* If the first component unify, then the simplification is covered by the [Inj]
-case *)
 
 (** ** [bool_decide] simplification *)
 Instance cdestruct_bool_decide_true b `{Decision P} :
