@@ -80,6 +80,21 @@ Export IfNotations.
 (** Make typeclass resolution treat all constant as opaque by default *)
 #[export] Hint Constants Opaque : typeclass_instances.
 
+Require Import stdpp.base.
+
+(** Functional pipe notation. *)
+Module FunctionPipeNotations.
+
+  Notation "v |> f" := (f v) (at level 68, only parsing, left associativity).
+
+  (** And pipes for  FMap notations *)
+  Notation "v |$> f" := (fmap f v) (at level 68, only parsing, left associativity).
+  Notation "v |$>@{ M } f" := (@fmap M _ _ _ f v)
+                                (at level 68, only parsing, left associativity).
+End FunctionPipeNotations.
+Export FunctionPipeNotations.
+
+
 (* TODO automatically check that all file in the project import this file.
    This might be done with a text checker that there exists a
    [Require Import Options.] or [Require Import ASCommon.Options] *)

@@ -106,22 +106,21 @@ Notation "∅" := Datatypes.Empty_set : type_scope.
 Notation "x =ⱼ y" := (@JMeq _ x _ y) (at level 70, no associativity).
 Notation "x ≠ⱼ y" := (¬(x =ⱼ y)) (at level 70, no associativity).
 
-(** Functional pipe notation.
 
-    TODO figure out a correct parsing level. Currently is just below relation so
-    that a = b |> f will be parsed as a = (b |> f). *)
-Notation "v |> f" := (f v) (at level 69, only parsing, left associativity).
+(** Monad-annotated fmap notation *)
+Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v)
+    (at level 61, only parsing, left associativity).
 
-(* FMap notations *)
-Notation "v |$> f" := (fmap f v) (at level 69, only parsing, left associativity).
-Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v) (at level 61, only parsing, left associativity).
-Notation "v |$>@{ M } f" := (@fmap M _ _ _ f v) (at level 69, only parsing, left associativity).
-
-(** Monadic bind with an explicit monad annotation *)
+(** Monad annotated bind notations *)
 Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
-  (at level 20, y at level 100, z at level 200, only parsing) : stdpp_scope.
+    (at level 20, y at level 100, z at level 200, only parsing) : stdpp_scope.
 Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
-  (at level 20, x pattern, y at level 100, z at level 200, only parsing) : stdpp_scope.
+    (at level 20, x pattern, y at level 100, z at level 200, only parsing)
+    : stdpp_scope.
+
+(** This defines operators [|>] and [|$>] for pipe-style function application
+    and fmap *)
+Module FunctionPipeNotations := FunctionPipeNotations.
 
 (** Useful for defining decision procedures *)
 Notation dec_if D := (match D with | left _ => left _ | right _ => right _ end).
