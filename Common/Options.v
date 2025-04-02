@@ -47,7 +47,8 @@
 Any downstream project should have its own options file as this might change at
 any time without notice.
 
-All ArchSem files should Import (but not Export) this. *)
+All ArchSem files should Import (but not Export) this.
+This file should be imported before any other ArchSem file *)
 (* Everything here should be [#[export] Set], which means when this
 file is *imported*, the option will only apply on the import site
 but not transitively. *)
@@ -75,6 +76,9 @@ needed) with [inspect] *)
 
 (** Use the if _ is _ notation in this project, but do not force users to use it *)
 Export IfNotations.
+
+(** Make typeclass resolution treat all constant as opaque by default *)
+#[export] Hint Constants Opaque : typeclass_instances.
 
 (* TODO automatically check that all file in the project import this file.
    This might be done with a text checker that there exists a

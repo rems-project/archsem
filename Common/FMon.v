@@ -42,9 +42,9 @@
 (*                                                                            *)
 (******************************************************************************)
 
+Require Import Options.
 Require Import Program.Equality.
 Require Import Common.
-Require Import Options.
 From stdpp Require Import option.
 
 (* Reexporting Effects. Using FMon implies using Effects *)

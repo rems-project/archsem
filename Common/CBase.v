@@ -66,19 +66,20 @@ Require Import Options.
 
 (** * Default Typeclass opaque
 
-  By default we make all constants opaque in typeclass resolution. This make
-  typeclass search much faster on average, at the cost of requiring more
-  instances or transparency annotations. In general for most type definitions,
-  one need either to declare it transparent, or define all the required
-  typeclasses on it. Same for decidable predicates as this development use
-  stdpp's [Decision] *)
-#[global] Hint Constants Opaque : typeclass_instances.
+  By default we make all constants opaque in typeclass resolution (in
+  Options.v). This make typeclass search much faster on average, at the cost of
+  requiring more instances or transparency annotations. In general for most type
+  definitions, one need either to declare it transparent, or define all the
+  required typeclasses on it. Same for decidable predicates as this development
+  use stdpp's [Decision] *)
+
+(** Some standard library (or stdpp) type abbreviations need to be
+    typeclass-transparent: Add them here *)
 #[global] Typeclasses Transparent relation.
 
 (** This is needed to fix the behaviour or setoid rewriting under opaque typeclasses *)
 Hint Extern 0 (ProperProxy _ _) =>
        simple apply @eq_proper_proxy || simple apply @reflexive_proper_proxy : typeclass_instances.
-
 
 
 (** * Axioms
@@ -95,6 +96,7 @@ Require Export FunctionalExtensionality PropExtensionality Classical.
     irrelevance try to find axiom-free instances first *)
 Instance proof_irrelevance_pi (P : Prop) : ProofIrrel P | 1000 :=
   proof_irrelevance P.
+
 
 (** * Notations ***)
 

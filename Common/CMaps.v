@@ -45,8 +45,8 @@
 From stdpp Require Export gmap.
 From stdpp Require Export fin_maps.
 
-Require Import CBase.
 Require Import Options.
+Require Import CBase.
 Require Import CBool.
 Require Import COption.
 Require Import CInduction.

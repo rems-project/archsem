@@ -42,8 +42,8 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import CBase CBool CMaps CArith.
 Require Import Options.
+Require Import CBase CBool CMaps CArith.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.

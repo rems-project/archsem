@@ -45,13 +45,13 @@
 (** Unfortunately this development needs to support two kinds of bitvector.
     The module will attempt to provide smooth interoperability between the two *)
 
+Require Import Options.
 Require Import Lia.
 Require Import stdpp.decidable.
 Require Import stdpp.countable.
 Require Export stdpp.bitvector.bitvector.
 Require Export stdpp.bitvector.tactics.
 Require Import CBase.
-Require Import Options.
 Require Import CBool.
 Require Import CList.
 

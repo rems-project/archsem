@@ -42,8 +42,8 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ArmInst.
 Require Import ASCommon.Options.
+Require Import ArmInst.
 Require Import ASCommon.Common.
 Require Import ASCommon.Exec.
 Require Import ASCommon.StateT.

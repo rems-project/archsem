@@ -58,8 +58,8 @@ From stdpp Require Export sets.
 From Hammer Require Import Tactics.
 From Hammer Require Reflect.
 
-Require Import CBase.
 Require Import Options.
+Require Import CBase.
 Require Import CDestruct.
 
 
