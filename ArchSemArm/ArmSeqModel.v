@@ -170,11 +170,11 @@ Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   λ n,
   match n with
   | 1 => λ initSt : MState.init 1,
-           Listset
+            Listset
             (sequential_model_seqmon fuel isem {| initSt := initSt; regs := ∅; mem := ∅ |}
-             |> Exec.to_result_list
-             |$> snd
-             |$> Model.Res.from_result)
+              |> Exec.to_stateful_result_list
+              |$> snd
+              |$> Model.Res.from_result)
   | _ => λ _, mret (Model.Res.Error "Exptected one thread")
   end.
 

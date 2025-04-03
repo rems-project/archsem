@@ -384,13 +384,14 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 
   (** Create a computational model from an ISA model and promising model *)
-(* TODO: Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
+Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
       (fuel : nat) : Model.c ∅ :=
       fun n (initMs : MState.init n) =>
         let initPs := PState.from_MState isem prom initMs in
+        initPs |>
         Model.Res.from_exec
           $ CPState.to_final_MState
-          <$> CPState.run isem prom initMs.(MState.termCond) fuel initPs. *)
+          <$> CPState.run isem prom initMs.(MState.termCond) fuel.
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)
