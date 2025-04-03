@@ -44,7 +44,7 @@
 
 (** This file defines an execution monad for operational models.
 
-This monad supports non determinism and errors. Use StateT to add state. *)
+This monad supports states, non determinism, and errors. *)
 
 Require Import Options.
 Require Import Common.
@@ -54,7 +54,7 @@ Require Import Effects.
 (* TODO: Make it a top level name *)
 Module Exec.
 
-(** * Base definitions *)
+(** * Base execution result definitions *)
 Record res {E A : Type} := make {
     results: list A;
     errors: list E;
@@ -62,7 +62,7 @@ Record res {E A : Type} := make {
 Arguments res : clear implicits.
 Arguments make {_ _}.
 
-(** Decide if an execution has errors *)
+(** Decide if a result has errors *)
 Definition has_error `(e : res E A) :=
   match e with
   | make _ [] => False
@@ -71,68 +71,19 @@ Definition has_error `(e : res E A) :=
 #[global] Instance has_error_dec `(e : res E A): Decision (has_error e).
 Proof. unfold_decide. Qed.
 
-(** Merge the results of two executions *)
-Definition merge {E A} (e1 e2 : res E A) :=
-  make (e1.(results) ++ e2.(results)) (e1.(errors) ++ e2.(errors)).
-#[global] Typeclasses Opaque merge.
+(** Merge two execution results by merging successes and errors separately.
+    This does not perform de-duplication *)
+Definition merge {E A} (er1 er2 : res E A) :=
+  make (er1.(results) ++ er2.(results)) (er1.(errors) ++ er2.(errors)).
+#[export] Typeclasses Opaque merge.
 Arguments merge : simpl never.
-
-(** Convert an execution into a list of results *)
-Definition to_result_list `(e : res E A) : list (result E A) :=
-  map Ok e.(results) ++ map Error e.(errors).
-
-(** Convert an execution with states into a list of results *)
-Definition to_stateful_result_list `(e : res (St * E) (St * A)) : list (St * result E A) :=
-  map (λ '(st,r), (st, Ok r)) e.(results) ++ map (λ '(st,err), (st, Error err)) e.(errors).
-
-(** Convert an execution into a list of result states *)
-Definition to_state_result_list `(e : res (St * E) (St * A)) : list (result St St) :=
-  map (Ok ∘ fst) e.(results) ++ map (Error ∘ fst) e.(errors).
-
-
-Definition t {St E A} := St → res (St * E) (St * A).
-Arguments t : clear implicits.
-#[global] Typeclasses Transparent t.
-
-(** Create an execution from a set of results, e.g. to convert from pure
-    non-determinism to Exec *)
-Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
-  λ st, make (map (st,.) (elements s)) [].
-
-#[global] Instance mret_inst {St E} : MRet (t St E) := λ _ v st, make [(st,v)] [].
-
-#[global] Instance mbind_inst {St E} : MBind (t St E) :=
-  λ _ _ f e st, let est := e st in
-    foldr merge (make [] est.(errors)) (map (λ '(st', r), f r st') est.(results)).
-#[global] Typeclasses Opaque mbind_inst.
-
-#[global] Instance fmap_inst {St E} : FMap (t St E) :=
-  λ _ _ f e st, let est := e st in
-    make (map (λ '(st', r), (st', f r)) est.(results)) est.(errors).
-#[global] Typeclasses Opaque fmap_inst.
-
-#[global] Instance throw_inst {St E} : MThrow E (t St E) :=
-  λ _ e st, make [] [(st,e)].
-
-#[global] Instance choose_inst {St E} : MChoose (t St E) :=
-  λ '(ChooseFin n), @Results _ _ (Fin.t n) _ _ (enum (fin n)).
-
-#[global] Typeclasses Opaque choose_inst.
-
-#[global] Instance st_call_MState {St E} : MCall (MState St) (t St E) | 10 :=
-  λ eff,
-    match eff with
-    | MSet s => λ _, (mret () : t St E ()) s
-    | MGet => λ s, (mret s : t St E St) s
-    end.
-
-Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
-Proof. reflexivity. Qed.
 
 (** Create a res record from a set of results, e.g. to convert from pure
     non-determinism to res *)
 Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
   make (elements s) [].
+
+(** Monadic definitions for executions results *)
 
 #[global] Instance res_mret_inst {E} : MRet (res E) := λ _ v, make [v] [].
 
@@ -150,6 +101,59 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
+
+(** Convert an execution into a list of results *)
+Definition to_result_list `(e : res E A) : list (result E A) :=
+  map Ok e.(results) ++ map Error e.(errors).
+
+(** Convert an execution with states into a list of results *)
+Definition to_stateful_result_list `(e : res (St * E) (St * A)) : list (St * result E A) :=
+  map (λ '(st,r), (st, Ok r)) e.(results) ++ map (λ '(st,err), (st, Error err)) e.(errors).
+
+(** Convert an execution into a list of result states *)
+Definition to_state_result_list `(e : res (St * E) (St * A)) : list (result St St) :=
+  map (Ok ∘ fst) e.(results) ++ map (Error ∘ fst) e.(errors).
+
+(** * Base execution monad definitions *)
+
+Definition t {St E A} := St → res (St * E) (St * A).
+Arguments t : clear implicits.
+#[export] Typeclasses Transparent t.
+
+(** Create an execution from a set of results, e.g. to convert from pure
+    non-determinism to Exec *)
+Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
+  λ st, (st,.) <$> res_Results s.
+
+(** Monadic definition based on the respective instances for execution results *)
+
+#[global] Instance mret_inst {St E} : MRet (t St E) := λ _ v st, mret (st,v).
+
+#[global] Instance mbind_inst {St E} : MBind (t St E) :=
+  λ _ _ f e st, '(st', a) ← e st; f a st'.
+#[global] Typeclasses Opaque mbind_inst.
+
+#[global] Instance fmap_inst {St E} : FMap (t St E) :=
+  λ _ _ f e st, (λ '(st',a), (st', f a)) <$> e st.
+#[global] Typeclasses Opaque fmap_inst.
+
+#[global] Instance throw_inst {St E} : MThrow E (t St E) :=
+  λ _ e st, mthrow (st,e).
+
+#[global] Instance choose_inst {St E} : MChoose (t St E) :=
+  λ '(ChooseFin n), @Results _ _ (Fin.t n) _ _ (enum (fin n)).
+
+#[global] Typeclasses Opaque choose_inst.
+
+#[global] Instance st_call_MState {St E} : MCall (MState St) (t St E) | 10 :=
+  λ eff,
+    match eff with
+    | MSet s => λ _, (mret () : t St E ()) s
+    | MGet => λ s, (mret s : t St E St) s
+    end.
+
+Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
+Proof. reflexivity. Qed.
 
 Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St → St)
     (inner : Exec.t St' E A) : Exec.t St E A :=
@@ -196,7 +200,7 @@ Definition map_error {St E E' A} (f : E -> E') (e : t St E A) : t St E' A :=
   λ st, let est := e st in make est.(results) (map (λ '(st', r), (st', f r)) est.(errors)).
 (** Merge the results of two executions *)
 
-(** * Unfold typeclass for results *)
+(** * Unfold typeclass for execution results *)
 
 Class UnfoldElemOf {A E} (x : A) (e : res E A) (Q : Prop) :=
   {unfold_elem_of : x ∈ e ↔ Q}.
@@ -247,7 +251,7 @@ Proof. tcclean. naive_solver. Qed.
 
 #[global] Instance unfold_elem_of_mret {St E A} st x y:
   UnfoldElemOf x ((mret y : t St E A) st) (x = (st, y)).
-Proof. tcclean. unfold mret, mret_inst. set_solver. Qed.
+Proof. tcclean. do 2 unfold mret, mret_inst, res_mret_inst. set_solver. Qed.
 
 #[global] Instance unfold_elem_of_merge {E A} x (e e' : res E A) P Q:
   UnfoldElemOf x e P →
@@ -284,7 +288,7 @@ Qed.
   SetUnfoldElemOf x ((e ≫= f) st).(errors) (P x ∨ ∃ st' y, Q (st',y) ∧ x ∈ (f y st').(errors)) | 20.
 Proof.
   tcclean. deintro.
-  unfold mbind, mbind_inst.
+  unfold mbind, mbind_inst, mbind, res_mbind_inst.
   destruct (e st) as [l es].
   set_unfold.
   enough (x ∈ mjoin (errors <$> map (λ '(st', r), f r st') l) ↔ ∃ (x0 : St) (x1 : A), (x0, x1) ∈ l ∧ x ∈ errors (f x1 x0))
@@ -318,7 +322,7 @@ Proof. tcclean. unfold mdiscard, fmap, fmap_inst; cbn. set_solver. Qed.
 #[global] Instance unfold_elem_of_Results {St E A C} `{Elements A C} (s : C) (x : St * A) st P:
   (∀ y : A, SetUnfoldElemOf y (elements s) (P y)) →
   UnfoldElemOf x (Results (E := E) s st) (P x.2 ∧ x.1 = st).
-Proof. tcclean. unfold Results. destruct x. set_solver. Qed.
+Proof. tcclean. unfold Results, res_Results. destruct x. cbn. set_solver. Qed.
 
 #[global] Instance unfold_elem_of_mcallM_MChoice {St E} st st' (m : MChoice) (v : eff_ret m) :
   UnfoldElemOf (st, v) (mcallM (Exec.t St E) m st') (st = st').
@@ -408,3 +412,4 @@ Proof. tcclean. case_guard_discard; try rewrite unfold_has_error; naive_solver. 
 Proof. tcclean. unfold fmap, fmap_inst. destruct (e st) as [l es]. easy. Qed.
 
 End Exec.
+
