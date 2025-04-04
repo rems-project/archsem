@@ -315,6 +315,22 @@ Qed.
   UnfoldElemOf x ((mdiscard : t St E A) st) False.
 Proof. tcclean. unfold mdiscard, fmap, fmap_inst; cbn. set_solver. Qed.
 
+#[global] Instance unfold_elem_of_Results {St E A C} `{Elements A C} (s : C) (x : St * A) st P:
+  (∀ y : A, SetUnfoldElemOf y (elements s) (P y)) →
+  UnfoldElemOf x (Results (E := E) s st) (P x.2 ∧ x.1 = st).
+Proof. tcclean. unfold Results. destruct x. set_solver. Qed.
+
+#[global] Instance unfold_elem_of_mcallM_MChoice {St E} st st' (m : MChoice) (v : eff_ret m) :
+  UnfoldElemOf (st, v) (mcallM (Exec.t St E) m st') (st = st').
+Proof.
+  tcclean.
+  destruct m.
+  cbn -[enum] in *.
+  unfold mcallM, choose_inst, enum.
+  destruct fin_finite.
+  set_solver.
+Qed.
+
 #[global] Instance res_unfold_elem_of_mbind {E A B} (x :  B) (e : res E A) (f : A → res E B) P:
   (∀ y, UnfoldElemOf y e (P y)) →
   UnfoldElemOf x (e ≫= f) (∃ y, P y ∧ x ∈ f y) | 20.
