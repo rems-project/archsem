@@ -234,7 +234,6 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       (** Check if all threads have no outstanding promises *)
       Definition nopromises (ps : t) := fforallb (nopromises_tid ps).
 
-      (* Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A. *)
       (** Run on instruction in specific thread by tid *)
       Definition run_tid (tid : fin n) : Exec.t t string () :=
         st ←@{Exec.t t string} mGet;
