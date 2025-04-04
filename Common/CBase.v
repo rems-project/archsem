@@ -81,6 +81,11 @@ Require Import Options.
 Hint Extern 0 (ProperProxy _ _) =>
        simple apply @eq_proper_proxy || simple apply @reflexive_proper_proxy : typeclass_instances.
 
+(** For the decide_rel instance we want to be more lax that the default. If R is
+homogenous, we want to unify x y without typeclass opacity because that's what
+the type checker does *)
+Hint Extern 3 (@Decision (?R ?x ?y)) => simple apply @decide_rel : typeclass_instances.
+Remove Hints decide_rel : typeclass_instances.
 
 (** * Axioms
 
