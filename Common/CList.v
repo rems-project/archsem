@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CBool CMaps CArith.
+Require Import CBase CBool CMaps CArith CDestruct.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.
@@ -69,6 +69,10 @@ Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
 
 
 #[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
+
+#[global] Instance cdestruct_list_elements b {A} x (l : list A) :
+  CDestrSimpl b (x ∈ elements l) (x ∈ l).
+Proof. tcclean. done. Qed.
 
 (** * List simplification *)
 
@@ -357,8 +361,26 @@ Lemma fold_left_inv {C B} (I : C → list B → Prop) (f : C → B → C)
   (I i l)
   → (∀ (a : C) (x : B) (tl : list B), x ∈ l → I a (x :: tl) → I (f a x) tl)
   → I (fold_left f l i) [].
+Proof.
   generalize dependent i.
   induction l; sauto lq:on.
+Qed.
+
+Lemma fold_left_inv_complete_list {C B} (I : C → list B → list B → Prop) (f : C → B → C)
+    (l l' : list B) (i : C) :
+  (I i l [])
+  → (∀ (a : C) (x : B) (tl strt : list B), x ∈ l → I a (x :: tl) strt → I (f a x) tl (x :: strt))
+  → I (fold_left f l i) [] (rev l).
+Proof.
+  replace (rev l) with (rev l ++ []) by by rewrite app_nil_r.
+  generalize (@nil B) at 1 3.
+  revert dependent i.
+  induction l.
+  1: done.
+  cdestruct |- ***.
+  rewrite <- app_assoc.
+  eapply IHl.
+  all: intros; eapply H0; set_solver.
 Qed.
 
 (** Tries to find a fold_left in the goal and pose the proofs of the
@@ -380,6 +402,7 @@ Lemma fold_left_inv_ND {C B} (I : C → list B → Prop) (f : C → B → C)
   → (I i l)
   → (∀ (a : C) (x : B) (t : list B), x ∈ l → x ∉ t → I a (x :: t) → I (f a x) t)
   → I (fold_left f l i) [].
+Proof.
   generalize dependent i.
   induction l; sauto lq:on.
 Qed.
