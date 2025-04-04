@@ -198,7 +198,6 @@ Definition discard_none {St E A} : option A -> t St E A :=
 (** Maps the error to another error type. *)
 Definition map_error {St E E' A} (f : E -> E') (e : t St E A) : t St E' A :=
   λ st, let est := e st in make est.(results) (map (λ '(st', r), (st', f r)) est.(errors)).
-(** Merge the results of two executions *)
 
 (** * Unfold typeclass for execution results *)
 
