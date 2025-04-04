@@ -49,6 +49,7 @@ Require Import CBase CBool CDestruct.
 From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.
+From stdpp Require Import finite.
 
 
 (** * Base effect definitions *)
@@ -245,6 +246,10 @@ Definition mdiscard `{MChoose M, FMap M} {A} : M A :=
 (** Helper to non-deterministically choose in a list *)
 Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
   mchoose (length l) |$> ((list_to_vec l) !!!.).
+
+Definition mchoosef `{MChoose M, FMap M} `{Finite A} : M A :=
+  mchoosel (enum A).
+
 
 (** Same as [guard] but discard the execution if the proposition is false  *)
 Definition guard_discard `{MChoose M, FMap M, MRet M} P `{Decision P} : M P :=
