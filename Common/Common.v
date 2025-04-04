@@ -73,8 +73,14 @@ Require Export CInduction.
 (** * Utility functions ***)
 
 (** Update a function at a specific value *)
-Definition fun_add {A B} {_: EqDecision A} (k : A) (v : B) (f : A -> B) :=
-  fun x : A => if k =? x then v else f x.
+Definition fun_add {A B} `{EqDecision A} (k : A) (v : B) (f : A → B) :=
+  λ x, if k =? x then v else f x.
+
+Definition dfun_add `{EqDecision A} `{CTrans A B}  (k : A) (v : B k) (f : ∀ a, B a) :=
+  λ x, match decide (k = x) with
+       | left e => ctrans e v
+       | _ => f x
+       end.
 
 
 (** countable for sigT, copied from prod_countable *)
