@@ -326,7 +326,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       prom.(promise_select) n tid (initmem st) (tstate tid st) (events st).
 
     (** Take any promising step for that tid and promise it *)
-    Program Definition cpromise_tid (fuel : nat) (tid : fin n)
+    Definition cpromise_tid (fuel : nat) (tid : fin n)
       : Exec.t t string () :=
     λ st,
       let res_st :=
@@ -340,7 +340,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         no progress is made in the thread (either instruction running or
         promises *)
     (* TODO make if only on bool *)
-    Program Definition run_step (fuel : nat) : Exec.t t string () :=
+    Definition run_step (fuel : nat) : Exec.t t string () :=
       st ← mGet;
       tid ← mchoose n;
       if terminated_tid isem prom term st tid then mdiscard
