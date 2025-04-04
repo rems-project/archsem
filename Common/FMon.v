@@ -500,6 +500,7 @@ Section CMon.
   (** A choice monad is just a free monad with additional choice effects. The
       only difference is the theory around it (equivalence, trace matching, etc.) *)
   Definition cMon := fMon (Eff + MChoice).
+  #[export] Typeclasses Transparent cMon.
 
   (** Interprets the effect in a monad supporting non-determinism *)
   Definition cinterp `{MR: MRet M, MB: MBind M, MCh: MChoose M}
@@ -526,10 +527,6 @@ Section CMon.
     - intro H. by dependent destruction H.
     - by constructor.
   Qed.
-
-  (* Useful in the following definition for typeclass search *)
-  #[local] Hint Extern 5 (EqDecision (eff_ret _)) => (progress (cbn)) : typeclass_instances.
-  #[local] Hint Extern 5 (Finite (eff_ret _)) => (progress (cbn)) : typeclass_instances.
 
   (** Decide a cmatch: This is a bit dumb, it will try every possible
       non-deterministic choice until one match succeeded or all failed. However

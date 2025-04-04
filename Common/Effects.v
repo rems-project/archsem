@@ -69,6 +69,17 @@ Class Effect (Eff : eff) := eff_ret : Eff → Type@{e}.
 #[export] Hint Mode Effect ! : typeclass_instances.
 Unset Typeclasses Unique Instances.
 
+(** Since eff_ret is typeclass opaque, we sometime need to reduce it to resolve
+    a typeclass instance *)
+Ltac eff_ret_red inst := (let h := get_head inst in progress (cbn [eff_ret h])).
+#[export] Hint Extern 5 (EqDecision (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (Finite (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (Countable (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
+#[export] Hint Extern 5 (EmptyT (@eff_ret _ ?inst _)) =>
+  eff_ret_red inst : typeclass_instances.
 
 (** Generic interface for calling an algebraic effect in a monad *)
 Class MCall (Eff : eff) `{Effect Eff} (M : Type → Type) :=
