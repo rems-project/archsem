@@ -386,8 +386,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
       (fuel : nat) : Model.c ∅ :=
       fun n (initMs : MState.init n) =>
-        let initPs := PState.from_MState isem prom initMs in
-        initPs |>
+        PState.from_MState isem prom initMs |>
         Model.Res.from_exec
           $ CPState.to_final_MState
           <$> CPState.run isem prom initMs.(MState.termCond) fuel.

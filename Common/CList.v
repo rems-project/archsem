@@ -70,10 +70,6 @@ Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
 
 #[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
 
-#[global] Instance cdestruct_list_elements b {A} x (l : list A) :
-  CDestrSimpl b (x ∈ elements l) (x ∈ l).
-Proof. tcclean. done. Qed.
-
 (** * List simplification *)
 
 #[global] Hint Rewrite <- app_assoc : list.
