@@ -63,7 +63,8 @@ Section UMArm.
   Import Candidate.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
-  Context (cd : Candidate.t NMS nmth).
+  Context {ms: exec_type}.
+  Context (cd : Candidate.t ms nmth).
 
   (** * Arm standard notations *)
   Import AxArmNames.
@@ -191,7 +192,7 @@ Section UMArm.
     ∪ (⦗ISB⦘⨾ instruction_order).
 
   (* Ordered-before *)
-  Definition ob1 := obs ∪ dob ∪ aob ∪ bob ∪ iio.
+  Definition ob1 := (if ms is NMS then obs else obs⨾sca) ∪ dob ∪ aob ∪ bob ∪ iio.
   Definition ob := ob1⁺.
 
   (* TODO This does not distinguishes UB conditions from invalid conditions.
