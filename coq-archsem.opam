@@ -19,7 +19,7 @@ bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
   "dune" {>= "3.8"}
   "coq-archsem-common"
-  "coq-sail-stdpp" {dev}
+  "coq-sail-stdpp" {= "0.19"}
   "odoc" {with-doc}
 ]
 build: [
@@ -38,5 +38,5 @@ build: [
 ]
 dev-repo: "git+https://github.com/rems-project/archsem.git"
 pin-depends: [
-  [ "coq-sail-stdpp.dev" "git+https://github.com/rems-project/coq-sail.git#6918e8f3d63494d9a0c3b7e8d57fa689527cdfc7"]
+  [ "coq-sail-stdpp.0.19" "git+https://github.com/rems-project/coq-sail.git#6918e8f3d63494d9a0c3b7e8d57fa689527cdfc7"]
 ]

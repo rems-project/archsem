@@ -35,7 +35,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part")
  (depends
    coq-archsem-common ; need same commit
-  (coq-sail-stdpp :dev) ; See INSTALL.md for the commit number
+  (coq-sail-stdpp (= 0.19)) ; See coq-archsem.opam.template for the commit number
  )
 )
 
@@ -44,6 +44,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
  (depends
    coq-archsem
+   (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
  )
 )
 

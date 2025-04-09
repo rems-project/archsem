@@ -50,13 +50,16 @@ Require Import ASCommon.StateT.
 Require Import ASCommon.FMon.
 Require Import Coq.Program.Equality.
 
-From stdpp Require Import decidable.
-From stdpp Require Import pretty.
-
 Require UMPromising.
 
 Require Import ArchSem.GenPromising.
 Require Import ArmInst.
+
+From stdpp Require Import decidable list vector.
+From stdpp Require Import pretty.
+
+
+#[local] Open Scope stdpp.
 
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)
@@ -228,14 +231,14 @@ Module Memory.
 
 
 
-  (** To a snapshot of the memory back to a memoryMap *)
+  (** Transform a promising initial memory and memory history back to a
+      TermModel memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
     fun pa =>
-      (loc ← Loc.from_pa_in pa;
+      let loc := Loc.from_pa_in pa in
       let '(v, _) := read_last loc init mem in
-      index ← Loc.pa_index pa;
-      bv_to_bytes 8 v !! bv_unsigned index)
-        |> default (bv_0 8).
+      let index := Loc.pa_index pa in
+      bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
 
   (** Adds the view number to each message given a view for the last message.
       This is for convenient use with cut_after.
@@ -423,84 +426,126 @@ Module Reg.
         end|}.
   Next Obligation. intros []; by try rewrite decode_encode. Qed.
 
-  (* TODO generate that automatically? *)
-  Definition from_arch (r : reg) :=
+  (* for i in range (0, 31):
+         print(f"    | R{i} => Some (App (R {i}))")*)
+  Definition from_arch (r : reg) : option t :=
     match r with
-    | "PC_" => Some PC
-    | "R0" => Some (App (R 0))
-    | "R1" => Some (App (R 1))
-    | "R2" => Some (App (R 2))
-    | "R3" => Some (App (R 3))
-    | "R4" => Some (App (R 4))
-    | "R5" => Some (App (R 5))
-    | "R6" => Some (App (R 6))
-    | "R7" => Some (App (R 7))
-    | "R8" => Some (App (R 8))
-    | "R9" => Some (App (R 9))
-    | "R10" => Some (App (R 10))
-    | "R11" => Some (App (R 11))
-    | "R12" => Some (App (R 12))
-    | "R13" => Some (App (R 13))
-    | "R14" => Some (App (R 14))
-    | "R15" => Some (App (R 15))
-    | "R16" => Some (App (R 16))
-    | "R17" => Some (App (R 17))
-    | "R18" => Some (App (R 18))
-    | "R19" => Some (App (R 19))
-    | "R20" => Some (App (R 20))
-    | "R21" => Some (App (R 21))
-    | "R22" => Some (App (R 22))
-    | "R23" => Some (App (R 23))
-    | "R24" => Some (App (R 24))
-    | "R25" => Some (App (R 25))
-    | "R26" => Some (App (R 26))
-    | "R27" => Some (App (R 27))
-    | "R28" => Some (App (R 28))
-    | "R29" => Some (App (R 29))
-    | "R30" => Some (App (R 30))
-    | "SP_EL0" => Some (App (SP 0))
-    | "SP_EL1" => Some (App (SP 1))
-    | "SP_EL2" => Some (App (SP 2))
-    | "SP_EL3" => Some (App (SP 3))
-    | "PSTATE" => Some (App PSTATE)
-    | "ELR_EL1" => Some (App (ELR 0))
-    | "ELR_EL2" => Some (App (ELR 1))
-    | "ELR_EL3" => Some (App (ELR 2))
-    | "ESR_EL1" => Some (Sys (ESR 0))
-    | "ESR_EL2" => Some (Sys (ESR 1))
-    | "ESR_EL3" => Some (Sys (ESR 2))
-    | "FAR_EL1" => Some (Sys (FAR 0))
-    | "FAR_EL2" => Some (Sys (FAR 1))
-    | "FAR_EL3" => Some (Sys (FAR 2))
-    | "PAR_EL1" => Some (Sys PAR)
-    | "TTBR0_EL1" => Some (Sys (TTBR0 0))
-    | "TTBR0_EL2" => Some (Sys (TTBR0 1))
-    | "TTBR0_EL3" => Some (Sys (TTBR0 2))
-    | "TTBR1_EL1" => Some (Sys (TTBR1 false))
-    | "TTBR1_EL2" => Some (Sys (TTBR1 true))
-    | "VBAR_EL1" => Some (Sys (VBAR 0))
-    | "VBAR_EL2" => Some (Sys (VBAR 1))
-    | "VBAR_EL3" => Some (Sys (VBAR 2))
-    | "VTTBR_EL2" => Some (Sys VTTBR)
-    | _ => None
+    | _PC => Some PC
+    | R0 => Some (App (R 0))
+    | R1 => Some (App (R 1))
+    | R2 => Some (App (R 2))
+    | R3 => Some (App (R 3))
+    | R4 => Some (App (R 4))
+    | R5 => Some (App (R 5))
+    | R6 => Some (App (R 6))
+    | R7 => Some (App (R 7))
+    | R8 => Some (App (R 8))
+    | R9 => Some (App (R 9))
+    | R10 => Some (App (R 10))
+    | R11 => Some (App (R 11))
+    | R12 => Some (App (R 12))
+    | R13 => Some (App (R 13))
+    | R14 => Some (App (R 14))
+    | R15 => Some (App (R 15))
+    | R16 => Some (App (R 16))
+    | R17 => Some (App (R 17))
+    | R18 => Some (App (R 18))
+    | R19 => Some (App (R 19))
+    | R20 => Some (App (R 20))
+    | R21 => Some (App (R 21))
+    | R22 => Some (App (R 22))
+    | R23 => Some (App (R 23))
+    | R24 => Some (App (R 24))
+    | R25 => Some (App (R 25))
+    | R26 => Some (App (R 26))
+    | R27 => Some (App (R 27))
+    | R28 => Some (App (R 28))
+    | R29 => Some (App (R 29))
+    | R30 => Some (App (R 30))
+    | SP_EL0 => Some (App (SP 0))
+    | SP_EL1 => Some (App (SP 1))
+    | SP_EL2 => Some (App (SP 2))
+    | SP_EL3 => Some (App (SP 3))
+    | System_types.PSTATE => Some (App PSTATE)
+    | ELR_EL1 => Some (App (ELR 0))
+    | ELR_EL2 => Some (App (ELR 1))
+    | ELR_EL3 => Some (App (ELR 2))
+    | ESR_EL1 => Some (Sys (ESR 0))
+    | ESR_EL2 => Some (Sys (ESR 1))
+    | ESR_EL3 => Some (Sys (ESR 2))
+    | FAR_EL1 => Some (Sys (FAR 0))
+    | FAR_EL2 => Some (Sys (FAR 1))
+    | FAR_EL3 => Some (Sys (FAR 2))
+    | PAR_EL1 => Some (Sys PAR)
+    | TTBR0_EL1 => Some (Sys (TTBR0 0))
+    | TTBR0_EL2 => Some (Sys (TTBR0 1))
+    | TTBR0_EL3 => Some (Sys (TTBR0 2))
+    | TTBR1_EL1 => Some (Sys (TTBR1 false))
+    | TTBR1_EL2 => Some (Sys (TTBR1 true))
+    | VBAR_EL1 => Some (Sys (VBAR 0))
+    | VBAR_EL2 => Some (Sys (VBAR 1))
+    | VBAR_EL3 => Some (Sys (VBAR 2))
+    | VTTBR_EL2 => Some (Sys VTTBR)
     end.
 
-  Definition to_arch (reg : t) : Arm.Arch.reg :=
-    match reg with
-    | PC => "PC_"
-    | App (R n) => "R" ++ (pretty n)
-    | App (SP n) => "SP_EL" ++ (pretty n)
-    | App PSTATE => "PSTATE"
-    | App (ELR n) => "ELR_EL" ++ (pretty (S n))
-    | Sys (ESR n) => "ESR_EL" ++ (pretty (S n))
-    | Sys (FAR n) => "FAR_EL" ++ (pretty (S n))
-    | Sys PAR => "PAR_EL1"
-    | Sys (TTBR0 n) => "TTBR0_EL" ++ (pretty (S n))
-    | Sys (TTBR1 false) => "TTBR1_EL1"
-    | Sys (TTBR1 true) => "TTBR1_EL2"
-    | Sys (VBAR n) => "VBAR_EL" ++ (pretty (S n))
-    | Sys VTTBR => "VTTBR_EL2"
-    end.
+
+  Equations to_arch : t → Arm.Arch.reg :=
+  | PC => _PC;
+  | App (R 0) => R0;
+  | App (R 1) => R1;
+  | App (R 2) => R2;
+  | App (R 3) => R3;
+  | App (R 4) => R4;
+  | App (R 5) => R5;
+  | App (R 6) => R6;
+  | App (R 7) => R7;
+  | App (R 8) => R8;
+  | App (R 9) => R9;
+  | App (R 10) => R10;
+  | App (R 11) => R11;
+  | App (R 12) => R12;
+  | App (R 13) => R13;
+  | App (R 14) => R14;
+  | App (R 15) => R15;
+  | App (R 16) => R16;
+  | App (R 17) => R17;
+  | App (R 18) => R18;
+  | App (R 19) => R19;
+  | App (R 20) => R20;
+  | App (R 21) => R21;
+  | App (R 22) => R22;
+  | App (R 23) => R23;
+  | App (R 24) => R24;
+  | App (R 25) => R25;
+  | App (R 26) => R26;
+  | App (R 27) => R27;
+  | App (R 28) => R28;
+  | App (R 29) => R29;
+  | App (R 30) => R30;
+  | App (SP 0) => SP_EL0;
+  | App (SP 1) => SP_EL1;
+  | App (SP 2) => SP_EL2;
+  | App (SP 3) => SP_EL3;
+  | App PSTATE => System_types.PSTATE;
+  | App (ELR 0) => ELR_EL1;
+  | App (ELR 1) => ELR_EL2;
+  | App (ELR 2) => ELR_EL3;
+  | Sys (ESR 0) => ESR_EL1;
+  | Sys (ESR 1) => ESR_EL2;
+  | Sys (ESR 2) => ESR_EL3;
+  | Sys (FAR 0) => FAR_EL1;
+  | Sys (FAR 1) => FAR_EL2;
+  | Sys (FAR 2) => FAR_EL3;
+  | Sys PAR => PAR_EL1;
+  | Sys (TTBR0 0) => TTBR0_EL1;
+  | Sys (TTBR0 1) => TTBR0_EL2;
+  | Sys (TTBR0 2) => TTBR0_EL3;
+  | Sys (TTBR1 false) => TTBR1_EL1;
+  | Sys (TTBR1 true) => TTBR1_EL2;
+  | Sys (VBAR 0) => VBAR_EL1;
+  | Sys (VBAR 1) => VBAR_EL2;
+  | Sys (VBAR 2) => VBAR_EL3;
+  | Sys VTTBR => VTTBR_EL2.
 
 
   Ltac fin_case :=
@@ -510,16 +555,10 @@ Module Reg.
     end.
 
   Lemma to_from_arch (reg : t) : from_arch (to_arch reg) = Some reg.
-  Proof.
-    destruct reg as [|[]|[]]; unfold EL,ELp in *;
-      repeat (deintro; intro n; dependent destruction n) || reflexivity.
-  Qed.
+  Proof. funelim (to_arch reg); cbn; reflexivity. Qed.
 
   Lemma from_to_arch (r : reg) (r' : t) : (from_arch r) = Some r' -> to_arch r' = r.
-  Proof.
-    intro H.
-    unfold from_arch in H.
-    repeat (discriminate H || case_split); inversion H; vm_compute; reflexivity.
+  Proof. destruct r as [_ [[]]]; cdestruct r' |- ***.
   Qed.
 
 End Reg.
@@ -530,7 +569,7 @@ Module WSReg.
   Record t :=
     make {
         sreg : Reg.sys;
-        val : regval;
+        val : bv 64;
         view : nat
       }.
 
@@ -549,8 +588,8 @@ Module TState.
         prom : list view;
 
         (* registers values and views *)
-        pc : regval;
-        regs : Reg.app -> regval * view;
+        pc : bv 64;
+        regs : Reg.app -> bv 64 * view;
         regs_init : registerMap;
         sregs : list WSReg.t;
 
@@ -599,7 +638,7 @@ Module TState.
     ({|
       prom := [];
       pc := iregs (Reg.to_arch Reg.PC);
-      regs := fun reg => (iregs (Reg.to_arch reg), 0);
+      regs := fun reg => (regt_to_bv64 (iregs (Reg.to_arch reg)), 0);
       regs_init := iregs;
       sregs := []; (* latest event at the top of the list *)
       coh := fun loc => 0;
@@ -629,12 +668,12 @@ Module TState.
          |> filter (fun wsreg => wsreg.(WSReg.sreg) = sreg)
          |> hd_error
          |> fmap (M:= option) WSReg.to_val_view
-         |> default (ts.(regs_init) (Reg.to_arch sreg), 0%nat).
+         |> default (ts.(regs_init) (Reg.to_arch sreg)|> regt_to_bv64, 0%nat).
 
   (** Read all possible system register values for sreg assuming the last
       synchronization at position sync *)
   Definition read_sreg (ts : t) (sync : nat) (sreg : Reg.sys)
-    : list (regval * view)
+    : list (bv 64 * view)
     :=
     let rest :=
       ts.(sregs)
@@ -644,12 +683,12 @@ Module TState.
     in (read_sreg_last ts sync sreg) :: rest.
 
   (** Read uniformly a register of any kind. *)
-  Definition read_reg (ts : t) (r : reg) : regval * view :=
+  Definition read_reg (ts : t) (r : reg) : bv 64 * view :=
     match Reg.from_arch r with
     | Some Reg.PC => (ts.(pc),0%nat)
     | Some (Reg.App app) => ts.(regs) app
     | Some (Reg.Sys sys) => read_sreg_last ts (sreg_cur ts) sys
-    | None => (ts.(regs_init) r, 0%nat)
+    | None => (ts.(regs_init) r |> regt_to_bv64, 0%nat)
     end.
 
 
@@ -657,10 +696,10 @@ Module TState.
       This is used to decide if a thread has terminated, and to observe the
       results of the model *)
   Definition reg_map (ts : t) : registerMap :=
-    λ r, (read_reg ts r).1.
+    λ r, regt_of_bv64 (read_reg ts r).1.
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : Reg.app) (rv : regval * view) : t -> t
+  Definition set_reg (reg : Reg.app) (rv : bv 64 * view) : t -> t
     := set regs (fun_add reg rv).
 
   (** Sets the coherence view of a location *)
@@ -737,7 +776,7 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
   bv_extract 9 (n - 9) va.
 
 Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
-  bv_concat 49 (bv_extract 9 40 loc) index.
+  bv_concat 53 (bv_extract 9 44 loc) index.
 
 (*** TLB ***)
 
@@ -1168,8 +1207,8 @@ Definition run_mem_read4 (rr : ReadReq.t 4) (iis : IIS.t)
   (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
   : Exec.t string (bv 32) :=
   let addr := rr.(ReadReq.pa) in
-  let aligned_addr := set FullAddress_address (bv_unset_bit 2) addr in
-  let bit2 := addr.(FullAddress_address) |> bv_get_bit 2 in
+  let aligned_addr := bv_unset_bit 2 addr in
+  let bit2 := addr |> bv_get_bit 2 in
   loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
   match rr.(ReadReq.access_kind) with
   | AK_ifetch () =>
@@ -1287,21 +1326,21 @@ Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
   end.
 
 Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
-  (tlbi : TLBI) (mem : Memory.t)
+  (tlbi : TLBIInfo) (mem : Memory.t)
   : Exec.t string (IIS.t * TState.t * Memory.t) :=
   guard_or
     "Non-shareable TLBIs are not supported"
-    (tlbi.(TLBI_shareability) = Shareability_NSH);;
+    (tlbi.(TLBIInfo_shareability) = Shareability_NSH);;
   guard_or
     "TLBIs in other regimes than EL10 are unsupported"
-    (tlbi.(TLBI_rec).(TLBIRecord_regime) ≠ Regime_EL10);;
-  let asid := tlbi.(TLBI_rec).(TLBIRecord_asid) in
-  let last := tlbi.(TLBI_rec).(TLBIRecord_level) =? TLBILevel_Last in
-  let va := bv_extract 12 36 (tlbi.(TLBI_rec).(TLBIRecord_address)) in
+    (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) ≠ Regime_EL10);;
+  let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
+  let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
+  let va := bv_extract 12 36 (tlbi.(TLBIInfo_rec).(TLBIRecord_address)) in
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
               ⊔ view in
   '(tlbiev : TLBI.t) ←
-    match tlbi.(TLBI_rec).(TLBIRecord_op) with
+    match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
     | TLBIOp_VAA => mret $ TLBI.Vaa tid va last
@@ -1339,10 +1378,10 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
       | Some Reg.PC =>
           let ts := ts
                     |> TState.update TState.vspec vreg
-                    |> setv TState.pc val in
+                    |> setv TState.pc (regt_to_bv64 val) in
           mret (ts, mem, iis, ())
       | Some (Reg.App app) =>
-          let ts := TState.set_reg app (val, vreg) ts in
+          let ts := TState.set_reg app (regt_to_bv64 val, vreg) ts in
           mret (ts, mem, iis, ())
       | Some (Reg.Sys sys) => mthrow "TODO"
       | None => mthrow "Writing to unsupported system register"

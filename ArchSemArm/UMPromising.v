@@ -64,74 +64,56 @@ Require Import ArmInst.
 
     So in order to get the physical address you need to append 3 zeros. *)
 Module Loc.
-  Definition t := bv 49.
+  Definition t := bv 53.
 
   #[global] Instance dec : EqDecision t.
   Proof. unfold t. solve_decision. Defined.
 
   (** Convert a location into an ARM physical address *)
-  Definition to_pa (loc : t) : FullAddress :=
-    {|FullAddress_paspace := PAS_NonSecure;
-      FullAddress_address := bv_concat 52 loc (bv_0 3)
-    |}.
+  Definition to_pa (loc : t) : pa := bv_concat 56 loc (bv_0 3).
 
 
   (** Recover a location from an ARM physical address. *)
-  Definition from_pa (pa : FullAddress) : option t :=
-    match FullAddress_paspace pa with
-    | PAS_NonSecure =>
-        let bvaddr := FullAddress_address pa in
-        if bv_extract 0 3 bvaddr =? bv_0 3 then
-          Some (bv_extract 3 49 bvaddr)
-        else None
-    | _ => None
-    end.
+  Definition from_pa (pa : pa) : option t :=
+    if bv_extract 0 3 pa =? bv_0 3 then
+      Some (bv_extract 3 53 pa)
+    else None.
 
-  Lemma to_from_pa (pa : FullAddress) (loc : t) :
-    from_pa pa = Some loc -> to_pa loc = pa.
+  Lemma to_from_pa (pa : pa) (loc : t) :
+    from_pa pa = Some loc → to_pa loc = pa.
   Proof.
     unfold from_pa,to_pa.
-    hauto inv:FullAddress b!:on solve:bv_solve' simp+:f_equal.
- Qed.
+    pa_unfold.
+    unfold t in *.
+    cdestruct loc |- ** #CDestrMatch.
+    bv_solve'.
+  Qed.
 
   Lemma from_to_pa (loc : t) : from_pa (to_pa loc) = Some loc.
     unfold from_pa, to_pa.
-    hauto b!:on solve:bv_solve' simp+:f_equal.
+    hauto solve:bv_solve'.
   Qed.
 
   (** Convert a location to a list of covered physical addresses *)
-  Definition to_pas (loc : t) : list FullAddress := pa_range (to_pa loc) 8.
+  Definition to_pas (loc : t) : list pa := pa_range (to_pa loc) 8.
 
   (** Give the location containing a pa *)
-  Definition from_pa_in (pa : FullAddress) : option t :=
-    match FullAddress_paspace pa with
-    | PAS_NonSecure =>
-        let bvaddr := FullAddress_address pa in
-          Some (bv_extract 3 49 bvaddr)
-    | _ => None
-    end.
+  Definition from_pa_in (pa : pa) : t := bv_extract 3 53 pa.
 
   (** Give the index of a pa inside its containing 8-bytes word *)
-  Definition pa_index (pa : FullAddress) : option (bv 3) :=
-    match FullAddress_paspace pa with
-    | PAS_NonSecure =>
-        let bvaddr := FullAddress_address pa in
-          Some (bv_extract 0 3 bvaddr)
-    | _ => None
-    end.
+  Definition pa_index (pa : pa) : bv 3 := bv_extract 0 3 pa.
 
   Lemma from_pa_pa_in pa loc :
-    from_pa pa = Some loc -> from_pa_in pa = Some loc.
-    Proof. unfold from_pa,from_pa_in. hauto. Qed.
+    from_pa pa = Some loc → from_pa_in pa = loc.
+  Proof. unfold from_pa,from_pa_in. hauto. Qed.
 
   Lemma from_pa_in_to_pas loc :
-    ∀ pa ∈ to_pas loc, from_pa_in pa = Some loc.
+    ∀ pa ∈ to_pas loc, from_pa_in pa = loc.
   Proof.
     unfold from_pa_in, to_pas, pa_range.
     set_unfold.
     cdestruct |- **.
-    cbn.
-    f_equal.
+    unfold t in *.
     bv_solve.
   Qed.
 
@@ -141,7 +123,7 @@ Module Loc.
 
   Definition from_va (addr : bv 64) : option t :=
     if bv_extract 0 3 addr =? bv_0 3 then
-      Some (bv_extract 3 49 addr)
+      Some (bv_extract 3 53 addr)
     else None.
 
 End Loc.
@@ -215,14 +197,14 @@ Module Memory.
     end.
 
 
-  (** To a snapshot of the memory back to a memoryMap *)
+  (** Transform a promising initial memory and memory history back to a
+      TermModel memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
-    fun pa =>
-      (loc ← Loc.from_pa_in pa;
+    λ pa,
+      let loc := Loc.from_pa_in pa in
       let '(v, _) := read_last loc init mem in
-      index ← Loc.pa_index pa;
-      bv_to_bytes 8 v !! bv_unsigned index)
-        |> default (bv_0 8).
+      let index := Loc.pa_index pa in
+      bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
 
   (** Adds the view number to each message given a view for the last message.
       This is for convenient use with cut_after.
@@ -298,7 +280,7 @@ Module TState.
         prom : list view;
 
         (* regs values and views *)
-        regs : reg -> regval * view;
+        regs : ∀ reg, reg_type reg * view;
 
         (* The coherence views *)
         coh : Loc.t -> view;
@@ -352,7 +334,7 @@ Module TState.
 
   (** Sets the value of a register *)
   Definition set_reg (reg : reg) (rv : (reg_type reg) * view) : t -> t
-    := set regs (fun_add reg rv).
+    := set regs (dfun_add reg rv).
 
   (** Sets the coherence view of a location *)
   Definition set_coh (loc : Loc.t) (v : view) : t -> t :=
