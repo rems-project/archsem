@@ -129,6 +129,25 @@ End PM.
 Arguments t : clear implicits.
 End PromMemory.
 
+(* Partial Promising State *)
+Module PPState.
+  Section PPS.
+  Context {tState : Type}.
+  Context {mEvent : Type}.
+  Context {iis_t : Type}.
+
+  Record t :=
+    Make {
+        state : tState;
+        mem : PromMemory.t mEvent;
+        iis : iis_t;
+      }.
+  #[global] Instance eta : Settable t :=
+    settable! @Make <state;mem;iis>.
+  End PPS.
+  Arguments t : clear implicits.
+End PPState.
+
 (* to be imported *)
 Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   Import IWA.Arch.
@@ -146,7 +165,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       mEvent : Type;
       handler : (* tid *) nat → memoryMap →
                 fHandler outcome
-                  (Exec.t (tState * PromMemory.t mEvent * iis) string);
+                  (Exec.t (PPState.t tState mEvent iis) string);
       allowed_promises : (* tid *) nat → memoryMap → tState →
                          PromMemory.t mEvent → propset mEvent;
       (** I'm not considering that emit_promise can fail or have a
@@ -234,14 +253,24 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       (** Check if all threads have no outstanding promises *)
       Definition nopromises (ps : t) := fforallb (nopromises_tid ps).
 
+      Definition PState_PPState tid (pst : t) :
+          PPState.t tState mEvent prom.(iis) :=
+        PPState.Make (tstate tid pst) pst.(events) prom.(iis_init).
+
+      Instance PState_PPState_set tid : Setter (PState_PPState tid) :=
+        λ update_ppst pst,
+          let ppst := PState_PPState tid pst |> update_ppst in
+          pst
+          |> setv (tstate tid) ppst.(PPState.state)
+          |> setv events ppst.(PPState.mem).
+
       (** Run on instruction in specific thread by tid *)
       Definition run_tid (tid : fin n) : Exec.t t string () :=
         st ←@{Exec.t t string} mGet;
         let handler := prom.(handler) tid (st.(initmem)) in
         let sem := (isem.(semantic) (istate tid st)) in
         let init := (tstate tid st, st.(events), prom.(iis_init)) in
-        ist ← Exec.liftSt
-                (tstate tid ×× events ×× const_getter prom.(iis_init))
+        ist ← Exec.liftSt (PState_PPState tid)
                 (cinterp handler sem);
         msetv (istate tid) ist.
 
