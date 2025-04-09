@@ -13,7 +13,7 @@
    VMSA22Arm
    VMUMEquivThm
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem)
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem SailTinyArm)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
                --external ../../Common/ASCommon.html ASCommon
@@ -23,7 +23,5 @@
 )
 
 ; This alias is useful to build all the coq libaries without extraction
-(alias
- (name coq)
- (deps (alias_rec all))
-)
+(alias (name coq) (deps (alias all)))
+(alias (name default) (deps (alias all)))

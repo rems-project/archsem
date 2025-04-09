@@ -48,6 +48,7 @@ Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
+Require Import SailTinyArm.System_types.
 
 Import Candidate.
 
@@ -229,8 +230,10 @@ Section VMSAArm.
   (*** TLBI *)
   (* armv9-interface/tlbi.cat *)
 
-  Definition is_tlbi_op  (tlbiop : TLBIOp) (tlbop : SailArmInstTypes.TLBI) :=
-    tlbop.(TLBI_rec).(TLBIRecord_op) = tlbiop.
+  (* Check SailTinyArm_types.TLBI. *)
+
+  Definition is_tlbi_op  (tlbiop : TLBIOp) (tlbop : TLBIInfo) :=
+    tlbop.(TLBIInfo_rec).(TLBIRecord_op) = tlbiop.
 
   Definition has_tlbi_op (event : iEvent) (tlbiop : TLBIOp) :=
     is_tlbopP (is_tlbi_op tlbiop) event.
@@ -270,8 +273,8 @@ Section VMSAArm.
     collect_all (λ _ event, has_tlbi_op event TLBIOp_IPAS2) cd.
 
   (** regime *)
-  Definition is_tlbi_regime (reg : Regime) (tlbop : SailArmInstTypes.TLBI) :=
-    tlbop.(TLBI_rec).(TLBIRecord_regime) = reg.
+  Definition is_tlbi_regime (reg : Regime) (tlbop : TLBIInfo) :=
+    tlbop.(TLBIInfo_rec).(TLBIRecord_regime) = reg.
 
   Definition has_tlbi_regime (event : iEvent) (reg : Regime) :=
     is_tlbopP (is_tlbi_regime reg) event.
@@ -285,8 +288,8 @@ Section VMSAArm.
 
   (** shareability *)
   Definition is_tlbi_shareability (share : Shareability)
-    (tlbop : SailArmInstTypes.TLBI) :=
-    tlbop.(TLBI_shareability) = share.
+    (tlbop : TLBIInfo) :=
+    tlbop.(TLBIInfo_shareability) = share.
 
   Definition has_tlbi_shareability (event : iEvent) (share : Shareability) :=
     is_tlbopP (is_tlbi_shareability share) event.
@@ -304,10 +307,12 @@ Section VMSAArm.
     *)
   Definition same_translation : grel EID.t := same_instruction_instance cd.
 
+
   Definition get_vmid (event : iEvent) :=
     match event with
-    | TlbOp tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_vmid))
-    | MemRead _ rreq &→ _ => (rreq.(ReadReq.translation).(TranslationInfo_vmid))
+    | TlbOp tlbop &→ _ => Some (tlbop.(TLBIInfo_rec).(TLBIRecord_vmid))
+    | MemRead _ rreq &→ _ => (ti ← rreq.(ReadReq.translation);
+                              ti.(TranslationInfo_vmid))
     | _ => None
     end.
 
@@ -316,8 +321,9 @@ Section VMSAArm.
 
   Definition get_asid (event : iEvent) :=
     match event with
-    | TlbOp tlbop &→ _ => Some (tlbop.(TLBI_rec).(TLBIRecord_asid))
-    | MemRead _ rreq &→ _ => (rreq.(ReadReq.translation).(TranslationInfo_asid))
+    | TlbOp tlbop &→ _ => Some (tlbop.(TLBIInfo_rec).(TLBIRecord_asid))
+    | MemRead _ rreq &→ _ => (ti ← rreq.(ReadReq.translation);
+                              ti.(TranslationInfo_asid))
     | _ => None
     end.
 
@@ -345,7 +351,7 @@ Section VMSAArm.
                                   | Some va => Some (page_of_addr va)
                                   | None => None
                                   end
-    | TlbOp tlbop &→ _ => Some (page_of_addr (tlbop.(TLBI_rec)
+    | TlbOp tlbop &→ _ => Some (page_of_addr (tlbop.(TLBIInfo_rec)
                                                       .(TLBIRecord_address)))
     | _ => None
     end.
@@ -356,12 +362,12 @@ Section VMSAArm.
   Definition get_ipa_page (event : iEvent) :=
     match event with
     | MemRead _ rreq &→ _ =>
-        match (rreq.(ReadReq.translation).(TranslationInfo_s2info)) with
+        match (tr ← rreq.(ReadReq.translation); tr.(TranslationInfo_s2info)) with
         | Some (ipa, _) => Some (page_of_addr ipa)
         | None => None
         end
     | TlbOp tlbop &→ _ => Some (page_of_addr
-                                          (tlbop.(TLBI_rec).(TLBIRecord_address)))
+                                          (tlbop.(TLBIInfo_rec).(TLBIRecord_address)))
     | _ => None
     end.
 
@@ -384,12 +390,12 @@ Section VMSAArm.
     Implicit Type ev : iEvent.
 
     Definition is_faultP :=
-      is_take_exceptionP (λ e, if e.(Exn_fault) is Some f then P f else False).
+      is_take_exceptionP (λ e, if e is Some f then P f else False).
     Typeclasses Opaque is_faultP.
 
     Definition is_faultP_spec ev:
       is_faultP ev ↔
-        ∃ exn flt, ev = TakeException (Build_Exn exn (Some flt)) &→ () ∧ P flt.
+        ∃ flt, ev = TakeException (Some flt) &→ () ∧ P flt.
     Proof.
       clear - P ev.
       destruct ev as [[] fret];
@@ -432,14 +438,15 @@ Section VMSAArm.
       (λ _ event,
           is_faultP
             (λ fault, fault.(FaultRecord_write) = false
-                      ∧ fault.(FaultRecord_acctype) = AccType_ORDERED) event) cd.
+                                                    (* TODO fix acqpc *)
+                      ∧ fault.(FaultRecord_access).(AccessDescriptor_acqsc)) event) cd.
   (* armv9-interface/exceptions.cat#L106 *)
   Definition FaultFromReleaseW :=
     collect_all
       (λ _ event,
           is_faultP
             (λ fault, fault.(FaultRecord_write) = true
-                      ∧ fault.(FaultRecord_acctype) = AccType_ORDERED) event) cd.
+                      ∧ fault.(FaultRecord_access).(AccessDescriptor_relsc)) event) cd.
 
   (*** translation-common *)
 
@@ -447,7 +454,7 @@ Section VMSAArm.
 
   Definition has_translationinfo_P P `{forall ti, Decision (P ti)} (event : iEvent) :=
     match event with
-    | MemRead _ rreq &→ _ => P (rreq.(ReadReq.translation))
+    | MemRead _ rreq &→ _ => if (rreq.(ReadReq.translation)) is Some ti then P ti else False
     | _ => False
     end.
 

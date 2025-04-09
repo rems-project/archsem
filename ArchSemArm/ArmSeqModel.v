@@ -58,7 +58,7 @@ Context (regs_whitelist : option (gset reg)).
 Record seq_state := {
   initSt : MState.init 1;
   mem : gmap pa (bv 8);
-  regs : gmap reg regval;
+  regs : gmap reg (bv 64);
 }.
 
 Global Instance eta_seq_state : Settable seq_state :=
@@ -66,9 +66,9 @@ Global Instance eta_seq_state : Settable seq_state :=
 
 Notation seqmon := (stateT seq_state (Exec.t string)).
 
-Definition read_reg_seq_state (reg : reg) (seqst : seq_state) : regval :=
+Definition read_reg_seq_state (reg : reg) (seqst : seq_state) : reg_type reg:=
   if (seqst.(regs) !! reg) is Some v
-  then v
+  then regt_of_bv64 v
   else (seqst.(initSt).(MState.regs) !!! 0%fin) reg.
 
 Definition read_byte_seq_state_flag (seqst : seq_state) (pa : pa) : bv 8 * bool :=
@@ -97,9 +97,9 @@ Fixpoint write_mem_seq_state (pa : pa) (bytes : list (bv 8)) : seqmon unit :=
 
 (** Combines a gmap with a registerMap to a new registerMap that was updated
     with the values from the gmap *)
-Definition seq_state_to_init_regs (regs_map : gmap reg regval)
+Definition seq_state_to_init_regs (regs_map : gmap reg (bv 64))
   (regs_vec : vec registerMap 1) : vec registerMap 1 :=
-  [# (λ reg, if (regs_map !! reg) is Some v then v else (regs_vec !!! 0%fin) reg)].
+  [# (λ reg, if (regs_map !! reg) is Some v then regt_of_bv64 v else (regs_vec !!! 0%fin) reg)].
 
 (** Combines a gmap with a memoryMap to a new memoryMap that was updated with the
     values from the gmap *)
@@ -124,9 +124,9 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   | RegWrite reg racc val =>
     if regs_whitelist is Some rwl
     then if bool_decide (reg ∈ rwl)
-      then msetv (lookup reg ∘ regs) (Some val)
+      then msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
       else mthrow "Write to illegal register"
-    else msetv (lookup reg ∘ regs) (Some val)
+    else msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
   | MemRead n rr =>
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then

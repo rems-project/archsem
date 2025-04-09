@@ -16,7 +16,7 @@ projects or Rocq files (assuming you are using a Rocq setup from opam):
  - ArchSemRiscV (RISC-V instantiation)
 
 
-## Manual handling of Dependencies
+## Manual handling of dependencies
 
 ### Opam and ocaml
 
@@ -49,40 +49,30 @@ Due to Ltac2 version we don't think it will work with lower version of Rocq such
 as 8.18* and below. However modifications needed are probably minimal if you do
 need it.
 
+It has been reported that it doesn't build on Rocq 8.20 yet due to some
+Equations changes.
 
 ### Sail
 
-This project temporarily doesn't use Sail for technical reason, as generated files
-have been checked in, it will start using Sail again later. As reference the
-previous text is here:
+This project uses the version 0.19 of Sail. Pin with:
 
-> This project uses the head version of Sail that hasn't been released yet. The
-> simplest to get it to clone it somewhere
-> ```
-> git clone https://github.com/rems-project/sail
-> ```
->
-> Then, if you want the precise version of sail this project was tested
-> against, do:
-> ```
-> git checkout f421b04d
-> ```
->
-> Then you can install sail with `opam pin .` in the `sail` directory.
-
+```
+opam pin sail 0.19
+```
 
 ### Coq libraries
 
 #### Regular coq libraries
 
-Install via opam
+Install via opam:
+
 ```
 opam install coq-hammer-tactics coq-record-update coq-equations
 ```
 
 #### stdpp
 
-This development uses `stdpp` and its splitoff `stdpp-bitvector`. They can install by
+This development uses `stdpp` and `stdpp-bitvector`. They can be installed by
 
 ```
 opam pin coq-stdpp.1.11.0
@@ -91,11 +81,23 @@ opam pin coq-stdpp-bitvector.1.11.0
 
 #### Coq Sail (stdpp version)
 
-The Coq Sail library is now in its own repository, to get the tested version (just after 0.19), do:
+The Coq Sail library is now in its own repository, to get the tested version
+(just after 0.19), do the following command with the commit number in
+`coq-archsem.opam.template`:
 
 ```
-opam pin coq-sail-stdpp git+https://github.com/rems-project/coq-sail.git#6918e8f3d63494d9a0c3b7e8d57fa689527cdfc7
+opam pin coq-sail-stdpp git+https://github.com/rems-project/coq-sail.git#<commit number here>
+```
+
+#### Sail Tiny Arm (for the Arm instance)
+
+To install it, do the following command with the commit number in
+`coq-archsem-arm.opam.template`:
 
 ```
+opam pin coq-sail-tiny-arm git+https://github.com/rems-project/sail-tiny-arm.git#<commit number here>
+```
+
+
 
 
