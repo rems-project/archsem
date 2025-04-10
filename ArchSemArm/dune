@@ -2,7 +2,6 @@
  (name ArchSemArm)
  (package coq-archsem-arm)
  (modules
-   SailArmInstTypes
    ArmInst
    ArmSeqModel
    UMPromising
