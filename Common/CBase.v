@@ -956,27 +956,27 @@ Proof. rewrite <- ctrans_sym. simp ctrans. reflexivity. Qed.
 
 (** ** Computable transport combinators *)
 
-Instance pair_ctrans `{CTrans A F, CTrans A G} :
+Instance ctrans_prod `{CTrans A F, CTrans A G} :
     CTrans (λ x, F x * G x)%type | 100 :=
   λ a b e '(x, y), (ctrans e x, ctrans e y).
 
-Instance pair_ctrans_simpl `{CTransSimpl A F, CTransSimpl A G} :
+Instance ctrans_prod_simpl `{CTransSimpl A F, CTransSimpl A G} :
   CTransSimpl (λ x, F x * G x)%type | 100.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
 
-Instance pair_ctransl `{EqDecision A, CTrans A F} T :
+Instance ctrans_prodl `{EqDecision A, CTrans A F} T :
     CTrans (λ x, F x * T)%type | 50 :=
   λ a b e '(x, y), (ctrans e x, y).
 
-Instance pair_ctransl_simpl `{EqDecision A, CTransSimpl A F} T :
+Instance ctrans_prodl_simpl `{EqDecision A, CTransSimpl A F} T :
   CTransSimpl (λ x, F x * T)%type | 50.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
 
-Instance pair_ctransr `{EqDecision A, CTrans A F} T :
+Instance ctrans_prodr `{EqDecision A, CTrans A F} T :
     CTrans (λ x, T * F x)%type | 50 :=
   λ a b e '(x, y), (x, ctrans e y).
 
-Instance pair_ctransr_simpl `{EqDecision A, CTransSimpl A F} T :
+Instance ctrans_prodr_simpl `{EqDecision A, CTransSimpl A F} T :
   CTransSimpl (λ x, T * F x)%type | 50.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
 
