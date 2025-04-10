@@ -99,8 +99,15 @@ Arguments mcall {_ _ _} _ {_}.
 #[export] Instance: Params (@mcall) 2 := {}.
 #[export] Hint Mode MCall' - - ! ! : typeclass_instances.
 
-Hint Extern 1 (@MCall' ?Eff ?H (?M ?T) ?call) =>
-       notypeclasses refine (@mcallM Eff H M _ call): typeclass_instances.
+Hint Extern 1 (@MCall' ?Eff ?ER (?M ?T) ?call) =>
+       let MC := fresh "MC" in
+       enough (@MCall Eff ER M) as MC;
+         (* HACK: Sometime unification does weird stuff (like inferring a
+            unifiable but not typeclass unifiable type) when unifying with
+            [eff_ret _], the [cbn] tries to prevent that by computing the
+            [eff_ret _] directly before attempting unification with [exact] *)
+         [specialize (MC call); cbn in MC; exact MC |]: typeclass_instances.
+
 
 (** Call a non returning effect. This is not necessarily a failure, so this is
     not directly linked to [MThrow] *)
