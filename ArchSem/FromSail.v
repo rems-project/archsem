@@ -152,6 +152,12 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   Definition tlb_op_eq := SA.tlb_op_eq.
   Definition fault := SA.fault .
   Definition fault_eq := SA.fault_eq.
+  Definition trans_start := ∅%type.
+  #[export] Typeclasses Transparent trans_start.
+  Definition trans_start_eq : EqDecision trans_start := _.
+  Definition trans_end := ∅%type.
+  #[export] Typeclasses Transparent trans_end.
+  Definition trans_end_eq : EqDecision trans_end := _.
 End ArchFromSail.
 
 Module Type ArchFromSailT (SA : SailArch) (PAM : PAManip SA).

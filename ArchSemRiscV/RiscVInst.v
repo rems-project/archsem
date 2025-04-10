@@ -400,6 +400,12 @@ Module RiscV.
     Definition fault := ∅%type.
     #[export] Typeclasses Transparent fault.
     Definition fault_eq : EqDecision fault := _.
+    Definition trans_start := ∅%type.
+    #[export] Typeclasses Transparent trans_start.
+    Definition trans_start_eq : EqDecision trans_start := _.
+    Definition trans_end := ∅%type.
+    #[export] Typeclasses Transparent trans_end.
+    Definition trans_end_eq : EqDecision trans_end := _.
   End Arch.
   Module Interface := Interface Arch.
   (* Module IWA <: InterfaceWithArch. *)

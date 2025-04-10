@@ -213,7 +213,7 @@ Global Hint Extern 2 (TCFindEq ?x ?y) => (unfold TCFindEq in *; congruence) : ty
 
 (** Stupid but useful *)
 #[global] Instance Empty_set_eq_dec : EqDecision ∅.
-Proof. intros []. Qed. (* <- this one cannot be called so it can be opaque *)
+Proof. intros []. Defined.
 
 (** Decidable heterogeneous equality in the case the dependencies are equal.
     This is base building block for equality decision procedure of dependent

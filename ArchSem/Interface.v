@@ -198,6 +198,21 @@ Module Type Arch.
   Parameter fault_eq : EqDecision fault.
   #[export] Existing Instance fault_eq.
 
+  (** Payload for a translation start outcome. This should contain at least TLB
+      indexing information, in particular the VA *)
+  Parameter trans_start : Type.
+
+  Parameter trans_start_eq : EqDecision trans_start.
+  #[export] Existing Instance trans_start_eq.
+
+  (** Payload for a translation end outcome. This should contain at least the
+      output physical address (matching with the address field of memory
+      outcomes) *)
+  Parameter trans_end : Type.
+
+  Parameter trans_end_eq : EqDecision trans_end.
+  #[export] Existing Instance trans_end_eq.
+
 End Arch.
 
 (** * The Interface *)
@@ -409,6 +424,10 @@ Module Interface (A : Arch).
     (** Return from an exception to this address e.g. ERET (for Arm) or
         IRET (for x86) *)
   | ReturnException
+    (** Start a translation. In operational model this would start a TLB lookup *)
+  | TranslationStart (ts : trans_start)
+    (** End a translation and give the PA *)
+  | TranslationEnd (te : trans_end)
 
     (** Bail out when something went wrong. This is to represent ISA model
         incompleteness: When getting out of the range of supported
@@ -441,7 +460,7 @@ Module Interface (A : Arch).
     (* There is 2 non trivial cases where the return type depends on the content
        of the effect constructor *)
     - (* RegRead case *)
-      intros e. eapply ctrans. naive_solver.
+      intros e. eapply ctrans. abstract naive_solver.
     - (* MemRead case *)
       intros e [[b o]| a]; [left | right]; intuition.
       eapply ctrans; [| eassumption].
