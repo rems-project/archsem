@@ -347,6 +347,24 @@ Lemma Forall2_diag A (P : A → A → Prop) l:
   Forall2 P l l ↔ ∀ x ∈ l, P x x.
 Proof. induction l; sauto lq:on. Qed.
 
+(** ** filter_partition *)
+
+Fixpoint filter_partition {A} P `{∀ x : A, Decision (P x)} (l : list A) :
+    list A * list A :=
+  if l is a :: ar
+  then let '(p_list, not_p_list) := filter_partition P ar in
+    (if decide (P a) then (a :: p_list, not_p_list) else (p_list, a :: not_p_list))
+  else ([],[]).
+
+Lemma filter_partition_spec {A} P `{∀ x : A, Decision (P x)} (l : list A) :
+  filter_partition P l = (filter P l, filter (λ x, ¬ P x) l).
+Proof.
+  induction l; cbn; first done.
+  cdestruct |- *** as ?? #CDestrMatch #CDestrSplitGoal.
+  all: rewrite IHl.
+  all: cdestruct |- ***.
+Qed.
+
 (** ** fold_left invariant proofs *)
 
 (** Proofs along fold_left using an invariant.
