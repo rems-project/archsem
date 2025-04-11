@@ -164,6 +164,18 @@ Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St �
 Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A :=
   liftSt_full getter (@setv _ _ getter _) inner.
 
+Definition partial_liftSt {St St' E A} (P : St → Prop) `{∀ st, Decision (P st)}
+    (e : E)
+    (getter : ∀ st : St, P st → St') (setter : St' → St → St)
+    (inner : Exec.t St' E A) : Exec.t St E A :=
+  λ st,
+    if decide (P st) is left H_P
+    then let inner_res := inner (getter st H_P) in
+      make ((λ '(st',a), (setter st' st, a)) <$> inner_res.(results))
+           ((λ '(st',a), (setter st' st, a)) <$> inner_res.(errors))
+    else
+      make [] [(st,e)].
+
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).
 #[global] Typeclasses Opaque elem_of_results.
@@ -190,6 +202,10 @@ Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (in
 (** Takes an option but convert None into an error *)
 Definition error_none {St E A} (e : E) : option A -> t St E A :=
   from_option mret (mthrow e).
+
+(** Takes a list but convert Nil into an error *)
+Definition error_Nil {St E A} (e : E) (l : list A) : t St E (A * list A) :=
+  if l is a :: ar then mret (a,ar) else mthrow e.
 
 (** Takes an option but convert None into a discard *)
 Definition discard_none {St E A} : option A -> t St E A :=

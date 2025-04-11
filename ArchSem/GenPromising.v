@@ -128,6 +128,7 @@ Section PM.
 End PM.
 Arguments t : clear implicits.
 End PromMemory.
+#[export] Typeclasses Transparent PromMemory.t.
 
 (* Partial Promising State *)
 Module PPState.
