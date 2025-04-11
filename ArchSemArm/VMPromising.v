@@ -270,8 +270,10 @@ Module Memory.
     lasts ++ [first].
 
   (** Promise a write and add it at the end of memory *)
-  Definition promise (ev : Ev.t) (mem : t) : view * t :=
-    let nmem := ev :: mem in (List.length nmem, nmem).
+  Definition promise (ev : Ev.t) : Exec.t t string view :=
+    mSet (St := t) (cons ev);;
+    mem ← mcall (@MGet t);
+    mret (List.length mem).
 
   (** Returns a view among a promise set that correspond to an event. The
       oldest matching view is taken. This is because it can be proven that
@@ -1051,12 +1053,11 @@ Module IIS.
     #[global] Instance eta : Settable _ :=
       settable! make <time; remaining; invalidation>.
 
-    Definition pop (tr : t) : Exec.t string (bv 64 * t) :=
-      match tr.(remaining) with
-      | h :: tl => mret (h, setv remaining tl tr)
-      | _ => mthrow
-              "Couldn't pop the next PTE: error in translation assumptions"
-      end.
+    Definition pop : Exec.t t string (bv 64) :=
+      remain ← mget remaining;
+      '(h, tl) ← remain |> Exec.error_Nil "Couldn't pop the next PTE: error in translation assumptions";
+      msetv remaining tl;;
+      mret h.
   End TransRes.
 
   Record t :=
@@ -1095,12 +1096,13 @@ Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
-  (invalidation_time : nat) (ak : Explicit_access_kind) (ts : TState.t)
+  (invalidation_time : nat) (ak : Explicit_access_kind)
   (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * view * val) :=
+  : Exec.t TState.t string (view * val) :=
   let acs := ak.(Explicit_access_kind_strength) in
   let acv := ak.(Explicit_access_kind_variety) in
   guard_or "Atomic RMV unsupported" (acv =? AV_atomic_rmw);;
+  ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
@@ -1115,71 +1117,67 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
     if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time in
   let vpost := vpre ⊔ read_view in
   guard_discard (vpost <= invalidation_time)%nat;;
-  let ts :=
-    ts |> TState.update_coh loc time
-       |> TState.update TState.vrd vpost
-       |> TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost)
-       |> TState.update TState.vspec vaddr
-       |> (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id)
-  in mret (ts, vpost, res).
+  mSet $ TState.update_coh loc time;;
+  mSet $ TState.update TState.vrd vpost;;
+  mSet $ TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost);;
+  mSet $ TState.update TState.vspec vaddr;;
+  mSet $ (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id);;
+  mret (vpost, res).
 
-Definition read_pte (ts : TState.t) (vaddr : view)
-  (tsum : translation) (tres : IIS.TransRes.t)
-  : Exec.t string (TState.t * view * val * IIS.TransRes.t) :=
+Definition read_pte (vaddr : view)
+  (tsum : translation)
+  : Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
+  tres ← mget snd;
   let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
-  '(val, tres) ← IIS.TransRes.pop tres;
-  let ts := ts |> TState.update TState.vspec vpost in
-  mret (ts, vpost, val, tres).
-
-
-
+  val ← Exec.liftSt snd IIS.TransRes.pop;
+  mset fst $ TState.update TState.vspec vpost;;
+  mret (vpost, val).
+Search (option ?A → ?A).
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (rr : ReadReq.t 8) (iis : IIS.t)
-  (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * IIS.t * val) :=
+Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) (mem : Memory.t) :
+    Exec.t (TState.t * IIS.t) string val :=
   addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
+  iis ← mget snd;
   let vaddr := iis.(IIS.strict) in
   let va : bv 64 := default (Loc.to_va addr) rr.(ReadReq.va) in
-  let trans_res := iis.(IIS.trs) !! (bv_extract 12 36 va) in
-  let inv :=
-    trans_res |> fmap (fun tr => tr.(IIS.TransRes.invalidation)) |> default (0 % nat)
-  in
   match rr.(ReadReq.access_kind) with
   | AK_explicit eak =>
-      '(ts, view, val) ← read_mem_explicit addr vaddr inv eak ts init mem;
-      let iis := IIS.add view iis in
-      mret (ts, iis, val)
+      trans_res ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ snd);
+      let inv :=
+        trans_res |> fmap (fun tr => tr.(IIS.TransRes.invalidation)) |> default (0 % nat)
+      in
+      '(view, val) ← Exec.liftSt fst $ read_mem_explicit addr vaddr inv eak init mem;
+      mset snd $ IIS.add view;;
+      mret val
   | AK_ttw () =>
-      tres ← Exec.error_none "TTW read before translation start" trans_res;
-      '(ts, view, val, tres) ←
-        read_pte ts vaddr rr.(ReadReq.translation) tres;
-      let iis :=
-        iis |> IIS.add view
-          |> IIS.set_trs (bv_extract 12 36 va) tres
-      in mret (ts, iis, val)
+      '(view, val) ← Exec.partial_liftSt
+                      (λ '(ts,iis), if iis.(IIS.trs) !! (bv_extract 12 36 va) then True else False)
+                      "TTW read before translation start"
+                      (λ '(ts,iis) H_some, (ts, unfold_if_Some H_some))
+                      (λ '(ts,tres) '(_,iis), (ts, IIS.set_trs (bv_extract 12 36 va) tres iis))
+                      $ read_pte vaddr rr.(ReadReq.translation);
+      mset snd $ IIS.add view;;
+      mret val
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
   | _ => mthrow "Only ifetch, ttw and explicit accesses supported"
   end.
 
-
-Definition run_mem_read4 (rr : ReadReq.t 4) (iis : IIS.t)
-  (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (bv 32) :=
-  let addr := rr.(ReadReq.pa) in
-  let aligned_addr := set FullAddress_address (bv_unset_bit 2) addr in
-  let bit2 := addr.(FullAddress_address) |> bv_get_bit 2 in
-  loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
+Definition run_mem_read4 (rr : ReadReq.t 4) (init : Memory.initial) :
+    Exec.t Memory.t string (bv 32) :=
   match rr.(ReadReq.access_kind) with
   | AK_ifetch () =>
+      let addr := rr.(ReadReq.pa) in
+      let aligned_addr := set FullAddress_address (bv_unset_bit 2) addr in
+      let bit2 := addr.(FullAddress_address) |> bv_get_bit 2 in
+      loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
+      mem ← mGet;
       block ← Exec.error_none "Modified instruction memory"
                               (Memory.read_initial loc init mem);
-      (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-        |> mret
+      mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   | _ => mthrow "4 bytes accesses unsupported (except ifetch)"
   end.
-
 
 
 (** Performs a memory write for a thread tid at a location loc with view
@@ -1188,9 +1186,11 @@ Definition run_mem_read4 (rr : ReadReq.t 4) (iis : IIS.t)
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
            (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
-           (data : val) : Exec.t string (TState.t * Memory.t * view):=
+           (data : val) : Exec.t (TState.t * Memory.t) string view:=
   let msg := Msg.make tid loc data in
   let is_release := acs =? AS_rel_or_acq in
+  mem ← mget snd;
+  '(time, mem) ← from_option (., mem)
   let '(time, mem) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem)
