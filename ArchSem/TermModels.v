@@ -283,7 +283,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
       Definition from_exec {St n} (e : Exec.t St string (MState.final n)) (st : St) :
           listset (t ∅ n) :=
-        e st |> Exec.to_result_list |$> snd |$> from_result |> Listset.
+        e st |> Exec.to_stateful_result_list |$> snd |$> from_result |> Listset.
 
     End Res.
 
