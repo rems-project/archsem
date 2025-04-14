@@ -491,7 +491,7 @@ Module IIS.
     iis |> set strict (max v).
 
 End IIS.
-About PPState.t.
+
 (** Runs an outcome. *)
 Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
@@ -591,10 +591,10 @@ Definition UMPromising_nocert isem :=
   : relation (TState.t * PromMemory.t Msg.t) :=
   let handler := run_outcome tid initmem in
   λ '(ts, mem) '(ts', mem'),
-  CResult.Ok (E := PPState.t TState.t Msg.t IIS.t) (ts', mem') ∈
-    cinterp handler isem (PPState.Make ts mem IIS.init)
-    |> Exec.to_state_result_list
-    |$> (fmap (M := CResult.result _) (λ '(PPState.Make ts mem iis), (ts, mem))).
+    CResult.Ok (ts', mem') ∈
+      cinterp handler isem (PPState.Make ts mem IIS.init)
+      |> Exec.to_state_result_list
+      |$> (fmap (M := CResult.result _) (λ '(PPState.Make ts mem iis), (ts, mem))).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
     (ts : TState.t) (mem : Memory.t) :=
