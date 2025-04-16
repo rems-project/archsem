@@ -427,4 +427,4 @@ Proof. tcclean. case_guard_discard; try rewrite unfold_has_error; naive_solver. 
 Proof. tcclean. unfold fmap, fmap_inst. destruct (e st) as [l es]. easy. Qed.
 
 End Exec.
-
+Export (hints) Exec.
