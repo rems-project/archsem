@@ -597,7 +597,8 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   cd := seq_state_to_cd seq_st;
   evs := Candidate.event_list cd;
   mem_writes_succeed :
-    ∀ ev ∈ evs.*2, is_mem_write_reqP (λ _ _ ret, if ret is inl true then True else False) ev;
+    ∀ ev ∈ evs.*2, is_mem_write_req ev →
+      is_mem_write_reqP (λ _ _ ret, if ret is inl b then b = true else False) ev;
   partial_cd_state_from_seq_state_maps_eids_wf :
     ∀ eid pa reg, pcdst.(pa_write_map) !! pa = Some eid ∨ pcdst.(reg_write_map) !! reg = Some eid
     → eid ∈ fst <$> evs;
@@ -611,20 +612,32 @@ Proof.
   unfold seq_model_outcome_invariant_preserved, sequential_model_outcome_logged, fHandler_logger.
   cdestruct |- *** as seq_st [] call seq_st_succ ret H_seq_st_succ.
   constructor; unfold seq_state_to_cd.
+  - admit.
   - erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons, trace_snoc_event_list; last eauto.
     eapply seq_state_step_to_partial_cd_state; first eauto.
     cdestruct |- ***.
     autorewrite with pair.
     destruct (decide (is_mem_write (call &→ ret) ∨ is_reg_write (call &→ ret))) as [[]|H_mem_reg_write];
-    destruct call; try done; try now cdestruct H_mem_reg_write.
-    3-10: unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
-    mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *;
-    cdestruct H |- *** #CDestrMatch #CDestrSplitGoal;
-    set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0;
+    destruct call; try cdestruct H_mem_reg_write; try done.
+    all: set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0;
     cdestruct partial_cd_state_from_seq_state_maps_eids_wf0;
+    unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+    mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *.
+    3-11: cdestruct H, H_seq_st_succ |- *** #CDestrMatch #CDestrSplitGoal;
     odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 eid _ _ _);
-    try solve [eauto; eexists _,_; cdestruct |- *** #CDestrSplitGoal; naive_solver].
-    3: { cdestruct H_mem_reg_write. }
+    try solve [eauto; eexists _,_; cdestruct |- *** #CDestrSplitGoal; naive_solver];
+    try solve [exfalso; naive_solver].
+    1: {
+      cbn in *.
+      cdestruct H #CDestrSplitGoal #CDestrMatch.
+      1: unfold Setter_finmap in *.
+      Set Typeclasses Debug Verbosity 2.
+      1: rewrite lookup_unfold in H2.
+      Check MachineWord.MachineWord.eq_dec.
+      rewrite set
+    }
+    all: cbn.
+    3: { cdestruct H_seq_st_succ. inversion H_seq_st_succ; subst. set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0; cdestruct partial_cd_state_from_seq_state_maps_eids_wf0. naive_solver. cdestruct H_mem_reg_write. }
     3-6: now cdestruct n.
     [try solve [eauto]|].
     1-5,8-13,18-37: try solve [].
