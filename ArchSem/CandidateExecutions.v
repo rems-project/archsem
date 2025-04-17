@@ -1306,6 +1306,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         same_footprint cd ∩ iio cd.
 
   End Candidate.
+  Export (hints, coercions) Candidate.
 
   Module Ax.
     Import Candidate.

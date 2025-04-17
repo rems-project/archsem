@@ -570,10 +570,10 @@ Admitted.
 
 Arguments Candidate.event_list : simpl never.
 
-Definition seq_model_state_handler_invariant_statement (I : seq_state → Prop) : Prop :=
-  ∀ (seq_st : seq_state) (call : outcome),
+Definition seq_model_outcome_invariant_preserved (I : seq_state → Prop) : Prop :=
+  ∀ (seq_st : seq_state),
   I seq_st →
-  ∀ seq_st_succ,
+  ∀ (call : outcome) seq_st_succ,
   Ok seq_st_succ ∈ Exec.to_state_result_list (sequential_model_outcome_logged (Some regs_whitelist) (Z.to_N (bv_modulus 52)) call seq_st) →
   I seq_st_succ.
 
@@ -593,38 +593,51 @@ Proof.
 Qed.
 
 Record seq_inv_predicate (seq_st : seq_state) := {
+  pcdst := seq_state_to_partial_cd_state seq_st;
+  cd := seq_state_to_cd seq_st;
+  evs := Candidate.event_list cd;
+  mem_writes_succeed :
+    ∀ ev ∈ evs.*2, is_mem_write_reqP (λ _ _ ret, if ret is inl true then True else False) ev;
   partial_cd_state_from_seq_state_maps_eids_wf :
-    let pcdst := seq_state_to_partial_cd_state seq_st in
-    let evs := Candidate.event_list $ seq_state_to_pe seq_st in
     ∀ eid pa reg, pcdst.(pa_write_map) !! pa = Some eid ∨ pcdst.(reg_write_map) !! reg = Some eid
     → eid ∈ fst <$> evs;
-  cd_from_seq_state_monotone : cd_monotone (seq_state_to_cd seq_st);
-  cd_from_seq_state_consistent : consistent regs_whitelist (seq_state_to_cd seq_st)
+  cd_from_seq_state_monotone : cd_monotone cd;
+  cd_from_seq_state_consistent : consistent regs_whitelist cd
 }.
 
 Lemma seq_model_consistent :
-  seq_model_state_handler_invariant_statement seq_inv_predicate.
+  seq_model_outcome_invariant_preserved seq_inv_predicate.
 Proof.
-  unfold seq_model_state_handler_invariant_statement, sequential_model_outcome_logged, fHandler_logger.
-  cdestruct |- *** as seq_st call [] seq_st_succ ret H_seq_st_succ.
+  unfold seq_model_outcome_invariant_preserved, sequential_model_outcome_logged, fHandler_logger.
+  cdestruct |- *** as seq_st [] call seq_st_succ ret H_seq_st_succ.
   constructor; unfold seq_state_to_cd.
   - erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons, trace_snoc_event_list; last eauto.
     eapply seq_state_step_to_partial_cd_state; first eauto.
     cdestruct |- ***.
     autorewrite with pair.
-    eexists eid.
-    destruct call;
-    unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+    destruct (decide (is_mem_write (call &→ ret) ∨ is_reg_write (call &→ ret))) as [[]|H_mem_reg_write];
+    destruct call; try done; try now cdestruct H_mem_reg_write.
+    3-10: unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
     mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *;
     cdestruct H |- *** #CDestrMatch #CDestrSplitGoal;
-    eexists;
-    cdestruct |- *** #CDestrSplitGoal.
+    set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0;
+    cdestruct partial_cd_state_from_seq_state_maps_eids_wf0;
+    odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 eid _ _ _);
+    try solve [eauto; eexists _,_; cdestruct |- *** #CDestrSplitGoal; naive_solver].
+    3: { cdestruct H_mem_reg_write. }
+    3-6: now cdestruct n.
+    [try solve [eauto]|].
+    1-5,8-13,18-37: try solve [].
+    1: { unfold Setter_finmap in *. rewrite lookup_unfold in H.
+        cdestruct H #CDestrMatch. }
+    1: unfold seq_state_to_pe in H1.
+
     all: destruct (decide (eid = intra_trace_eid_succ (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin))) as [->|];
     [right; eauto|left].
     all: set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0.
     all: cdestruct partial_cd_state_from_seq_state_maps_eids_wf0.
     all: odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 _ _ _ _).
-    1: right;eauto.
+    1: left;eauto.
     1: cdestruct x, H1.
     1: admit.
     1: best.
