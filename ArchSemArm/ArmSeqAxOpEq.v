@@ -606,6 +606,16 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   cd_from_seq_state_consistent : consistent regs_whitelist cd
 }.
 
+#[local] Typeclasses Transparent mword Z.to_N Decision RelDecision Decidable_eq_mword eq_vec_dec MachineWord.MachineWord.Z_idx.
+
+Lemma and_or_dist P Q R :
+  P ∧ (Q ∨ R) ↔ (P ∧ Q) ∨ (P ∧ R).
+Proof. naive_solver. Qed.
+
+Lemma exists_or_dist {T} (P Q : T → Prop) :
+  (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
+Proof. naive_solver. Qed.
+
 Lemma seq_model_consistent :
   seq_model_outcome_invariant_preserved seq_inv_predicate.
 Proof.
@@ -616,7 +626,6 @@ Proof.
   - erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons, trace_snoc_event_list; last eauto.
     eapply seq_state_step_to_partial_cd_state; first eauto.
     cdestruct |- ***.
-    autorewrite with pair.
     destruct (decide (is_mem_write (call &→ ret) ∨ is_reg_write (call &→ ret))) as [[]|H_mem_reg_write];
     destruct call; try cdestruct H_mem_reg_write; try done.
     all: set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0;
@@ -625,15 +634,32 @@ Proof.
     mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *.
     3-11: cdestruct H, H_seq_st_succ |- *** #CDestrMatch #CDestrSplitGoal;
     odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 eid _ _ _);
-    try solve [eauto; eexists _,_; cdestruct |- *** #CDestrSplitGoal; naive_solver];
+    try solve [eauto; eexists _; cdestruct |- *** #CDestrSplitGoal; naive_solver];
     try solve [exfalso; naive_solver].
-    1: {
-      cbn in *.
-      cdestruct H #CDestrSplitGoal #CDestrMatch.
-      1: unfold Setter_finmap in *.
+    + cbn in *.
+      setoid_rewrite and_or_dist.
+      setoid_rewrite exists_or_dist.
+      cdestruct H #CDestrMatch; last naive_solver.
+      all: unfold Setter_finmap in *.
+      all: rewrite lookup_unfold in H2.
+      all: cdestruct H2 #CDestrSplitGoal #CDestrMatch.
+      1,4: right; autorewrite with pair; eauto.
+      all: left; eapply partial_cd_state_from_seq_state_maps_eids_wf0; eauto.
+    + cbn in *.
+      setoid_rewrite and_or_dist.
+      setoid_rewrite exists_or_dist.
+      unfold Setter_finmap in *.
       Set Typeclasses Debug Verbosity 2.
-      1: rewrite lookup_unfold in H2.
-      Check MachineWord.MachineWord.eq_dec.
+      rewrite (lookup_unfold (k := reg0)) in H.
+      cdestruct H #CDestrSplitGoal #CDestrMatch.
+      1,3: left; eapply partial_cd_state_from_seq_state_maps_eids_wf0; eauto.
+      1: right; autorewrite with pair; eauto.
+
+
+
+      Print MachineWord.MachineWord.eq_dec.
+      Print Decidable_eq_mword.
+      Print eq_vec_dec.
       rewrite set
     }
     all: cbn.
