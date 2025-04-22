@@ -398,6 +398,91 @@ Proof.
   eauto.
 Qed.
 
+Definition rel_strictly_monotone (rel : grel EID.t) : Prop :=
+  ∀ '(x,y) ∈ rel, EID.full_po_lt x y.
+
+Definition rel_monotone (rel : grel EID.t) : Prop :=
+  ∀ '(x,y) ∈ rel, x = y ∨ EID.full_po_lt x y.
+
+Lemma rel_montone_union (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 ∧ rel_strictly_monotone rel2 ↔ rel_strictly_monotone (rel1 ∪ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma rel_montone_intersection1 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma rel_montone_intersection2 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma grel_from_set_montone (eids : gset EID.t) :
+  rel_monotone ⦗ eids ⦘.
+Proof.
+  unfold rel_monotone.
+  autorewrite with pair.
+  cdestruct |- ***.
+  now left.
+Qed.
+
+Lemma rel_strictly_monotone_seq1 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 ∧ rel_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
+Proof.
+  unfold rel_strictly_monotone, rel_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  admit. (* TODO : Transitive full_po_lt *)
+Admitted.
+Lemma rel_strictly_monotone_seq2 (rel1 rel2 : grel EID.t) :
+  rel_monotone rel1 ∧ rel_strictly_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
+Proof.
+  unfold rel_strictly_monotone, rel_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  admit. (* TODO : Transitive full_po_lt *)
+Admitted.
+
+Lemma rel_montone_acyclic (rel : grel EID.t) :
+  rel_strictly_monotone rel → grel_acyclic rel.
+Proof.
+  unfold rel_strictly_monotone, grel_acyclic, grel_irreflexive.
+  autorewrite with pair.
+  change (∀ x y, (x, y) ∈ rel → EID.full_po_lt x y)
+    with (∀ x y, grel_to_relation rel x y → EID.full_po_lt x y).
+  cdestruct |- *** as Hsubrel x Hcylcic.
+  rewrite grel_plus_spec in Hcylcic.
+  depelim Hcylcic.
+  - specialize (Hsubrel _ _ H).
+    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+    lia.
+  - opose proof (rtc_subrel _ _ _ _ Hsubrel _).
+    1: eapply rtc_tc.
+    1: right; eassumption.
+    ospecialize (Hsubrel _ _ _); first eauto.
+    clear -H0 Hsubrel.
+    dependent induction H0.
+    { unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *. lia. }
+    eapply IHrtc.
+    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+    lia.
+Qed.
+
+
 Context (max_size : N) {max_size_upper_limit : (max_size < Z.to_N (bv_modulus 52))%N}.
 
 Definition tr_wf (str : result seq_state seq_state) : Prop :=
@@ -549,18 +634,15 @@ Proof.
   now rewrite unsnoc_snoc.
 Qed.
 
-Definition rel_monotone (rel : grel EID.t) : Prop :=
-  ∀ '(x,y) ∈ rel, EID.full_po_lt x y.
-
 Definition cd_monotone (cd : Candidate.t Candidate.NMS 1) : Prop :=
-  rel_monotone cd.(Candidate.reads_from)
-  ∧ rel_monotone cd.(Candidate.reg_reads_from)
-  ∧ rel_monotone cd.(Candidate.coherence).
+  rel_strictly_monotone cd.(Candidate.reads_from)
+  ∧ rel_strictly_monotone cd.(Candidate.reg_reads_from)
+  ∧ rel_strictly_monotone cd.(Candidate.coherence).
 
 Definition partial_cd_state_monotone (cdst : partial_cd_state) : Prop :=
-  rel_monotone cdst.(rf_acc)
-  ∧ rel_monotone cdst.(rrf_acc)
-  ∧ rel_monotone cdst.(co_acc).
+  rel_strictly_monotone cdst.(rf_acc)
+  ∧ rel_strictly_monotone cdst.(rrf_acc)
+  ∧ rel_strictly_monotone cdst.(co_acc).
 
 Lemma event_list_monotone {nmth} (pe : Candidate.pre Candidate.NMS nmth) l l' :
   Candidate.event_list pe = l ++ l' →
@@ -599,7 +681,7 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   mem_writes_succeed :
     ∀ ev ∈ evs.*2, is_mem_write_req ev →
       is_mem_write_reqP (λ _ _ ret, if ret is inl b then b = true else False) ev;
-  partial_cd_state_from_seq_state_maps_eids_wf :
+  partial_cd_state_eids_map_in_trace :
     ∀ eid pa reg, pcdst.(pa_write_map) !! pa = Some eid ∨ pcdst.(reg_write_map) !! reg = Some eid
     → eid ∈ fst <$> evs;
   cd_from_seq_state_monotone : cd_monotone cd;
@@ -616,26 +698,36 @@ Lemma exists_or_dist {T} (P Q : T → Prop) :
   (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
 Proof. naive_solver. Qed.
 
-Lemma seq_model_consistent :
-  seq_model_outcome_invariant_preserved seq_inv_predicate.
+Lemma seq_model_monotone :
+  seq_model_outcome_invariant_preserved
+    (λ seq_st,
+      let pcdst := seq_state_to_partial_cd_state seq_st in
+      let cd := seq_state_to_cd seq_st in
+      let evs := Candidate.event_list cd in
+      (∀ ev ∈ evs.*2, is_mem_write_req ev →
+        is_mem_write_reqP (λ _ _ ret, if ret is inl b then b = true else False) ev)
+      ∧ (∀ eid pa reg,
+        pcdst.(pa_write_map) !! pa = Some eid ∨ pcdst.(reg_write_map) !! reg = Some eid
+        → eid ∈ fst <$> evs)
+      ∧ cd_monotone $ seq_state_to_cd seq_st).
 Proof.
   unfold seq_model_outcome_invariant_preserved, sequential_model_outcome_logged, fHandler_logger.
-  cdestruct |- *** as seq_st [] call seq_st_succ ret H_seq_st_succ.
-  constructor; unfold seq_state_to_cd.
+  cdestruct |- *** as seq_st H_mem_w_succeed H_pcdst_wf Hmono call seq_st_succ ret H_seq_st_succ.
+  pose (Candidate.event_list (seq_state_to_cd seq_st)) as evs.
+  do 2 try split.
   - admit.
   - erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons, trace_snoc_event_list; last eauto.
     eapply seq_state_step_to_partial_cd_state; first eauto.
     cdestruct |- ***.
     destruct (decide (is_mem_write (call &→ ret) ∨ is_reg_write (call &→ ret))) as [[]|H_mem_reg_write];
     destruct call; try cdestruct H_mem_reg_write; try done.
-    all: set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0;
-    cdestruct partial_cd_state_from_seq_state_maps_eids_wf0;
+    all: set_unfold in H_pcdst_wf;
+    cdestruct H_pcdst_wf;
     unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
     mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *.
     3-11: cdestruct H, H_seq_st_succ |- *** #CDestrMatch #CDestrSplitGoal;
-    odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 eid _ _ _);
-    try solve [eauto; eexists _; cdestruct |- *** #CDestrSplitGoal; naive_solver];
-    try solve [exfalso; naive_solver].
+    odestruct (H_pcdst_wf eid _ _ _);
+    hauto lq: on rew: off.
     + cbn in *.
       setoid_rewrite and_or_dist.
       setoid_rewrite exists_or_dist.
@@ -644,53 +736,85 @@ Proof.
       all: rewrite lookup_unfold in H2.
       all: cdestruct H2 #CDestrSplitGoal #CDestrMatch.
       1,4: right; autorewrite with pair; eauto.
-      all: left; eapply partial_cd_state_from_seq_state_maps_eids_wf0; eauto.
+      all: left; unshelve eapply H_pcdst_wf; eauto.
     + cbn in *.
       setoid_rewrite and_or_dist.
       setoid_rewrite exists_or_dist.
       unfold Setter_finmap in *.
-      Set Typeclasses Debug Verbosity 2.
       rewrite (lookup_unfold (k := reg0)) in H.
       cdestruct H #CDestrSplitGoal #CDestrMatch.
-      1,3: left; eapply partial_cd_state_from_seq_state_maps_eids_wf0; eauto.
+      1,3: left; unshelve eapply H_pcdst_wf; eauto.
       1: right; autorewrite with pair; eauto.
+  - unfold cd_monotone in *.
+    cdestruct Hmono |- *** #CDestrSplitGoal.
+    all: eapply seq_state_step_to_partial_cd_state; first eauto.
+    all: generalize dependent (seq_state_to_partial_cd_state seq_st).
+    all: cdestruct |- ***.
+    all: opose proof (event_list_monotone _ evs [(intra_trace_eid_succ (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin), call &→ ret)] (trace_snoc_event_list _ _ _)).
+    all: unfold update_partial_cd_state_for_eid_ev in *.
+    all: destruct call; cbn in *; try done.
+    all: unfold reg_read_upd_partial_cd_state, mem_read_upd_partial_cd_state, mem_write_upd_partial_cd_state.
+    all: cdestruct |- *** #CDestrMatch.
+    all: unfold rel_strictly_monotone in *.
+    all: autorewrite with pair in *.
+    all: cdestruct |- *** #CDestrSplitGoal; last set_solver.
+    all: set_unfold in H2; cdestruct H2.
+    all: unshelve assert (t ∈ evs.*1) as H_ev_in_ev_list by (eapply H_pcdst_wf; eauto).
+    1-3: admit. (* TODO: Make statement better *)
+    all: set_unfold in H_ev_in_ev_list; cdestruct H_ev_in_ev_list.
+    all: ospecialize (H2 t _ _ (_,_) _ _);
+    [eassumption|now eapply elem_of_list_singleton|admit|assumption].
+  Admitted.
+
+Lemma seq_model_consistent :
+  seq_model_outcome_invariant_preserved seq_inv_predicate.
+Proof.
+  cdestruct |- *** as seq_st [] call seq_st_succ H_succ_st.
+  constructor; unfold seq_state_to_cd.
+  - now eapply (seq_model_monotone seq_st _ call).
+  - now eapply (seq_model_monotone seq_st _ call).
+  - now eapply (seq_model_monotone seq_st _ call).
+  - constructor.
+    * assert (cd_monotone (seq_state_to_cd seq_st_succ)) as (? & ? & ?)
+      by now eapply (seq_model_monotone seq_st _ call).
+      unfold cd_monotone, seq_state_to_cd in *.
+      apply rel_montone_acyclic.
+      rewrite <- ?rel_montone_union.
+      unfold GenAxiomaticArm.AxArmNames.fr, GenAxiomaticArm.AxArmNames.co, GenAxiomaticArm.AxArmNames.rf.
+      cdestruct |- *** #CDestrSplitGoal.
+      2: eapply rel_strictly_monotone_seq2; split.
+      4: eapply rel_montone_intersection1, rel_strictly_monotone_seq1; split.
+      4: eapply rel_strictly_monotone_seq2; split.
+      7: eapply rel_strictly_monotone_seq1; split.
+      2,4,6,8: eapply grel_from_set_montone.
+      all: try assumption.
+      2: unfold Candidate.from_reads.
+      all: unfold Candidate.overlapping.
+
+      all: unfold Candidate.explicit_writes, Candidate.writes_by_kind.
+      Print grel_seq.
+
+      all: try naive_solver.
+      all: unfold seq_state_to_cd in *.
+      all: admit.
+
+    unfold grel_acyclic.
 
 
 
-      Print MachineWord.MachineWord.eq_dec.
-      Print Decidable_eq_mword.
-      Print eq_vec_dec.
-      rewrite set
-    }
-    all: cbn.
-    3: { cdestruct H_seq_st_succ. inversion H_seq_st_succ; subst. set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0; cdestruct partial_cd_state_from_seq_state_maps_eids_wf0. naive_solver. cdestruct H_mem_reg_write. }
-    3-6: now cdestruct n.
-    [try solve [eauto]|].
-    1-5,8-13,18-37: try solve [].
-    1: { unfold Setter_finmap in *. rewrite lookup_unfold in H.
-        cdestruct H #CDestrMatch. }
-    1: unfold seq_state_to_pe in H1.
+      1: set_unfold.
+      1: set_unfold.
+      cdestruct H2.
+      eapply (H2 _ _ _ _ _ _).
+      eapply H2.
 
-    all: destruct (decide (eid = intra_trace_eid_succ (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin))) as [->|];
-    [right; eauto|left].
-    all: set_unfold in partial_cd_state_from_seq_state_maps_eids_wf0.
-    all: cdestruct partial_cd_state_from_seq_state_maps_eids_wf0.
-    all: odestruct (partial_cd_state_from_seq_state_maps_eids_wf0 _ _ _ _).
-    1: left;eauto.
-    1: cdestruct x, H1.
-    1: admit.
-    1: best.
-    1: eapply partial_cd_state_from_seq_state_maps_eids_wf0.
 
-  .
-    unfold seq_state_to_partial_cd_state in H.
+      opose proof (event_list_monotone _ evs0).
+      2: { autorewrite with pair in *. set_solver. }
 
-  unfold cd_monotone in *.
-    cdestruct cd_from_seq_state_monotone0 |- *** #CDestrSplitGoal.
-    + eapply seq_state_step_to_partial_cd_state; first eauto.
-      generalize dependent (seq_state_to_partial_cd_state seq_st).
-      cdestruct |- ***.
-     unfold seq_state_to_partial_cd_state in *.
+      2: best.
+      set_unfold.
+
     unfold construct_cd_for_pe.
       rewrite seq_state_to_pe_trace_cons.
       erewrite seq_state_to_pe_eq.
