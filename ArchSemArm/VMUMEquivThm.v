@@ -464,5 +464,89 @@ Section Phase1.
 
 End Phase1.
 
+Record trace_erasure_state :=
+  { last_va : option va;
+    rev_trace : list iEvent;
+    inside_trans : bool;
+    error : bool;
+  }.
+#[global] Instance tes_eta : Settable _ :=
+  settable! Build_trace_erasure_state <last_va; rev_trace; inside_trans; error>.
+
+Program Definition trace_erasure (vm : iTrace ()) : option (iTrace ()) :=
+  let st :=
+    fold_left (λ st e,
+        match e with
+        | TranslationStart _ &→ () =>
+          (* Get the va and store it
+             Set error if already inside_trans
+             Switch inside_trans to true
+           *) _
+        | TranslationEnd _ &→ () => _
+        (* Switch inside_trans to false (error if not true) *)
+        | MemRead n rr &→ _ =>
+            if inside_trans st
+            then st
+            else
+              if last_va st is Some v then _
+              (* swap address with va, remove any translation stuff,
+                 add back to rem trace *)
+              else setv error true st
+        | MemWrite _ _ &→ _ =>
+            if inside_trans st
+            then setv error true st
+            else
+              if last_va st is Some v then _
+              else setv error true st
+        | MemWriteAnnounce _ _ &→ _ =>
+            if inside_trans st
+            then setv error true st
+            else
+              if last_va st is Some v then _
+              else setv error true st
+        | RegRead _ _ &→ _ =>
+            if inside_trans st then st else set rev_trace (cons e) st
+        | RegWrite _ _ _ &→ () =>
+            if inside_trans st then st (* error? *) else set rev_trace (cons e) st
+        | Barrier _ &→ () =>
+            if inside_trans st then setv error true st else set rev_trace (cons e) st
+        | e => setv error true st
+        end
+      ) vm.1 {|last_va := None; rev_trace := []; inside_trans := false; error := false|}
+  in
+  Some (rev (rev_trace st), vm.2).
+Admit Obligations.
+
+Definition no_system_event : iTrace () → Prop.
+Admitted.
+
+Section Phase2.
+  Context (nth : nat).
+  Context (s1params : S1TTWParams).
+  Context (lower : bool).
+
+  Context (vm_isem : iMon ()).
+  Context (um_isem : iMon ()).
+
+  (* TODO figure out how to present system register assumptions *)
+
+  Context (trace_erasure_not_failing:
+            ∀ trc : iTrace (),
+             cmatch vm_isem trc →
+             no_system_event trc →
+             is_Some (trace_erasure trc)).
+
+  Context (trace_erasure_valid:
+            ∀ trc trc' : iTrace (),
+             cmatch vm_isem trc →
+             trace_erasure trc = Some trc' →
+             cmatch um_isem trc').
+
+  (* For any memory access in a VM trace, the pa is in the same page as
+     translation end. *)
+  (* For any VM trace, the pa in translation end match the characteisation function *)
 
 
+  (* Need Caracterisation function *)
+
+  (* Need to be able to split VM initial state into mutable and immutable(page-table) state *)
