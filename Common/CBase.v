@@ -63,6 +63,10 @@ From Hammer Require Export Tactics.
 
 Require Import Options.
 
+Print Grammar constr.
+
+
+
 
 (** * Default Typeclass opaque
 
@@ -110,6 +114,14 @@ Notation "∅" := Datatypes.Empty_set : type_scope.
 (** Heterogenous equality *)
 Notation "x =ⱼ y" := (@JMeq _ x _ y) (at level 70, no associativity).
 Notation "x ≠ⱼ y" := (¬(x =ⱼ y)) (at level 70, no associativity).
+
+(** Alternative if-then-else notations *)
+Notation "'ifb' c 'then' u 'else' v" :=
+  (match (c : bool) with true => u | false => v end)
+    (at level 200, only parsing).
+Notation "'ifd' c 'then' u 'else' v" :=
+  (match decide c with left _ => u | right _ => v end)
+    (at level 200).
 
 
 (** Monad-annotated fmap notation *)

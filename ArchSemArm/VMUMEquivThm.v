@@ -464,5 +464,182 @@ Section Phase1.
 
 End Phase1.
 
+(** * Phase 2
+
+    In Phase 2 we want to prove that the user-mode model based on physical
+    addresses (with constant page-tables) does not create more unwanted
+    behaviours than the user-mode model based on virtual addresses (with no
+    translation). This require "Importing" a few ISA model properties from
+    Isabelle as axioms. *)
+
+(** ** ISA traces manipulation functions
+
+    Those function must match exactly the Isabelle definition since Axioms
+    proven in Isabelle depend on those. *)
+
+Record trace_erasure_state :=
+  { last_translation_info : option TranslationStartInfo;
+    last_translation_result : option AddressDescriptor;
+    inside_translation : bool;
+    (* translation_error : bool; *)
+  }.
+#[global] Instance tes_eta : Settable _ :=
+  settable! Build_trace_erasure_state
+  <last_translation_info; last_translation_result;
+    inside_translation>.
+
+Definition initial_tes :=
+  {|last_translation_info := None;
+    last_translation_result := None;
+    inside_translation := false;
+    (* translation_error := false; *)
+  |}.
+
+Definition reconstruct_translated_va (tes : trace_erasure_state) (pa : bv 56) :
+    option (bv 64) :=
+  match tes.(last_translation_info), tes.(last_translation_result) with
+  | Some tsi, Some desc =>
+      let result_pa := FullAddress_address (AddressDescriptor_paddress desc) in
+      let offset := (pa - result_pa)%bv in
+      let orig_va := TranslationStartInfo_va tsi in
+      Some (orig_va + bv_sign_extend 64 offset)%bv
+  | _,_=> None
+  end.
+
+(* Definition erase_mem_request (tes : trace_erasure_state) *)
+(*     (rr : MemReq.t) : option (MemReq.t) := *)
+(*   if reconstruct_translated_va tes rr.(MemReq.address) is Some va then *)
+(*     rr *)
+(*       |> setv MemReq.address (bv_extract 0 56 va) *)
+(*       |> setv MemReq.address_space PAS_NonSecure *)
+(*       |> Some *)
+(*   else None. *)
+
+Section ArmTranslationErasure.
+  Context (arm_global_variables : gset reg) (arm_translation_register : gset reg).
+
+  Variant erasure_result :=
+  | Keep (tes : trace_erasure_state) (ev : iEvent)
+  | Drop (tes : trace_erasure_state)
+  | Error.
+
+  Section EraseIEvent.
+    Context (tes : trace_erasure_state).
+  Equations erase_iEvent  (ev : iEvent) : erasure_result :=
+  | TranslationStart ts &→ () =>
+      if inside_translation tes
+      then Error
+      else
+        tes
+        |> setv inside_translation true
+        |> setv last_translation_info (Some ts)
+        |> setv last_translation_result None
+        |> Drop
+  | TranslationEnd res &→ () =>
+      if decide (inside_translation tes ∧ last_translation_info tes ≠ None)
+      then
+        tes
+        |> setv inside_translation false
+        |> setv last_translation_result (Some res)
+        |> Drop
+      else Error
+  | MemRead mr &→ res =>
+      if inside_translation tes then
+        ifd mr.(MemReq.size) = 8%N ∧ mr.(MemReq.num_tag) = 0%N then Drop tes else Error
+      else
+        if reconstruct_translated_va tes mr.(MemReq.address) is Some va then
+          Keep tes (MemRead (setv MemReq.address (bv_extract 0 56 va) mr) &→ res)
+        else Error
+  | MemWriteAddrAnnounce mr &→ () =>
+      if inside_translation tes then Error
+      else
+        if reconstruct_translated_va tes mr.(MemReq.address) is Some va then
+          Keep tes (MemWriteAddrAnnounce (setv MemReq.address (bv_extract 0 56 va) mr) &→ ())
+        else Error
+  | MemWrite mr val tags &→ res =>
+      if inside_translation tes then Error
+      else
+        if reconstruct_translated_va tes mr.(MemReq.address) is Some va then
+          Keep tes (MemWrite (setv MemReq.address (bv_extract 0 56 va) mr) val tags &→ res)
+        else Error
+  | _ => Error.
 
 
+
+Program Definition trace_erasure (vm : iTrace ()) : option (iTrace ()) :=
+  let st :=
+    fold_left (λ st e,
+        match e with
+        | TranslationStart _ &→ () =>
+          (* Get the va and store it
+             Set error if already inside_trans
+             Switch inside_trans to true
+           *) _
+        | TranslationEnd _ &→ () => _
+        (* Switch inside_trans to false (error if not true) *)
+        | MemRead n rr &→ _ =>
+            if inside_trans st
+            then st
+            else
+              if last_va st is Some v then _
+              (* swap address with va, remove any translation stuff,
+                 add back to rem trace *)
+              else setv error true st
+        | MemWrite _ _ &→ _ =>
+            if inside_trans st
+            then setv error true st
+            else
+              if last_va st is Some v then _
+              else setv error true st
+        | MemWriteAnnounce _ _ &→ _ =>
+            if inside_trans st
+            then setv error true st
+            else
+              if last_va st is Some v then _
+              else setv error true st
+        | RegRead _ _ &→ _ =>
+            if inside_trans st then st else set rev_trace (cons e) st
+        | RegWrite _ _ _ &→ () =>
+            if inside_trans st then st (* error? *) else set rev_trace (cons e) st
+        | Barrier _ &→ () =>
+            if inside_trans st then setv error true st else set rev_trace (cons e) st
+        | e => setv error true st
+        end
+      ) vm.1 {|last_va := None; rev_trace := []; inside_trans := false; error := false|}
+  in
+  Some (rev (rev_trace st), vm.2).
+Admit Obligations.
+
+Definition no_system_event : iTrace () → Prop.
+Admitted.
+
+Section Phase2.
+  Context (nth : nat).
+  Context (s1params : S1TTWParams).
+  Context (lower : bool).
+
+  Context (vm_isem : iMon ()).
+  Context (um_isem : iMon ()).
+
+  (* TODO figure out how to present system register assumptions *)
+
+  Context (trace_erasure_not_failing:
+            ∀ trc : iTrace (),
+             cmatch vm_isem trc →
+             no_system_event trc →
+             is_Some (trace_erasure trc)).
+
+  Context (trace_erasure_valid:
+            ∀ trc trc' : iTrace (),
+             cmatch vm_isem trc →
+             trace_erasure trc = Some trc' →
+             cmatch um_isem trc').
+
+  (* For any memory access in a VM trace, the pa is in the same page as
+     translation end. *)
+  (* For any VM trace, the pa in translation end match the characteisation function *)
+
+
+  (* Need Caracterisation function *)
+
+  (* Need to be able to split VM initial state into mutable and immutable(page-table) state *)
