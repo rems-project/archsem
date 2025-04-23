@@ -685,6 +685,7 @@ Record seq_inv_predicate (seq_st : seq_state) := {
     ∀ eid pa reg, pcdst.(pa_write_map) !! pa = Some eid ∨ pcdst.(reg_write_map) !! reg = Some eid
     → eid ∈ fst <$> evs;
   cd_from_seq_state_monotone : cd_monotone cd;
+  cd_wf : Candidate.wf cd;
   cd_from_seq_state_consistent : consistent regs_whitelist cd
 }.
 
@@ -775,6 +776,28 @@ Proof.
   - now eapply (seq_model_monotone seq_st _ call).
   - now eapply (seq_model_monotone seq_st _ call).
   - constructor.
+   + admit.
+   + unfold sequential_model_outcome_logged, fHandler_logger in *.
+    cdestruct seq_st_succ, H_succ_st as seq_st_succ ret H_succ_st.
+    erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons; last eauto.
+    eapply seq_state_step_to_partial_cd_state; first eauto.
+    unfold cd0, seq_state_to_cd in cd_wf0.
+    destruct cd_wf0 as [? []].
+    constructor.
+    * destruct (decide (is_mem_write (call &→ ret))).
+    2: {
+     unfold seq_state_to_partial_cd_state, update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+      mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *;
+      destruct call; cbn in *; cdestruct |- *** #CDestrMatch;
+      generalize dependent (seq_state_to_pe seq_st);
+      cdestruct |- ***.
+      1: set_unfold.
+      1: try set_solver.
+
+     intros eid Heiddom.
+     cdestruct eid, Heiddom |- ***.
+
+  - constructor.
     * assert (cd_monotone (seq_state_to_cd seq_st_succ)) as (? & ? & ?)
       by now eapply (seq_model_monotone seq_st _ call).
       unfold cd_monotone, seq_state_to_cd in *.
@@ -792,6 +815,18 @@ Proof.
       all: unfold Candidate.overlapping.
 
       all: unfold Candidate.explicit_writes, Candidate.writes_by_kind.
+      2: {
+        unfold rel_strictly_monotone.
+        cdestruct |- ***.
+        assert (t ≠ t0)
+        by (intros ->; unfold Candidate.mem_reads, Candidate.mem_writes in *;
+            cdestruct H2, H6; naive_solver).
+        enough (¬ EID.full_po_lt t0 t)
+        by (opose proof (EID.full_po_lt_connex t t0 _ _ _) as [|[|]]; [admit|admit|admit| | |];
+        hauto lq: on).
+        intro.
+        apply H7.
+       }
       Print grel_seq.
 
       all: try naive_solver.
