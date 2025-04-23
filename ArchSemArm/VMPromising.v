@@ -1356,8 +1356,7 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
   let ts :=
     ts |> set TState.prom (delete time)
        |> TState.update TState.vtlbi time
-       |> TState.update TState.vspec view
-       |> TState.tlbi_cse time 
+       |> TState.tlbi_cse time
   in
   mret (IIS.add time iis, ts, mem).
 
