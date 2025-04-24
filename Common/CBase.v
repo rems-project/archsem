@@ -964,21 +964,28 @@ Instance ctrans_prod_simpl `{CTransSimpl A F, CTransSimpl A G} :
   CTransSimpl (λ x, F x * G x)%type | 100.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
 
-Instance ctrans_prodl `{EqDecision A, CTrans A F} T :
+Instance ctrans_prodl `{CTrans A F} T :
     CTrans (λ x, F x * T)%type | 50 :=
   λ a b e '(x, y), (ctrans e x, y).
 
-Instance ctrans_prodl_simpl `{EqDecision A, CTransSimpl A F} T :
+Instance ctrans_prodl_simpl `{CTransSimpl A F} T :
   CTransSimpl (λ x, F x * T)%type | 50.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
 
-Instance ctrans_prodr `{EqDecision A, CTrans A F} T :
+Instance ctrans_prodr `{CTrans A F} T :
     CTrans (λ x, T * F x)%type | 50 :=
   λ a b e '(x, y), (x, ctrans e y).
 
-Instance ctrans_prodr_simpl `{EqDecision A, CTransSimpl A F} T :
+Instance ctrans_prodr_simpl `{CTransSimpl A F} T :
   CTransSimpl (λ x, T * F x)%type | 50.
 Proof. intros x p []. cbn. by simp ctrans. Qed.
+
+Instance ctrans_f_equal `(f : A → B) `{CTrans B F}  :
+  CTrans (λ x, F (f x)) := λ a b e x, ctrans (f_equal f e) x.
+
+Instance ctrans_f_equal_simpl `(f : A → B) `{CTransSimpl B F} :
+  CTransSimpl (λ x, F (f x)).
+Proof. intros x p a. unfold ctrans. unfold ctrans_f_equal. by simp ctrans. Qed.
 
 (** ** Computable transport for [fin] *)
 

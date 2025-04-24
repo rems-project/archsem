@@ -15,13 +15,28 @@ Require Import ASCommon.Options.
 Require Import ASCommon.Common.
 Require Import ASCommon.Effects.
 
-
-
 Require Import ASCommon.FMon.
 Require Import Interface.
 
+(** * Transparency management for [coq-sail] *)
 #[export] Typeclasses Transparent choose_type.
+#[export] Typeclasses Transparent mword.
+#[export] Typeclasses Transparent MachineWord.MachineWord.word.
+#[export] Typeclasses Transparent MachineWord.MachineWord.idx.
+#[export] Typeclasses Transparent MachineWord.MachineWord.Z_idx.
 
+(* TODO go in coq-sail and make those not exist *)
+Arguments MachineWord.MachineWord.word / _.
+Arguments MachineWord.MachineWord.idx /.
+Arguments MachineWord.MachineWord.Z_idx / _.
+
+(* TODO remove that in coq-sail *)
+Remove Hints Decidable_eq_mword : typeclass_instances.
+
+(** * Missing Interface parts
+
+This section defines a module type that describes everything ArchSem need from
+an architecture instantiation that is missing from the Sail generated code *)
 Module Type PAManip (SA : SailArch).
   Import SA.
   (** Add an offset to a physical address. Can wrap if out of bounds *)
@@ -49,29 +64,8 @@ Module Type PAManip (SA : SailArch).
   Parameter pc_reg : greg.
 
 End PAManip.
-Arguments MachineWord.MachineWord.word / _.
 
-Instance mword_finite z : Finite (mword z).
-Proof.
-  unfold mword, MachineWord.MachineWord.word, MachineWord.MachineWord.Z_idx.
-  unshelve econstructor.
-  - exact (enum _).
-  - apply NoDup_enum.
-  - apply elem_of_enum.
-Defined.
-
-#[global] Instance ctrans_mword : CTrans mword.
-Proof.
-  intros x y H.
-  unfold CTrans, mword, MachineWord.MachineWord.word, MachineWord.MachineWord.Z_idx.
-  apply ctrans.
-  abstract (f_equal; assumption).
-Defined.
-
-#[global] Instance ctrans_mword_simpl : CTransSimpl mword.
-Proof.
-  intros x e a; unfold ctrans, ctrans_mword; by simp ctrans.
-Qed.
+(** * Convert from Sail generated instantiations to ArchSem ones *)
 
 Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   Include PAM.
