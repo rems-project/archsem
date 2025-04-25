@@ -1338,7 +1338,7 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let va := bv_extract 12 36 (tlbi.(TLBIInfo_rec).(TLBIRecord_address)) in
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
-              ⊔ view in
+              ⊔ view ⊔ ts.(TState.vspec) in
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
