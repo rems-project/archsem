@@ -122,6 +122,8 @@ Notation "x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
 Notation "' x ←@{ M } y ; z" := (@mbind M _ _ _ (λ x : _, z) y)
     (at level 20, x pattern, y at level 100, z at level 200, only parsing)
     : stdpp_scope.
+Notation "x ;;@{ M } z" := (@mbind M _ _ _ (λ _, z) x)
+                       (at level 100, z at level 200, only parsing, right associativity): stdpp_scope.
 
 (** This defines operators [|>] and [|$>] for pipe-style function application
     and fmap *)

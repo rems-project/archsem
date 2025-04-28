@@ -59,6 +59,10 @@ From stdpp Require Import decidable list vector.
 From stdpp Require Import pretty.
 
 
+(* Shadow constructor name from coq-sail with our result type *)
+Import ASCommon.CResult.
+
+
 #[local] Open Scope stdpp.
 
 (** The goal of this module is to define an Virtual memory promising model,
@@ -176,7 +180,7 @@ Module Memory.
 
   (** Convert from a memoryMap to the internal representation: initial *)
   Definition initial_from_memMap (mem : memoryMap) : initial :=
-    fun loc => Loc.to_pas loc |> map mem |> bv_of_bytes 64.
+    fun loc => Loc.to_addrs loc |> map mem |> bv_of_bytes 64.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
@@ -233,11 +237,11 @@ Module Memory.
 
   (** Transform a promising initial memory and memory history back to a
       TermModel memoryMap *)
-  Definition to_memMap (init : initial) (mem : t) : memoryMap:=
-    fun pa =>
-      let loc := Loc.from_pa_in pa in
+  Definition to_memMap (init : initial) (mem : t) : memoryMap :=
+    fun addr =>
+      let loc := Loc.from_addr_in addr in
       let '(v, _) := read_last loc init mem in
-      let index := Loc.pa_index pa in
+      let index := Loc.addr_index addr in
       bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
 
   (** Adds the view number to each message given a view for the last message.
@@ -1085,13 +1089,14 @@ Module IIS.
   Module TransRes.
     Record t :=
       make {
+          va : bv 36;
           time : nat;
           remaining : list (bv 64);
           invalidation : nat
         }.
 
     #[global] Instance eta : Settable _ :=
-      settable! make <time; remaining; invalidation>.
+      settable! make <va; time; remaining; invalidation>.
 
     Definition pop : Exec.t t string (bv 64) :=
       remain ← mget remaining;
@@ -1104,23 +1109,21 @@ Module IIS.
   Record t :=
     make {
         strict : view;
-        (* The translations whose results were already selected *)
-        (* TODO: only the latest translation,
-                 crash if pas don't match *)
-        trs : gmap (bv 36) TransRes.t
+        (* The translations results of the latest translation *)
+        trs : option TransRes.t
       }.
 
   #[global] Instance eta : Settable _ :=
     settable! make <strict;trs>.
 
-  Definition init : t := make 0 ∅.
+  Definition init : t := make 0 None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
     iis |> set strict (max v).
 
-  Definition set_trs (va : bv 36) (tres : TransRes.t) :=
-    set trs <[ va := tres ]>.
+  Definition set_trs (tres : TransRes.t) :=
+    setv trs (Some tres).
 
 End IIS.
 
@@ -1168,9 +1171,8 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   else mret ());;
   mret (vpost, res).
 
-Definition read_pte (vaddr : view)
-  (tsum : translation)
-  : Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
+Definition read_pte (vaddr : view) :
+    Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
   tres ← mget snd;
   let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
   val ← Exec.liftSt snd IIS.TransRes.pop;
@@ -1179,50 +1181,47 @@ Definition read_pte (vaddr : view)
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
+Definition run_mem_read (rr : ReadReq.t 8 0) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
+  addr ← Exec.error_none "Address not supported" $
+           Loc.from_addr rr.(ReadReq.address);
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
-  let va : bv 64 := default (Loc.to_va addr) rr.(ReadReq.va) in
   match rr.(ReadReq.access_kind) with
   | AK_explicit eak =>
-      trans_res ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ PPState.iis);
-      let inv :=
-        trans_res
-        |> fmap (fun tr => tr.(IIS.TransRes.invalidation))
-        |> default (0 % nat)
-      in
+      tres_opt ← mget (IIS.trs ∘ PPState.iis);
+      trans_res ← Exec.error_none "Explicit access before translation" tres_opt;
+      let invalidation := trans_res.(IIS.TransRes.invalidation) in
       '(view, val) ←
         Exec.liftSt (PPState.state ×× PPState.mem)
-          $ read_mem_explicit addr vaddr inv eak init;
+          $ read_mem_explicit addr vaddr invalidation eak init;
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ttw () =>
       ts ← mget PPState.state;
-      tres_option ← mget ((.!! bv_extract 12 36 va) ∘ IIS.trs ∘ PPState.iis);
+      tres_option ← mget (IIS.trs ∘ PPState.iis);
       tres ← Exec.error_none "TTW read before translation start" tres_option;
       '(view, val) ←
-        read_pte vaddr rr.(ReadReq.translation) (ts, tres)
+        read_pte vaddr (ts, tres)
         |> Exec.lift_res_set_full
             (λ '(ts, tres) ppst,
               ppst
               |> setv PPState.state ts
-              |> set PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres));
+              |> set PPState.iis (IIS.set_trs tres));
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
   | _ => mthrow "Only ifetch, ttw and explicit accesses supported"
   end.
 
-Definition run_mem_read4 (rr : ReadReq.t 4) (init : Memory.initial) :
+Definition run_mem_read4 (rr : ReadReq.t 4 0) (init : Memory.initial) :
     Exec.t Memory.t string (bv 32) :=
   match rr.(ReadReq.access_kind) with
   | AK_ifetch () =>
-      let addr := rr.(ReadReq.pa) in
+      let addr := rr.(ReadReq.address) in
       let aligned_addr := bv_unset_bit 2 addr in
       let bit2 := bv_get_bit 2 addr in
-      loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
+      loc ← Exec.error_none "Address not supported" $ Loc.from_addr aligned_addr;
       mem ← mGet;
       block ← Exec.error_none "Modified instruction memory"
                               (Memory.read_initial loc init mem);
@@ -1375,10 +1374,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
 
 
 (** Runs an outcome. *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
-    Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
-  let initmem := Memory.initial_from_memMap initmem in
-  match out with
+Section RunOutcome.
+  Context (tid : nat) (initmem : memoryMap).
+  Equations run_outcome (out : outcome) :
+      Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
   | RegWrite reg racc val =>
       guard_or
         "Non trivial write reg access types unsupported"
@@ -1395,29 +1394,31 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
       | None => mthrow "Writing to unsupported system register"
       end
   | RegRead reg direct => mthrow "TODO"
-  | MemRead 8 rr =>
+  | MemRead 8 0 rr =>
+      let initmem := Memory.initial_from_memMap initmem in
       val ← run_mem_read rr initmem;
-      mret (inl (val, None))
-  | MemRead 4 rr => (* ifetch *)
+      mret (Ok (val, 0%bv))
+  | MemRead 4 0 rr => (* ifetch *)
+      let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ run_mem_read4 rr initmem;
-      mret (inl (opcode, None))
-  | MemRead _ _ => mthrow "Memory read of size other than 8 or 4"
-  | MemWriteAddrAnnounce _ _ _ _ =>
+      mret (Ok (opcode, 0%bv))
+  | MemRead _ _ _ => mthrow "Memory read of size other than 8 or 4, or with tags"
+  | MemWriteAddrAnnounce _ _ _ _ _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vspec vaddr
-  | MemWrite 8 wr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
+  | MemWrite 8 0 wr =>
+      addr ← Exec.error_none "Address not supported" $ Loc.from_addr wr.(WriteReq.address);
       viio ← mget (IIS.strict ∘ PPState.iis);
       let data := wr.(WriteReq.value) in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           Exec.liftSt (PPState.state ×× PPState.mem) $ write_mem_xcl tid addr viio eak data;;
-          mret (inl true)
+          mret (Ok ())
       | AK_ifetch () => mthrow "Write of type ifetch ???"
       | AK_ttw () => mthrow "Write of type TTW ???"
       | _ => mthrow "Unsupported non-explicit write"
       end
-  | MemWrite _ _ => mthrow "Memory write of size other than 8"
+  | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
   | Barrier barrier =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier
   | TlbOp tlbi =>
@@ -1426,8 +1427,8 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
   | ReturnException =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome"
-  end.
+  | _ => mthrow "Unsupported outcome".
+End RunOutcome.
 
 
 (** * Implement GenPromising ***)
@@ -1445,6 +1446,7 @@ Definition VMPromising_nocert' : PromisingModel :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
+    address_space := ();
     mEvent := Ev.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_nocert;
@@ -1485,6 +1487,7 @@ Definition VMPromising_cert' (isem : iMon ()) : PromisingModel  :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
+    address_space := ();
     mEvent := Ev.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_cert isem;

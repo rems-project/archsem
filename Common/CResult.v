@@ -42,9 +42,8 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import CBase.
 Require Import Options.
-Require Import CDestruct.
+Require Import CBase CDestruct.
 From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to
@@ -153,8 +152,20 @@ Section Result.
     | Error err => mthrow err
     end.
 
+
+
+
 End Result.
 Arguments result : clear implicits.
+
+Instance DecisionT_result  `{DecisionT E} `{DecisionT A} : DecisionT (result E A).
+Proof. sfirstorder. Qed.
+
+Instance result_inhabited_ok {E} `{Inhabited A} : Inhabited (result E A).
+Proof. firstorder. Defined.
+
+Instance result_inhabited_error `{Inhabited E} {A} : Inhabited (result E A).
+Proof. firstorder. Defined.
 
 
 (** * Result as monad *)
@@ -196,3 +207,8 @@ Definition mapE {E E' A} (f : E → E') (r : result E A) : result E' A :=
   | Ok val => Ok val
   | Error err => Error (f err)
   end.
+
+(** * CDestruct interaction *)
+
+Definition cdestruct_result (E A : Type) :
+  CDestrCase (result E A) := ltac:(constructor).

@@ -165,7 +165,7 @@ Section UMArm.
 
   (** * Preserved program order *)
 
-  Definition po_loc := po ∩ same_pa cd.
+  Definition po_loc := po ∩ same_addr cd.
   Definition po_loc_no_w := po_loc ∖ (po_loc⨾⦗W⦘⨾po_loc).
 
   Definition ppo :=

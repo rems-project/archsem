@@ -307,28 +307,30 @@ Section VMSAArm.
     *)
   Definition same_translation : grel EID.t := same_instruction_instance cd.
 
+  Definition get_translation_start (eid : EID.t) : option trans_start :=
+    '(instr_trace, _) ← lookup_instruction cd eid.(EID.tid) eid.(EID.iid);
+    let trace_before := take eid.(EID.ieid) instr_trace in
+    list.last $ list_filter_map get_trans_start trace_before.
 
-  Definition get_vmid (event : iEvent) :=
-    match event with
-    | TlbOp tlbop &→ _ => Some (tlbop.(TLBIInfo_rec).(TLBIRecord_vmid))
-    | MemRead _ rreq &→ _ => (ti ← rreq.(ReadReq.translation);
-                              ti.(TranslationInfo_vmid))
-    | _ => None
-    end.
+  Definition get_vmid (eid : EID.t) (event : iEvent) :=
+    if event is TlbOp tlbop &→ _
+    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_asid)
+    else
+      ts ← get_translation_start eid;
+      Some ts.(TranslationStartInfo_asid).
 
   (* symmetry relation for [T] and [TLBI] with same vmid *)
-  Definition same_vmid := same_key (λ _ event, get_vmid event) cd.
+  Definition same_vmid := same_key get_vmid cd.
 
-  Definition get_asid (event : iEvent) :=
-    match event with
-    | TlbOp tlbop &→ _ => Some (tlbop.(TLBIInfo_rec).(TLBIRecord_asid))
-    | MemRead _ rreq &→ _ => (ti ← rreq.(ReadReq.translation);
-                              ti.(TranslationInfo_asid))
-    | _ => None
-    end.
+  Definition get_asid (eid : EID.t) (event : iEvent) :=
+    if event is TlbOp tlbop &→ _
+    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_asid)
+    else
+      ts ← get_translation_start eid;
+      Some ts.(TranslationStartInfo_asid).
 
   (* symmetry relation for [T] and [TLBI] with same asid *)
-  Definition same_asid := same_key (λ _ event, get_asid event) cd.
+  Definition same_asid := same_key get_asid cd.
 
   (* armv9-interface/tlbi.cat#L158 *)
   (* NOTE: the definition diverges from the hacky cat version *)
@@ -340,39 +342,65 @@ Section VMSAArm.
   Definition tlbi_translate_same_vmid : grel EID.t :=
     (TLBI_VMID × T) ∩ same_vmid.
 
+  (* Hardcoding 4K pages here *)
   Definition page_of_addr (ad: bits 64): bits 36 := bv_extract 12 36 ad.
 
   (* below are specialised version of [page_overlaps] *)
   (* armv9-interface/tlbi.cat#L170 *)
 
-  Definition get_va_page (event : iEvent) :=
-    match event with
-    | MemRead _ rreq &→ _ => match (rreq.(ReadReq.va)) with
-                                  | Some va => Some (page_of_addr va)
-                                  | None => None
-                                  end
-    | TlbOp tlbop &→ _ => Some (page_of_addr (tlbop.(TLBIInfo_rec)
-                                                      .(TLBIRecord_address)))
-    | _ => None
+  Inductive TLBI_addr_kind :=
+    | TLBI_ak_unsupported (* Unsupported because Aarch32 or VMSA128 or GPT/RME *)
+    | TLBI_ak_no (* This TLBI doen't have an address *)
+    | TLBI_ak_va
+    | TLBI_ak_ipa.
+
+  (** Classifies the use of the TLBI address field ([TLBIRecord_address]).
+      The results can be:
+      - This TLBI is unsupported (because Aarch32, VMSA128, or GPT/RME)
+      - doesn't use an address, thus this field is unused
+      - use the address as a virtual address (VA)
+      - use the address as a intermediate physical address (IPA)
+
+      TODO write this function in Sail so other sail backends can use it? *)
+  Definition get_TLBI_addr_kind (top : TLBIOp) : TLBI_addr_kind :=
+    match top with
+    | TLBIOp_ALL => TLBI_ak_no
+    | TLBIOp_ASID => TLBI_ak_no
+    | TLBIOp_IPAS2 => TLBI_ak_ipa
+    | TLBIOp_VAA => TLBI_ak_va
+    | TLBIOp_VA => TLBI_ak_va
+    | TLBIOp_VMALL => TLBI_ak_no
+    | TLBIOp_VMALLS12 => TLBI_ak_no
+    | TLBIOp_RIPAS2 => TLBI_ak_ipa
+    | TLBIOp_RVAA => TLBI_ak_va
+    | TLBIOp_RVA => TLBI_ak_va
+    | _ => TLBI_ak_unsupported
     end.
+
+  Definition get_va_page (eid : EID.t) (event : iEvent) :=
+    if event is TlbOp tlbop &→ _
+    then
+      guard (get_TLBI_addr_kind tlbop.(TLBIInfo_rec).(TLBIRecord_op) = TLBI_ak_va);;
+      Some $ page_of_addr tlbop.(TLBIInfo_rec).(TLBIRecord_address)
+    else
+      ts ← get_translation_start eid;
+      Some $ page_of_addr ts.(TranslationStartInfo_va).
 
   Definition va_page_overlap :=
-    same_key (λ _ event, get_va_page event) cd.
+    same_key get_va_page cd.
 
-  Definition get_ipa_page (event : iEvent) :=
-    match event with
-    | MemRead _ rreq &→ _ =>
-        match (tr ← rreq.(ReadReq.translation); tr.(TranslationInfo_s2info)) with
-        | Some (ipa, _) => Some (page_of_addr ipa)
-        | None => None
-        end
-    | TlbOp tlbop &→ _ => Some (page_of_addr
-                                          (tlbop.(TLBIInfo_rec).(TLBIRecord_address)))
-    | _ => None
-    end.
+  Definition get_ipa_page (eid : EID.t) (event : iEvent) :=
+    if event is TlbOp tlbop &→ _
+    then
+      guard (get_TLBI_addr_kind tlbop.(TLBIInfo_rec).(TLBIRecord_op) = TLBI_ak_ipa);;
+      Some $ page_of_addr tlbop.(TLBIInfo_rec).(TLBIRecord_address)
+    else
+      ts ← get_translation_start eid;
+      guard (ts.(TranslationStartInfo_regime) = Regime_EL10);;
+      Some $ page_of_addr ts.(TranslationStartInfo_va).
 
   Definition ipa_page_overlap :=
-    same_key (λ _ event, get_ipa_page event) cd.
+    same_key get_ipa_page cd.
 
   (* armv9-interface/tlbi.cat#L173 *)
   Definition tlbi_translate_same_va_page : grel EID.t :=
@@ -452,65 +480,18 @@ Section VMSAArm.
 
   Notation T_f := (T_f cd).
 
-  Definition has_translationinfo_P P `{forall ti, Decision (P ti)} (event : iEvent) :=
-    match event with
-    | MemRead _ rreq &→ _ => if (rreq.(ReadReq.translation)) is Some ti then P ti else False
-    | _ => False
-    end.
+  (** Stage 2 is temporarily disabled because the current Arm instantiation in
+      translation start/end doesn't support it *)
 
-  Definition is_translationinfo_vmid (vmid : bits 16)
-    (translationinfo: TranslationInfo) :=
-    translationinfo.(TranslationInfo_vmid) = Some vmid.
-  Global Instance is_translationinfo_vmid_dec vmid translationinfo :
-    Decision (is_translationinfo_vmid vmid translationinfo).
-  Proof. apply _. Qed.
-
-  Definition has_translationinfo_vmid (event : iEvent) (vmid : bits 16) :=
-    has_translationinfo_P (is_translationinfo_vmid vmid) event.
-
-  Definition is_translationinfo_asid (asid : bits 16)
-    (translationinfo: TranslationInfo) :=
-    translationinfo.(TranslationInfo_asid) = Some asid.
-  Global Instance is_translationinfo_asid_dec asid translationinfo :
-    Decision (is_translationinfo_asid asid translationinfo).
-  Proof. apply _. Qed.
-
-  Definition has_translationinfo_asid (event : iEvent) (asid : bits 16) :=
-    has_translationinfo_P (is_translationinfo_asid asid) event.
-
-  Definition is_translationinfo_stage1 (translationinfo: TranslationInfo) :=
-    translationinfo.(TranslationInfo_s2info) = None.
-
-  Definition has_translationinfo_stage1 (event : iEvent) :=
-    has_translationinfo_P is_translationinfo_stage1 event.
-  Global Instance has_translationinfo_stage1_dec event :
-    Decision (has_translationinfo_stage1 event).
-  Proof. apply _. Qed.
-
-  Definition is_translate := is_mem_read_kindP is_ttw.
+  (* Definition is_translate := is_mem_read_kindP is_ttw. *)
 
   (* translation-common.cat#L13 *)
-  Definition Stage1 := collect_all
-                          (λ _ event, is_translate event
-                                      ∧ has_translationinfo_stage1 event) cd.
+  Definition Stage1 := T. (* Temporary HACK: Stage 2 disabled *)
+  (* (* translation-common.cat#L14 *) *)
+  Definition Stage2 : gset EID.t:= ∅. (* Temporary HACK: Stage 2 disabled *)
 
-  Definition is_translationinfo_stage2 (translationinfo: TranslationInfo) :=
-    translationinfo.(TranslationInfo_s2info) ≠ None.
-
-  Definition has_translationinfo_stage2 (event : iEvent) :=
-    has_translationinfo_P is_translationinfo_stage2 event.
-  Global Instance has_translationinfo_stage2_dec event :
-    Decision (has_translationinfo_stage2 event).
-  Proof. apply _. Qed.
-
-  (* translation-common.cat#L14 *)
-  Definition Stage2 := collect_all
-                          (λ _ event, is_translate event
-                                      ∧ has_translationinfo_stage2 event) cd.
   (* translation-common.cat#L31 *)
   Definition speculative := ctrl ∪ (addr⨾po) ∪ (⦗T⦘⨾instruction_order).
-  (* translation-common.cat#L37 *)
-  (* Definition po_pa := (instruction_order ∪ iio) ∩ loc. *)
   (* translation-common.cat#L42 *)
   Definition ContextChange := MSR ∪ TE ∪ ERET.
   (* translation-common.cat#L46 *)

@@ -305,40 +305,21 @@ Module RiscV.
     Definition reg_acc := unit.
     #[export] Typeclasses Transparent reg_acc.
     Definition reg_acc_eq : EqDecision reg_acc := _.
+    #[export] Typeclasses Transparent reg_acc_eq.
 
     Definition pc_reg := "_PC".
 
-    Definition va_size := 64%N.
-    Definition pa := bv 64.
-    #[export] Typeclasses Transparent pa.
-    Definition pa_eq : EqDecision pa := _.
-    Definition pa_countable : Countable pa := _.
-    Definition pa_addZ (pa : pa) z := (pa `+Z` z)%bv.
-    Arguments pa_addZ pa z /.
+    Definition CHERI := false.
+    Definition cap_size := 16%N. (* dummy value *)
 
-    Lemma pa_addZ_assoc pa z z' :
-      pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
-    Proof. bv_solve. Qed.
-    Lemma pa_addZ_zero pa : pa_addZ pa 0 = pa.
-    Proof. bv_solve. Qed.
-
-    Definition pa_diffN (pa' pa : pa) := Some (Z.to_N (bv_unsigned (pa' - pa))).
-
-    Lemma pa_diffN_addZ pa pa' n:
-      pa_diffN pa' pa = Some n → pa_addZ pa (Z.of_N n) = pa'.
-    Proof. unfold pa_diffN. cdestruct n |- ** # CDestrMatch. bv_solve. Qed.
-    Lemma pa_diffN_existZ pa pa' z:
-      pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
-    Proof. hauto q:on. Qed.
-    #[local] Opaque N.le.
-    Lemma pa_diffN_minimalZ pa pa' n:
-      pa_diffN pa' pa = Some n →
-      ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
-    Proof.
-      unfold pa_diffN.
-      cdestruct pa, pa', n |- ** # CDestrMatch.
-      bv_solve.
-    Qed.
+    Definition addr_size := 64%N.
+    #[export] Typeclasses Transparent addr_size.
+    Definition addr_space := ()%type.
+    #[export] Typeclasses Transparent addr_space.
+    Definition addr_space_eq : EqDecision addr_space := _.
+    #[export] Typeclasses Transparent addr_space_eq.
+    Definition addr_space_countable : Countable addr_space := _.
+    #[export] Typeclasses Transparent addr_space_countable.
 
 
     Definition mem_acc := Access_kind RISCV_strong_access.
@@ -383,9 +364,6 @@ Module RiscV.
       | _ => false
       end.
 
-    Definition translation := unit.
-    #[export] Typeclasses Transparent translation.
-    Definition translation_eq : EqDecision translation := _.
     Definition abort := unit.
 
     Definition barrier := barrier_kind.
@@ -414,10 +392,14 @@ Module RiscV.
   (* End IWA. *)
 End RiscV.
 
+Module NoCHERI.
+  Definition no_cheri : ¬ RiscV.Arch.CHERI := ltac:(naive_solver).
+End NoCHERI.
+
 Bind Scope string_scope with RiscV.Arch.reg.
 
 Module RiscVTM := TermModels RiscV.
-Module RiscVCand := CandidateExecutions RiscV RiscVTM.
+Module RiscVCand := CandidateExecutions RiscV RiscVTM NoCHERI.
 Module RiscVGenPro := GenPromising RiscV RiscVTM.
 
 Export RiscV.Arch.
