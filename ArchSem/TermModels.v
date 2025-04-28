@@ -70,12 +70,12 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Import IWA.Interface.
 
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
-  Definition memoryMap := pa → bv 8.
+  Definition memoryMap := address → bv 8.
   #[global] Typeclasses Transparent memoryMap.
 
   (** Read a sequence of bytes from  a [memoryMap]:  *)
-  Definition memoryMap_read (mm : memoryMap) (pa : pa) (n : N) : bv (8 * n) :=
-    pa_range pa n |$> mm |> bv_of_bytes (8 * n).
+  Definition memoryMap_read (mm : memoryMap) (addr : address) (n : N) : bv (8 * n) :=
+    addr_range addr n |$> mm |> bv_of_bytes (8 * n).
 
   Definition registerMap := ∀ r : reg, reg_type r.
   #[global] Typeclasses Transparent registerMap.
@@ -103,6 +103,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     Record t :=
       Make {
           memory : memoryMap;
+          address_space : addr_space;
           regs: vec registerMap n;
         }.
 

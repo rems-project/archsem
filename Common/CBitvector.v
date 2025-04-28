@@ -49,6 +49,7 @@ Require Import Options.
 Require Import Lia.
 Require Import stdpp.decidable.
 Require Import stdpp.countable.
+Require Import stdpp.vector.
 Require Export stdpp.bitvector.bitvector.
 Require Export stdpp.bitvector.tactics.
 Require Import CBase.
@@ -126,24 +127,38 @@ Proof. intro H. rewrite H. apply bv_wrap_bv_unsigned. Qed.
   using unfold bv_modulus in *; lia : bv_unfolded_arith.
 #[global] Hint Rewrite Z_to_bv_bv_unsigned : bv_simplify.
 
+Lemma bv_add_Z_bv_unsigned n (b b' : bv n) : (b `+Z` bv_unsigned b' = b + b')%bv.
+Proof. bv_solve. Qed.
+#[export] Hint Rewrite bv_add_Z_bv_unsigned : bv_simplify.
+
+#[export] Hint Rewrite Z2N.id using bv_solve : bv_simplify.
 
 (** * [bv_solve] improvements *)
 
+(** We redefine bv_solve to end with [lia || f_equal; lia]. This is because on
+    some goals where the size is universally quantified, the extra bv_wrap n on
+    either size confuse [lia], but on the other hand, if the size is universally
+    quantified we are happy to prove the equality without wrapping.*)
+Ltac bv_solve ::=
+  bv_simplify_arith;
+  (* we unfold signed so we just need to saturate unsigned *)
+  bv_saturate_unsigned;
+  bv_solve_unfold_tac;
+  unfold bv_signed, bv_swrap, bv_wrap, bv_half_modulus, bv_modulus, bv_unsigned in *;
+  simpl;
+  (lia || f_equal; lia).
 
-(* Makes bv_unfold slower but more powerful, we'll see if that is better. *)
-Global Hint Constants Transparent : bv_unfold_db.
-
-(** Simplify all bitvector equation in Z equations everywhere. Aimed for
-    bitblast and bit by bit analysis*)
+(** Simplify all bitvector and Z equations everywhere and not just the goal like
+    [bv_simplify]. Aimed for bitblast and bit by bit analysis*)
 Ltac bv_simplify' :=
   forall_hyps ltac:(fun H => bv_simplify H); bv_simplify.
 
-(** Simplify all bitvector equation in Z equations everywhere. Aimed for
-    lia and arithmetic analysis*)
+(** Simplify all bitvector and Z equations everywhere and not just the
+    goal like [bv_simplify_arith]. Aimed for lia and arithmetic analysis*)
 Ltac bv_simplify_arith' :=
   forall_hyps ltac:(fun H => bv_simplify_arith H); bv_simplify_arith.
 
-(** Improvement of bv_solve that also simplifies the hypothesis *)
+(** Version of bv_solve that also simplifies the hypotheses *)
 Ltac bv_solve' :=
   forall_hyps ltac:(fun H => bv_simplify_arith H); bv_solve.
 
@@ -163,6 +178,10 @@ Definition div_round_up (m n : N) := ((m + (n - 1)) / n)%N.
 (** Transform a bitvector to bytes of size n. *)
 Definition bv_to_bytes (n : N) {m : N} (b : bv m) : list (bv n) :=
   bv_to_little_endian (Z.of_N $ div_round_up m n) n (bv_unsigned b).
+
+Lemma length_bv_to_bytes (n m : N) (b : bv m) :
+  length (bv_to_bytes n b) = N.to_nat (div_round_up m n)%N.
+Proof. unfold bv_to_bytes. rewrite length_bv_to_little_endian by lia. lia. Qed.
 
 (** Transform a list of bytes of size n to a bitvector of size m.
 
