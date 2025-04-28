@@ -70,50 +70,49 @@ Module Loc.
   Proof. unfold t. solve_decision. Defined.
 
   (** Convert a location into an ARM physical address *)
-  Definition to_pa (loc : t) : pa := bv_concat 56 loc (bv_0 3).
+  Definition to_addr (loc : t) : address := bv_concat 56 loc (bv_0 3).
 
 
   (** Recover a location from an ARM physical address. *)
-  Definition from_pa (pa : pa) : option t :=
-    if bv_extract 0 3 pa =? bv_0 3 then
-      Some (bv_extract 3 53 pa)
+  Definition from_addr (addr : address) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 53 addr)
     else None.
 
-  Lemma to_from_pa (pa : pa) (loc : t) :
-    from_pa pa = Some loc → to_pa loc = pa.
+  Lemma to_from_addr (addr : address) (loc : t) :
+    from_addr addr = Some loc → to_addr loc = addr.
   Proof.
-    unfold from_pa,to_pa.
-    pa_unfold.
+    unfold from_addr,to_addr, address, addr_size in *.
     unfold t in *.
     cdestruct loc |- ** #CDestrMatch.
     bv_solve'.
   Qed.
 
-  Lemma from_to_pa (loc : t) : from_pa (to_pa loc) = Some loc.
-    unfold from_pa, to_pa.
+  Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
+    unfold from_addr, to_addr.
     hauto solve:bv_solve'.
   Qed.
 
   (** Convert a location to a list of covered physical addresses *)
-  Definition to_pas (loc : t) : list pa := pa_range (to_pa loc) 8.
+  Definition to_addrs (loc : t) : list address := addr_range (to_addr loc) 8.
 
-  (** Give the location containing a pa *)
-  Definition from_pa_in (pa : pa) : t := bv_extract 3 53 pa.
+  (** Give the location containing a addr *)
+  Definition from_addr_in (addr : address) : t := bv_extract 3 53 addr.
 
-  (** Give the index of a pa inside its containing 8-bytes word *)
-  Definition pa_index (pa : pa) : bv 3 := bv_extract 0 3 pa.
+  (** Give the index of a addr inside its containing 8-bytes word *)
+  Definition addr_index (addr : address) : bv 3 := bv_extract 0 3 addr.
 
-  Lemma from_pa_pa_in pa loc :
-    from_pa pa = Some loc → from_pa_in pa = loc.
-  Proof. unfold from_pa,from_pa_in. hauto. Qed.
+  Lemma from_addr_addr_in addr loc :
+    from_addr addr = Some loc → from_addr_in addr = loc.
+  Proof. unfold from_addr,from_addr_in. hauto. Qed.
 
-  Lemma from_pa_in_to_pas loc :
-    ∀ pa ∈ to_pas loc, from_pa_in pa = loc.
+  Lemma from_addr_in_to_addrs loc :
+    ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
   Proof.
-    unfold from_pa_in, to_pas, pa_range.
+    unfold from_addr_in, to_addrs, addr_range, addr_addN, to_addr.
     set_unfold.
-    cdestruct |- **.
-    unfold t in *.
+    cdestruct |- ***.
+    unfold t, addr_size in *.
     bv_solve.
   Qed.
 
@@ -163,7 +162,7 @@ Module Memory.
 
   (** Convert from a memoryMap to the internal representation: initial *)
   Definition initial_from_memMap (mem : memoryMap) : initial :=
-    fun loc => Loc.to_pas loc |> map mem |> bv_of_bytes 64.
+    fun loc => Loc.to_addrs loc |> map mem |> bv_of_bytes 64.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
@@ -201,9 +200,9 @@ Module Memory.
       TermModel memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
     λ pa,
-      let loc := Loc.from_pa_in pa in
+      let loc := Loc.from_addr_in pa in
       let '(v, _) := read_last loc init mem in
-      let index := Loc.pa_index pa in
+      let index := Loc.addr_index pa in
       bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
 
   (** Adds the view number to each message given a view for the last message.
@@ -488,73 +487,82 @@ Module IIS.
 
 End IIS.
 
+(* Set Typeclasses Debug Verbosity 2. *)
+
+Require Import ASCommon.CResult.
+
+Section RunOutcome.
+  Context (tid : nat) (initmem : memoryMap) (ts : TState.t) (mem : Memory.t) (iis : IIS.t).
+Equations run_outcome' (out : outcome) :
+  Exec.t string (TState.t * Memory.t * IIS.t * eff_ret out) :=
+| RegWrite reg racc val =>
+    guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+    let vreg := iis.(IIS.strict) in
+    let ts :=
+      if decide (reg = pc_reg) then
+        ts
+        |> TState.update TState.vcap vreg
+        |> TState.set_reg reg (val, 0%nat)
+      else TState.set_reg reg (val, vreg) ts
+    in
+    mret (ts, mem, iis, ())
+| RegRead reg racc =>
+    guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+    let (val, view) := ts.(TState.regs) reg in
+    let iis := IIS.add view iis in
+    mret (ts, mem, iis, val)
+| MemRead 8 0 rr =>
+    let initmem := Memory.initial_from_memMap initmem in
+    addr ← Exec.error_none "PA not supported" $ Loc.from_addr rr.(ReadReq.address);
+    let vaddr := iis.(IIS.strict) in
+    match rr.(ReadReq.access_kind) with
+    | AK_explicit eak =>
+        '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
+        mret (ts, mem, IIS.add view iis, Ok (val, bv_0 0))
+    | AK_ifetch () => mthrow "TODO ifetch"
+    | _ => mthrow "Only ifetch and explicit accesses supported"
+    end
+| MemRead _ _ _ => mthrow "Memory read of size other than 8, or with tags"
+| MemWriteAddrAnnounce _ _ _ _ _ =>
+    let vaddr := iis.(IIS.strict) in
+    let ts := TState.update TState.vcap vaddr ts in
+    mret (ts, mem, iis, ())
+| MemWrite 8 0 wr =>
+    addr ← Exec.error_none "PA not supported" $ Loc.from_addr wr.(WriteReq.address);
+    let data := wr.(WriteReq.value) in
+    let vdata := iis.(IIS.strict) in
+    match wr.(WriteReq.access_kind) with
+    | AK_explicit eak =>
+        '(ts, mem) ← write_mem_xcl tid addr vdata eak ts mem data;
+        mret (ts, mem, iis, Ok ())
+    | AK_ifetch () => mthrow "Write of type ifetch ???"
+    | AK_ttw () => mthrow "Write of type TTW ???"
+    | _ => mthrow "Unsupported non-explicit write"
+    end
+| Barrier (Barrier_DMB dmb) => (* dmb *)
+    match dmb.(DxB_types) with
+    | MBReqTypes_All (* dmb sy *) =>
+        let ts :=
+          TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
+        mret (ts, mem, iis, ())
+    | MBReqTypes_Reads (* dmb ld *) =>
+        let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
+        mret (ts, mem, iis, ())
+    | MBReqTypes_Writes (* dmb st *) =>
+        let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
+        mret (ts, mem, iis, ())
+    end
+| Barrier (Barrier_ISB ()) => (* isb *)
+    let ts := TState.update TState.visb (TState.vcap ts) ts in
+    mret (ts, mem, iis, ())
+| GenericFail s => mthrow ("Instruction failure: " ++ s)%string
+| _ => mthrow "Unsupported outcome".
+End RunOutcome.
+
 (** Runs an outcome. *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
-   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) := λ '(ts, mem, iis),
-  let initmem := Memory.initial_from_memMap initmem in
-  match out with
-  | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      let vreg := iis.(IIS.strict) in
-      let ts :=
-        if decide (reg = pc_reg) then
-          ts
-          |> TState.update TState.vcap vreg
-          |> TState.set_reg reg (val, 0%nat)
-        else TState.set_reg reg (val, vreg) ts
-      in
-      mret (ts, mem, iis, ())
-  | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      let (val, view) := ts.(TState.regs) reg in
-      let iis := IIS.add view iis in
-      mret (ts, mem, iis, val)
-  | MemRead 8 rr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
-      let vaddr := iis.(IIS.strict) in
-      match rr.(ReadReq.access_kind) with
-      | AK_explicit eak =>
-          '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
-          mret (ts, mem, IIS.add view iis, inl (val, None))
-      | AK_ifetch () => mthrow "TODO ifetch"
-      | _ => mthrow "Only ifetch and explicit accesses supported"
-      end
-  | MemRead _ _ => mthrow "Memory read of size other than 8"
-  | MemWriteAddrAnnounce _ _ _ _ =>
-      let vaddr := iis.(IIS.strict) in
-      let ts := TState.update TState.vcap vaddr ts in
-      mret (ts, mem, iis, ())
-  | MemWrite 8 wr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let data := wr.(WriteReq.value) in
-      let vdata := iis.(IIS.strict) in
-      match wr.(WriteReq.access_kind) with
-      | AK_explicit eak =>
-          '(ts, mem) ← write_mem_xcl tid addr vdata eak ts mem data;
-          mret (ts, mem, iis, inl true)
-      | AK_ifetch () => mthrow "Write of type ifetch ???"
-      | AK_ttw () => mthrow "Write of type TTW ???"
-      | _ => mthrow "Unsupported non-explicit write"
-      end
-  | Barrier (Barrier_DMB dmb) => (* dmb *)
-      match dmb.(DxB_types) with
-      | MBReqTypes_All (* dmb sy *) =>
-          let ts :=
-            TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
-          mret (ts, mem, iis, ())
-      | MBReqTypes_Reads (* dmb ld *) =>
-          let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
-          mret (ts, mem, iis, ())
-      | MBReqTypes_Writes (* dmb st *) =>
-          let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
-          mret (ts, mem, iis, ())
-      end
-  | Barrier (Barrier_ISB ()) => (* isb *)
-      let ts := TState.update TState.visb (TState.vcap ts) ts in
-      mret (ts, mem, iis, ())
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome"
-  end.
+Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome)  :
+  stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) :=
+  λ '(ts, mem, iis), run_outcome' tid initmem ts mem iis out.
 
 (** * Implement GenPromising ***)
 
@@ -571,6 +579,7 @@ Definition UMPromising_nocert' : PromisingModel :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
+    address_space := ();
     mEvent := Msg.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_nocert;

@@ -144,6 +144,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       iis : Type;
       iis_init : iis;
       mEvent : Type;
+      address_space : addr_space;
       handler : (* tid *) nat → memoryMap →
                 fHandler outcome
                   (stateT (tState * PromMemory.t mEvent * iis) (Exec.t string));
@@ -283,7 +284,8 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           This is a lossy conversion *)
       Definition to_MState (ps: t) : MState.t n :=
         {| MState.regs := vmap (prom.(tState_regs)) ps.(tstates);
-          MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events) |}.
+          MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events);
+          MState.address_space := prom.(address_space) |}.
     End PSProm.
 
   End PState.
