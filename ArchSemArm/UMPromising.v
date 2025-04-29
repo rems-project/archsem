@@ -167,7 +167,7 @@ Module Memory.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
-  #[export] Typeclasses Transparent t.
+  #[global] Typeclasses Transparent t.
 
   Definition cut_after : nat -> t -> t := @cut_after Msg.t.
   Definition cut_before : nat -> t -> t := @cut_before Msg.t.
@@ -460,9 +460,9 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
   let acv := Explicit_access_kind_variety ak in
   guard_or "Atomic RMV unsupported" (acv = AV_atomic_rmw) ;;
   let xcl := acv =? AV_exclusive in
-  ts ← mGet;
   if xcl then
     '(mem, time) ← write_mem tid loc vdata acs mem data;
+    ts ← mGet;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
@@ -532,7 +532,8 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
       let data := wr.(WriteReq.value) in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
-          '({| PPState.state := ts; PPState.mem := mem; PPState.iis := iis |}) ← mGet;
+          mem ← mget PPState.mem;
+          iis ← mget PPState.iis;
           let vdata := iis.(IIS.strict) in
           mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata eak mem data);
           msetv PPState.mem mem;;
@@ -587,14 +588,13 @@ Definition UMPromising_nocert isem :=
 (* The certified version only works on simple ISA model without internal
      state *)
 
- Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
-  : relation (TState.t * PromMemory.t Msg.t) :=
+Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
+  : relation (TState.t * Memory.t) :=
   let handler := run_outcome tid initmem in
   λ '(ts, mem) '(ts', mem'),
-    CResult.Ok (ts', mem') ∈
-      cinterp handler isem (PPState.Make ts mem IIS.init)
-      |> Exec.to_state_result_list
-      |$> (fmap (M := CResult.result _) (λ '(PPState.Make ts mem iis), (ts, mem))).
+    (ts', mem') ∈
+      (PPState.state ×× PPState.mem)
+      <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
     (ts : TState.t) (mem : Memory.t) :=

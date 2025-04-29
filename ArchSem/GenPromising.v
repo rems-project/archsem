@@ -267,10 +267,9 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
       (** Run on instruction in specific thread by tid *)
       Definition run_tid (tid : fin n) : Exec.t t string () :=
-        st ←@{Exec.t t string} mGet;
+        st ← mGet;
         let handler := prom.(handler) tid (st.(initmem)) in
         let sem := (isem.(semantic) (istate tid st)) in
-        let init := (tstate tid st, st.(events), prom.(iis_init)) in
         ist ← Exec.liftSt (PState_PPState tid)
                 (cinterp handler sem);
         msetv (istate tid) ist.
@@ -369,7 +368,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         search but it is obviously correct. If a thread has reached termination
         no progress is made in the thread (either instruction running or
         promises *)
-    (* TODO make if only on bool *)
+    (* TODO: Make if/then/else syntax only work on bool *)
     Definition run_step (fuel : nat) : Exec.t t string () :=
       st ← mGet;
       tid ← mchoose n;
@@ -402,7 +401,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           st ← mGet;
           if dec $ terminated isem prom term st then mret (make_final st _)
           else
-            nextSt ← run_step fuel;
+            run_step fuel;;
             run fuel
       end.
     Solve All Obligations with naive_solver.
@@ -413,13 +412,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 
   (** Create a computational model from an ISA model and promising model *)
-Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
+  Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
       (fuel : nat) : Model.c ∅ :=
-      fun n (initMs : MState.init n) =>
-        PState.from_MState isem prom initMs |>
-        Model.Res.from_exec
-          $ CPState.to_final_MState
-          <$> CPState.run isem prom initMs.(MState.termCond) fuel.
+    fun n (initMs : MState.init n) =>
+      PState.from_MState isem prom initMs |>
+      Model.Res.from_exec
+        $ CPState.to_final_MState
+        <$> CPState.run isem prom initMs.(MState.termCond) fuel.
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)

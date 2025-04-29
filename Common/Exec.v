@@ -114,6 +114,9 @@ Definition to_stateful_result_list `(e : res (St * E) (St * A)) : list (St * res
 Definition to_state_result_list `(e : res (St * E) (St * A)) : list (result St St) :=
   map (Ok ∘ fst) e.(results) ++ map (Error ∘ fst) e.(errors).
 
+Definition success_state_list `(e : res (St * E) (St * A)) : list St :=
+  e.(results).*1.
+
 (** * Base execution monad definitions *)
 
 Definition t {St E A} := St → res (St * E) (St * A).

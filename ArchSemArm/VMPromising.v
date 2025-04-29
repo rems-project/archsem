@@ -283,12 +283,10 @@ Module Memory.
       taking a more recent view, will make the previous promises unfulfillable
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
-  Definition fulfill (ev : Ev.t) (prom : list view) : Exec.t t string (option view) :=
-    mem ← (mcall (@MGet t));
+  Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
     prom |> filter (fun t => Some ev =? mem !! t)
          |> reverse
-         |> head
-         |> mret.
+         |> head.
 
   (** Check that the write at the provided timestamp is indeed to that location
       and that no write to that location have been made by any other thread *)
@@ -1096,10 +1094,10 @@ Module IIS.
 
     Definition pop : Exec.t t string (bv 64) :=
       remain ← mget remaining;
-      if remain is h :: tl then 
-        msetv remaining tl;
+      if remain is h :: tl then
+        msetv remaining tl;;
         mret h
-      else mthrow "Couldn't pop the next PTE: error in translation assumptions"
+      else mthrow "Couldn't pop the next PTE: error in translation assumptions".
   End TransRes.
 
   Record t :=
@@ -1175,7 +1173,7 @@ Definition read_pte (vaddr : view)
   val ← Exec.liftSt snd IIS.TransRes.pop;
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
-
+Print CResult.result.
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
@@ -1194,14 +1192,19 @@ Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ttw () =>
-      '(view, val) ← Exec.partial_liftSt
-                      (λ ppst, if (ppst.(PPState.iis)).(IIS.trs) !! (bv_extract 12 36 va) then True else False)
-                      "TTW read before translation start"
-                      (λ ppst H_some, (ppst.(PPState.state), unfold_if_Some H_some))
-                      (λ '(ts,tres) ppst, ppst |> setv PPState.state ts |> set PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres))
-                      $ read_pte vaddr rr.(ReadReq.translation);
-      mset PPState.iis $ IIS.add view;;
-      mret val
+      ts ← mget PPState.state;
+      trans_res_option ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ PPState.iis);
+      tres ← Exec.error_none "TTW read before translation start" trans_res_option;
+      let read_pte_res := read_pte vaddr rr.(ReadReq.translation) (ts, tres) in
+      '((ts,tres), res) ← mchoosel $ Exec.to_stateful_result_list read_pte_res;
+      msetv PPState.state ts;;
+      mset PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres);;
+      match res with
+      | CResult.Ok (view, val) =>
+        mset PPState.iis $ IIS.add view;;
+        mret val
+      | CResult.Error e => mthrow e
+      end
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
   | _ => mthrow "Only ifetch, ttw and explicit accesses supported"
   end.
@@ -1230,11 +1233,10 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (acs : Access_stren
     (data : val) : Exec.t (TState.t * Memory.t) string view :=
   let msg := Msg.make tid loc data in
   let is_release := acs =? AS_rel_or_acq in
-  ts ← mget fst;
-  otime ← Exec.liftSt snd $ Memory.fulfill msg (TState.prom ts);
-  time ← (if Memory.fulfill msg (TState.prom ts) mem is Some t 
-         then mret t 
-         else Exec.liftSt snd $ Memory.promise msg
+  '(ts,mem) ← mGet;
+  time ← (if Memory.fulfill msg (TState.prom ts) mem is Some t
+         then mret t
+         else Exec.liftSt snd $ Memory.promise msg);
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
@@ -1355,8 +1357,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     | TLBIOp_VA => mret $ TLBI.Va tid asid va last
     | _ => mthrow "Unsupported kind of TLBI"
     end;
-  otime ← Exec.liftSt PPState.mem $ Memory.fulfill tlbiev (TState.prom ts);
-  time ← from_option mret (Exec.liftSt PPState.mem $ Memory.promise tlbiev) otime;
+  mem ← mget PPState.mem;
+  time ← (if Memory.fulfill tlbiev (TState.prom ts) mem is Some t
+          then mret t
+          else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
   guard_discard (vpre < time)%nat;;
   mset (TState.prom ∘ PPState.state) $ delete time;;
   mset PPState.state $ TState.update TState.vtlbi time;;
