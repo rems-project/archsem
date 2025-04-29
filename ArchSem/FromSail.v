@@ -146,12 +146,10 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   Definition tlb_op_eq := SA.tlb_op_eq.
   Definition fault := SA.fault .
   Definition fault_eq := SA.fault_eq.
-  Definition trans_start := ∅%type.
-  #[export] Typeclasses Transparent trans_start.
-  Definition trans_start_eq : EqDecision trans_start := _.
-  Definition trans_end := ∅%type.
-  #[export] Typeclasses Transparent trans_end.
-  Definition trans_end_eq : EqDecision trans_end := _.
+  Definition trans_start := SA.trans_start.
+  Definition trans_start_eq := SA.trans_start_eq.
+  Definition trans_end := SA.trans_end.
+  Definition trans_end_eq := SA.trans_end_eq.
 End ArchFromSail.
 
 Module Type ArchFromSailT (SA : SailArch) (PAM : PAManip SA).
@@ -196,6 +194,8 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | SI.TlbOp top => mcall (TlbOp top)
     | SI.TakeException fault => mcall (TakeException fault)
     | SI.ReturnException _ => mcall ReturnException
+    | SI.TranslationStart ts => mcall (TranslationStart ts)
+    | SI.TranslationEnd te => mcall (TranslationEnd te)
     | SI.GenericFail msg => mcall_noret (GenericFail msg)
     | SI.CycleCount => mret ()
     | SI.GetCycleCount => mcall_noret (GenericFail "GetCycleCount not supported")
