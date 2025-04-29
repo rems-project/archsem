@@ -1173,7 +1173,7 @@ Definition read_pte (vaddr : view)
   val ← Exec.liftSt snd IIS.TransRes.pop;
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
-Print CResult.result.
+
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
