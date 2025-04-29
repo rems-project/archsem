@@ -1096,9 +1096,10 @@ Module IIS.
 
     Definition pop : Exec.t t string (bv 64) :=
       remain ← mget remaining;
-      '(h, tl) ← remain |> Exec.error_Nil "Couldn't pop the next PTE: error in translation assumptions";
-      msetv remaining tl;;
-      mret h.
+      if remain is h :: tl then 
+        msetv remaining tl;
+        mret h
+      else mthrow "Couldn't pop the next PTE: error in translation assumptions"
   End TransRes.
 
   Record t :=
@@ -1163,7 +1164,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost);;
   mset fst $ TState.update TState.vspec vaddr;;
-  mset fst $ (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id);;
+(if acv =? AV_exclusive then mset fst $ TState.set_xclb (time, vpost) else mret ());;
   mret (vpost, res).
 
 Definition read_pte (vaddr : view)
@@ -1231,7 +1232,9 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (acs : Access_stren
   let is_release := acs =? AS_rel_or_acq in
   ts ← mget fst;
   otime ← Exec.liftSt snd $ Memory.fulfill msg (TState.prom ts);
-  time ← from_option mret (Exec.liftSt snd $ Memory.promise msg) otime;
+  time ← (if Memory.fulfill msg (TState.prom ts) mem is Some t 
+         then mret t 
+         else Exec.liftSt snd $ Memory.promise msg
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
