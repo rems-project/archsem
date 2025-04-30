@@ -56,12 +56,6 @@ Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
 
 Notation ofail := (othrow ()).
 
-Definition unfold_if_Some {A} {o : option A} : (if o then True else False) → A :=
-  match o as o0 return ((if o0 then True else False) → A) with
-  | Some a => λ _ : True, a
-  | None => λ H : False, match H with end
-  end.
-
 (** * EqSomeUnfold *)
 
 Class EqSomeUnfold {A} (oa : option A) (a : A) (P : Prop) :=
