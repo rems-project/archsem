@@ -277,27 +277,6 @@ Proof.
   elim l; cdestruct |- ***; set_solver.
 Qed.
 
-#[global] Instance unfold_elem_of_foldr_error {St E A} es (x : St * E) (l : list (res (St * E) (St * A))) :
-  SetUnfoldElemOf x (foldr merge {| results := []; errors := es |} l).(errors) (x ∈ es ∨ (x ∈ (mjoin (errors <$> l)))) | 20.
-Proof.
-  tcclean.
-  elim l; cdestruct |- ***; set_solver.
-Qed.
-
-#[global] Instance unfold_elem_of_mbind_error {St E A B} st (x : St * E) (e : t St E A) (f : A → t St E B) P Q :
-  (∀ y, SetUnfoldElemOf y (e st) (Q y)) →
-  (∀ y, SetUnfoldElemOf y (e st).(errors) (P y)) →
-  SetUnfoldElemOf x ((e ≫= f) st).(errors) (P x ∨ ∃ st' y, Q (st',y) ∧ x ∈ (f y st').(errors)) | 20.
-Proof.
-  tcclean. deintro.
-  unfold mbind, mbind_inst, mbind, res_mbind_inst.
-  destruct (e st) as [l es].
-  set_unfold.
-  enough (x ∈ mjoin (errors <$> map (λ '(st', r), f r st') l) ↔ ∃ (x0 : St) (x1 : A), (x0, x1) ∈ l ∧ x ∈ errors (f x1 x0))
-  by naive_solver.
-  elim l; cdestruct |- *** #CDestrSplitGoal; set_solver.
-Qed.
-
 #[global] Instance unfold_elem_of_bind_guard `{Decision P} {St E A} st (e : t St E A)
     (err : E) a Q:
   UnfoldElemOf a (e st) Q →
