@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CBool CMaps CArith CDestruct.
+Require Import CBase CBool CMaps CArith.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.
@@ -347,24 +347,6 @@ Lemma Forall2_diag A (P : A → A → Prop) l:
   Forall2 P l l ↔ ∀ x ∈ l, P x x.
 Proof. induction l; sauto lq:on. Qed.
 
-(** ** filter_partition *)
-
-Fixpoint filter_partition {A} P `{∀ x : A, Decision (P x)} (l : list A) :
-    list A * list A :=
-  if l is a :: ar
-  then let '(p_list, not_p_list) := filter_partition P ar in
-    (if decide (P a) then (a :: p_list, not_p_list) else (p_list, a :: not_p_list))
-  else ([],[]).
-
-Lemma filter_partition_spec {A} P `{∀ x : A, Decision (P x)} (l : list A) :
-  filter_partition P l = (filter P l, filter (λ x, ¬ P x) l).
-Proof.
-  induction l; cbn; first done.
-  cdestruct |- *** as ?? #CDestrMatch #CDestrSplitGoal.
-  all: rewrite IHl.
-  all: cdestruct |- ***.
-Qed.
-
 (** ** fold_left invariant proofs *)
 
 (** Proofs along fold_left using an invariant.
@@ -375,26 +357,8 @@ Lemma fold_left_inv {C B} (I : C → list B → Prop) (f : C → B → C)
   (I i l)
   → (∀ (a : C) (x : B) (tl : list B), x ∈ l → I a (x :: tl) → I (f a x) tl)
   → I (fold_left f l i) [].
-Proof.
   generalize dependent i.
   induction l; sauto lq:on.
-Qed.
-
-Lemma fold_left_inv_complete_list {C B} (I : C → list B → list B → Prop) (f : C → B → C)
-    (l l' : list B) (i : C) :
-  (I i l [])
-  → (∀ (a : C) (x : B) (tl strt : list B), x ∈ l → I a (x :: tl) strt → I (f a x) tl (x :: strt))
-  → I (fold_left f l i) [] (rev l).
-Proof.
-  replace (rev l) with (rev l ++ []) by by rewrite app_nil_r.
-  generalize (@nil B) at 1 3.
-  revert dependent i.
-  induction l.
-  1: done.
-  cdestruct |- ***.
-  rewrite <- app_assoc.
-  eapply IHl.
-  all: intros; eapply H0; set_solver.
 Qed.
 
 (** Tries to find a fold_left in the goal and pose the proofs of the
@@ -416,7 +380,6 @@ Lemma fold_left_inv_ND {C B} (I : C → list B → Prop) (f : C → B → C)
   → (I i l)
   → (∀ (a : C) (x : B) (t : list B), x ∈ l → x ∉ t → I a (x :: t) → I (f a x) t)
   → I (fold_left f l i) [].
-Proof.
   generalize dependent i.
   induction l; sauto lq:on.
 Qed.
