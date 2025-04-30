@@ -533,8 +533,7 @@ Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
           mem ← mget PPState.mem;
-          iis ← mget PPState.iis;
-          let vdata := iis.(IIS.strict) in
+          vdata ← mget (IIS.strict ∘ PPState.iis);
           mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata eak mem data);
           msetv PPState.mem mem;;
           mret (inl true)
