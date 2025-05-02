@@ -1189,21 +1189,26 @@ Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
   | AK_explicit eak =>
       trans_res ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ PPState.iis);
       let inv :=
-        trans_res |> fmap (fun tr => tr.(IIS.TransRes.invalidation)) |> default (0 % nat)
+        trans_res
+        |> fmap (fun tr => tr.(IIS.TransRes.invalidation))
+        |> default (0 % nat)
       in
-      '(view, val) ← Exec.liftSt (PPState.state ×× PPState.mem) $ read_mem_explicit addr vaddr inv eak init;
+      '(view, val) ←
+        Exec.liftSt (PPState.state ×× PPState.mem)
+          $ read_mem_explicit addr vaddr inv eak init;
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ttw () =>
-      '(PPState.Make ts mem iis) ← mGet;
-      let tres_option := iis.(IIS.trs) !! bv_extract 12 36 va in
+      ts ← mget PPState.state;
+      tres_option ← mget ((.!! bv_extract 12 36 va) ∘ IIS.trs ∘ PPState.iis);
       tres ← Exec.error_none "TTW read before translation start" tres_option;
-      let read_pte_res_lifted :=
+      '(view, val) ←
         read_pte vaddr rr.(ReadReq.translation) (ts, tres)
-        |> Exec.res_states_map
-            (λ '(ts, tres),
-              PPState.Make ts mem (IIS.set_trs (bv_extract 12 36 va) tres iis)) in
-      '(view, val) ← Exec.import_res read_pte_res_lifted;
+        |> Exec.lift_res_set_full
+            (λ '(ts, tres) ppst,
+              ppst
+              |> setv PPState.state ts
+              |> set PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres));
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
@@ -1459,8 +1464,8 @@ Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
   let handler := run_outcome tid initmem in
   λ '(ts, mem) '(ts', mem'),
     (ts', mem') ∈
-    (PPState.state ×× PPState.mem)
-    <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
+    PPState.state ×× PPState.mem
+      <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
   (ts : TState.t) (mem : Memory.t) : propset Ev.t :=

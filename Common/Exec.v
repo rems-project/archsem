@@ -106,10 +106,6 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
 
-(** Mapping function for both successful and error states *)
-Definition res_states_map {St St' E A} (f : St → St') (r : res (St * E) (St * A)) :=
-  make (map (λ '(st, a), (f st, a)) r.(results)) (map (λ '(st, e), (f st, e)) r.(errors)).
-
 (** Convert an execution result into a list of results *)
 Definition to_result_list `(e : res E A) : list (result E A) :=
   map Ok e.(results) ++ map Error e.(errors).
@@ -176,8 +172,11 @@ Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St �
 Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A :=
   liftSt_full getter (@setv _ _ getter _) inner.
 
-Definition import_res `(r : res (St * E) (St * A)) : t St E A :=
-  λ _, r.
+Definition lift_res_set_full {St' St} (setter : St' → St → St) `(r : res (St' * E) (St' * A)) : t St E A :=
+  λ st, make (map (λ '(st', v), (setter st' st, v)) r.(results)) (map (λ '(st', e), (setter st' st, e)) r.(errors)).
+
+Definition lift_res_set {St' St} (getter : St → St') `{Setter St St' getter} `(r : res (St' * E) (St' * A)) : t St E A :=
+  lift_res_set_full (@setv _ _ getter _) r.
 
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).
