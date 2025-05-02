@@ -167,7 +167,7 @@ Module Memory.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
-  #[global] Typeclasses Transparent t.
+  #[export] Typeclasses Transparent t.
 
   Definition cut_after : nat -> t -> t := @cut_after Msg.t.
   Definition cut_before : nat -> t -> t := @cut_before Msg.t.
@@ -259,6 +259,7 @@ Module Memory.
     end.
 
 End Memory.
+Import (hints) Memory.
 
 Module FwdItem.
    Record t :=

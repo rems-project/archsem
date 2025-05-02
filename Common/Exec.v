@@ -44,7 +44,11 @@
 
 (** This file defines an execution monad for operational models.
 
-This monad supports states, non determinism, and errors. *)
+    This monad supports states, non determinism, and errors.
+    As an intermediate step the [res] monad is defined,
+    that supports non-determinism and errors.
+    The definition of the execution monad then makes use of [res]
+    and its monadic functions, and adds states to both valid results and errors *)
 
 Require Import Options.
 Require Import Common.
@@ -102,18 +106,23 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
 
-(** Convert an execution into a list of results *)
+(** Mapping function for both successful and error states *)
+Definition res_states_map {St St' E A} (f : St → St') (r : res (St * E) (St * A)) :=
+  make (map (λ '(st, a), (f st, a)) r.(results)) (map (λ '(st, e), (f st, e)) r.(errors)).
+
+(** Convert an execution result into a list of results *)
 Definition to_result_list `(e : res E A) : list (result E A) :=
   map Ok e.(results) ++ map Error e.(errors).
 
-(** Convert an execution with states into a list of results *)
+(** Convert an execution result with states into a list of results *)
 Definition to_stateful_result_list `(e : res (St * E) (St * A)) : list (St * result E A) :=
   map (λ '(st,r), (st, Ok r)) e.(results) ++ map (λ '(st,err), (st, Error err)) e.(errors).
 
-(** Convert an execution into a list of result states *)
+(** Convert an execution result into a list of result states *)
 Definition to_state_result_list `(e : res (St * E) (St * A)) : list (result St St) :=
   map (Ok ∘ fst) e.(results) ++ map (Error ∘ fst) e.(errors).
 
+(** Convert and execution result into a list of successful states *)
 Definition success_state_list `(e : res (St * E) (St * A)) : list St :=
   e.(results).*1.
 
@@ -151,8 +160,8 @@ Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
 #[global] Instance st_call_MState {St E} : MCall (MState St) (t St E) | 10 :=
   λ eff,
     match eff with
-    | MSet s => λ _, (mret () : t St E ()) s
-    | MGet => λ s, (mret s : t St E St) s
+    | MSet s => λ _, make [(s,())] []
+    | MGet => λ s, make [(s,s)] []
     end.
 
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
@@ -166,6 +175,9 @@ Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St �
 
 Definition liftSt {St St' E A} (getter : St → St') `{Setter St St' getter} (inner : Exec.t St' E A) : Exec.t St E A :=
   liftSt_full getter (@setv _ _ getter _) inner.
+
+Definition import_res `(r : res (St * E) (St * A)) : t St E A :=
+  λ _, r.
 
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).

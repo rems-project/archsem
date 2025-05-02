@@ -308,6 +308,7 @@ Module Memory.
     end.
 
 End Memory.
+Import (hints) Memory.
 
 Module FwdItem.
    Record t :=
@@ -1162,7 +1163,9 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost);;
   mset fst $ TState.update TState.vspec vaddr;;
-(if acv =? AV_exclusive then mset fst $ TState.set_xclb (time, vpost) else mret ());;
+  (if acv =? AV_exclusive
+  then mset fst $ TState.set_xclb (time, vpost)
+  else mret ());;
   mret (vpost, res).
 
 Definition read_pte (vaddr : view)
@@ -1192,19 +1195,17 @@ Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
       mset PPState.iis $ IIS.add view;;
       mret val
   | AK_ttw () =>
-      ts ← mget PPState.state;
-      trans_res_option ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ PPState.iis);
-      tres ← Exec.error_none "TTW read before translation start" trans_res_option;
-      let read_pte_res := read_pte vaddr rr.(ReadReq.translation) (ts, tres) in
-      '((ts,tres), res) ← mchoosel $ Exec.to_stateful_result_list read_pte_res;
-      msetv PPState.state ts;;
-      mset PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres);;
-      match res with
-      | CResult.Ok (view, val) =>
-        mset PPState.iis $ IIS.add view;;
-        mret val
-      | CResult.Error e => mthrow e
-      end
+      '(PPState.Make ts mem iis) ← mGet;
+      let tres_option := iis.(IIS.trs) !! bv_extract 12 36 va in
+      tres ← Exec.error_none "TTW read before translation start" tres_option;
+      let read_pte_res_lifted :=
+        read_pte vaddr rr.(ReadReq.translation) (ts, tres)
+        |> Exec.res_states_map
+            (λ '(ts, tres),
+              PPState.Make ts mem (IIS.set_trs (bv_extract 12 36 va) tres iis)) in
+      '(view, val) ← Exec.import_res read_pte_res_lifted;
+      mset PPState.iis $ IIS.add view;;
+      mret val
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
   | _ => mthrow "Only ifetch, ttw and explicit accesses supported"
   end.
@@ -1454,13 +1455,12 @@ Definition VMPromising_nocert isem :=
      state *)
 
 Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
-  : relation (TState.t * PromMemory.t Ev.t) :=
+  : relation (TState.t * Memory.t) :=
   let handler := run_outcome tid initmem in
   λ '(ts, mem) '(ts', mem'),
-    CResult.Ok (ts', mem') ∈
-      cinterp handler isem (PPState.Make ts mem IIS.init)
-      |> Exec.to_state_result_list
-      |$> (fmap (M := CResult.result _) (λ '(PPState.Make ts mem iis), (ts, mem))).
+    (ts', mem') ∈
+    (PPState.state ×× PPState.mem)
+    <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
   (ts : TState.t) (mem : Memory.t) : propset Ev.t :=
