@@ -1006,7 +1006,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       make {
           (** The preexecution this candidate is based on *)
           pre_exec : pre et nmth;
-          (** Relate a memory read with the write it gets it's value from *)
+          (** Relate a memory read with the write it gets its value from *)
           reads_from : grel EID.t;
           (** Register read from (needed because of potentially relaxed
               register). For non-relaxed register, this must link a register
@@ -1113,12 +1113,12 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     (** The definition of [from_reads] is a bit unusual, because initial
         memory/initial writes are not represented as events. A write event is
-        after a read event it the footprints overlap and the write event is not
+        after a read event if the footprints overlap and the write event is not
         before the read event (aka the read reads from the write, or a
         coherence-later write)*)
     Definition from_reads cd :=
       (⦗mem_reads cd⦘⨾ overlapping cd ⨾⦗mem_writes cd⦘)
-        ∖ ((coherence cd ∪ ⦗reg_writes cd⦘) ⨾ reads_from cd)⁻¹.
+        ∖ ((coherence cd ∪ ⦗mem_writes cd⦘) ⨾ reads_from cd)⁻¹.
     #[global] Typeclasses Opaque from_reads.
 
 
