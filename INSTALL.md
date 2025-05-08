@@ -75,8 +75,8 @@ opam install coq-hammer-tactics coq-record-update coq-equations
 This development uses `stdpp` and `stdpp-bitvector`. They can be installed by
 
 ```
-opam pin coq-stdpp.1.11.0
-opam pin coq-stdpp-bitvector.1.11.0
+opam pin coq-stdpp 1.11.0
+opam pin coq-stdpp-bitvector 1.11.0
 ```
 
 #### Coq Sail (stdpp version)
