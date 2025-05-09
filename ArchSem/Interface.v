@@ -480,25 +480,6 @@ Module Interface (A : Arch).
   Definition iMon := cMon outcome.
   #[global] Typeclasses Transparent iMon.
 
-  (** The semantics of an complete instruction. A full definition of
-      instruction semantics is allowed to have an internal state that gets
-      passed from one instruction to the next. This is useful to handle
-      pre-computed instruction semantics (e.g. Isla). For complete instruction
-      semantics, we expect that A will be unit.
-
-      This is planned to disappear and be replaced by a plain [iMon ()], so
-      some modules (like CandidateExecutions) will already assume [iMon ()].
-      *)
-  Record iSem :=
-    {
-      (** The instruction model internal state *)
-      isa_state : Type;
-      (** The instruction model initial state for a thread with a specific Tid
-          *)
-      init_state : nat -> isa_state;
-      semantic : isa_state -> iMon isa_state
-    }.
-
   (** A single event in an instruction execution. Events cannot contain
       termination outcome (outcomes of type `outcome False`) *)
   Definition iEvent := fEvent outcome.

@@ -622,4 +622,5 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-(* Definition UMPromising_cert isem := Promising_to_Modelnc UMPromising_cert'. *)
+Definition UMPromising_cert_nc isem :=
+  Promising_to_Modelnc isem (UMPromising_cert' isem).

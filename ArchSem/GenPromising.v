@@ -207,23 +207,19 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   Module PState. (* namespace *)
 
     Section PS.
-      Context {iState : Type}.
       Context {tState : Type}.
       Context {mEvent : Type}.
       Context {n : nat}.
 
       Record t :=
         Make {
-            istates : vec iState n;
             tstates : vec tState n;
             initmem : memoryMap;
             events : PromMemory.t mEvent;
           }.
       #[global] Instance set_t : Settable t :=
-        settable! @Make <istates;tstates;initmem;events>.
+        settable! @Make <tstates;initmem;events>.
 
-      Definition istate tid := ((.!!! tid) ∘ istates).
-      #[global] Typeclasses Transparent istate.
       Definition tstate tid := ((.!!! tid) ∘ tstates).
       #[global] Typeclasses Transparent tstate.
     End PS.
@@ -231,13 +227,12 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 
     Section PSProm.
-      Context (isem : iSem).
+      Context (isem : iMon ()).
       Context (prom : PromisingModel).
       Context {n : nat}.
       Local Notation tState := prom.(tState).
       Local Notation mEvent := prom.(mEvent).
-      Local Notation iState := isem.(isa_state).
-      Local Notation t := (t iState tState mEvent n).
+      Local Notation t := (t tState mEvent n).
 
       (** Check if a thread has finished according to term *)
       Definition terminated_tid (term : terminationCondition n) (ps : t)
@@ -269,10 +264,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       Definition run_tid (tid : fin n) : Exec.t t string () :=
         st ← mGet;
         let handler := prom.(handler) tid (st.(initmem)) in
-        let sem := (isem.(semantic) (istate tid st)) in
-        ist ← Exec.liftSt (PState_PPState tid)
-                (cinterp handler sem);
-        msetv (istate tid) ist.
+        Exec.liftSt (PState_PPState tid) (cinterp handler isem).
 
       (** Compute the set of allowed promises by a thread indexed by tid *)
       Definition allowed_promises_tid (st : t) (tid : fin n) :=
@@ -299,8 +291,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
       (** Create an initial promising state from a generic machine state *)
       Definition from_MState (ms: MState.t n) : t :=
-        {|istates := fun_to_vec isem.(init_state);
-          tstates :=
+        {|tstates :=
             fun_to_vec
               (λ tid,
                  prom.(tState_init) tid ms.(MState.memory)
@@ -311,24 +302,24 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       (** Convert a promising state to a generic machine state.
           This is a lossy conversion *)
       Definition to_MState (ps: t) : MState.t n :=
-        {| MState.regs := vmap (prom.(tState_regs)) ps.(tstates);
+        {|MState.regs := vmap (prom.(tState_regs)) ps.(tstates);
           MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events) |}.
     End PSProm.
 
   End PState.
 
   (** Create a non-computational model from an ISA model and promising model *)
-  Definition Promising_to_Modelnc (isem : iSem) (prom : PromisingModel)
+  Definition Promising_to_Modelnc (isem : iMon ()) (prom : PromisingModel)
     : Model.nc False :=
     λ n (initMs : MState.init n),
       {[ mr |
-         let initPs := PState.from_MState isem prom initMs in
+         let initPs := PState.from_MState prom initMs in
          match mr with
          | Model.Res.FinalState fs =>
              ∃ finPs, rtc (PState.step isem prom) initPs finPs ∧
-                        fs.(MState.state) = PState.to_MState isem prom finPs ∧
+                        fs.(MState.state) = PState.to_MState prom finPs ∧
                         fs.(MState.termCond) = initMs.(MState.termCond) ∧
-                        PState.nopromises isem prom finPs
+                        PState.nopromises prom finPs
          | Model.Res.Error s =>
              ∃ finPs tid, rtc (PState.step isem prom) initPs finPs ∧
                             Error s ∈ PState.run_tid isem prom tid finPs
@@ -340,14 +331,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   Module CPState.
     Include PState.
     Section CPS.
-    Context (isem : iSem).
+    Context (isem : iMon ()).
     Context (prom : BasicExecutablePM).
     Context {n : nat}.
     Context (term : terminationCondition n).
     Local Notation tState := (tState prom).
     Local Notation mEvent := (mEvent prom).
-    Local Notation iState := isem.(isa_state).
-    Local Notation t := (t iState tState mEvent n).
+    Local Notation t := (t tState mEvent n).
 
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
@@ -360,7 +350,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     λ st,
       let res_st :=
         ev ← promise_select_tid fuel st tid;
-        mret $ promise_tid isem prom st tid ev
+        mret $ promise_tid prom st tid ev
       in
         Exec.make ((.,()) <$> res_st.(Exec.results)) ((st,.) <$> res_st.(Exec.errors)).
 
@@ -372,21 +362,21 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Definition run_step (fuel : nat) : Exec.t t string () :=
       st ← mGet;
       tid ← mchoose n;
-      if terminated_tid isem prom term st tid then mdiscard
+      if terminated_tid prom term st tid then mdiscard
       else
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
     (** The type of final promising state return by run *)
-    Definition final := { x : t | terminated isem prom term x }.
+    Definition final := { x : t | terminated prom term x }.
 
-    Definition make_final (p : t) := exist (terminated isem prom term) p.
+    Definition make_final (p : t) := exist (terminated prom term) p.
 
 
     (** Convert a final promising state to a generic final state *)
     Program Definition to_final_MState (f : final) : MState.final n :=
       {|MState.istate :=
-          {|MState.state := to_MState isem prom f;
+          {|MState.state := to_MState prom f;
             MState.termCond := term|};
         MState.terminated' := _ |}.
     Solve All Obligations with
@@ -399,23 +389,21 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       | 0%nat => mthrow "not enough fuel"
       | S fuel =>
           st ← mGet;
-          if dec $ terminated isem prom term st then mret (make_final st _)
+          if dec $ terminated prom term st then mret (make_final st _)
           else
             run_step fuel;;
             run fuel
       end.
     Solve All Obligations with naive_solver.
     End CPS.
-    Arguments final {_} _ {_}.
-    Arguments to_final_MState {_ _ _ _}.
+    Arguments to_final_MState {_ _ _}.
   End CPState.
 
-
   (** Create a computational model from an ISA model and promising model *)
-  Definition Promising_to_Modelc {isem : iSem} (prom : BasicExecutablePM)
+  Definition Promising_to_Modelc (isem : iMon ()) (prom : BasicExecutablePM)
       (fuel : nat) : Model.c ∅ :=
     fun n (initMs : MState.init n) =>
-      PState.from_MState isem prom initMs |>
+      PState.from_MState prom initMs |>
       Model.Res.from_exec
         $ CPState.to_final_MState
         <$> CPState.run isem prom initMs.(MState.termCond) fuel.
