@@ -422,6 +422,16 @@ Proof.
   now destruct x.
 Qed.
 
+#[local] Instance cdestruct_guard_option_True b `(Decision P) :
+  CDestrSimpl b (∃ x, guard P = Some x) P.
+Proof.
+  tcclean.
+  unfold guard', guard.
+  cdestruct |- *** #CDestrMatch #CDestrSplitGoal; try done.
+  eexists.
+  now unfold mret, option_ret.
+Qed.
+
 #[local] Instance cdestruct_elem_of_mthrow {St E A} (x : St * A) (err : E) st :
   CDestrSimpl false (x ∈ (mthrow err : Exec.t St E A) st) False.
 Proof.
@@ -429,6 +439,33 @@ Proof.
   unfold mthrow, Exec.throw_inst, mthrow, Exec.res_throw_inst.
   set_solver.
 Qed.
+
+#[local] Instance cdestruct_ObvTrue_is_Some_mret `(x : A) :
+  ObvTrue (is_Some (mret x : option A)).
+Proof. tcclean. unfold mret, option_ret. done. Qed.
+
+#[local] Instance cdestruct_is_Some_mret b `(x : A) :
+  CDestrSimpl b (is_Some (mret x : option A)) True.
+Proof. tcclean. unfold mret, option_ret. done. Qed.
+
+#[local] Instance cdestruct_exists_simpl_andr b `(P : A → Prop) Q Q' :
+  CDestrSimpl b Q Q' →
+  CDestrSimpl b (∃ x, P x ∧ Q) (∃ x, P x ∧ Q').
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+#[local] Instance cdestruct_exists_simpl_andl b `(P : A → Prop) Q Q' :
+  CDestrSimpl b Q Q' →
+  CDestrSimpl b (∃ x, Q ∧ P x) (∃ x, Q' ∧ P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+#[local] Instance cdestruct_exists_and_Truel b `(P : A → Prop) :
+  CDestrSimpl b (∃ x, True ∧ P x) (∃ x, P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+
+#[local] Instance cdestruct_exists_and_Truer b `(P : A → Prop) :
+  CDestrSimpl b (∃ x, P x ∧ True) (∃ x, P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
 
 Lemma is_Some_fold `(o : option A) i :
   o = Some i → is_Some o.
@@ -1091,14 +1128,6 @@ Proof.
       cdestruct Hmem_map_wf |- ***; rewrite ?cd_to_pe_lookup in *;
       cbn in *; rewrite ?lookup_unfold in *; do 2 deintro; cdestruct |- *** #CDestrMatch).
       all: rewrite ?cd_to_pe_lookup in *; unfold set, Setter_compose in *; cbn in *.
-(*       5: {
-        ospecialize (Hmem_map_wf t (ReadReq.pa rr) _).
-        1: cdestruct |- *** #CDestrMatch.
-        cdestruct Hmem_map_wf #CDestrMatch.
-        rewrite ?cd_to_pe_lookup in *; setoid_rewrite cd_to_pe_lookup in H11;
-        cbn in *.
-        unfold lookup in *.
-       } *)
       all: eexists; split; eauto.
       all: cdestruct |- ***.
       all: rewrite lookup_unfold; cdestruct |- *** #CDestrMatch.
@@ -1109,16 +1138,28 @@ Proof.
       all: try solve [opose proof (rf_to_reads _ _) as Hrf_reads; first (cdestruct |- ***; eauto);
       unfold Candidate.mem_reads in Hrf_reads; cdestruct Hrf_reads; subst; rewrite ?lookup_unfold in *; done].
       all: eexists; split; eauto.
-      all: cdestruct |- *** #CDestrMatch.
-      5,6,7,8,9: admit. (* Abort write *)
+      all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      4,6: admit (* TODO :  read has right value *).
+      4,5: admit. (* Abort write case *)
       all: eexists; split; eauto.
       all: cdestruct |- *** #CDestrMatch.
-      4: admit (* TODO *).
       all: eexists; split; eauto.
       all: cdestruct |- *** #CDestrMatch.
       all: eexists; split; eauto.
-      all: cdestruct |- *** #CDestrMatch.
-
+      all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      Unshelve.
+      all: cdestruct |- *** #CDestrSplitGoal.
+    * unfold partial_cd_state_to_cd, Candidate.is_valid_rf, seq_state_to_partial_cd_state, update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+      mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state, Candidate.mem_writes, seq_state_to_cd in *.
+      destruct call; unfold Candidate.init_mem_reads in *; cbn in *; cdestruct |- *** #CDestrMatch #CDestrSplitGoal; try done.
+      all: unfold Candidate.is_valid_init_mem_read.
+      all: cdestruct |- ***.
+      all: destruct (seq_state_to_pe seq_st); do 2 depelim events; unfold set, Setter_compose; cbn in *.
+      all: rewrite lookup_unfold.
+      all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      all: eexists; split; eauto.
+      9: admit (* write abort *).
+      all: unfold Candidate.init_mem_reads in *.
       all : unfold guard.
       all: rewrite ?lookup_unfold; cdestruct |- *** #CDestrMatch.
       5: { rewrite lookup_unfold in *.  cdestruct H10 |- *** #CDestrMatch. cbv [mthrow] in *. }
