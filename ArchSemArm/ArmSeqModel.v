@@ -64,7 +64,7 @@ Record seq_state := {
 Global Instance eta_seq_state : Settable seq_state :=
   settable! Build_seq_state <initSt;mem;regs>.
 
-Notation seqmon := (stateT seq_state (Exec.t string)).
+Notation seqmon := (Exec.t seq_state string).
 
 Definition read_reg_seq_state (reg : reg) (seqst : seq_state) : reg_type reg:=
   if (seqst.(regs) !! reg) is Some v
@@ -163,14 +163,6 @@ Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
     else sequential_model_seqmon fuel isem
   else mthrow "Out of fuel".
 
-(** Run the model on given initial MState and an initially blank sequential state.
-    The sequential state gets discarded and only the final state is returned *)
-Definition sequential_model_exec (fuel : nat) (isem : iMon ())
-  (initSt : MState.init 1) : Exec.t string (MState.final 1) :=
-  '(_, fs) ← sequential_model_seqmon fuel isem
-             {| initSt := initSt; regs := ∅; mem := ∅ |};
-  mret fs.
-
 (** Top-level one-threaded sequential model function that takes fuel (guaranteed
     termination) and an instruction monad, and returns a computational set of
     all possible final states. *)
@@ -178,10 +170,8 @@ Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   λ n,
   match n with
   | 1 => λ initSt : MState.init 1,
-           Listset
-            (sequential_model_exec fuel isem initSt
-             |> Exec.to_result_list
-             |$> Model.Res.from_result)
+    {| initSt := initSt; regs := ∅; mem := ∅ |}
+    |> Model.Res.from_exec (sequential_model_seqmon fuel isem)
   | _ => λ _, mret (Model.Res.Error "Exptected one thread")
   end.
 

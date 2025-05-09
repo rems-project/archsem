@@ -222,6 +222,11 @@ Proof. tcclean. naive_solver. Qed.
   CDestrSimpl g (oa = None) P :=
   cdestr_simpl g (@eq_none_unfold T oa P _).
 
+(** * CDestrSimpl *)
+
+#[export] Instance cdestruct_is_Some {A} (x : option A) :
+  CDestrSimpl false (is_Some x) (∃ y, x = Some y).
+Proof. tcclean. naive_solver. Qed.
 
 (** * Hint database for options *)
 Hint Extern 5 (_ = Some _) => progress (apply eq_some_unfold) : option.

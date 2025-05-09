@@ -273,8 +273,10 @@ Module Memory.
     lasts ++ [first].
 
   (** Promise a write and add it at the end of memory *)
-  Definition promise (ev : Ev.t) (mem : t) : view * t :=
-    let nmem := ev :: mem in (List.length nmem, nmem).
+  Definition promise (ev : Ev.t) : Exec.t t string view :=
+    mSet (cons ev);;
+    mem ← mGet;
+    mret (List.length mem).
 
   (** Returns a view among a promise set that correspond to an event. The
       oldest matching view is taken. This is because it can be proven that
@@ -306,6 +308,7 @@ Module Memory.
     end.
 
 End Memory.
+Import (hints) Memory.
 
 Module FwdItem.
    Record t :=
@@ -1090,12 +1093,12 @@ Module IIS.
     #[global] Instance eta : Settable _ :=
       settable! make <time; remaining; invalidation>.
 
-    Definition pop (tr : t) : Exec.t string (bv 64 * t) :=
-      match tr.(remaining) with
-      | h :: tl => mret (h, setv remaining tl tr)
-      | _ => mthrow
-              "Couldn't pop the next PTE: error in translation assumptions"
-      end.
+    Definition pop : Exec.t t string (bv 64) :=
+      remain ← mget remaining;
+      if remain is h :: tl then
+        msetv remaining tl;;
+        mret h
+      else mthrow "Couldn't pop the next PTE: error in translation assumptions".
   End TransRes.
 
   Record t :=
@@ -1134,12 +1137,13 @@ Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
-  (invalidation_time : nat) (ak : Explicit_access_kind) (ts : TState.t)
-  (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * view * val) :=
+  (invalidation_time : nat) (ak : Explicit_access_kind)
+  (init : Memory.initial)
+  : Exec.t (TState.t * Memory.t) string (view * val) :=
   let acs := ak.(Explicit_access_kind_strength) in
   let acv := ak.(Explicit_access_kind_variety) in
   guard_or "Atomic RMV unsupported" (acv =? AV_atomic_rmw);;
+  ts ← mget fst;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
@@ -1148,105 +1152,108 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   (* We only read after the coherence point, because without mixed-size, this
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts loc) in
+  mem ← mget snd;
   '(res, time) ← Exec.Results $ Memory.read loc vread init mem;
   let fwd := TState.fwdb ts loc in
   let read_view :=
     if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time in
   let vpost := vpre ⊔ read_view in
   guard_discard (vpost <= invalidation_time)%nat;;
-  let ts :=
-    ts |> TState.update_coh loc time
-       |> TState.update TState.vrd vpost
-       |> TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost)
-       |> TState.update TState.vspec vaddr
-       |> (if acv =? AV_exclusive then TState.set_xclb (time, vpost) else id)
-  in mret (ts, vpost, res).
+  mset fst $ TState.update_coh loc time;;
+  mset fst $ TState.update TState.vrd vpost;;
+  mset fst $ TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost);;
+  mset fst $ TState.update TState.vspec vaddr;;
+  (if acv =? AV_exclusive
+  then mset fst $ TState.set_xclb (time, vpost)
+  else mret ());;
+  mret (vpost, res).
 
-Definition read_pte (ts : TState.t) (vaddr : view)
-  (tsum : translation) (tres : IIS.TransRes.t)
-  : Exec.t string (TState.t * view * val * IIS.TransRes.t) :=
+Definition read_pte (vaddr : view)
+  (tsum : translation)
+  : Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
+  tres ← mget snd;
   let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
-  '(val, tres) ← IIS.TransRes.pop tres;
-  let ts := ts |> TState.update TState.vspec vpost in
-  mret (ts, vpost, val, tres).
-
-
-
+  val ← Exec.liftSt snd IIS.TransRes.pop;
+  mset fst $ TState.update TState.vspec vpost;;
+  mret (vpost, val).
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (rr : ReadReq.t 8) (iis : IIS.t)
-  (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (TState.t * IIS.t * val) :=
+Definition run_mem_read (rr : ReadReq.t 8) (init : Memory.initial) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
   addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
+  iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
   let va : bv 64 := default (Loc.to_va addr) rr.(ReadReq.va) in
-  let trans_res := iis.(IIS.trs) !! (bv_extract 12 36 va) in
-  let inv :=
-    trans_res |> fmap (fun tr => tr.(IIS.TransRes.invalidation)) |> default (0 % nat)
-  in
   match rr.(ReadReq.access_kind) with
   | AK_explicit eak =>
-      '(ts, view, val) ← read_mem_explicit addr vaddr inv eak ts init mem;
-      let iis := IIS.add view iis in
-      mret (ts, iis, val)
+      trans_res ← mget ((.!! (bv_extract 12 36 va)) ∘ IIS.trs ∘ PPState.iis);
+      let inv :=
+        trans_res
+        |> fmap (fun tr => tr.(IIS.TransRes.invalidation))
+        |> default (0 % nat)
+      in
+      '(view, val) ←
+        Exec.liftSt (PPState.state ×× PPState.mem)
+          $ read_mem_explicit addr vaddr inv eak init;
+      mset PPState.iis $ IIS.add view;;
+      mret val
   | AK_ttw () =>
-      tres ← Exec.error_none "TTW read before translation start" trans_res;
-      '(ts, view, val, tres) ←
-        read_pte ts vaddr rr.(ReadReq.translation) tres;
-      let iis :=
-        iis |> IIS.add view
-          |> IIS.set_trs (bv_extract 12 36 va) tres
-      in mret (ts, iis, val)
+      ts ← mget PPState.state;
+      tres_option ← mget ((.!! bv_extract 12 36 va) ∘ IIS.trs ∘ PPState.iis);
+      tres ← Exec.error_none "TTW read before translation start" tres_option;
+      '(view, val) ←
+        read_pte vaddr rr.(ReadReq.translation) (ts, tres)
+        |> Exec.lift_res_set_full
+            (λ '(ts, tres) ppst,
+              ppst
+              |> setv PPState.state ts
+              |> set PPState.iis (IIS.set_trs (bv_extract 12 36 va) tres));
+      mset PPState.iis $ IIS.add view;;
+      mret val
   | AK_ifetch () => mthrow "8 bytes ifetch ???"
   | _ => mthrow "Only ifetch, ttw and explicit accesses supported"
   end.
 
-
-Definition run_mem_read4 (rr : ReadReq.t 4) (iis : IIS.t)
-  (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-  : Exec.t string (bv 32) :=
-  let addr := rr.(ReadReq.pa) in
-  let aligned_addr := bv_unset_bit 2 addr in
-  let bit2 := addr |> bv_get_bit 2 in
-  loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
+Definition run_mem_read4 (rr : ReadReq.t 4) (init : Memory.initial) :
+    Exec.t Memory.t string (bv 32) :=
   match rr.(ReadReq.access_kind) with
   | AK_ifetch () =>
+      let addr := rr.(ReadReq.pa) in
+      let aligned_addr := bv_unset_bit 2 addr in
+      let bit2 := bv_get_bit 2 addr in
+      loc ← Exec.error_none "PA not supported" $ Loc.from_pa aligned_addr;
+      mem ← mGet;
       block ← Exec.error_none "Modified instruction memory"
                               (Memory.read_initial loc init mem);
-      (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-        |> mret
+      mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   | _ => mthrow "4 bytes accesses unsupported (except ifetch)"
   end.
-
 
 
 (** Performs a memory write for a thread tid at a location loc with view
     vaddr and vdata. Return the new state.
 
     This may mutate memory if no existing promise can be fullfilled *)
-Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
-           (acs : Access_strength) (ts : TState.t) (mem : Memory.t)
-           (data : val) : Exec.t string (TState.t * Memory.t * view):=
+Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (acs : Access_strength)
+    (data : val) : Exec.t (TState.t * Memory.t) string view :=
   let msg := Msg.make tid loc data in
   let is_release := acs =? AS_rel_or_acq in
-  let '(time, mem) :=
-    match Memory.fulfill msg (TState.prom ts) mem with
-    | Some t => (t, mem)
-    | None => Memory.promise msg mem
-    end in
+  '(ts,mem) ← mGet;
+  time ← (if Memory.fulfill msg (TState.prom ts) mem is Some t
+         then mret t
+         else Exec.liftSt snd $ Memory.promise msg);
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := ts.(TState.vspec) ⊔ vbob ⊔ viio in
   guard_discard (vpre ⊔ (TState.coh ts loc) < time)%nat;;
-  let ts :=
-    ts |> set TState.prom (delete time)
-       |> TState.update_coh loc time
-       |> TState.update TState.vwr time
-       |> TState.update TState.vrel (view_if is_release time)
-  in mret (ts, mem, time).
+  mset (TState.prom ∘ fst) $ delete time;;
+  mset fst $ TState.update_coh loc time;;
+  mset fst $ TState.update TState.vwr time;;
+  mset fst $ TState.update TState.vrel (view_if is_release time);;
+  mret time.
 
 
 (** Tries to perform a memory write.
@@ -1257,51 +1264,56 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
     If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
-    (ak : Explicit_access_kind) (ts : TState.t) (mem : Memory.t) (data : val)
-    : Exec.t string (TState.t * Memory.t):=
+    (ak : Explicit_access_kind) (data : val)
+    : Exec.t (TState.t * Memory.t) string () :=
   let acs := Explicit_access_kind_strength ak in
   let acv := Explicit_access_kind_variety ak in
   guard_or "Atomic RMV unsupported" (acv = AV_atomic_rmw);;
   let xcl := acv =? AV_exclusive in
   if xcl then
-    '(ts, mem, time) ← write_mem tid loc viio acs ts mem data;
+    time ← write_mem tid loc viio acs data;
+    '(ts, mem) ← mGet;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
         guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
     end;;
-    let ts := TState.set_fwdb loc (FwdItem.make time viio true) ts in
-    mret (TState.clear_xclb ts, mem)
+    mset fst $ TState.set_fwdb loc (FwdItem.make time viio true);;
+    mset fst TState.clear_xclb
   else
-    '(ts, mem, time) ← write_mem tid loc viio acs ts mem data;
-    let ts := TState.set_fwdb loc (FwdItem.make time viio false) ts in
-    mret (ts, mem).
+    time ← write_mem tid loc viio acs data;
+    mset fst $ TState.set_fwdb loc (FwdItem.make time viio false).
 
-Definition run_cse (iis : IIS.t) (ts : TState.t) : IIS.t * TState.t :=
-  let vpost :=
-    ts.(TState.vspec) ⊔ ts.(TState.vcse)
-    ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr)
-  in
-  (IIS.add vpost iis, TState.cse vpost ts).
+Definition run_cse : Exec.t (TState.t * IIS.t) string () :=
+  mSet
+    (λ '(ts, iis),
+      let vpost :=
+        ts.(TState.vspec) ⊔ ts.(TState.vcse)
+        ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr)
+      in (TState.cse vpost ts, IIS.add vpost iis)).
 
 (** Perform a barrier, mostly view shuffling *)
-Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
-  Exec.t string (IIS.t * TState.t) :=
+Definition run_barrier (barrier : barrier) :
+  Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
   match barrier with
   | Barrier_DMB dmb => (* dmb *)
-       match dmb.(DxB_types) with
+      match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
           let vpost :=
             ts.(TState.vrd) ⊔ ts.(TState.vwr)
             ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb)
           in
-          mret (IIS.add vpost iis, TState.update TState.vdmb vpost ts)
+          mset fst $ TState.update TState.vdmb vpost;;
+          mset snd $ IIS.add vpost
       | MBReqTypes_Reads (* dmb ld *) =>
           let vpost := ts.(TState.vrd) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
-          mret (IIS.add vpost iis, TState.update TState.vdmb vpost ts)
+          mset fst $ TState.update TState.vdmb vpost;;
+          mset snd $ IIS.add vpost
       | MBReqTypes_Writes (* dmb st *) =>
           let vpost := ts.(TState.vwr) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
-          mret (IIS.add vpost iis, TState.update TState.vdmbst vpost ts)
+          mset fst $ TState.update TState.vdmbst vpost;;
+          mset snd $ IIS.add vpost
       end
   | Barrier_DSB dmb => (* dsb *)
       guard_or "Non-shareable barrier are not supported"
@@ -1313,21 +1325,23 @@ Definition run_barrier (iis : IIS.t) (ts : TState.t) (barrier : barrier) :
             ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdmbst)
             ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vtlbi)
           in
-          mret (IIS.add vpost iis, TState.update TState.vdsb vpost ts)
+          mset fst $ TState.update TState.vdsb vpost;;
+          mset snd $ IIS.add vpost
       | MBReqTypes_Reads (* dsb ld *) =>
           let vpost := ts.(TState.vrd) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
-          mret (IIS.add vpost iis, TState.update TState.vdsb vpost ts)
+          mset fst $ TState.update TState.vdsb vpost;;
+          mset snd $ IIS.add vpost
       | MBReqTypes_Writes (* dsb st *) =>
           let vpost := ts.(TState.vwr) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
-          mret (IIS.add vpost iis, TState.update TState.vdsb vpost ts)
+          mset fst $ TState.update TState.vdsb vpost;;
+          mset snd $ IIS.add vpost
       end
-  | Barrier_ISB () => mret (run_cse iis ts)
+  | Barrier_ISB () => run_cse
   | _ => mthrow "Unsupported barrier"
   end.
 
-Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
-  (tlbi : TLBIInfo) (mem : Memory.t)
-  : Exec.t string (IIS.t * TState.t * Memory.t) :=
+Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string () :=
   guard_or
     "Non-shareable TLBIs are not supported"
     (tlbi.(TLBIInfo_shareability) = Shareability_NSH);;
@@ -1337,6 +1351,8 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let va := bv_extract 12 36 (tlbi.(TLBIInfo_rec).(TLBIRecord_address)) in
+  ts ← mget PPState.state;
+  iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
               ⊔ view ⊔ ts.(TState.vspec) in
   '(tlbiev : TLBI.t) ←
@@ -1347,80 +1363,68 @@ Definition run_tlbi (tid : nat) (iis : IIS.t) (ts : TState.t) (view : nat)
     | TLBIOp_VA => mret $ TLBI.Va tid asid va last
     | _ => mthrow "Unsupported kind of TLBI"
     end;
-  let '(time, mem) :=
-    match Memory.fulfill tlbiev (TState.prom ts) mem with
-    | Some t => (t, mem)
-    | None => Memory.promise tlbiev mem
-    end in
+  mem ← mget PPState.mem;
+  time ← (if Memory.fulfill tlbiev (TState.prom ts) mem is Some t
+          then mret t
+          else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
   guard_discard (vpre < time)%nat;;
-  let ts :=
-    ts |> set TState.prom (delete time)
-       |> TState.update TState.vtlbi time
-       |> TState.tlbi_cse time
-  in
-  mret (IIS.add time iis, ts, mem).
-
-
+  mset (TState.prom ∘ PPState.state) $ delete time;;
+  mset PPState.state $ TState.update TState.vtlbi time;;
+  mset PPState.state $ TState.tlbi_cse time;;
+  mset PPState.iis $ IIS.add time.
 
 
 (** Runs an outcome. *)
 Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
-   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) :=
-  λ '(ts, mem, iis),
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
   let initmem := Memory.initial_from_memMap initmem in
   match out with
   | RegWrite reg racc val =>
       guard_or
         "Non trivial write reg access types unsupported"
         (bool_decide (racc ≠ None));;
+      iis ← mget PPState.iis;
       let vreg := IIS.strict iis in
       match Reg.from_arch reg with
       | Some Reg.PC =>
-          let ts := ts
-                    |> TState.update TState.vspec vreg
-                    |> setv TState.pc (regt_to_bv64 val) in
-          mret (ts, mem, iis, ())
+          mset PPState.state $ TState.update TState.vspec vreg;;
+          msetv (TState.pc ∘ PPState.state) (regt_to_bv64 val)
       | Some (Reg.App app) =>
-          let ts := TState.set_reg app (regt_to_bv64 val, vreg) ts in
-          mret (ts, mem, iis, ())
+          mset PPState.state $ TState.set_reg app (regt_to_bv64 val, vreg)
       | Some (Reg.Sys sys) => mthrow "TODO"
       | None => mthrow "Writing to unsupported system register"
       end
   | RegRead reg direct => mthrow "TODO"
   | MemRead 8 rr =>
-      '(ts, iis, val) ← run_mem_read rr iis ts initmem mem;
-      mret (ts, mem, iis, inl (val, None))
+      val ← run_mem_read rr initmem;
+      mret (inl (val, None))
   | MemRead 4 rr => (* ifetch *)
-      opcode ← run_mem_read4 rr iis ts initmem mem;
-      mret (ts, mem, iis, inl (opcode, None))
+      opcode ← Exec.liftSt PPState.mem $ run_mem_read4 rr initmem;
+      mret (inl (opcode, None))
   | MemRead _ _ => mthrow "Memory read of size other than 8 or 4"
   | MemWriteAddrAnnounce _ _ _ _ =>
-      let vaddr := iis.(IIS.strict) in
-      let ts := TState.update TState.vspec vaddr ts in
-      mret (ts, mem, iis, ())
+      vaddr ← mget (IIS.strict ∘ PPState.iis);
+      mset PPState.state $ TState.update TState.vspec vaddr
   | MemWrite 8 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let viio := iis.(IIS.strict) in
+      viio ← mget (IIS.strict ∘ PPState.iis);
       let data := wr.(WriteReq.value) in
       match wr.(WriteReq.access_kind) with
       | AK_explicit eak =>
-          '(ts, mem) ← write_mem_xcl tid addr viio eak ts mem data;
-          mret (ts, mem, iis, inl true)
+          Exec.liftSt (PPState.state ×× PPState.mem) $ write_mem_xcl tid addr viio eak data;;
+          mret (inl true)
       | AK_ifetch () => mthrow "Write of type ifetch ???"
       | AK_ttw () => mthrow "Write of type TTW ???"
       | _ => mthrow "Unsupported non-explicit write"
       end
   | MemWrite _ _ => mthrow "Memory write of size other than 8"
   | Barrier barrier =>
-      '(iis, ts) ← run_barrier iis ts barrier;
-      mret (ts, mem, iis, ())
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier
   | TlbOp tlbi =>
-      let viio := iis.(IIS.strict) in
-      '(iis, ts, mem) ← run_tlbi tid iis ts viio tlbi mem;
-      mret (ts, mem, iis, ())
+      viio ← mget (IIS.strict ∘ PPState.iis);
+      run_tlbi tid viio tlbi
   | ReturnException =>
-      let '(iis, ts) := run_cse iis ts in
-      mret (ts, mem, iis, ())
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome"
   end.
@@ -1458,8 +1462,10 @@ Definition VMPromising_nocert isem :=
 Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
   : relation (TState.t * Memory.t) :=
   let handler := run_outcome tid initmem in
-  λ tsmem tsmem',
-    tsmem' ∈ (cinterp handler isem (tsmem, IIS.init) |$> fst ∘ fst).
+  λ '(ts, mem) '(ts', mem'),
+    (ts', mem') ∈
+    PPState.state ×× PPState.mem
+      <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
 
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
   (ts : TState.t) (mem : Memory.t) : propset Ev.t :=

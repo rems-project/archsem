@@ -423,6 +423,8 @@ Section FMon.
   (** If the target monad already supports the effect, then there is a trivial
       handler *)
   Definition mcall_fHandler `{MC : !MCall Eff M} : fHandler M := mcallM M.
+  #[export] Typeclasses Transparent mcall_fHandler.
+  #[global] Arguments mcall_fHandler {_ _} _ /.
 
   (** Free monad interpret: Interprets a free monad over Eff in an arbitrary monad, using a handler *)
   Fixpoint finterp `{MR: MRet M, MB: MBind M} (handler : fHandler M)
