@@ -357,28 +357,6 @@ Proof.
   cdestruct eid, H |- *** #CDestrMatch.
 Admitted.
 
-#[export] Instance lookup_unfold_intra_trace_eid_succ_None {et} (init : MState.t 1) evs :
-  LookupUnfold (intra_trace_eid_succ 0 evs) (Candidate.make_pre et init [# evs]) None.
-Proof.
-  tcclean.
-  unfold intra_trace_eid_succ.
-  destruct (decide (evs = [])) as [->|Hevs_not_empty]; cdestruct |- ***.
-  destruct (exists_last Hevs_not_empty)as [? [[] ->]].
-  unfold unsnoc_total.
-  rewrite unsnoc_snoc.
-  unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent, Candidate.lookup_instruction;
-  cdestruct |- ***; unfold lookup at 3, vec_lookup_nat; cdestruct |- *** #CDestrMatch.
-  rewrite length_app; cbn.
-  replace (Nat.pred (length x + 1)) with (length x) by lia.
-  rewrite lookup_app.
-  cdestruct |- *** as #CDestrMatch; first (intros ???%lookup_length; lia).
-  intros.
-  rewrite Nat.sub_diag; cbn.
-  destruct (l !! length l) eqn: Hl; cdestruct |- ***.
-  pose proof (lookup_length _ _ _ _ Hl).
-  unfold iEvent in *; lia.
-Qed.
-
 #[export] Instance lookup_unfold_intra_traces_eid_succ_None {nmth et} (init : MState.t nmth) trs (tid : Fin.t nmth) :
   LookupUnfold (intra_trace_eid_succ tid (trs !!! tid)) (Candidate.make_pre et init trs) None.
 Admitted.
@@ -402,47 +380,10 @@ Definition result_same_type_proj {T} (r : result T T) :=
   | Error t => t
   end.
 
-Lemma option_mbind_is_Some {A B} (o : option A) (f : A → option B) :
-  is_Some (x ←@{option} o; f x) ↔ ∃ i, o = Some i ∧ is_Some (f i).
-Proof.
-  destruct o eqn: Ho; cdestruct o, f, Ho |- *** #CDestrSplitGoal.
-  all: by eexists.
-Qed.
-
-#[local] Instance cdestruct_bind_is_Some_goal {A B} b o (f : A → option B) :
-  CDestrSimpl b (is_Some (x ←@{option} o; f x)) (∃ i, o = Some i ∧ is_Some (f i)).
-Proof. tcclean. eapply option_mbind_is_Some. Qed.
-
-#[local] Instance cdestruct_guard'_True b x `(Decision P) :
-  CDestrSimpl b (guard' P = Some x) P.
-Proof.
-  tcclean.
-  unfold guard', guard.
-  cdestruct |- *** #CDestrMatch #CDestrSplitGoal; try done.
-  now destruct x.
-Qed.
-
-#[local] Instance cdestruct_guard_option_True b `(Decision P) :
-  CDestrSimpl b (∃ x, guard P = Some x) P.
-Proof.
-  tcclean.
-  unfold guard', guard.
-  cdestruct |- *** #CDestrMatch #CDestrSplitGoal; try done.
-  eexists.
-  now unfold mret, option_ret.
-Qed.
-
-#[local] Instance cdestruct_elem_of_mthrow {St E A} (x : St * A) (err : E) st :
-  CDestrSimpl false (x ∈ (mthrow err : Exec.t St E A) st) False.
-Proof.
-  tcclean.
-  unfold mthrow, Exec.throw_inst, mthrow, Exec.res_throw_inst.
-  set_solver.
-Qed.
-
-#[local] Instance cdestruct_ObvTrue_is_Some_mret `(x : A) :
-  ObvTrue (is_Some (mret x : option A)).
-Proof. tcclean. unfold mret, option_ret. done. Qed.
+#[local] Instance cdestruct_is_some_unit b (o : option ()) P :
+  EqSomeUnfold o () P →
+  CDestrSimpl b (is_Some o) P.
+Proof. tcclean. by cdestruct o, H |- *** #CDestrSplitGoal. Qed.
 
 #[local] Instance cdestruct_is_Some_mret b `(x : A) :
   CDestrSimpl b (is_Some (mret x : option A)) True.
@@ -461,7 +402,6 @@ Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
 #[local] Instance cdestruct_exists_and_Truel b `(P : A → Prop) :
   CDestrSimpl b (∃ x, True ∧ P x) (∃ x, P x).
 Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
-
 
 #[local] Instance cdestruct_exists_and_Truer b `(P : A → Prop) :
   CDestrSimpl b (∃ x, P x ∧ True) (∃ x, P x).
@@ -692,8 +632,7 @@ Proof.
     lia.
 Qed.
 
-
-Context (max_size : N) {max_size_upper_limit : (max_size < Z.to_N (bv_modulus 52))%N}.
+(* Context (max_size : N) {max_size_upper_limit : (max_size < Z.to_N (bv_modulus 52))%N}.
 
 Definition tr_wf (str : result seq_state seq_state) : Prop :=
   match str with
@@ -745,7 +684,7 @@ Proof.
     cdestruct H0.
     eapply bv_add_Z_inj_l in H0; cdestruct H0 |- *** #CDestrSplitGoal #CDestrMatch; try lia.
     all: admit.
-Admitted.
+Admitted. *)
 
 Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
 
@@ -786,7 +725,7 @@ Definition reg_read_upd_partial_cd_state (reg : reg) (reid : EID.t) (st : partia
 
 Definition update_partial_cd_state_for_eid_ev st '(eid, ev) :=
   match ev with
-  | MemWrite _ wr &→ inl _ => mem_write_upd_partial_cd_state wr.(WriteReq.pa) eid st
+  | MemWrite _ wr &→ _ => mem_write_upd_partial_cd_state wr.(WriteReq.pa) eid st
   | MemRead _ rr &→ _ => mem_read_upd_partial_cd_state rr.(ReadReq.pa) eid st
   | RegWrite reg _ _ &→ _ => reg_write_upd_partial_cd_state reg eid st
   | RegRead reg _ &→ _ => reg_read_upd_partial_cd_state reg eid st
@@ -855,6 +794,177 @@ Proof.
   now rewrite unsnoc_snoc.
 Qed.
 
+#[local] Instance lookup_ev_from_iTraces : Lookup EID.t iEvent (list (iTrace ())) :=
+  λ eid evs,
+  '(trace, result) ← evs !! eid.(EID.iid);
+  trace !! eid.(EID.ieid).
+
+  (* #[local] Instance lookup_ev_from_iTraces {nmth : nat} : Lookup EID.t iEvent (vec (list (iTrace ())) nmth) :=
+  λ eid evs,
+  traces ← evs !! eid.(EID.tid);
+  '(trace, result) ← traces !! eid.(EID.iid);
+  trace !! eid.(EID.ieid). *)
+
+#[local] Instance lookup_unfold_vec_singleton (n : nat) `(v : A) :
+  LookupUnfold n [#v] (if decide (n = 0) then Some v else None).
+Proof.
+  tcclean.
+  unfold lookup, vec_lookup_nat.
+  cdestruct n |- *** #CDestrMatch; lia.
+Qed.
+
+#[local] Instance lookup_unfold_seq_state_to_cd (eid : EID.t) seqst o :
+  LookupUnfold eid (trace_rev seqst.(itrs)) o →
+  LookupUnfold eid (seq_state_to_cd seqst) (if decide (eid.(EID.tid) = 0 ∧ eid.(EID.byte) = None) then o else None).
+Proof.
+  tcclean.
+  destruct eid; subst.
+  rewrite cd_to_pe_lookup.
+  unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent,
+    Candidate.lookup_instruction, seq_state_to_cd, partial_cd_state_to_cd,
+    lookup_ev_from_iTraces, seq_state_to_pe in *.
+  cdestruct tid, byte |- *** #CDestrMatch.
+  all: rewrite lookup_unfold.
+  all: cdestruct |- *** #CDestrMatch.
+  all: destruct (trace_rev (itrs seqst) !! iid) as [[l ?]|].
+  all: cdestruct |- ***.
+  all: destruct (l !! ieid); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+  set_unfold.
+  intros ->.
+  naive_solver.
+Qed.
+
+#[global] Instance lookup_unfold_length_None `(l : list A) :
+  LookupUnfold (length l) l None.
+Proof. tcclean. induction l; done. Qed.
+
+#[global] Instance lookup_unfold_Nil `(l : list A) n :
+  LookupUnfold n [] None.
+Proof. tcclean. done. Qed.
+
+#[local] Instance lookup_unfold_partial_cd_state_to_cd eid pcdst pe o :
+  LookupUnfold eid pe o →
+  LookupUnfold eid (partial_cd_state_to_cd pcdst pe) o.
+Proof. tcclean. rewrite cd_to_pe_lookup. now unfold partial_cd_state_to_cd. Qed.
+
+#[local] Instance lookup_seq_state_to_pe eid seq_st o :
+  LookupUnfold eid (trace_rev seq_st.(itrs)) o →
+  LookupUnfold eid (seq_state_to_pe seq_st)
+  (if decide (eid.(EID.tid) = 0 ∧ eid.(EID.byte) = None) then o else None).
+Proof.
+  tcclean.
+  unfold seq_state_to_pe.
+  unfold lookup, Candidate.lookup_eid_pre, lookup_ev_from_iTraces, Candidate.lookup_iEvent, Candidate.lookup_instruction.
+  cdestruct o, eid, seq_st, H |- *** #CDestrMatch #CDestrSplitGoal #CDestrEqOpt.
+  all: rewrite lookup_unfold.
+  all: cdestruct |- *** #CDestrMatch.
+  all: destruct (trace_rev (itrs seq_st) !! EID.iid eid) as [[]|].
+  all: cdestruct |- ***.
+  all: destruct (l !! EID.ieid eid).
+  all: cdestruct |- *** #CDestrEqOpt.
+  all: sauto lq: on.
+Qed.
+
+(* #[global] Instance cdestruct_nat_sub_daig_0 b x P :
+  CDestrSimpl b (P (x - x)) (P 0).
+Proof. tcclean. by rewrite Nat.sub_diag. Qed. *)
+
+#[local] Instance lookup_unfold_trace_rev_cons (eid : EID.t) ev seqst o :
+  LookupUnfold eid (trace_rev seqst.(itrs)) o →
+  LookupUnfold eid (trace_rev (set itrs (trace_cons ev) seqst).(itrs))
+    (let succ_eid := intra_trace_eid_succ 0 (trace_rev seqst.(itrs)) in
+      if decide (eid.(EID.iid) = succ_eid.(EID.iid) ∧ eid.(EID.ieid) = succ_eid.(EID.ieid))
+    then Some ev
+    else
+      (if decide (eid.(EID.iid) < succ_eid.(EID.iid)
+        ∨ eid.(EID.iid) = succ_eid.(EID.iid) ∧ eid.(EID.ieid) < succ_eid.(EID.ieid))
+      then o
+      else None)).
+Proof.
+  tcclean.
+  unfold trace_rev, lookup, lookup_ev_from_iTraces, trace_cons in *.
+  destruct eid as [?[][]?], seqst, itrs; cbn;
+  cdestruct H |- *** as #CDestrMatch #CDestrSplitGoal.
+  all: rename itrs into it.
+  all: destruct (rev (map (set fst (rev (A:=fEvent outcome))) it)) as [|??] eqn: ?.
+  all: destruct i eqn: ?.
+  all: cdestruct |- ***.
+  all: rewrite ?lookup_app.
+  all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+  all: destruct (rev l) eqn: ?.
+  all: cbn in *.
+  all: try scongruence.
+  all: unfold intra_trace_eid_succ, unsnoc_total in *.
+  all: rewrite ?app_comm_cons, ?unsnoc_snoc in *.
+  all: cbn in *.
+  all: rewrite ?length_app in *.
+  all: cbn in *.
+  all: try solve [destruct (length l); lia].
+(*   all: inversion H1; subst.
+  all: rewrite ?lookup_unfold in *.
+  1: unshelve erewrite lookup_unfold in *; try eapply lookup_unfold_length_None; done.
+  all: cdestruct |- ***.
+  all: rewrite ?Nat.sub_diag in *.
+  all: cdestruct |- ***.
+  all: try eapply lookup_ge_None in H1.
+  1: assert (n - length l0 >= 1) by admit; admit.
+  1: admit.
+  1: admit.
+  1,2: try assert (n - length l = 0) as -> by admit; cbn; admit.
+  all: destruct (Init.Nat.sub n (@Datatypes.length (iTrace unit) l)) eqn: ?; cbn.
+  all: try lia.
+  all: try done.
+  all: destruct (rev l0); cbn in *. *)
+Admitted.
+
+#[export] Instance lookup_unfold_intra_trace_eid_succ_None evs :
+  LookupUnfold (intra_trace_eid_succ 0 evs) evs None.
+Proof.
+  tcclean.
+  unfold intra_trace_eid_succ.
+  destruct (decide (evs = [])) as [->|Hevs_not_empty]; cdestruct |- ***.
+  destruct (exists_last Hevs_not_empty)as [? [[] ->]].
+  unfold unsnoc_total.
+  rewrite unsnoc_snoc.
+  unfold lookup, lookup_ev_from_iTraces.
+  cdestruct |- ***.
+  rewrite length_app; cbn.
+  replace (Nat.pred (length x + 1)) with (length x) by lia.
+  rewrite lookup_app.
+  cdestruct |- *** as #CDestrMatch; rewrite lookup_unfold.
+  1: scongruence.
+  intros.
+  rewrite Nat.sub_diag; cbn.
+  by rewrite lookup_unfold.
+Qed.
+
+#[export] Instance lookup_unfold_pe_intra_trace_eid_succ_None {et} (init : MState.t 1) evs :
+  LookupUnfold (intra_trace_eid_succ 0 evs) (Candidate.make_pre et init [# evs]) None.
+Proof.
+  tcclean.
+  unfold intra_trace_eid_succ.
+  destruct (decide (evs = [])) as [->|Hevs_not_empty]; cdestruct |- ***.
+  destruct (exists_last Hevs_not_empty)as [? [[] ->]].
+  unfold unsnoc_total.
+  rewrite unsnoc_snoc.
+  unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent, Candidate.lookup_instruction;
+  cdestruct |- ***; unfold lookup at 3, vec_lookup_nat; cdestruct |- *** #CDestrMatch.
+  rewrite length_app; cbn.
+  replace (Nat.pred (length x + 1)) with (length x) by lia.
+  rewrite lookup_app.
+  cdestruct |- *** as #CDestrMatch; first (intros ???%lookup_length; lia).
+  intros.
+  rewrite Nat.sub_diag; cbn.
+  destruct (l !! length l) eqn: Hl; cdestruct |- ***.
+  pose proof (lookup_length _ _ _ _ Hl).
+  unfold iEvent in *; lia.
+Qed.
+
+#[local] Instance lookup_unfold_cd_to_pe `(cd : Candidate.t et nmth) eid o :
+  LookupUnfold eid cd o →
+  LookupUnfold eid (Candidate.pre_exec cd) o.
+Proof. tcclean. now rewrite cd_to_pe_lookup. Qed.
+
 Definition cd_monotone (cd : Candidate.t Candidate.NMS 1) : Prop :=
   rel_strictly_monotone cd.(Candidate.reads_from)
   ∧ rel_strictly_monotone cd.(Candidate.reg_reads_from)
@@ -880,19 +990,77 @@ Definition seq_model_outcome_invariant_preserved (I : seq_state → Prop) : Prop
   Ok seq_st_succ ∈ Exec.to_state_result_list (sequential_model_outcome_logged (Some regs_whitelist) (Z.to_N (bv_modulus 52)) call seq_st) →
   I seq_st_succ.
 
-Lemma seq_state_step_to_partial_cd_state I seq_st seq_st_succ call ret :
+Lemma seq_state_step_to_partial_cd_state (I : partial_cd_state → Prop) seq_st seq_st_succ call ret :
   (seq_st_succ, ret) ∈ sequential_model_outcome (Some regs_whitelist) (Z.to_N (bv_modulus 52)) call seq_st →
-  I (update_partial_cd_state_for_eid_ev (seq_state_to_partial_cd_state seq_st)
-      (intra_trace_eid_succ 0 (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin), call &→ ret)) →
+  let succ_eid := intra_trace_eid_succ 0 (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin) in
+  let pcdst := seq_state_to_partial_cd_state seq_st in
+  I pcdst →
+  (∀ reg racc, call = RegRead reg racc → I pcdst → I (reg_read_upd_partial_cd_state reg succ_eid pcdst)) →
+  (∀ reg racc regval, call = RegWrite reg racc regval → I pcdst → I (reg_write_upd_partial_cd_state reg succ_eid pcdst)) →
+  (∀ n rr, call = MemRead n rr → I pcdst → I (mem_read_upd_partial_cd_state rr.(ReadReq.pa) succ_eid pcdst)) →
+  (∀ n wr, call = MemWrite n wr → I pcdst → I (mem_write_upd_partial_cd_state wr.(WriteReq.pa) succ_eid pcdst)) →
   I (seq_state_to_partial_cd_state (set itrs (trace_cons (call &→ ret)) seq_st_succ)).
 Proof.
+  intro.
   unfold seq_state_to_partial_cd_state, construct_cd_for_pe.
-  cdestruct |- ***.
-  erewrite seq_state_to_pe_trace_cons, seq_state_to_pe_eq, trace_snoc_event_list.
-  2: eapply sequential_model_outcome_same_initSt; eauto.
-  2: eapply sequential_model_outcome_same_itrs; eauto.
-  rewrite fold_left_app.
-  eapply X.
+  destruct call.
+  all: cdestruct |- *** as H1 H2 H3 H4 H5.
+  all: erewrite seq_state_to_pe_trace_cons, seq_state_to_pe_eq, trace_snoc_event_list;
+  [|eapply sequential_model_outcome_same_initSt|eapply sequential_model_outcome_same_itrs].
+  all: eauto.
+  all: rewrite fold_left_app.
+  all: try solve [by eapply H1].
+  1: by eapply H2.
+  1: by eapply H3.
+  1: by eapply H4.
+  1: by eapply H5.
+Qed.
+
+Lemma seq_state_to_pe_fold seq_st :
+  {| Candidate.init := Candidate.init (seq_state_to_pe seq_st);
+    Candidate.events := [#Candidate.events (seq_state_to_pe seq_st) !!! 0%fin] |}
+  = seq_state_to_pe seq_st.
+Proof. unfold seq_state_to_pe. cdestruct |- ***. Qed.
+
+Lemma seq_state_step_to_cd (I : Ax.cand Candidate.NMS 1 → Prop) seq_st seq_st_succ call ret :
+  (seq_st_succ, ret) ∈ sequential_model_outcome (Some regs_whitelist) (Z.to_N (bv_modulus 52)) call seq_st →
+  let pe_succ := seq_state_to_pe (set itrs (trace_cons (call &→ ret)) seq_st_succ) in
+  let eid_succ := intra_trace_eid_succ 0 (Candidate.events (seq_state_to_pe seq_st) !!! 0%fin) in
+  let cd := seq_state_to_cd seq_st in
+  let pcdst := seq_state_to_partial_cd_state seq_st in
+  I cd →
+  (¬ is_mem_event (call &→ ret) → ¬ is_reg_write (call &→ ret) → ¬ is_reg_read (call &→ ret) →
+    I (partial_cd_state_to_cd (seq_state_to_partial_cd_state seq_st)
+      (set (lookup_total 0%fin ∘ Candidate.events)
+        (trace_snoc (call &→ ret)) (seq_state_to_pe seq_st)))) →
+  (∀ reg racc, call = RegRead reg racc → I cd → I (partial_cd_state_to_cd (reg_read_upd_partial_cd_state reg eid_succ pcdst) pe_succ)) →
+  (∀ reg racc regval, call = RegWrite reg racc regval → I cd → I (partial_cd_state_to_cd (reg_write_upd_partial_cd_state reg eid_succ pcdst) pe_succ)) →
+  (∀ n rr, call = MemRead n rr → I cd → I (partial_cd_state_to_cd (mem_read_upd_partial_cd_state rr.(ReadReq.pa) eid_succ pcdst) pe_succ)) →
+  (∀ n wr, call = MemWrite n wr → I cd → I (partial_cd_state_to_cd (mem_write_upd_partial_cd_state wr.(WriteReq.pa) eid_succ pcdst) pe_succ)) →
+  I (seq_state_to_cd (set itrs (trace_cons (call &→ ret)) seq_st_succ)).
+Proof.
+  intro.
+  repeat unfold partial_cd_state_to_cd, seq_state_to_cd, seq_state_to_partial_cd_state, construct_cd_for_pe.
+  opose proof (seq_state_to_pe_eq seq_st_succ seq_st _ _) as Hseq_st_equal_succ;
+  [eapply sequential_model_outcome_same_initSt|eapply sequential_model_outcome_same_itrs|];
+  eauto.
+  destruct call.
+  all: cdestruct |- *** as Hb H1 H2 H3 H4 H5 #CDestrMatch.
+  all: rewrite seq_state_to_pe_trace_cons, Hseq_st_equal_succ, trace_snoc_event_list.
+  all: eauto.
+  all: rewrite fold_left_app.
+  all: cbn.
+  all: unfold update_partial_cd_state_for_eid_ev at 1 3 5.
+  all: cdestruct |- ***.
+  all: rewrite ?seq_state_to_pe_fold, ?seq_state_to_pe_trace_cons in *.
+  all: rewrite Hseq_st_equal_succ in *.
+  all: try done.
+  all: try by eapply H2.
+  all: try by eapply H3.
+  all: try by eapply H4.
+  all: try by eapply H5.
+  all: eapply H1.
+  all: cdestruct |- *** #CDestrSplitGoal.
 Qed.
 
 Definition mem_writes_succeedP seq_st :=
@@ -913,7 +1081,9 @@ Definition partial_cd_state_eids_mem_map_in_traceP seq_st :=
 Definition partial_cd_state_eids_reg_map_in_traceP seq_st :=
   let pcdst := seq_state_to_partial_cd_state seq_st in
   let cd := seq_state_to_cd seq_st in
-  ∀ eid reg, pcdst.(reg_write_map) !! reg = Some eid → ∃ ev, is_reg_writeP (λ reg' _ _, reg' = reg) ev ∧ cd !! eid = Some ev ∧ (∀ eid' ev', cd !! eid' = Some ev' → is_reg_writeP (λ reg' _ _, reg' = reg) ev' → EID.full_po_lt eid' eid).
+  ∀ eid reg, pcdst.(reg_write_map) !! reg = Some eid →
+  ∃ ev, is_reg_writeP (λ reg' _ _, reg' = reg) ev ∧ cd !! eid = Some ev ∧
+    (∀ eid' ev', cd !! eid' = Some ev' → is_reg_writeP (λ reg' _ _, reg' = reg) ev' → EID.full_po_lt eid' eid).
 
 Record seq_inv_predicate (seq_st : seq_state) := {
   pcdst := seq_state_to_partial_cd_state seq_st;
@@ -937,6 +1107,25 @@ Lemma exists_or_dist {T} (P Q : T → Prop) :
   (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
 Proof. naive_solver. Qed.
 
+Lemma intra_trace_eid_succ_components_equal eid tid tr :
+  eid.(EID.tid) = tid →
+  eid.(EID.iid) = (intra_trace_eid_succ tid tr).(EID.iid) →
+  eid.(EID.ieid) = (intra_trace_eid_succ tid tr).(EID.ieid) →
+  eid.(EID.byte) = None →
+  eid = intra_trace_eid_succ tid tr.
+Proof.
+  destruct eid, (intra_trace_eid_succ tid tr) eqn: ?.
+  unfold intra_trace_eid_succ, unsnoc_total in *.
+  destruct (decide (tr = [])) as [->|].
+  2: opose proof (exists_last _) as [? [ltr]]; eauto.
+  all: cdestruct Heqt |- *** #CDestrSplitGoal.
+  all: try scongruence.
+  all: subst.
+  all: rewrite unsnoc_snoc in *.
+  all: destruct ltr.
+  all: cdestruct Heqt |- ***.
+Qed.
+
 Lemma seq_model_monotone :
   seq_model_outcome_invariant_preserved
     (λ seq_st,
@@ -951,18 +1140,76 @@ Proof.
   unfold seq_model_outcome_invariant_preserved, sequential_model_outcome_logged, fHandler_logger.
   cdestruct |- *** as seq_st H_mem_w_succeed H_pcdst_mem_map_wf H_pcdst_reg_map_wf Hmono call seq_st_succ ret H_seq_st_succ.
   pose (Candidate.event_list (seq_state_to_cd seq_st)) as evs.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seq_st_succ) as Hsame_itrs.
   do 3 try split.
   - admit.
   - unfold partial_cd_state_eids_mem_map_in_traceP.
+    eapply seq_state_step_to_cd; first eauto.
+    unfold seq_state_to_cd.
+    intros ??.
     (* erewrite seq_state_step_to_pe_eq, seq_state_to_pe_trace_cons; last eauto. *)
     eapply seq_state_step_to_partial_cd_state; first eauto.
-    cdestruct |- ***.
-    destruct (decide (is_mem_write (call &→ ret)));
-    destruct call; try done.
-    all: set_unfold in H_pcdst_mem_map_wf;
-    cdestruct H_pcdst_mem_map_wf;
-    unfold update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+    + unfold partial_cd_state_eids_mem_map_in_traceP in *.
+      cdestruct |- ***.
+      ospecialize (H_pcdst_mem_map_wf _ _ _); first eauto.
+      cdestruct H_pcdst_mem_map_wf.
+      exists (MemWrite x0 x1 &→ inl true).
+      cdestruct |- *** #CDestrSplitGoal.
+      * unfold seq_state_to_cd in H1.
+        rewrite ?lookup_unfold in *.
+        cdestruct H1 |- *** #CDestrMatch.
+        1: opose proof (intra_trace_eid_succ_components_equal _ _ _ _ _ _ _ ); eauto.
+        1: subst.
+        all: rewrite Hsame_itrs in *.
+        1: rewrite lookup_unfold in H4.
+        1: scongruence.
+        1: done.
+        1: admit.
+      * rewrite ?lookup_unfold in H3.
+        cdestruct H1, H3, H_seq_st_succ |- *** #CDestrMatch.
+        2: {
+          eapply H2; eauto.
+          1: rewrite lookup_unfold, Hsame_itrs in *; cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+          1: eauto.
+          hauto l: on.
+        }
+        opose proof (intra_trace_eid_succ_components_equal _ _ _ _ _ _ _ ); eauto.
+        exfalso.
+
+        2: {}
+
+
+
+
+        rewrite H4.
+        cdestruct |- *** #CDestrMatch.
+        1: assert (eid = (intra_trace_eid_succ 0 (trace_rev (itrs seq_st_succ)))) as -> by admit.
+        1: erewrite sequential_model_outcome_same_itrs in H4; last eauto.
+        1: rewrite lookup_unfold in H4.
+        1: done.
+        admit.
+      * eapply H2.
+
+        cdestruct H3 #CDestrMatch.
+        1: assert (eid' = (intra_trace_eid_succ 0 (trace_rev (itrs seq_st_succ)))) as -> by admit.
+        all: eapply H2.
+
+
+
+
+      all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      1: assert (eid = (intra_trace_eid_succ 0 (trace_rev (itrs seq_st_succ)))) as ->.
+      { destruct eid; subst. cbn in *. subst. admit. }
+      1: admit.
+      eapply H_pcdst_mem_map_wf.
+    all: cdestruct |- ***.
+    all: rewrite lookup_unfold.
+    all: cdestruct |- *** #CDestrMatch; last admit.
+    1: unfold partial_cd_state_eids_mem_map_in_traceP in *.
+    1: eapply H_pcdst_mem_map_wf.
+    all: unfold partial_cd_state_eids_mem_map_in_traceP, update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
     mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state in *.
+    all: cdestruct H_pcdst_mem_map_wf, H0, H_seq_st_succ #CDestrMatch #CDestrSplitGoal.
     all: cdestruct H, H_seq_st_succ |- *** #CDestrMatch #CDestrSplitGoal.
     all: opose proof (H_pcdst_mem_map_wf eid _ _) as Hbase; eauto.
     all: admit.
@@ -1142,22 +1389,47 @@ Proof.
       4,6: admit (* TODO :  read has right value *).
       4,5: admit. (* Abort write case *)
       all: eexists; split; eauto.
-      all: cdestruct |- *** #CDestrMatch.
-      all: eexists; split; eauto.
-      all: cdestruct |- *** #CDestrMatch.
-      all: eexists; split; eauto.
-      all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      all: unfold is_Some.
+      all: exists ().
+      all: cdestruct |- *** #CDestrMatch #CDestrEqOpt.
+      all: eauto 7.
       Unshelve.
       all: cdestruct |- *** #CDestrSplitGoal.
-    * unfold partial_cd_state_to_cd, Candidate.is_valid_rf, seq_state_to_partial_cd_state, update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
+    *
+    unfold partial_cd_state_to_cd, Candidate.is_valid_rf, seq_state_to_partial_cd_state, update_partial_cd_state_for_eid_ev, reg_write_upd_partial_cd_state, reg_read_upd_partial_cd_state,
       mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state, Candidate.mem_writes, seq_state_to_cd in *.
-      destruct call; unfold Candidate.init_mem_reads in *; cbn in *; cdestruct |- *** #CDestrMatch #CDestrSplitGoal; try done.
+      destruct call; unfold Candidate.init_mem_reads in *; cbn in *; cdestruct H_succ_st |- *** #CDestrMatch #CDestrSplitGoal; try done.
+      9: admit (* write abort *).
       all: unfold Candidate.is_valid_init_mem_read.
       all: cdestruct |- ***.
       all: destruct (seq_state_to_pe seq_st); do 2 depelim events; unfold set, Setter_compose; cbn in *.
       all: rewrite lookup_unfold.
       all: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+      all: unfold Candidate.mem_reads in *.
+      all: cdestruct H1.
+      all: unfold set, Setter_compose in *; cbn in H1.
+      all: rewrite ?lookup_unfold in *.
+      all: cdestruct H1 #CDestrMatch.
+      1: {
+      ospecialize (rf_valid_initial reid _).
+      - unfold Candidate.mem_reads.
+        cdestruct |- *** #CDestrSplitGoal.
+
+      }
+
+      all: try (ospecialize (rf_valid_initial reid _);
+      first solve [unfold Candidate.mem_reads in *; cdestruct H1 |- *** #CDestrMatch #CDestrSplitGoal;
+      unfold set, Setter_compose in H1; cbn in H1;
+      rewrite ?lookup_unfold in *; cdestruct H1 #CDestrMatch #CDestrSplitGoal]).
+      all: unfold Candidate.is_valid_init_mem_read in *.
+      all: cdestruct rf_valid_initial.
       all: eexists; split; eauto.
+      2: { ospecialize (rf_valid_initial reid _). 1: unfold Candidate.mem_reads in *;
+      cdestruct H1 |- *** #CDestrMatch #CDestrSplitGoal; unfold set, Setter_compose in H1; cbn in H1; rewrite lookup_unfold in *.
+      1: cdestruct H1 |- *** #CDestrMatch #CDestrSplitGoal; eexists; cdestruct |- *** #CDestrSplitGoal;
+      eauto; cdestruct |- ***.
+      1: cdestruct rf_valid_initial |- ***; eauto.
+      1: now unfold is_mem_readP, is_mem_read_reqP. }
       9: admit (* write abort *).
       all: unfold Candidate.init_mem_reads in *.
       all : unfold guard.

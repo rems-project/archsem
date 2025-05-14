@@ -360,6 +360,10 @@ Proof.
   elim l; cdestruct |- ***; set_solver.
 Qed.
 
+#[global] Instance res_unfold:elem_of_mthrow {St E A} x (err : E) st :
+  UnfoldElemOf x ((mthrow err : Exec.t St E A) st) False.
+Proof. tcclean. unfold mthrow, throw_inst, mthrow, res_throw_inst. set_solver. Qed.
+
 (** * Unfold the [has_error] predicate *)
 
 Class UnfoldHasError `(e : res E A) (Q : Prop) :=
