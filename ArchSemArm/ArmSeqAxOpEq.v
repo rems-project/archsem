@@ -1145,6 +1145,18 @@ Proof.
   all: cdestruct Heqt |- ***.
 Qed.
 
+Lemma reg_read_upd_pcdst_pa_w_map_equal reg eid pcdst :
+  pa_write_map (reg_read_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold reg_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma reg_write_upd_pcdst_pa_w_map_equal reg eid pcdst :
+  pa_write_map (reg_write_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold reg_write_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma mem_read_upd_pcdst_pa_w_map_equal reg eid pcdst :
+  pa_write_map (mem_read_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold mem_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
 Lemma seq_model_monotone :
   seq_model_outcome_invariant_preserved seq_inv_predicate
     (λ seq_st,
@@ -1191,7 +1203,66 @@ Proof.
         1: done.
         1: destruct call; cdestruct H11 |- ***; hauto l: on.
         1: destruct call; cdestruct H9 |- ***; hauto l: on.
-      *
+      * hauto lq: on rew: off.
+    + rewrite lookup_unfold.
+      ospecialize (H_inv _ _ _).
+      1: by rewrite reg_read_upd_pcdst_pa_w_map_equal in *.
+      setoid_rewrite lookup_unfold in H_inv.
+      setoid_rewrite lookup_unfold.
+      cdestruct H_inv |- *** #CDestrMatch.
+      2,3: hauto l: on.
+      eexists; repeat split.
+      2: hauto lq: on.
+      1: naive_solver.
+      1: cdestruct |- *** #CDestrMatch; eapply H5; cdestruct |- *** #CDestrMatch.
+      all: hauto l: on.
+    + rewrite lookup_unfold.
+      ospecialize (H_inv _ _ _); first eassumption.
+      setoid_rewrite lookup_unfold in H_inv.
+      setoid_rewrite lookup_unfold.
+      cdestruct H_inv |- *** #CDestrMatch.
+      2,3: hauto l: on.
+      eexists; repeat split.
+      2: hauto lq: on.
+      1: naive_solver.
+      1: cdestruct |- *** #CDestrMatch; eapply H5; cdestruct |- *** #CDestrMatch.
+      all: hauto l: on.
+    + rewrite lookup_unfold.
+      ospecialize (H_inv _ _ _).
+      1: by rewrite mem_read_upd_pcdst_pa_w_map_equal in *.
+      setoid_rewrite lookup_unfold in H_inv.
+      setoid_rewrite lookup_unfold.
+      cdestruct H_inv |- *** #CDestrMatch.
+      2,3: hauto l: on.
+      eexists; repeat split.
+      2: hauto lq: on.
+      1: naive_solver.
+      1: cdestruct |- *** #CDestrMatch; eapply H5; cdestruct |- *** #CDestrMatch.
+      all: hauto l: on.
+    + rewrite lookup_unfold.
+      cdestruct H0 #CDestrMatch.
+      * ospecialize (H_inv _ _ _); first eassumption.
+        setoid_rewrite lookup_unfold in H_inv.
+        setoid_rewrite lookup_unfold.
+        cdestruct H_inv |- *** #CDestrMatch.
+        all: eexists; repeat split; try eassumption.
+        1: best.
+        1: naive_solver.
+        1: cdestruct |- *** #CDestrMatch; eapply H5; cdestruct |- *** #CDestrMatch.
+        all: hauto l: on.
+    +
+      all: try naive_solver.
+      unfold reg_read_upd_partial_cd_state in *. (* TODO write Lemmas *)
+      cdestruct H0 #CDestrMatch.
+       eexists; repeat split; eauto.
+        1: destruct call; hauto lq: on.
+        cdestruct |- *** #CDestrMatch.
+        1: eapply H8.
+        1: cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+        1: eapply H12.
+        1: done.
+        1: destruct call; cdestruct H11 |- ***; hauto l: on.
+        1: destruct call; cdestruct H9 |- ***; hauto l: on.
       exists (MemWrite x0 x1 &→ inl true).
       repeat split.
       3: intros ???.
