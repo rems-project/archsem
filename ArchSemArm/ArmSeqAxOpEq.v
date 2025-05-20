@@ -335,21 +335,50 @@ Proof.
   lia.
 Qed.
 
-#[export] Instance lookup_unfold_traces_snoc {et nmth} (init : MState.t nmth) evs (ev : iEvent) thread (eid : EID.t) R :
-  LookupUnfold eid (Candidate.make_pre et init evs) R →
-  LookupUnfold eid (Candidate.make_pre et init (traces_snoc ev thread evs))
+Lemma lookup_vec_nat_cons_S {A n} (h : A) (v : vec A n) x :
+  (h ::: v) !! S x = v !! x.
+Proof.
+  unfold lookup, vec_lookup_nat.
+  cdestruct |- *** #CDestrMatch; try lia.
+  f_equal.
+  eapply Fin.of_nat_ext.
+Qed.
+
+Lemma lookup_total_fin_to_nat {A size} (n : fin size) (v : vec A size)  :
+  v !! fin_to_nat n = Some (v !!! n).
+Proof.
+  generalize dependent n.
+  dependent induction v.
+  all: intros m.
+  2: destruct n.
+  all: depelim m.
+  all: cdestruct |- *** #CDestrMatch.
+  1: depelim m.
+  rewrite lookup_vec_nat_cons_S.
+  sfirstorder.
+Qed.
+
+#[export] Instance lookup_unfold_traces_snoc {nmth} (init : MState.t nmth) evs (ev : iEvent) thread (eid : EID.t) R :
+  LookupUnfold eid (Candidate.make_pre Candidate.NMS init evs) R →
+  LookupUnfold eid (Candidate.make_pre Candidate.NMS init (traces_snoc ev thread evs))
     (if eid =? intra_trace_eid_succ (fin_to_nat thread) (evs !!! thread) then Some ev else R).
 Proof.
   tcclean.
-  cdestruct |- *** #CDestrMatch.
-  - rewrite H0 in *.
-    unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent, Candidate.lookup_instruction in H |- *.
-    rewrite intra_trace_eid_succ_tid in *.
-    cbn in *.
+  clear H R.
+  cdestruct |- *** #CDestrMatch #CDestrEqOpt.
+  - unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent, Candidate.lookup_instruction in H |- *.
+    cdestruct eid, H |- *** #CDestrEqOpt.
+    eexists.
+    cdestruct |- *** #CDestrSplitGoal.
+    2: eapply intra_trace_eid_succ_byte.
+    rewrite intra_trace_eid_succ_tid.
     unfold traces_snoc, set, Setter_valter, alter, valter.
-    destruct (evs !!! thread) eqn:Hvl; cbn in *;
-    pose proof Hvl as Hl; eapply vlookup_lookup in Hl;
-    rewrite ?Hvl, ?Hl.
+    rewrite lookup_total_fin_to_nat.
+    rewrite vlookup_insert.
+    cdestruct |- *** #CDestrEqOpt.
+    unfold intra_trace_eid_succ, unsnoc_total.
+    destruct (unsnoc (evs !!! thread)) as [[? []]|] eqn: Hunsnoc.
+    1: cbn.
 Admitted.
 
 #[export] Instance lookup_unfold_trace_snoc {et} (init : MState.t 1) evs (ev : iEvent) (eid : EID.t) R :
@@ -368,6 +397,59 @@ Admitted.
 Lemma cd_to_pe_lookup `(cd : Candidate.t et nmth) eid :
   cd !! eid = Candidate.pre_exec cd !! eid.
 Proof. reflexivity. Qed.
+
+#[local] Instance lookup_ev_from_iTraces : Lookup EID.t iEvent (list (iTrace ())) :=
+  λ eid evs,
+  '(trace, result) ← evs !! eid.(EID.iid);
+  trace !! eid.(EID.ieid).
+
+#[local] Instance lookup_unfold_list_singleton {A} (x : A) n :
+  LookupUnfold n [x] (if n is 0 then Some x else None).
+Proof. tcclean. by destruct n. Qed.
+
+Lemma eid_full_po_lt_intra_trace_eid_succ {tid} eid (tr : list (iTrace ())) :
+  eid.(EID.tid) = tid → is_Some (tr !! eid) →
+  EID.full_po_lt eid (intra_trace_eid_succ tid tr).
+Proof.
+  cdestruct |- *** as Htid ev Hev.
+  opose proof (intra_trace_eid_succ_tid tid tr).
+  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt, intra_trace_eid_succ, unsnoc_total.
+  destruct (decide (tr = [])) as [->|H_notempty].
+  all: unfold lookup, lookup_ev_from_iTraces in Hev.
+  1: destruct eid as [? []]; by cbn in *.
+  pose proof (exists_last H_notempty) as [trstart [[] ->]].
+  rewrite ?unsnoc_snoc, length_app.
+  cbn.
+  replace (Nat.pred (length trstart + 1)) with (length trstart) by lia.
+  rewrite lookup_app in Hev.
+  cdestruct Hev |- *** #CDestrEqOpt #CDestrMatch.
+  2: {
+    rewrite lookup_unfold in H1.
+    cdestruct H1 #CDestrMatch #CDestrEqOpt.
+    opose proof (lookup_ge_None_1 _ _ _); eauto.
+    right.
+    cdestruct |- *** #CDestrSplitGoal.
+    1: eapply Nat.sub_0_le in H1.
+    1: assert (∀ x y : nat, x ≤ y -> y ≤ x → x = y) as Heq by lia.
+    1: eapply Heq; sfirstorder.
+    eapply lookup_lt_is_Some_1.
+    sfirstorder.
+  }
+  left.
+  cdestruct |- *** #CDestrSplitGoal.
+  eapply lookup_lt_is_Some_1.
+  sfirstorder.
+Qed.
+
+Lemma eid_full_po_lt_irreflexive eid :
+  ¬ EID.full_po_lt eid eid.
+Proof.
+  destruct eid.
+  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt.
+  cdestruct |- *** as ? #CDestrSplitGoal.
+  all: lia.
+Qed.
+
 
 Section Proof.
 Context (regs_whitelist : gset reg) (fuel : nat) (isem : iMon ()).
@@ -611,7 +693,7 @@ Proof.
   admit. (* TODO : Transitive full_po_lt *)
 Admitted.
 
-Lemma rel_montone_acyclic (rel : grel EID.t) :
+Lemma rel_monotone_acyclic (rel : grel EID.t) :
   rel_strictly_monotone rel → grel_acyclic rel.
 Proof.
   unfold rel_strictly_monotone, grel_acyclic, grel_irreflexive.
@@ -635,6 +717,18 @@ Proof.
     unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
     lia.
 Qed.
+
+Lemma rel_monotone_difference (rel1 rel2 : grel EID.t) :
+
+  (∀ x y, (x,y) ∈ rel1 → EID.full_po_lt x y ∨ (x,y) ∈ rel2) →
+  rel_strictly_monotone (rel1 ∖ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  cdestruct |- *** as H a b ??.
+  ospecialize (H _ _ _); eauto.
+  cdestruct H |- *** #CDestrSplitGoal.
+Qed.
+
 
 (* Context (max_size : N) {max_size_upper_limit : (max_size < Z.to_N (bv_modulus 52))%N}.
 
@@ -798,11 +892,6 @@ Proof.
   destruct (itrs seqst); first done.
   now rewrite unsnoc_snoc.
 Qed.
-
-#[local] Instance lookup_ev_from_iTraces : Lookup EID.t iEvent (list (iTrace ())) :=
-  λ eid evs,
-  '(trace, result) ← evs !! eid.(EID.iid);
-  trace !! eid.(EID.ieid).
 
   (* #[local] Instance lookup_ev_from_iTraces {nmth : nat} : Lookup EID.t iEvent (vec (list (iTrace ())) nmth) :=
   λ eid evs,
@@ -996,7 +1085,7 @@ Proof.
   2: sauto q: on.
   tcclean.
   by unfold build_pre_exec.
-Qed.
+Admitted.
 
 
 #[local] Instance lookup_unfold_build_pre_exec_trace_cons_tail initSt itrs eid ev o :
@@ -1241,9 +1330,7 @@ Lemma seq_model_pcdst_mem_map_inv :
       let pcdst := (seq_state_to_partial_cd_state seq_st) in
       let cd := (seq_state_to_cd seq_st) in
       let evs := Candidate.event_list cd in
-      partial_cd_state_mem_map_invP seq_st
-      (* ∧ partial_cd_state_reg_map_invP seq_st
-      ∧ cd_monotone cd *)).
+      partial_cd_state_mem_map_invP seq_st).
 Proof.
   unfold seq_model_outcome_invariant_preserved.
   cdestruct as seq_st H_inv call seqst_succ H_seqst_succ.
@@ -1402,12 +1489,59 @@ Proof.
   opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
     opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
   constructor.
-  - eapply rel_montone_acyclic.
+  - eapply rel_monotone_acyclic.
     repeat rewrite <- rel_montone_union.
     unfold cd_monotone in *.
     cdestruct H_mono |- *** #CDestrSplitGoal.
-    1: admit. (* full instruction order monotone *)
-    1: admit. (* from reads montone *)
+    {
+      unfold Candidate.full_instruction_order, Candidate.instruction_order, Candidate.iio, rel_strictly_monotone, EID.full_po_lt, EID.po_lt, EID.iio_lt, Candidate.same_thread, Candidate.same_instruction_instance.
+      cdestruct |- *** #CDestrSplitGoal.
+      2: lia.
+      rewrite ?lookup_unfold in *.
+      rewrite ?lookup_unfold in H3.
+      cdestruct H3, H4 |- *** #CDestrMatch.
+      all: lia.
+    }
+    {
+      unfold GenAxiomaticArm.AxArmNames.fr.
+      eapply rel_strictly_monotone_seq2; split.
+      1: eapply grel_from_set_montone.
+      unfold Candidate.from_reads.
+      eapply rel_monotone_difference.
+      cdestruct |- ***.
+      unfold Candidate.mem_reads, Candidate.mem_writes in *.
+      set_unfold.
+      cdestruct H2, H6.
+
+      rewrite lookup_unfold in H2.
+      rewrite lookup_unfold in H6.
+      opose proof (EID.full_po_lt_connex x y) as Hconnex.
+      cdestruct x, y, H2, H6 #CDestrMatch #CDestrSplitGoal.
+      all: try solve [by rewrite ?intra_trace_eid_succ_tid, ?intra_trace_eid_succ_byte in *].
+      all: ospecialize (Hconnex _ _ _); try solve [by rewrite ?intra_trace_eid_succ_tid, ?intra_trace_eid_succ_byte in *]; try lia.
+      all: cdestruct Hconnex #CDestrSplitGoal.
+      all: try solve [by left].
+      1: hauto l: on.
+      1: right; admit.
+      1,2: opose proof (eid_full_po_lt_intra_trace_eid_succ x (trace_rev (itrs seqst_succ)) _ _); eauto.
+      1,2: opose proof (eid_full_po_lt_intra_trace_eid_succ y (trace_rev (itrs seqst_succ)) _ _); eauto.
+      all: subst.
+      all: try solve [opose proof (eid_full_po_lt_irreflexive (intra_trace_eid_succ 0 (trace_rev (itrs seqst_succ))) _); done].
+      1: best.
+      1: left; admit.
+      1: right.
+      1: admit.
+      1: left; admit.
+      1: best.
+      1-2: admit.
+
+      1-2,4-6,8: try opose proof (EID.full_po_lt_connex x y _ _ _) as [|[|]];.
+      1: unfold EID.full_po_lt.
+      all: try solve [unfold EID.full_po_lt; done].
+      1: best.
+
+      9: try naive_solver.
+    }
     1,2: unfold partial_cd_state_to_cd, GenAxiomaticArm.AxArmNames.co, GenAxiomaticArm.AxArmNames.rf; cbn.
     1: eapply rel_montone_intersection1.
     1: eapply rel_strictly_monotone_seq1; split.
@@ -1455,8 +1589,7 @@ Lemma seq_model_pcdst_wf :
       let cd := (seq_state_to_cd seq_st) in
       let evs := Candidate.event_list cd in
       Candidate.wf cd).
-    all: cbn in *.
-Admitted.
+Admitted. (*
 
     all: rewrite Exec.unfold_has_error in H_seqst_succ.
 
@@ -1466,7 +1599,7 @@ Admitted.
     all: cdestruct H_mono.
     eapply seq_state_to_partial_cd_state_destruct.
     + cdestruct |- ***.
-    rel_montone_acyclic
+    rel_monotone_acyclic
 
 
       1: unfold EID.full_po_lt, EID.po_lt.
@@ -1637,6 +1770,21 @@ Admitted.
     all: cdestruct Hl #CDestrMatch.
     all: lia.
   Admitted.
+ *)
+Lemma seq_model_seq_inv_predicate_preserved :
+  seq_model_outcome_invariant_preserved seq_inv_predicate
+    seq_inv_predicate.
+Proof using fuel
+isem regs_whitelist.
+  cdestruct |- *** as seqst H_seq_inv call seqst_succ H_succ.
+  constructor.
+  - eapply seq_model_mem_writes_succeed_inv; done.
+  - eapply seq_model_pcdst_mem_map_inv; done.
+  - eapply seq_model_pcdst_reg_map_inv; done.
+  - eapply seq_model_pcdst_montonone; done.
+  - eapply seq_model_pcdst_wf; done.
+  - eapply seq_model_pcdst_consistent; done.
+Qed.
 
 Lemma seq_model_consistent :
   seq_model_outcome_invariant_preserved seq_inv_predicate.
@@ -1885,7 +2033,7 @@ Proof.
     * assert (seq_model_monotone (seq_state_to_cd seq_st_succ)) as (? & ? & ?)
       by now eapply (seq_model_monotone seq_st _ call).
       unfold cd_monotone, seq_state_to_cd in *.
-      apply rel_montone_acyclic.
+      apply rel_monotone_acyclic.
       rewrite <- ?rel_montone_union.
       unfold GenAxiomaticArm.AxArmNames.fr, GenAxiomaticArm.AxArmNames.co, GenAxiomaticArm.AxArmNames.rf.
       cdestruct |- *** #CDestrSplitGoal.
