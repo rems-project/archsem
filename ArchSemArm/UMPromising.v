@@ -53,6 +53,10 @@ Require Import ASCommon.FMon.
 Require Import ArchSem.GenPromising.
 Require Import ArmInst.
 
+(* CResult constructors get shadowed by coq-sail *)
+(* TODO upstream result type to stdpp *)
+Require Import ASCommon.CResult.
+
 
 
 (** The goal of this module is to define an User-mode promising model,
@@ -494,208 +498,76 @@ End IIS.
 
 (* Set Typeclasses Debug Verbosity 2. *)
 
-Require Import ASCommon.CResult.
 
+
+(** Runs an outcome in the promising model while doing the correct view tracking
+    and computation. This can mutate memory because it will append a write at
+    the end of memory the corresponding event was not already promised. *)
 Section RunOutcome.
-  Context (tid : nat) (initmem : memoryMap) (ts : TState.t) (mem : Memory.t) (iis : IIS.t).
-Equations run_outcome' (out : outcome) :
-  Exec.t string (TState.t * Memory.t * IIS.t * eff_ret out) :=
-| RegWrite reg racc val =>
-    guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-    let vreg := iis.(IIS.strict) in
-    let ts :=
-      if decide (reg = pc_reg) then
-        ts
-        |> TState.update TState.vcap vreg
-        |> TState.set_reg reg (val, 0%nat)
-      else TState.set_reg reg (val, vreg) ts
-    in
-    mret (ts, mem, iis, ())
-| RegRead reg racc =>
-    guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+  Context (tid : nat) (initmem : memoryMap).
+  Equations run_outcome (out : outcome) :
+      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+  | RegWrite reg racc val =>
+      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+      vreg ← mget (IIS.strict ∘ PPState.iis);
+    ( if decide (reg = pc_reg)
+      then
+        mset PPState.state $ TState.update TState.vcap vreg;;
+        mset PPState.state $ TState.set_reg reg (val, 0%nat)
+      else mset PPState.state $ TState.set_reg reg (val, vreg))
+  | RegRead reg racc =>
+      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+      ts ← mget PPState.state;
     let (val, view) := ts.(TState.regs) reg in
-    let iis := IIS.add view iis in
-    mret (ts, mem, iis, val)
-| MemRead 8 0 rr =>
-    let initmem := Memory.initial_from_memMap initmem in
-    addr ← Exec.error_none "PA not supported" $ Loc.from_addr rr.(ReadReq.address);
-    let vaddr := iis.(IIS.strict) in
+    mset PPState.iis $ IIS.add view;;
+    mret val
+  | MemRead 8 0 rr =>
+      addr ← Exec.error_none "PA not supported" $ Loc.from_addr rr.(ReadReq.address);
     match rr.(ReadReq.access_kind) with
     | AK_explicit eak =>
-        '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
-        mret (ts, mem, IIS.add view iis, Ok (val, bv_0 0))
+        let initmem := Memory.initial_from_memMap initmem in
+        vaddr ← mget (IIS.strict ∘ PPState.iis);
+      mem ← mget PPState.mem;
+      '(view, val) ← Exec.liftSt PPState.state (read_mem addr vaddr eak initmem mem);
+      mset PPState.iis $ IIS.add view;;
+      mret (Ok (val, bv_0 0))
     | AK_ifetch () => mthrow "TODO ifetch"
     | _ => mthrow "Only ifetch and explicit accesses supported"
     end
-| MemRead _ _ _ => mthrow "Memory read of size other than 8, or with tags"
-| MemWriteAddrAnnounce _ _ _ _ _ =>
-    let vaddr := iis.(IIS.strict) in
-    let ts := TState.update TState.vcap vaddr ts in
-    mret (ts, mem, iis, ())
-| MemWrite 8 0 wr =>
-    addr ← Exec.error_none "PA not supported" $ Loc.from_addr wr.(WriteReq.address);
+  | MemRead _ _ _ => mthrow "Memory read of size other than 8"
+  | MemWriteAddrAnnounce _ _ _ _ _ =>
+      vaddr ← mget (IIS.strict ∘ PPState.iis);
+    mset PPState.state $ TState.update TState.vcap vaddr
+  | MemWrite 8 0 wr =>
+      addr ← Exec.error_none "PA not supported" $ Loc.from_addr wr.(WriteReq.address);
     let data := wr.(WriteReq.value) in
-    let vdata := iis.(IIS.strict) in
     match wr.(WriteReq.access_kind) with
     | AK_explicit eak =>
-        '(ts, mem) ← write_mem_xcl tid addr vdata eak ts mem data;
-        mret (ts, mem, iis, Ok ())
+        mem ← mget PPState.mem;
+      vdata ← mget (IIS.strict ∘ PPState.iis);
+      mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata eak mem data);
+      msetv PPState.mem mem;;
+      mret (Ok ())
     | AK_ifetch () => mthrow "Write of type ifetch ???"
     | AK_ttw () => mthrow "Write of type TTW ???"
     | _ => mthrow "Unsupported non-explicit write"
     end
-| Barrier (Barrier_DMB dmb) => (* dmb *)
+  | Barrier (Barrier_DMB dmb) => (* dmb *)
+      ts ← mget PPState.state;
     match dmb.(DxB_types) with
     | MBReqTypes_All (* dmb sy *) =>
-        let ts :=
-          TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
-        mret (ts, mem, iis, ())
+        mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
     | MBReqTypes_Reads (* dmb ld *) =>
-        let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
-        mret (ts, mem, iis, ())
+        mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
     | MBReqTypes_Writes (* dmb st *) =>
-        let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
-        mret (ts, mem, iis, ())
+        mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
     end
-| Barrier (Barrier_ISB ()) => (* isb *)
-    let ts := TState.update TState.visb (TState.vcap ts) ts in
-    mret (ts, mem, iis, ())
-| GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-| _ => mthrow "Unsupported outcome".
+  | Barrier (Barrier_ISB ()) => (* isb *)
+      ts ← mget PPState.state;
+    mset PPState.state $ TState.update TState.visb (TState.vcap ts)
+  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
+  | _ => mthrow "Unsupported outcome".
 End RunOutcome.
-
-(** Runs an outcome. *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
-    Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-  let initmem := Memory.initial_from_memMap initmem in
-  match out with
-  | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      vreg ← mget (IIS.strict ∘ PPState.iis);
-      ( if decide (reg = pc_reg)
-        then
-          mset PPState.state $ TState.update TState.vcap vreg;;
-          mset PPState.state $ TState.set_reg reg (val, 0%nat)
-        else mset PPState.state $ TState.set_reg reg (val, vreg))
-  | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      ts ← mget PPState.state;
-      let (val, view) := ts.(TState.regs) reg in
-      mset PPState.iis $ IIS.add view;;
-      mret val
-  | MemRead 8 rr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
-      match rr.(ReadReq.access_kind) with
-      | AK_explicit eak =>
-          vaddr ← mget (IIS.strict ∘ PPState.iis);
-          mem ← mget PPState.mem;
-          '(view, val) ← Exec.liftSt PPState.state (read_mem addr vaddr eak initmem mem);
-          mset PPState.iis $ IIS.add view;;
-          mret (inl (val, None))
-      | AK_ifetch () => mthrow "TODO ifetch"
-      | _ => mthrow "Only ifetch and explicit accesses supported"
-      end
-  | MemRead _ _ => mthrow "Memory read of size other than 8"
-  | MemWriteAddrAnnounce _ _ _ _ =>
-      vaddr ← mget (IIS.strict ∘ PPState.iis);
-      mset PPState.state $ TState.update TState.vcap vaddr
-  | MemWrite 8 wr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let data := wr.(WriteReq.value) in
-      match wr.(WriteReq.access_kind) with
-      | AK_explicit eak =>
-          mem ← mget PPState.mem;
-          vdata ← mget (IIS.strict ∘ PPState.iis);
-          mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata eak mem data);
-          msetv PPState.mem mem;;
-          mret (inl true)
-      | AK_ifetch () => mthrow "Write of type ifetch ???"
-      | AK_ttw () => mthrow "Write of type TTW ???"
-      | _ => mthrow "Unsupported non-explicit write"
-      end
-  | Barrier (Barrier_DMB dmb) => (* dmb *)
-      ts ← mget PPState.state;
-      match dmb.(DxB_types) with
-      | MBReqTypes_All (* dmb sy *) =>
-          mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
-      | MBReqTypes_Reads (* dmb ld *) =>
-          mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
-      | MBReqTypes_Writes (* dmb st *) =>
-          mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
-      end
-  | Barrier (Barrier_ISB ()) => (* isb *)
-      ts ← mget PPState.state;
-      mset PPState.state $ TState.update TState.visb (TState.vcap ts)
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome"
-  end.
-(* TODO fix up below is the pre-interfacev2 but state-Exec above is interfacev2 and no state-Exec *)
-Definition run_outcome (tid : nat) (initmem : memoryMap) (out : outcome) :
-   stateT (TState.t * Memory.t * IIS.t) (Exec.t string) (eff_ret out) := λ '(ts, mem, iis),
-  let initmem := Memory.initial_from_memMap initmem in
-  match out with
-  | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      let vreg := iis.(IIS.strict) in
-      let ts :=
-        if decide (reg = pc_reg) then
-          ts
-          |> TState.update TState.vcap vreg
-          |> TState.set_reg reg (val, 0%nat)
-        else TState.set_reg reg (val, vreg) ts
-      in
-      mret (ts, mem, iis, ())
-  | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
-      let (val, view) := ts.(TState.regs) reg in
-      let iis := IIS.add view iis in
-      mret (ts, mem, iis, val)
-  | MemRead 8 rr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa rr.(ReadReq.pa);
-      let vaddr := iis.(IIS.strict) in
-      match rr.(ReadReq.access_kind) with
-      | AK_explicit eak =>
-          '(ts, view, val) ← read_mem addr vaddr eak ts initmem mem;
-          mret (ts, mem, IIS.add view iis, inl (val, None))
-      | AK_ifetch () => mthrow "TODO ifetch"
-      | _ => mthrow "Only ifetch and explicit accesses supported"
-      end
-  | MemRead _ _ => mthrow "Memory read of size other than 8"
-  | MemWriteAddrAnnounce _ _ _ _ =>
-      let vaddr := iis.(IIS.strict) in
-      let ts := TState.update TState.vcap vaddr ts in
-      mret (ts, mem, iis, ())
-  | MemWrite 8 wr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_pa wr.(WriteReq.pa);
-      let data := wr.(WriteReq.value) in
-      let vdata := iis.(IIS.strict) in
-      match wr.(WriteReq.access_kind) with
-      | AK_explicit eak =>
-          '(ts, mem) ← write_mem_xcl tid addr vdata eak ts mem data;
-          mret (ts, mem, iis, inl true)
-      | AK_ifetch () => mthrow "Write of type ifetch ???"
-      | AK_ttw () => mthrow "Write of type TTW ???"
-      | _ => mthrow "Unsupported non-explicit write"
-      end
-  | Barrier (Barrier_DMB dmb) => (* dmb *)
-      match dmb.(DxB_types) with
-      | MBReqTypes_All (* dmb sy *) =>
-          let ts :=
-            TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr)) ts in
-          mret (ts, mem, iis, ())
-      | MBReqTypes_Reads (* dmb ld *) =>
-          let ts := TState.update TState.vdmb ts.(TState.vrd) ts in
-          mret (ts, mem, iis, ())
-      | MBReqTypes_Writes (* dmb st *) =>
-          let ts := TState.update TState.vdmbst ts.(TState.vwr) ts in
-          mret (ts, mem, iis, ())
-      end
-  | Barrier (Barrier_ISB ()) => (* isb *)
-      let ts := TState.update TState.visb (TState.vcap ts) ts in
-      mret (ts, mem, iis, ())
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome"
-  end.
 
 (** * Implement GenPromising ***)
 
@@ -753,6 +625,7 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
+    address_space := ();
     mEvent := Msg.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_cert isem;

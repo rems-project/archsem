@@ -38,7 +38,10 @@ Equations init_mem : memoryMap:=
 Definition termCond : terminationCondition 1 := (λ tid rm, rm _PC =? (0x504 : bv 64)).
 
 Definition initState :=
-  {| MState.state := {| MState.memory := init_mem; MState.regs := [# init_reg] |};
+  {|MState.state :=
+      {|MState.memory := init_mem;
+        MState.regs := [# init_reg];
+        MState.address_space := () |};
     MState.termCond := termCond |}.
 Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
 
@@ -66,7 +69,10 @@ Equations init_mem : memoryMap:=
 Definition termCond : terminationCondition 1 := (λ tid rm, rm _PC =? (0x504 : bv 64)).
 
 Definition initState :=
-  {| MState.state := {| MState.memory := init_mem; MState.regs := [# init_reg] |};
+  {|MState.state :=
+      {|MState.memory := init_mem;
+        MState.regs := [# init_reg];
+        MState.address_space := () |};
     MState.termCond := termCond |}.
 Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
 
@@ -98,7 +104,10 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Definition termCond : terminationCondition 1 := (λ tid rm, rm _PC =? (0x508 : bv 64)).
 
   Definition initState :=
-    {| MState.state := {| MState.memory := init_mem; MState.regs := [# init_reg] |};
+    {|MState.state :=
+        {|MState.memory := init_mem;
+          MState.regs := [# init_reg];
+          MState.address_space := () |};
       MState.termCond := termCond |}.
   Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
 
