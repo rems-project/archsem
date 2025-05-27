@@ -599,7 +599,6 @@ Module TState.
         pc : bv 64;
         regs : Reg.app -> bv 64 * view;
         regs_init : registerMap;
-        (* TODO: levents *)
         sregs : list WSReg.t;
 
         (* The coherence views *)
