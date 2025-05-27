@@ -48,6 +48,7 @@ Require Import ASCommon.Exec.
 Require Import ASCommon.GRel.
 Require Import ASCommon.StateT.
 Require Import ASCommon.FMon.
+Require Import ASCommon.HVec.
 Require Import Coq.Program.Equality.
 
 Require UMPromising.
@@ -598,11 +599,11 @@ Module TState.
         pc : bv 64;
         regs : Reg.app -> bv 64 * view;
         regs_init : registerMap;
+        (* TODO: levents *)
         sregs : list WSReg.t;
 
         (* The coherence views *)
         coh : Loc.t -> view;
-
 
         vrd : view; (* The maximum output view of a read  *)
         vwr : view; (* The maximum output view of a write  *)
@@ -786,76 +787,6 @@ Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
 
 (*** TLB ***)
-
-
-
-
-
-Fixpoint hvec (n : nat) : (fin n -> Type) -> Type :=
-  match n with
-  | 0%nat => fun _ => unit
-  | S m => fun T => ((T 0%fin) * hvec m (T ∘ FS))%type
-  end.
-Arguments hvec {n} T.
-
-Fixpoint hget {n : nat} (i : fin n) : forall T : fin n -> Type, hvec T -> T i :=
-  match i with
-  | 0%fin => fun _ v => v.1
-  | FS p => fun _ v => hget p _ v.2
-  end.
-Arguments hget {n} i {T} v.
-
-Fixpoint hvec_func {n : nat} : forall T : fin n -> Type, (forall i, T i) -> hvec T :=
-  match n with
-  | 0%nat => fun _ f => ()
-  | S m => fun _ f => (f 0%fin, hvec_func _ (fun x => f (FS x)))
-  end.
-Arguments hvec_func {n T} f.
-
-Fixpoint hset {n : nat} (i : fin n) : forall T : fin n -> Type, T i -> hvec T -> hvec T :=
-  match i with
-  | 0%fin => fun _ nv v => (nv, v.2)
-  | FS p => fun _ nv v => (v.1, hset p _ nv v.2)
-  end.
-Arguments hset {n} i {T} nv v.
-
-Lemma hvec_get_func {n : nat} {T : fin n -> Type} (i : fin n) (f : forall i, T i) :
-  hget i (hvec_func f) = f i.
-Proof. induction i; hauto. Qed.
-
-Lemma hvec_get_set_same {n : nat} {T : fin n -> Type}
-  (v : hvec T) (i : fin n) (nv : T i) :
-  hget i (hset i nv v) = nv.
-Proof. induction i; hauto. Qed.
-
-Lemma hvec_get_set_diff {n : nat} {T : fin n -> Type}
-  (v : hvec T) (i j : fin n) (nv : T j) :
-  i ≠ j -> hget i (hset j nv v) = hget i v.
-Proof. induction i; sauto dep:on. Qed.
-
-(* Technically, this is mapi, but a plain map can't exist because of dependent
- typing *)
-Definition hmap {n : nat} {T1 T2 : fin n -> Type} (f : forall i, T1 i -> T2 i)
-  (v : hvec T1) : hvec T2 := hvec_func (fun i => f i (hget i v)).
-
-Definition hmap2 {n : nat} {T1 T2 T3 : fin n -> Type} (f : forall i, T1 i -> T2 i -> T3 i)
-  (v1 : hvec T1) (v2 : hvec T2) : hvec T3
-  := hvec_func (fun i => f i (hget i v1) (hget i v2)).
-
-Lemma hget_hmap {n : nat} {T1 T2 : fin n -> Type} (f : forall i, T1 i -> T2 i)
-  (v : hvec T1) (i : fin n) :
-  hget i (hmap f v) = f i (hget i v).
-Proof.
-  unfold hmap.
-  rewrite hvec_get_func.
-  reflexivity.
-Qed.
-
-Definition hlast {n : nat} {T : fin (S n) -> Type} (v : hvec T) : T (fin_last n)
-  := hget (fin_last n) v.
-
-
-
 
 Global Program Instance countable_sigT `{Countable A} (P : A → Type)
     {eqdepP : EqDepDecision P} {eqP: ∀ a, EqDecision (P a)}

@@ -21,6 +21,7 @@
    Effects
    FMon
    Exec
+   HVec
  )
  (theories stdpp Hammer RecordUpdate Equations Ltac2)
  (coqdoc_flags :standard --utf8
