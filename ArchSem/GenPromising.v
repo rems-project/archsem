@@ -113,17 +113,16 @@ Section PM.
   (** Cuts the memory to only what exists after the timestamp, excluded.
       Provide the original timestamps as a additional value.
   *)
+  Fixpoint attach_timestamps (mem : t) : list (ev * nat) :=
+    match mem with
+    | [] => []
+    | h :: q =>
+      (h, List.length mem) :: attach_timestamps q
+    end.
 
-  Fixpoint cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
-    let len := List.length mem in
-    if (Nat.leb v len)%nat then []
-    else
-      match mem with
-      | [] => []
-      | h :: q => (h, len) :: cut_after_with_timestamps v q
-      end.
-
-
+  Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
+    let indexed_mem := attach_timestamps mem in
+    filter (fun p : ev * nat => Nat.ltb v (snd p)) indexed_mem.
 
 End PM.
 Arguments t : clear implicits.
