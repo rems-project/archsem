@@ -636,8 +636,7 @@ Module TState.
     settable! make <prom;pc;regs;regs_init;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb;scse;tlbscses>.
 
-  (* TODO Check and remove mem as an argument here *)
-  Definition init (mem : memoryMap) (iregs : registerMap) :=
+  Definition init (iregs : registerMap) :=
     ({|
       prom := [];
       pc := iregs (Reg.to_arch Reg.PC);
