@@ -313,7 +313,7 @@ Module TState.
   #[global] Instance eta : Settable _ :=
     settable! make <prom;regs;coh;vrd;vwr;vdmbst;vdmb;vcap;visb;vacq;vrel;fwdb;xclb>.
 
-  Definition init (mem : memoryMap) (iregs : registerMap) :=
+  Definition init (iregs : registerMap) :=
     ({|
       prom := [];
       regs := fun reg => (iregs reg, 0);

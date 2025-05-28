@@ -156,7 +156,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
   Structure PromisingModel := {
       tState : Type;
-      tState_init : (* tid *) nat → memoryMap → registerMap → tState;
+      tState_init : (* tid *) nat → registerMap → tState;
       tState_regs : tState → registerMap;
       tState_nopromises : tState → bool;
       (** Intra instruction state, reset after each instruction *)
@@ -294,8 +294,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         {|tstates :=
             fun_to_vec
               (λ tid,
-                 prom.(tState_init) tid ms.(MState.memory)
-                                                  $ ms.(MState.regs) !!! tid);
+                 prom.(tState_init) tid $ ms.(MState.regs) !!! tid);
           initmem := ms.(MState.memory);
           events := []|}.
 
