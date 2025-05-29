@@ -592,7 +592,7 @@ Module TState.
   Record t :=
     make {
         (* The promises that this thread must fullfil
-           Is must be ordered with oldest promises at the bottom of the list *)
+           is must be ordered with oldest promises at the bottom of the list *)
         prom : list view;
 
         (* registers values and views *)
@@ -705,8 +705,8 @@ Module TState.
     λ r, regt_of_bv64 (read_reg ts r).1.
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : Reg.app) (rv : bv 64 * view) : t -> t
-    := set regs (fun_add reg rv).
+  Definition set_reg (reg : Reg.app) (rv : bv 64 * view) : t -> t :=
+    set regs (fun_add reg rv).
 
   (** Sets the coherence view of a location *)
   Definition set_coh (loc : Loc.t) (v : view) : t -> t :=
@@ -775,14 +775,33 @@ Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
+Definition match_prefix_at {n : N} (lvl : Level) (va va' : bv n) : bool :=
+  bool_decide (level_prefix va lvl = level_prefix va' lvl).
+
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
   bv_extract 0 9 (level_prefix va lvl).
 
-Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
+Definition higher_prefix {n : N} (va : bv n) : bv (n - 9) :=
   bv_extract 9 (n - 9) va.
 
+(* NOTE: Loc.t is 53 not 48? *)
 Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
+
+Definition is_valid (e : val) : bool := bv_get_bit 0 e.
+
+Definition is_table (e : val) : bool :=
+  bv_get_bit 0 e && bv_get_bit 1 e.
+
+Definition is_block (e : val) : bool :=
+  bv_get_bit 0 e && negb (bv_get_bit 1 e).
+
+Definition is_final (lvl : Level) (e : val) :=
+  (bool_decide (fin_to_nat lvl = 3) && (bv_get_bit 0 e && bv_get_bit 1 e))
+  && (bool_decide (fin_to_nat lvl < 3) && is_block e).
+
+Definition is_global (lvl : Level) (e : val) :=
+  (is_final lvl e) && negb (bv_get_bit 11 e).
 
 (*** TLB ***)
 
@@ -1300,7 +1319,6 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   mset PPState.state $ TState.update TState.vtlbi time;;
   mset PPState.state $ TState.tlbi_cse time;;
   mset PPState.iis $ IIS.add time.
-
 
 (** Runs an outcome. *)
 Section RunOutcome.
