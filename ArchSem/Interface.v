@@ -666,6 +666,9 @@ Module Interface (A : Arch).
   Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
   Notation is_reg_write := (is_reg_writeP (λ _ _ _, True)).
 
+  Arguments is_reg_readP : simpl never.
+  Arguments is_reg_writeP : simpl never.
+
   (** ** Memory reads *)
 
   (** *** Memory reads request
@@ -721,6 +724,8 @@ Module Interface (A : Arch).
     Proof using Pdec. unfold is_mem_readP. solve_decision. Defined.
   End IsMemRead.
   Notation is_mem_read := (is_mem_readP (λ _ _ _ _, True)).
+
+  Arguments is_mem_readP : simpl never.
 
   (** ** Memory writes *)
 
@@ -813,6 +818,8 @@ Module Interface (A : Arch).
     Proof using Pdec. unfold is_mem_writeP. solve_decision. Defined.
   End isMemWrite.
   Notation is_mem_write := (is_mem_writeP (λ _ _, True)).
+
+  Arguments is_mem_writeP : simpl never.
 
   Definition is_mem_event (ev : iEvent) :=
     is_mem_read ev \/ is_mem_write ev.

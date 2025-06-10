@@ -270,7 +270,9 @@ Module AxArmNames.
   Lemma T_f_in_T : T_f ⊆ T.
   Proof.
     unfold T_f, T, ttw_reads, reads_by_kind.
-    set_unfold. hauto q:on use:is_mem_readP_spec.
+    set_unfold. unfold is_mem_read_kindP.
+    setoid_rewrite is_mem_readP_spec.
+    naive_solver.
   Qed.
 
 
