@@ -72,8 +72,12 @@ Require Import TermModels.
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
+Module Type NoCHERI (IWA : InterfaceWithArch).
+  Parameter no_cheri : ¬ IWA.Arch.CHERI.
+End NoCHERI.
+
 (* Module to be imported *)
-Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
+Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (NC : NoCHERI IWA).
   Import IWA.Arch.
   Import IWA.Interface.
   Import Term.
@@ -145,15 +149,13 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     (** An ISA event is either represented by a single event in the candidate,
         or by an event per byte. This is the function that decides which event
-        are split per byte. [None] means not split, and [Some n], means split in
-        [n] *)
+        are split per byte, depending on the [exec_type]*)
     Definition bytes_per_event (et : exec_type) (ev : iEvent) : list (option N) :=
       match et with
       | MS =>
           match ev with
-          | MemRead n rr &→ _ =>
-              let main := seqN 0 n |$> Some in
-              if rr.(ReadReq.tag) then main else None :: main
+          (* nt is assumed to be 0 here *)
+          | MemRead n nt rr &→ _ => seqN 0 n |$> Some
           | _ => [None]
           end
       | NMS => [None]
@@ -423,18 +425,18 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       (** Get the set of all memory reads *)
       Definition mem_reads := collect_all (λ _, is_mem_read).
       Typeclasses Opaque mem_reads.
-      Definition mem_read_reqs:= collect_all (λ _ , is_mem_read_req).
+      Definition mem_read_reqs:= collect_all (λ _, is_mem_read_req).
       Typeclasses Opaque mem_read_reqs.
       Definition mem_read_aborts :=
-        collect_all (λ _, is_mem_read_reqP (λ _ _, is_inr)).
+        collect_all (λ _, is_mem_read_reqP (λ _ _ _, is_Error)).
       Typeclasses Opaque mem_read_aborts.
 
       Lemma mem_read_reqs_union pe :
         mem_read_reqs pe = mem_reads pe ∪ mem_read_aborts pe.
       Proof.
-        unfold mem_reads, mem_read_reqs, mem_read_aborts.
+        unfold mem_reads, mem_read_reqs, mem_read_aborts, is_Error.
         set_unfold.
-        cdestruct |- *** #CDestrSplitGoal; naive_solver.
+        cdestruct |- *** #CDestrSplitGoal ## cdestruct_result; naive_solver.
       Qed.
 
       (** Get the set of all memory writes *)
@@ -445,17 +447,15 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition mem_write_reqs := collect_all (λ _, is_mem_write_req).
       Typeclasses Opaque mem_write_reqs.
       Definition mem_write_aborts :=
-        collect_all (λ _, is_mem_write_reqP (λ _ _ res, res ≠ inl true)).
+        collect_all (λ _, is_mem_write_reqP (λ _ _ _, is_Error)).
       Typeclasses Opaque mem_write_aborts.
 
       Lemma mem_write_reqs_union pe :
         mem_write_reqs pe = mem_writes pe ∪ mem_write_aborts pe.
       Proof.
-        unfold mem_writes, mem_write_reqs, mem_write_aborts.
+        unfold mem_writes, mem_write_reqs, mem_write_aborts, is_Error.
         set_unfold.
-        split;
-          cdestruct |- ** #CDestrSplitGoal # (CDestrCase bool);
-          naive_solver.
+        cdestruct |- *** #CDestrSplitGoal ##cdestruct_result; naive_solver.
       Qed.
 
       Definition mem_events := collect_all (λ _, is_mem_event).
@@ -466,7 +466,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
       (* WARNING: intense boilerplate *)
       Section ByKind.
-        Context (P : accessKind → Prop).
+        Context (P : mem_acc → Prop).
         Context {Pdec : ∀ acc, Decision (P acc)}.
         Definition mem_by_kind := collect_all (λ _, is_mem_event_kindP P).
         #[global] Typeclasses Opaque mem_by_kind.
@@ -525,8 +525,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         - memory tags
         - Rejecting exclusive memory writes *)
       Definition unsupported_event (ev : iEvent) : Prop :=
-        is_mem_read_reqP (λ n rr _, rr.(ReadReq.tag)) ev ∨
-        is_mem_write_reqP (λ n wr r, is_Some (wr.(WriteReq.tag))) ev.
+        is_mem_read_reqP (λ _ nt _ _, nt ≠ 0)%N ev ∨
+        is_mem_write_reqP (λ _ nt _ _, nt ≠ 0)%N ev.
       #[global] Typeclasses Transparent unsupported_event.
 
       Definition has_only_supported_events pe : Prop :=
@@ -789,24 +789,24 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       (** Equivalence relation relating memory events that have the same physical
           address. In an [MixedSize] model which splits reads but not write, this
           is based on the pa of the whole read *)
-      Definition same_pa : (pre et nmth) → grel EID.t :=
-        same_key (λ _, get_pa).
-      Typeclasses Opaque same_pa.
+      Definition same_addr : (pre et nmth) → grel EID.t :=
+        same_key (λ _, get_addr).
+      Typeclasses Opaque same_addr.
 
-      Definition get_pa_footprint (eid : EID.t) ev : option (pa * N) :=
-        pa ← get_pa ev;
+      Definition get_addr_footprint (eid : EID.t) ev : option (address * N) :=
+        addr ← get_addr ev;
         match eid.(EID.byte) with
-        | None => get_size ev |$> (pa,.)
-        | Some n => Some (pa_addN pa n, 1%N)
+        | None => get_size ev |$> (addr,.)
+        | Some n => Some (addr_addN addr n, 1%N)
         end.
-      Typeclasses Opaque get_pa_footprint.
+      Typeclasses Opaque get_addr_footprint.
 
       (** Equivalence relation relating memory events that have the same size. *)
       Definition same_size : (pre et nmth) → grel EID.t :=
         same_key (λ _, get_size).
       Typeclasses Opaque same_size.
 
-      Definition same_footprint pe := same_pa pe ∩ same_size pe.
+      Definition same_footprint pe := same_addr pe ∩ same_size pe.
 
       (** Equivalence relation relating memory event that have the same size and value *)
       Definition same_mem_value : (pre et nmth) → grel EID.t :=
@@ -826,12 +826,13 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Definition is_overlapping pe (eid1 eid2 : EID.t) : Prop :=
         is_Some $
           e1 ← pe !! eid1;
-          '(pa1, size1) ← get_pa_footprint eid1 e1;
+          '(addr1, size1) ← get_addr_footprint eid1 e1;
           e2 ← pe !! eid2;
-          '(pa2, size2) ← get_pa_footprint eid2 e2;
-          guard' (pa_overlap pa1 size1 pa2 size2).
+          '(addr2, size2) ← get_addr_footprint eid2 e2;
+          guard' (addr_overlap addr1 size1 addr2 size2).
 
-      #[global] Instance is_overlapping_dec pa eid1 eid2 : Decision (is_overlapping pa eid1 eid2).
+      #[global] Instance is_overlapping_dec addr eid1 eid2 :
+        Decision (is_overlapping addr eid1 eid2).
       Proof. unfold is_overlapping. tc_solve. Qed.
 
       Lemma is_overlapping_sym pe eid1 eid2 :
@@ -839,7 +840,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       Proof.
         unfold is_overlapping, is_Some in *.
         cdestruct |- ? # CDestrEqOpt.
-        typeclasses eauto with core pa option.
+        typeclasses eauto with core addr option.
       Qed.
 
       Lemma is_overlapping_sym_iff pe eid1 eid2 :
@@ -930,9 +931,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         is_Some $
         read ← pe !! eid;
         guard (is_mem_read read);;
-        pa ← get_pa read;
+        addr ← get_addr read;
         val ← get_mem_value read;
-        guard' (val = memoryMap_read pe.(init).(MState.memory) pa (bvn_n val / 8)).
+        guard' (val = memoryMap_read pe.(init).(MState.memory) addr (bvn_n val / 8)).
 
 
       (** ** Not after
@@ -1058,28 +1059,28 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     (** Get the last write for each pa in candidate. If it's not in the map, it
         was not written by the candidate *)
-    Definition final_write_per_pa (cd : t) : gmap pa (EID.t * bv 8) :=
+    Definition final_write_per_addr (cd : t) : gmap address (EID.t * bv 8) :=
       foldl
         (λ mmap '(eid, ev),
           match ev with
-          | MemWrite n wr &→ _ =>
+          | MemWrite n _ wr &→ _ =>
               foldl
                 (λ mmap i,
-                  let pa := pa_addZ (WriteReq.pa wr) (Z.of_nat i) in
+                  let addr := (WriteReq.address wr `+Z` Z.of_nat i)%bv in
                   let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
-                  match mmap !! pa with
+                  match mmap !! addr with
                   | Some (eid', _) =>
                       match decide ((eid, eid') ∈ cd.(coherence)) with
                       | left _ => mmap
-                      | right _ => <[pa := (eid, byte)]> mmap
+                      | right _ => <[addr := (eid, byte)]> mmap
                       end
-                  | None => <[pa := (eid, byte)]> mmap
+                  | None => <[addr := (eid, byte)]> mmap
                   end) mmap (seq 0 (N.to_nat n))
           | _ => mmap
           end) ∅ (event_list cd).
 
     Definition final_mem_map (cd : t) : memoryMap :=
-      let mmap := final_write_per_pa cd in
+      let mmap := final_write_per_addr cd in
       λ pa,
         match mmap !! pa with
         | Some (_, val) => val
@@ -1087,7 +1088,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         end.
 
     Definition cd_to_MState (cd : t) : MState.t nmth :=
-      {| MState.regs := final_reg_map cd; MState.memory := final_mem_map cd |}.
+      {|MState.regs := final_reg_map cd;
+        MState.memory := final_mem_map cd;
+        MState.address_space := cd.(init).(MState.address_space)|}.
 
     Definition cd_to_MState_final (cd : t) (term : terminationCondition nmth) :
         option (MState.final nmth) :=
@@ -1142,20 +1145,20 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     Definition is_valid_rf (cd : t) (weid reid : EID.t) : Prop :=
       is_Some $
       write ← cd !! weid;
-      wpa ← get_pa write;
+      waddr ← get_addr write;
       wval ← get_mem_value write;
       read ← cd !! reid;
-      rpa ← get_pa read;
+      raddr ← get_addr read;
       rval ← get_mem_value read;
       match reid.(EID.byte) with
       | Some n =>
-          let rpa' := pa_addN rpa n in
+          let raddr' := addr_addN raddr n in
           rbyte ← (bv_to_bytes 8 (bvn_val rval)) !! n;
-          offset ← pa_diffN rpa' wpa;
+          let offset := Z.to_N (bv_unsigned (raddr' - waddr)) in
           wbyte ← (bv_to_bytes 8 (bvn_val wval)) !! offset;
           guard' (rbyte = wbyte)
       | None =>
-          guard' (rpa = wpa ∧ wval = rval)
+          guard' (raddr = waddr ∧ wval = rval)
           (* wval and rval are dynamic sized bitvector, so this also checks
              that both accesses are the same size *)
       end.
@@ -1195,7 +1198,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         lxsx_from_reads : grel_dom (lxsx cd) ⊆ exclusive_reads cd;
         lxsx_to_writes : grel_rng (lxsx cd) ⊆ exclusive_writes cd;
         lxsx_instruction_order : lxsx cd ⊆ instruction_order cd;
-        lxsx_same_pa : lxsx cd ⊆ same_pa cd
+        lxsx_same_pa : lxsx cd ⊆ same_addr cd
       }.
     #[global] Arguments lxsx_wf : clear implicits.
 
@@ -1246,9 +1249,16 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
 
     (** ** Full wellformedness *)
 
+    Definition addr_space_wf cd :=
+      ∀ '(eid, ev) ∈ event_list cd,
+        if get_addr_space ev is Some a
+        then a = cd.(init).(MState.address_space)
+        else True.
+
     Record wf (cd : t) :=
       {
         has_only_supported_events' :> has_only_supported_events cd;
+        addr_space_wf' :> addr_space_wf cd;
         reads_from_wf' :> reads_from_wf cd;
         coherence_wf' :> coherence_wf cd;
         lxsx_wf' :> lxsx_wf cd;

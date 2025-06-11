@@ -24,14 +24,16 @@ Require Import Interface.
 #[export] Typeclasses Transparent MachineWord.MachineWord.word.
 #[export] Typeclasses Transparent MachineWord.MachineWord.idx.
 #[export] Typeclasses Transparent MachineWord.MachineWord.Z_idx.
+#[export] Typeclasses Transparent Z.to_N.
 
 (* TODO go in coq-sail and make those not exist *)
 Arguments MachineWord.MachineWord.word / _.
 Arguments MachineWord.MachineWord.idx /.
 Arguments MachineWord.MachineWord.Z_idx / _.
 
+
 (* TODO remove that in coq-sail *)
-Remove Hints Decidable_eq_mword : typeclass_instances.
+Remove Hints Decidable_eq_mword Countable_mword : typeclass_instances.
 
 (** * Missing Interface parts
 
@@ -39,27 +41,18 @@ This section defines a module type that describes everything ArchSem need from
 an architecture instantiation that is missing from the Sail generated code *)
 Module Type PAManip (SA : SailArch).
   Import SA.
-  (** Add an offset to a physical address. Can wrap if out of bounds *)
-  Parameter pa_addZ : pa → Z → pa.
 
-  (** This need to behave sensibly.
-      For fancy words: pa_addZ need to be an action of the group Z on pa *)
-  Parameter pa_addZ_assoc :
-    ∀ pa z z', pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
-  Parameter pa_addZ_zero : ∀ pa, pa_addZ pa 0 = pa.
-  #[export] Hint Rewrite pa_addZ_assoc : arch.
-  #[export] Hint Rewrite pa_addZ_zero : arch.
+  Parameter addr_size : N.
+  Parameter addr_space : Type.
+  Parameter addr_space_eq : EqDecision addr_space.
+  #[export] Existing Instance addr_space_eq.
+  Parameter addr_space_countable : @Countable addr_space addr_space_eq.
+  #[export] Existing Instance addr_space_countable.
 
-  Parameter pa_diffN : pa → pa → option N.
-  Parameter pa_diffN_addZ:
-    ∀ pa pa' n, pa_diffN pa' pa = Some n → pa_addZ pa (Z.of_N n) = pa'.
-  Parameter pa_diffN_existZ:
-    ∀ pa pa' z, pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
-  Parameter pa_diffN_minimalZ:
-    ∀ pa pa' n, pa_diffN pa' pa = Some n →
-                ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
-
-  (* Extra stuff that shouldn't be there *)
+  Parameter pa_to_address : pa → bv addr_size.
+  Parameter pa_to_addr_space : pa → addr_space.
+  Parameter pa_of_addr_and_space : bv addr_size → addr_space → pa.
+  (* TODO do I need a round-trip lemma *)
 
   Parameter pc_reg : greg.
 
@@ -71,8 +64,11 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   Include PAM.
   Import (hints) SA.
   Definition reg := SA.greg.
-  #[export] Instance reg_eq : EqDecision reg := SA.greg_eq.
-  #[export] Instance reg_countable : Countable reg := SA.greg_cnt.
+  #[export] Typeclasses Transparent reg.
+  Definition reg_eq : EqDecision reg := SA.greg_eq.
+  #[export] Typeclasses Transparent reg_eq.
+  Definition reg_countable : Countable reg := SA.greg_cnt.
+  #[export] Typeclasses Transparent reg_countable.
 
   Definition reg_type (r : reg) := match r with @SA.GReg A _ => A end.
   #[export] Instance reg_type_eq (r : reg) : EqDecision (reg_type r).
@@ -97,18 +93,19 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
 
   (* TODO get sail to generate reg_acc *)
   Definition reg_acc := option SA.sys_reg_id.
-  #[local] Typeclasses Transparent reg_acc.
-  Existing Instance SA.sys_reg_id_eq.
+  #[export] Typeclasses Transparent reg_acc.
+  #[local] Existing Instance SA.sys_reg_id_eq.
   Definition reg_acc_eq : EqDecision reg_acc := _.
 
-  Definition va_size := SA.va_size.
-  Definition pa := SA.pa.
-  Definition pa_eq := SA.pa_eq.
-  Definition pa_countable := SA.pa_countable.
+  Definition CHERI := false.
+  #[export] Typeclasses Transparent CHERI.
+  Definition cap_size := 16%N. (* dummy value since CHERI is off*)
+  #[export] Typeclasses Transparent cap_size.
 
   Definition mem_acc := Access_kind SA.arch_ak.
-  #[local] Typeclasses Transparent mem_acc.
+  #[export] Typeclasses Transparent mem_acc.
   Definition mem_acc_eq : EqDecision mem_acc := _.
+  #[export] Typeclasses Transparent mem_acc_eq.
   Definition is_explicit (acc : mem_acc) :=
     if acc is AK_explicit _ then true else false.
   Definition is_ifetch (acc : mem_acc) :=
@@ -134,22 +131,33 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
     if acc is AK_explicit eak then
       eak.(Explicit_access_kind_variety) =? AV_atomic_rmw else false.
 
-  Definition translation := SA.translation.
-  Definition translation_eq := SA.translation_eq.
   Definition abort := SA.abort.
+  #[export] Typeclasses Transparent abort.
 
   Definition barrier := SA.barrier.
+  #[export] Typeclasses Transparent barrier.
   Definition barrier_eq := SA.barrier_eq.
+  #[export] Typeclasses Transparent barrier_eq.
   Definition cache_op := SA.cache_op.
+  #[export] Typeclasses Transparent cache_op.
   Definition cache_op_eq := SA.cache_op_eq.
+  #[export] Typeclasses Transparent cache_op_eq.
   Definition tlb_op := SA.tlb_op.
+  #[export] Typeclasses Transparent tlb_op.
   Definition tlb_op_eq := SA.tlb_op_eq.
-  Definition fault := SA.fault .
+  #[export] Typeclasses Transparent tlb_op_eq.
+  Definition fault := SA.fault.
+  #[export] Typeclasses Transparent fault.
   Definition fault_eq := SA.fault_eq.
+  #[export] Typeclasses Transparent fault_eq.
   Definition trans_start := SA.trans_start.
+  #[export] Typeclasses Transparent trans_start.
   Definition trans_start_eq := SA.trans_start_eq.
+  #[export] Typeclasses Transparent trans_start_eq.
   Definition trans_end := SA.trans_end.
+  #[export] Typeclasses Transparent trans_end.
   Definition trans_end_eq := SA.trans_end_eq.
+  #[export] Typeclasses Transparent trans_end_eq.
 End ArchFromSail.
 
 Module Type ArchFromSailT (SA : SailArch) (PAM : PAManip SA).
@@ -163,30 +171,36 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Import I.
   Import (coercions) SA.
 
-  Definition ReadReq_from_sail {n} (rr : SI.ReadReq.t n) : ReadReq.t n :=
-    {|ReadReq.pa := rr.(SI.ReadReq.pa);
+  Definition ReadReq_from_sail {n} (rr : SI.ReadReq.t n) : ReadReq.t n 0 :=
+    {|ReadReq.address := pa_to_address rr.(SI.ReadReq.pa);
       ReadReq.access_kind := rr.(SI.ReadReq.access_kind);
-      ReadReq.va := rr.(SI.ReadReq.va);
-      ReadReq.translation := rr.(SI.ReadReq.translation);
-      ReadReq.tag := rr.(SI.ReadReq.tag)
+      ReadReq.address_space := pa_to_addr_space rr.(SI.ReadReq.pa);
     |}.
 
-  Definition WriteReq_from_sail {n} (rr : SI.WriteReq.t n) : WriteReq.t n :=
-    {|WriteReq.pa := rr.(SI.WriteReq.pa);
+  Definition WriteReq_from_sail {n} (rr : SI.WriteReq.t n) : WriteReq.t n 0 :=
+    {|WriteReq.address := pa_to_address rr.(SI.WriteReq.pa);
       WriteReq.access_kind := rr.(SI.WriteReq.access_kind);
-      WriteReq.va := rr.(SI.WriteReq.va);
+      WriteReq.address_space := pa_to_addr_space rr.(SI.WriteReq.pa);
       WriteReq.value := rr.(SI.WriteReq.value);
-      WriteReq.translation := rr.(SI.WriteReq.translation);
-      WriteReq.tag := rr.(SI.WriteReq.tag)
+      WriteReq.tags := bv_0 0
     |}.
 
   Definition Sail_outcome_interp {A eo} (out : SI.outcome eo A) : I.iMon A :=
     match out with
     | SI.RegRead reg acc => mcall (RegRead reg acc)
     | SI.RegWrite reg acc regval => mcall (RegWrite reg acc regval)
-    | SI.MemRead n rr => mcall (MemRead n (ReadReq_from_sail rr))
+    | SI.MemRead n rr =>
+        mcall (MemRead n 0 (ReadReq_from_sail rr)) |$>
+          (λ o, match o with
+                | Ok (b, _) => inl (b, None)
+                | Error a => inr a
+                end)
     | SI.MemWrite n wr =>
-        mcall (MemWrite n (WriteReq_from_sail wr)) |$> mapl Some
+        mcall (MemWrite n 0 (WriteReq_from_sail wr)) |$>
+          (λ o, match o with
+                | Ok () => inl (Some true)
+                | Error a => inr a
+                end)
     | SI.InstrAnnounce _ => mret ()
     | SI.BranchAnnounce _ _ => mret ()
     | SI.Barrier b => mcall (Barrier b)

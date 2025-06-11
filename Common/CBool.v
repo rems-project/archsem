@@ -215,6 +215,7 @@ Global Hint Extern 2 (TCFindEq ?x ?y) => (unfold TCFindEq in *; congruence) : ty
 #[global] Instance Empty_set_eq_dec : EqDecision ∅.
 Proof. intros []. Defined.
 
+(** ** Dependent equality decision *)
 (** Decidable heterogeneous equality in the case the dependencies are equal.
     This is base building block for equality decision procedure of dependent
  types *)
@@ -245,7 +246,14 @@ Solve All Obligations with
    naive_solver).
 #[export] Existing Instance fin_eqdep_dec.
 
+Class EqDep2Decision {A B} (P : A → B → Type) :=
+  eqdep2_decide : ∀ {a a' : A} (Ha : a = a') {b b' : B} (Hb : b = b') (x : P a b) (y : P a' b'), Decision (x =ⱼ y).
 
+#[global] Instance eq_dep2_decision_dec `{EqDep2Decision A B P}
+  (a a' : A) {H : TCFindEq a a'} (b b' : B) {H' : TCFindEq b b'} (x : P a b) (y : P a' b') : Decision (x =ⱼ y) :=
+  eqdep2_decide H H' x y.
+
+(** ** Decision procedure generation *)
 
 Ltac decide_field a b tac :=
   tryif unify a b then idtac else
@@ -287,9 +295,8 @@ Ltac decide_jmeq :=
          left; abstract (subst; reflexivity))
   end.
 
-(** Hint database to decide equality *)
+(** ** Hint database to decide equality *)
 Create HintDb eqdec discriminated.
-
 
 #[global] Hint Extern 3 => progress cbn : eqdec.
 #[global] Hint Extern 10 (Decision (_ = _)) => decide_eq : eqdec.

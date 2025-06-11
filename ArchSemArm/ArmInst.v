@@ -60,38 +60,21 @@ Module Arm.
   (** Then we need to create a few new things for ArchSem, mostly around pas *)
   Module PAManip <: FromSail.PAManip SA.
     Import SA.
-    Implicit Type a : pa.
     Coercion GReg : register >-> greg.
     Bind Scope bv_scope with pa.
 
-    (** Unfold pa that are mword 56 to a bv 56 to work nicely with bv tactics*)
-    Ltac pa_unfold := change pa with (bv 56) in *.
-    Ltac pa_solve := pa_unfold; bv_solve.
+    Definition addr_size := 56%N.
+    #[export] Typeclasses Transparent addr_size.
+    Definition addr_space := ()%type.
+    #[export] Typeclasses Transparent addr_space.
+    Definition addr_space_eq : EqDecision addr_space := _.
+    #[export] Typeclasses Transparent addr_space_eq.
+    Definition addr_space_countable : Countable addr_space := _.
+    #[export] Typeclasses Transparent addr_space_countable.
 
-    Definition pa_addZ (a : pa) z : pa := ((a : bv 56) `+Z` z).
-    Lemma pa_addZ_assoc pa z z' :
-      pa_addZ (pa_addZ pa z) z' = pa_addZ pa (z + z')%Z.
-    Proof. pa_solve. Qed.
-    Lemma pa_addZ_zero a : pa_addZ a 0 = a.
-    Proof. pa_solve. Qed.
-
-    Definition pa_diffN (pa' pa : pa) :=
-      Some $ Z.to_N $ bv_unsigned ((pa' : bv 56) - pa).
-    Lemma pa_diffN_addZ pa pa' n :
-      pa_diffN pa' pa = Some n → pa_addZ pa (Z.of_N n) = pa'.
-    Proof.
-      unfold pa_diffN, pa_addZ. cdestruct n |- ?.
-      pa_solve.
-    Qed.
-
-    Lemma pa_diffN_existZ pa pa' z :
-      pa_addZ pa z = pa' → is_Some (pa_diffN pa' pa).
-    Proof. unfold pa_diffN, pa_addZ. hauto q:on. Qed.
-
-    Lemma pa_diffN_minimalZ pa pa' n :
-      pa_diffN pa' pa = Some n →
-        ∀ z', pa_addZ pa z' = pa' → (z' < 0 ∨ (Z.of_N n) ≤ z')%Z.
-    Proof. unfold pa_diffN, pa_addZ. cdestruct pa',n |- ***. pa_solve. Qed.
+    Definition pa_to_address : pa → bv addr_size := λ x, x.
+    Definition pa_to_addr_space : pa → addr_space := λ x, ().
+    Definition pa_of_addr_and_space : bv addr_size → addr_space → pa := λ x '(), x.
 
     Definition pc_reg : greg := _PC.
   End PAManip.
@@ -105,14 +88,19 @@ Module Arm.
   Module IMonFromSail := IMonFromSail SA SI PAManip Arch Interface.
 End Arm.
 
+Module NoCHERI.
+  Definition no_cheri : ¬ Arm.Arch.CHERI := ltac:(naive_solver).
+End NoCHERI.
+
 (** We can then instantiate the rest of the generic parts of ArchSem on Arm *)
 Module ArmTM := TermModels Arm.
-Module ArmCand := CandidateExecutions Arm ArmTM.
+Module ArmCand := CandidateExecutions Arm ArmTM NoCHERI.
 Module ArmGenPro := GenPromising Arm ArmTM.
 
 (** We export everything we generated, so the rest of ArchSemArm should
     just import this file *)
 Export Arm.
+Export (hints) PAManip.
 Export Arm.Arch.
 Export Arm.Interface.
 Export Arm.IMonFromSail.
@@ -120,20 +108,24 @@ Export ArmTM.
 Export ArmCand.
 Export ArmGenPro.
 
-(** Unfold pa that are mword 56 to a bv 56 to work nicely with bv tactics*)
-Ltac pa_unfold := change pa with (bv 56) in *.
-Ltac pa_solve := pa_unfold; bv_solve.
-
 (** Export [GReg] definitions and typeclasses, since it's what we will manipulate *)
 Export GRegister.
 Coercion GReg : register >-> greg.
 
+
+
 (** Make type abbreviations transparent *)
-#[export] Typeclasses Transparent pa.
-#[export] Typeclasses Transparent SA.pa.
-#[export] Typeclasses Transparent reg_acc.
-#[export] Typeclasses Transparent reg.
 #[export] Typeclasses Transparent bits.
+#[export] Typeclasses Transparent SA.pa.
+#[export] Typeclasses Transparent SA.sys_reg_id.
+#[export] Typeclasses Transparent SA.arch_ak.
+#[export] Typeclasses Transparent SA.abort.
+#[export] Typeclasses Transparent SA.barrier.
+#[export] Typeclasses Transparent SA.cache_op.
+#[export] Typeclasses Transparent SA.tlb_op.
+#[export] Typeclasses Transparent SA.fault.
+#[export] Typeclasses Transparent SA.trans_start.
+#[export] Typeclasses Transparent SA.trans_end.
 
 
 (** HACK: For now all register in system sail-tiny arm are [bv 64], this make
