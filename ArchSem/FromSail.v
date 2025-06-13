@@ -22,6 +22,21 @@ Require Import Interface.
 
 #[export] Typeclasses Transparent choose_type.
 
+#[export] Typeclasses Transparent mword.
+#[export] Typeclasses Transparent MachineWord.MachineWord.word.
+#[export] Typeclasses Transparent MachineWord.MachineWord.idx.
+#[export] Typeclasses Transparent MachineWord.MachineWord.Z_idx.
+#[export] Typeclasses Transparent Z.to_N.
+
+(* TODO go in coq-sail and make those not exist *)
+Arguments MachineWord.MachineWord.word / _.
+Arguments MachineWord.MachineWord.idx /.
+Arguments MachineWord.MachineWord.Z_idx / _.
+
+
+(* TODO remove that in coq-sail *)
+Remove Hints Decidable_eq_mword Countable_mword : typeclass_instances.
+
 Module Type PAManip (SA : SailArch).
   Import SA.
   (** Add an offset to a physical address. Can wrap if out of bounds *)
