@@ -130,6 +130,7 @@ Module Loc.
     else None.
 
 End Loc.
+#[export] Typeclasses Transparent Loc.t.
 
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
@@ -162,11 +163,20 @@ Module Memory.
   (** Representation of initial memory, this is representation
       optimized for the internals of this model, so it not a plain
       memoryMap *)
-  Definition initial := Loc.t -> val.
+  Definition initial := gmap Loc.t val.
+  #[export] Typeclasses Transparent initial.
 
   (** Convert from a memoryMap to the internal representation: initial *)
   Definition initial_from_memMap (mem : memoryMap) : initial :=
-    fun loc => Loc.to_addrs loc |> map mem |> bv_of_bytes 64.
+    mem
+    |> dom
+    |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
+    |> set_fold (λ loc map,
+       let val :=
+         for addr in addr_range (Loc.to_addr loc) 8 do mem !! addr end
+         |$> bv_of_bytes 64
+       in
+       partial_alter (λ _, val) loc map) ∅.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
@@ -180,12 +190,12 @@ Module Memory.
  (** Reads the last write to a location in some memory. Gives the value and the
      timestamp of the write that it read from.
      The timestamp is 0 if reading from initial memory. *)
-  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : (val * nat) :=
+  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : option (val * nat) :=
     match mem with
-    | [] => (init loc, 0%nat)
+    | [] => init !! loc |$> (., 0%nat)
     | msg :: mem' =>
         if Msg.loc msg =? loc then
-          (Msg.val msg, List.length mem)
+          Some (Msg.val msg, List.length mem)
         else read_last loc init mem'
     end.
 
@@ -195,19 +205,17 @@ Module Memory.
       This is mainly for instruction fetching in this model *)
   Definition read_initial (loc : Loc.t) (init : initial) (mem : t) : option val :=
     match read_last loc init mem with
-    | (v, 0%nat) => Some v
+    | Some (v, 0%nat) => Some v
     | _ => None
     end.
-
 
   (** Transform a promising initial memory and memory history back to a
       TermModel memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
-    λ pa,
-      let loc := Loc.from_addr_in pa in
-      let '(v, _) := read_last loc init mem in
-      let index := Loc.addr_index pa in
-      bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
+    let final :=
+      foldl (λ nmem ev, insert ev.(Msg.loc) ev.(Msg.val) nmem) init mem
+    in
+    map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
 
   (** Adds the view number to each message given a view for the last message.
       This is for convenient use with cut_after.
@@ -223,15 +231,16 @@ Module Memory.
 
   (** Returns the list of possible reads at a location restricted by a certain
       view. The list is never empty as one can always read from at least the
-      initial value. *)
+      initial value. Returns [None] if the address is not mapped in initial
+      memory *)
   Definition read (loc : Loc.t) (v : view) (init : initial) (mem : t)
-    : list (val * view) :=
-    let first := mem |> cut_before v |> read_last loc init in
+    : option (list (val * view)) :=
+    first ← mem |> cut_before v |> read_last loc init;
     let lasts := mem |> cut_after_with_timestamps v
                      |> filter (fun '(msg, v) => Msg.loc msg =? loc)
                      |> map (fun '(msg, v) => (Msg.val msg, v))
     in
-    lasts ++ [first].
+    Some (lasts ++ [first])%list.
 
   (** Promise a write and add it at the end of memory *)
   Definition promise (msg : Msg.t) (mem : t) : view * t :=
@@ -284,10 +293,10 @@ Module TState.
         prom : list view;
 
         (* regs values and views *)
-        regs : ∀ reg, reg_type reg * view;
+        regs : dmap reg (λ reg, reg_type reg * view)%type;
 
         (* The coherence views *)
-        coh : Loc.t -> view;
+        coh : gmap Loc.t view;
 
 
         vrd : view; (* The maximum output view of a read  *)
@@ -302,7 +311,7 @@ Module TState.
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
            of the write. The boolean marks if the store was an exclusive*)
-        fwdb : Loc.t -> FwdItem.t;
+        fwdb : gmap Loc.t FwdItem.t;
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
@@ -316,8 +325,8 @@ Module TState.
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
-      regs := fun reg => (iregs reg, 0);
-      coh := fun loc => 0;
+      regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
+      coh := ∅;
       vrd := 0;
       vwr := 0;
       vdmbst := 0;
@@ -326,7 +335,7 @@ Module TState.
       visb := 0;
       vacq := 0;
       vrel := 0;
-      fwdb := fun loc => FwdItem.init;
+      fwdb := ∅;
       xclb := None
     |})%nat.
 
@@ -334,24 +343,26 @@ Module TState.
       This is used to decide if a thread has terminated, and to observe the
       results of the model *)
   Definition reg_map (ts : t) : registerMap :=
-    fun reg => (ts.(regs) reg).1.
+    dmap_map (λ _, fst) ts.(regs).
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : reg) (rv : (reg_type reg) * view) : t -> t
-    := set regs (dfun_add reg rv).
+  Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
+    if decide (is_Some (dmap_lookup reg ts.(regs))) then
+      Some $ set regs (dmap_insert reg rv) ts
+    else None.
 
   (** Sets the coherence view of a location *)
   Definition set_coh (loc : Loc.t) (v : view) : t -> t :=
-    set coh (fun_add loc v).
+    set coh (insert loc v).
 
   (** Updates the coherence view of a location by taking the max of the new
       view and of the existing value *)
-  Definition update_coh (loc : Loc.t) (v : view) (s : t) : t :=
-    set_coh loc (max v (coh s loc)) s.
+  Definition update_coh (loc : Loc.t) (v : view) (ts : t) : t :=
+    set_coh loc (max v (ts.(coh) !!! loc)) ts.
 
   (** Updates the forwarding database for a location. *)
   Definition set_fwdb (loc : Loc.t) (fi : FwdItem.t) : t -> t :=
-    set fwdb (fun_add loc fi).
+    set fwdb (insert loc fi).
 
   (** Set the exclusive database to the timestamp and view of the latest
       load exclusive *)
@@ -389,11 +400,6 @@ Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
   if f.(FwdItem.xcl) && negb (ak.(Explicit_access_kind_strength) =? AS_normal)
   then f.(FwdItem.time) else f.(FwdItem.view).
 
-(* (** Read memory from a timestamp. *) *)
-(* Definition read_from (init: Memory.initial) (mem : Memory.t) (loc : Loc.t) (tr : nat) := *)
-(*   Memory.read_last loc init (Memory.cut_before tr mem). *)
-
-
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
@@ -407,11 +413,14 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
                 (* Strong Acquire loads are ordered after Release stores *)
               ⊔ view_if (acs =? AS_rel_or_acq) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
-  let vread := vpre ⊔ (TState.coh ts loc) in
-  '(res, time) ← mchoosel $ Memory.read loc vread init mem;
-  let fwd := TState.fwdb ts loc in
+  let vread := vpre ⊔ (ts.(TState.coh) !!! loc) in
+  reads ← Exec.error_none "Reading from unmapped memory" $
+            Memory.read loc vread init mem;
+  '(res, time) ← mchoosel reads;
   let read_view :=
-    if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time in
+    if (ts.(TState.fwdb) !! loc) is Some fwd then
+      if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time
+    else time in
   let vpost := vpre ⊔ read_view in
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vrd vpost;;
@@ -441,7 +450,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
-  guard_discard (vpre ⊔ (TState.coh ts loc) < time)%nat;;
+  guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
   mset TState.prom (delete time);;
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vwr time;;
@@ -510,15 +519,21 @@ Section RunOutcome.
   | RegWrite reg racc val =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
-    ( if decide (reg = pc_reg)
-      then
-        mset PPState.state $ TState.update TState.vcap vreg;;
-        mset PPState.state $ TState.set_reg reg (val, 0%nat)
-      else mset PPState.state $ TState.set_reg reg (val, vreg))
+      vreg' ←
+        (if reg =? pc_reg
+         then
+           mset PPState.state $ TState.update TState.vcap vreg;;
+           mret 0%nat
+         else mret vreg);
+      ts ← mget PPState.state;
+      nts ← Exec.error_none "Register isn't mapped, can't write" $
+        TState.set_reg reg (val, vreg') ts;
+      msetv PPState.state nts
   | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       ts ← mget PPState.state;
-    let (val, view) := ts.(TState.regs) reg in
+    '(val, view) ← Exec.error_none "Register isn't mapped can't read" $
+       dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret val
   | MemRead 8 0 rr =>

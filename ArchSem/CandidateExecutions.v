@@ -532,26 +532,21 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Definition has_only_supported_events pe : Prop :=
         iEvent_list pe |> filter (λ '(_,ev), unsupported_event ev) = [].
 
-          (** Get the final register maps of all threads from a candidate *)
-      Definition final_reg_map_tid pe (tid : fin nmth) :
-          registerMap :=
-        λ reg,
-        let oval :=
-          foldl (λ val itrc,
-              foldl (λ (val : option (reg_type reg)) ev,
-                  match ev with
-                  | RegWrite reg' _ val' &→ _ =>
-                      if decide (reg' = reg) is left e
-                      then Some (ctrans e val')
-                      else val
-                  | _ => val
-                  end
-                ) val itrc.1
-            ) None (pe.(events) !!! tid)
-        in
-        if oval is Some val then val else (pe.(init).(MState.regs) !!! tid) reg.
+      (** * Final register map *)
+      (** Get the final register maps of all threads from a pre-execution. If
+          the pre-execution writes registers that were not in the initial map,
+          then they are added, which is somewhat unsound but can't happen if the
+          pre-execution is part of a well-formed candidate. *)
+      Definition final_reg_map_tid pe (tid : fin nmth) : registerMap :=
+        foldl (λ map itrc,
+            foldl (λ map ev,
+                if ev is RegWrite reg _ val &→ _ then
+                  dmap_insert reg val map
+                else map
+              ) map itrc.1
+          ) (pe.(init).(MState.regs) !!! tid) (pe.(events) !!! tid).
 
-      (** Get all the final register map from candidate *)
+      (** Get all the final register map from a pre-execution *)
       Definition final_reg_map pe : vec registerMap nmth :=
         fun_to_vec (final_reg_map_tid pe).
 
@@ -891,7 +886,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Definition is_valid_init_reg_read pe (eid : EID.t) : iEvent → Prop :=
         is_reg_readP (λ reg _ rv,
             match pe.(init).(MState.regs) !! eid.(EID.tid) with
-            | Some regmap => rv = regmap reg
+            | Some regmap => dmap_lookup reg regmap = Some rv
             | None => False
             end).
       #[global] Instance is_valid_init_reg_read_dec pe eid ev :
@@ -903,7 +898,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           ∃ reg reg_acc rv,
             (ev = RegRead reg reg_acc &→ rv) ∧
               ∃ H : eid.(EID.tid) < nmth,
-                (pe.(init).(MState.regs) !!! nat_to_fin H) reg = rv.
+                dmap_lookup reg (pe.(init).(MState.regs) !!! nat_to_fin H) =
+                  Some rv.
       Proof.
         unfold is_valid_init_reg_read.
         split; cdestruct ev |- ** #CDestrMatch #CDestrEqOpt.
@@ -933,7 +929,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         guard (is_mem_read read);;
         addr ← get_addr read;
         val ← get_mem_value read;
-        guard' (val = memoryMap_read pe.(init).(MState.memory) addr (bvn_n val / 8)).
+        guard' (
+            mem_lookup addr (bvn_n val / 8) pe.(init).(MState.memory)
+              |$> bv_to_bvn = Some val).
 
 
       (** ** Not after
@@ -1041,21 +1039,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       λ eid cd, (pre_exec cd) !! eid.
     #[global] Typeclasses Opaque lookup_eid_candidate.
 
-    (** * Connection to final state *)
-
-    (** Get the list of final register values in a candidate for a thread *)
-    (* TODO fix it when Dmaps are working *)
-    (* Definition final_reg_gmap_tid (cd : t) (tid : fin nmth) : *)
-    (*   gmap reg reg_type := *)
-    (*   foldl (λ umap itrc, *)
-    (*       foldl (λ umap ev, *)
-    (*           match ev with *)
-    (*           | RegWrite reg _ val &→ _ => <[reg := val]> umap *)
-    (*           | _ => umap *)
-    (*           end *)
-    (*         ) umap itrc.1 *)
-    (*     ) (∅ : gmap reg reg_type) (cd.(events) !!! tid). *)
-
+    (** * Final memory state *)
 
     (** Get the last write for each pa in candidate. If it's not in the map, it
         was not written by the candidate *)
@@ -1080,12 +1064,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           end) ∅ (event_list cd).
 
     Definition final_mem_map (cd : t) : memoryMap :=
-      let mmap := final_write_per_addr cd in
-      λ pa,
-        match mmap !! pa with
-        | Some (_, val) => val
-        | None => cd.(init).(MState.memory) pa
-        end.
+      let written_values := final_write_per_addr cd |$> snd in
+      union_with (λ old new, Some new) cd.(init).(MState.memory) written_values.
 
     Definition cd_to_MState (cd : t) : MState.t nmth :=
       {|MState.regs := final_reg_map cd;
@@ -1255,10 +1235,32 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         then a = cd.(init).(MState.address_space)
         else True.
 
+    Record footprint_wf {cd : t} :=
+      {
+        (** All register operations are in the initial footprint *)
+        reg_footprint_valid:
+        ∀ tid : fin nmth,
+          ∀ instr ∈ cd.(events) !!! tid,
+          ∀ ev ∈ fst instr,
+          if get_reg ev is Some reg
+          then reg ∈ dom (cd.(init).(MState.regs) !!! tid)
+          else True;
+        (** All memory operations are in the initial footprint *)
+        mem_footprint_valid:
+        ∀ '(eid, ev) ∈ event_list cd,
+          if get_addr ev is Some addr then
+            if get_size ev is Some n then
+              ∀ addr' ∈ addr_range addr n, addr' ∈ dom cd.(init).(MState.memory)
+            else False
+          else True
+      }.
+    #[global] Arguments footprint_wf : clear implicits.
+
     Record wf (cd : t) :=
       {
         has_only_supported_events' :> has_only_supported_events cd;
         addr_space_wf' :> addr_space_wf cd;
+        footprint_wf' :> footprint_wf cd;
         reads_from_wf' :> reads_from_wf cd;
         coherence_wf' :> coherence_wf cd;
         lxsx_wf' :> lxsx_wf cd;

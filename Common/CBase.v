@@ -208,6 +208,7 @@ Definition is_inr `(x : A + B) : Prop :=
 Proof. destruct x; unfold is_inr; solve_decision. Qed.
 
 Notation guard' P := (guard P;; mret ()).
+Notation guard_or' e P := (guard_or e P;; mret ()).
 
 (** * Cartesian product *)
 

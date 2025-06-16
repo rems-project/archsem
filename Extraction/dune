@@ -6,7 +6,7 @@
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst ArmSeqModel Ascii base Basics BinInt
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
-                     CList CMaps COption countable CResult CSets Datatypes
+                     CList CMaps COption Common countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap Interface list0 List list_numbers listset mapset
                      Nat numbers option propset RecordSet

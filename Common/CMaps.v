@@ -388,13 +388,12 @@ Section DMap.
     ∀ k f, g !! k = Some f → f.T1 = k.
 
   (* TODO should I hide dmap_wf in a bool like bv? *)
-  Record dmap :=
-    {dmap_carrier : gmap K (sigT F); dmap_wf : gmap_is_dmap dmap_carrier}.
+  Record dmap := DMap
+    {dmap_car : gmap K (sigT F); dmap_wf : gmap_is_dmap dmap_car}.
 
   (** ** DMap methods *)
 
-  #[export] Program Instance dmap_empty : Empty dmap :=
-    {|dmap_carrier := ∅|}.
+  #[export] Program Instance dmap_empty : Empty dmap := DMap ∅ _.
   Next Obligation.
     unfold gmap_is_dmap.
     setoid_rewrite lookup_unfold.
@@ -402,7 +401,7 @@ Section DMap.
   Qed.
 
   Definition dmap_lookup (k : K) (m : dmap) : option (F k) :=
-    match inspect ((dmap_carrier m) !! k) with
+    match inspect ((dmap_car m) !! k) with
     | Some f eq:e => Some (ctrans (dmap_wf m k f e) f.T2)
     | None eq:_ => None
     end.
@@ -410,7 +409,7 @@ Section DMap.
   Notation "m !d! k" := (dmap_lookup k m) (at level 20).
 
   Program Definition dmap_insert (k : K) (f : F k) (m : dmap) :=
-    {|dmap_carrier := insert k (existT k f) (dmap_carrier m)|}.
+    DMap (insert k (existT k f) (dmap_car m)) _.
   Next Obligation.
     unfold gmap_is_dmap.
     setoid_rewrite lookup_unfold.
@@ -419,7 +418,7 @@ Section DMap.
   Qed.
 
   Program Definition dmap_delete (k : K) (m : dmap) :=
-    {|dmap_carrier := delete k (dmap_carrier m)|}.
+    DMap (delete k (dmap_car m)) _.
   Next Obligation.
     unfold gmap_is_dmap.
     setoid_rewrite lookup_delete_Some.
@@ -442,17 +441,24 @@ Section DMap.
     | None => dmap_delete k m
     end.
 
-  #[export] Instance dmap_dom : Dom dmap (gset K) := λ m, dom (dmap_carrier m).
+  #[export] Instance dmap_dom : Dom dmap (gset K) := λ m, dom (dmap_car m).
 
 
   (** ** DMap lemmas *)
+  Lemma dmap_eq_car m m': dmap_car m = dmap_car m' → m = m'.
+  Proof.
+    intro H.
+    destruct m, m'.
+    cbn in *.
+    subst.
+    f_equal.
+    apply proof_irrelevance.
+  Qed.
 
   Lemma dmap_eq m m': (∀ k : K, m !d! k = m' !d! k) → m = m'.
   Proof using ctrans_F_simpl.
     intro H.
-    destruct m as [m Wfm].
-    destruct m' as [m' Wfm'].
-    enough (m = m') as -> by (f_equal; apply proof_irrelevance).
+    apply dmap_eq_car.
     apply map_eq.
     intros i.
     specialize (H i).
@@ -510,5 +516,78 @@ Section DMap.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
+  Section DmapFold.
+    Context {B} (f : sigT F → B → B) (init : B).
+    Definition dmap_fold (m : dmap) : B :=
+      map_fold (λ _, f) init m.(dmap_car).
+
+    Context (P : dmap → B → Prop) (Hi : P ∅ init)
+      (Hr : ∀ k v m r,
+         dmap_lookup k m = None → P m r →
+         P (dmap_insert k v m) (f (existT k v) r)).
+    Lemma dmap_fold_ind : ∀ m, P m (dmap_fold m).
+    Proof using Hi Hr ctrans_F.
+      intro m.
+      unfold dmap_fold.
+      funelim (map_fold _ _ _).
+      - enough (∅ = m) as <- by done.
+      by apply dmap_eq_car.
+      - do 8 deintro. intros k [k' v] mold b Hknew HInd mnew Hmnew.
+        assert (k' = k). {
+          enough (dmap_car mnew !! k = Some (existT k' v)) as H'' by
+              by apply dmap_wf in H''.
+          rewrite <- Hmnew.
+          cdestruct |- *** # CDestrEqOpt. }
+        subst.
+        assert (gmap_is_dmap mold) as mold_wf. {
+          destruct mnew as [mnew mnew_wf].
+          unfold gmap_is_dmap in *.
+          intros.
+          apply mnew_wf.
+          cdestruct mnew,k0 |- *** # CDestrEqOpt #CDestrMatch. }
+        assert (mnew = dmap_insert k v (DMap mold mold_wf)). {
+          unfold dmap_insert.
+          by apply dmap_eq_car.
+        }
+        subst.
+        apply Hr.
+        + unfold dmap_lookup. cdestruct |- *** #CDestrMatch.
+        + naive_solver.
+    Qed.
+  End DmapFold.
+
+  #[export] Instance FunctionalElimination_dmap_fold {B} f b :
+    FunctionalElimination (dmap_fold f b) _ 3 :=
+    dmap_fold_ind (B := B) f b.
+
 End DMap.
 Arguments dmap _ {_ _} _.
+Notation "m !d! k" := (dmap_lookup k m) (at level 20).
+
+
+Section DMapMap.
+  Context {K : Type}.
+  Context {K_eq_dec : EqDecision K}.
+  Context {K_countable : Countable K}.
+  Context {F : K → Type}.
+  Context {ctrans_F : CTrans F}.
+  Context {ctrans_F_simpl : CTransSimpl F}.
+  Context {F' : K → Type}.
+  Context {ctrans_F' : CTrans F'}.
+  Context {ctrans_F'_simpl : CTransSimpl F'}.
+
+  (** DMap utility functions *)
+  Definition dmap_map (f: ∀ k, F k → F' k) (m : dmap K F) : dmap K F' :=
+    dmap_fold (λ '(existT k v) res, dmap_insert k (f k v) res) ∅ m.
+
+  Lemma dmap_lookup_map (f: ∀ k, F k → F' k) (m : dmap K F) k :
+    (dmap_map f m) !d! k = f k <$> m !d! k.
+  Proof using ctrans_F'_simpl ctrans_F_simpl.
+    unfold dmap_map.
+    funelim (dmap_fold _ _ _).
+    - by rewrite ?dmap_lookup_empty.
+    - destruct decide subst k k0.
+      + by rewrite ?dmap_lookup_insert.
+      + by rewrite ?dmap_lookup_insert_ne.
+  Qed.
+End DMapMap.

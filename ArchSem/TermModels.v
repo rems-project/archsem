@@ -69,16 +69,67 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Import IWA.Arch.
   Import IWA.Interface.
 
+  (** * Machine States
+
+      This section defines types to represent architecturally defined state
+      called "machine state" (Not a great name, to be changed).
+      Those states allow express initial and final states uniformly across all
+      kinds of models *)
+
+  (** ** Memory map *)
+
   (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
-  Definition memoryMap := address → bv 8.
+  Definition memoryMap := gmap address (bv 8).
   #[global] Typeclasses Transparent memoryMap.
 
-  (** Read a sequence of bytes from  a [memoryMap]:  *)
-  Definition memoryMap_read (mm : memoryMap) (addr : address) (n : N) : bv (8 * n) :=
-    addr_range addr n |$> mm |> bv_of_bytes (8 * n).
+  (** Lookup a range of memory as a list of bytes.
+      Returns [None] if any byte is missing *)
+  Definition mem_lookup_bytes (addr : address) (n : N) (mm : memoryMap) :
+      option (list (bv 8)) :=
+    addr_range addr n |$> (mm !!.) |> list_of_options.
 
-  Definition registerMap := ∀ r : reg, reg_type r.
+  (** Lookup a range of memory as a [bv] (little-endian).
+      Returns [None] if any byte is missing *)
+  Definition mem_lookup (addr : address) (n : N) (mm : memoryMap) :
+      option (bv (8 * n)) :=
+    bv_of_bytes _ <$> (mem_lookup_bytes addr n mm).
+
+  (** Insert a sequence of bytes to memory (even if there were not there before).
+      A normal memory write should check if bytes exists before writing them *)
+  Fixpoint mem_insert_bytes (addr : address) (bytes : list (bv 8)) (mm : memoryMap) :
+      memoryMap :=
+    if bytes is byte :: bytes'
+    then
+      mm
+      |> insert addr byte
+      |> mem_insert_bytes (addr_addN addr 1) bytes'
+    else mm.
+
+  (** Write a bitvector to memory (little-endian). If the size is not a multiple
+      of 8, it is zero extended to the next byte boundary*)
+  Definition mem_insert_bv (addr : address) {m : N} (val : bv m) : memoryMap → memoryMap :=
+    mem_insert_bytes addr (bv_to_bytes 8 val).
+
+  (** Write a bitvector to memory (little-endian). *)
+  Definition mem_insert (addr : address) (n : N) (val : bv (8 * n)) : memoryMap → memoryMap :=
+    mem_insert_bytes addr (bv_to_bytes 8 val).
+
+  (** Remove all bytes in the range provided from the memory map *)
+  Definition mem_delete (addr : address) (n : N) : memoryMap → memoryMap :=
+    fold_left (λ mm i, delete (addr_addN addr i) mm) (seqN 0 n).
+
+
+  (** ** Register map *)
+  Definition registerMap := dmap reg reg_type.
   #[global] Typeclasses Transparent registerMap.
+
+  (** Helpers for type inference.
+      WARNING: Do not eta-contract, otherwise OCaml extraction fails *)
+  Definition reg_lookup (r : reg) : registerMap → option (reg_type r) :=
+    dmap_lookup r.
+  Definition reg_insert (r : reg) (rv : reg_type r) : registerMap → registerMap :=
+    dmap_insert r rv.
+  Definition reg_delete (r : reg) : registerMap → registerMap := dmap_delete r.
 
   (** A termination condition that define when each thread should stop.
 
@@ -86,6 +137,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       be `PC = ...` or `PC >= ...` *)
   Definition terminationCondition (n : nat) := fin n → registerMap → bool.
 
+  (** ** Machine state *)
   (** This module define a concept of simple machine state without any
       micro-architectural details.
 
@@ -107,6 +159,9 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
           regs: vec registerMap n;
         }.
 
+    #[export] Instance eta : Settable t :=
+      settable! Make <memory; address_space; regs>.
+
     (** A initial state for a machine model test. This means that the
         machine must stop at the required termination condition *)
     Record init :=
@@ -114,6 +169,10 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
           state :> t;
           termCond : terminationCondition n
         }.
+
+    #[export] Instance eta_init : Settable init :=
+      settable! MakeI <state;termCond>.
+
 
     Definition is_terminated (s : init) :=
       ∀ tid, s.(termCond) tid (s.(regs) !!! tid).
@@ -126,6 +185,10 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
           istate :> init;
           terminated' : bool_decide (is_terminated istate)
         }.
+
+    #[export] Instance eta_final : Settable final :=
+      settable! MakeF <istate;terminated'>.
+
 
     Definition terminated (f : final) : is_terminated f :=
       bool_decide_unpack (terminated' f).
@@ -153,17 +216,17 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     Arguments final : clear implicits.
 
   End MState.
-  (* Make the coercions available without importing the module *)
-  Global Coercion MState.state : MState.init >-> MState.t.
-  Global Coercion MState.istate : MState.final >-> MState.init.
+  Export (hints, coercions) MState.
 
-  Class SubsetEqEquiv (E : Type) {sse : SubsetEq E} {eq : Equiv E} :=
-    subseteq_equiv : forall a b : E, a ≡ b ↔ a ⊆ b ∧ b ⊆ a.
 
-  Global Instance set_subseteq_equiv_instance `{ElemOf A C} :
-    SubsetEqEquiv C.
-  Proof. intros a b. set_solver. Qed.
+  (** * General terminating model
 
+      This section defines general terminating models which are CPU architecture
+      models that are defined by the set of final state reachable from a given
+      initial state. Given that there is no fundamental notion of termination,
+      we use a provided [terminationCondition] that gives the program point at
+      which one must examine final state as if this program point was a strong
+      synchronization point. *)
   Module Model. (* namespace *)
     Module Res. (* namespace *)
       Section MR.
@@ -192,7 +255,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         | CResult.Error msg => Error msg
         end.
 
-      (** * Sets of model results *)
+      (** ** Sets of model results *)
 
       (** We are only interested in monadsets, so sets that support fmap, bind,
       ... *)
@@ -288,6 +351,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
     End Res.
 
+    (** ** Models *)
     Section Model.
       Context `{MonadSet E}.
       Context {unspec : Type}.
@@ -345,6 +409,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     Definition to_nc {unspec} `{MonadSet E} : t E unspec → nc unspec :=
       map_set (λ A, set_to_propset).
   End Model.
+
 
 End TermModels.
 

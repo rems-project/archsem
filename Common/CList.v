@@ -250,6 +250,7 @@ Definition enumerate {A} (l : list A) : list (nat * A) :=
 #[global] Typeclasses Opaque zip_with.
 
 
+
 Global Instance set_elem_of_zip_with A B C (x : C) (f : A → B → C) l1 l2:
   SetUnfoldElemOf x (zip_with f l1 l2)
     (∃ (n : nat) y z, l1 !! n = Some y ∧ l2 !! n = Some z ∧ f y z = x) | 10.
@@ -326,6 +327,16 @@ Proof.
   - intros []. lia.
   - intros. exists (N.to_nat x). lia.
 Qed.
+
+Definition enumerateN {A} (l : list A) : list (N * A) :=
+  zip_with pair (seqN 0 (N.of_nat (length l))) l.
+
+(** ** List and option inversion *)
+
+(** Take a list of option and if they are all [Some], return a list of the results.
+    otherwise return [None] *)
+Definition list_of_options {A} (l : list (option A)) : option (list A) :=
+  for x in l do x end.
 
 (** * List lemmas *)
 
