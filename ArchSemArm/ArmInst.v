@@ -128,13 +128,6 @@ Coercion GReg : register >-> greg.
 #[export] Typeclasses Transparent SA.trans_end.
 
 
-(** HACK: For now all register in system sail-tiny arm are [bv 64], this make
-    porting some existing models simpler *)
-Definition regt_to_bv64 {r} (rv : reg_type r) : bv 64.
-  by destruct r as [?[]]. Defined.
-Definition regt_of_bv64 {r} (rv : bv 64) : reg_type r.
-  by destruct r as [?[]]. Defined.
-
 (** Since ArchSem only uses register types through [reg_type], there is no need
     for those slow and risky instances *)
 #[export] Remove Hints

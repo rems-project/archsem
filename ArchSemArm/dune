@@ -5,7 +5,7 @@
    ArmInst
    ArmSeqModel
    UMPromising
-   VMPromising
+   ; VMPromising
    GenAxiomaticArm
    UMArm
    UMSeqArm

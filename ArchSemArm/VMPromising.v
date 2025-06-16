@@ -51,6 +51,7 @@ Require Import ASCommon.FMon.
 Require Import Coq.Program.Equality.
 
 Require UMPromising.
+Import (hints) UMPromising.
 
 Require Import ArchSem.GenPromising.
 Require Import ArmInst.
@@ -61,7 +62,6 @@ From stdpp Require Import pretty.
 
 (* Shadow constructor name from coq-sail with our result type *)
 Import ASCommon.CResult.
-
 
 #[local] Open Scope stdpp.
 
@@ -176,11 +176,21 @@ Module Memory.
   (** Representation of initial memory, this is representation
       optimized for the internals of this model, so it not a plain
       memoryMap *)
-  Definition initial := Loc.t -> val.
+  Definition initial := gmap Loc.t val.
+  #[export] Typeclasses Transparent initial.
 
   (** Convert from a memoryMap to the internal representation: initial *)
   Definition initial_from_memMap (mem : memoryMap) : initial :=
-    fun loc => Loc.to_addrs loc |> map mem |> bv_of_bytes 64.
+    mem
+    |> dom
+    |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
+    |> set_fold (λ loc map,
+          let val :=
+            for addr in addr_range (Loc.to_addr loc) 8 do mem !! addr end
+            |$> bv_of_bytes 64
+          in
+          partial_alter (λ _, val) loc map) ∅.
+
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
@@ -194,15 +204,16 @@ Module Memory.
  (** Reads the last write to a location in some memory. Gives the value and the
      timestamp of the write that it read from.
      The timestamp is 0 if reading from initial memory. *)
-  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : (val * nat) :=
+  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : option (val * nat) :=
     match mem with
-    | [] => (init loc, 0%nat)
+    | [] => init !! loc |$> (., 0%nat)
     | (Ev.Msg msg) :: mem' =>
         if Msg.loc msg =? loc then
-          (Msg.val msg, List.length mem)
+          Some (Msg.val msg, List.length mem)
         else read_last loc init mem'
     | Ev.Tlbi _ :: mem' => read_last loc init mem'
     end.
+
 
   (** Read memory at a given timestamp without any weak memory behaviour *)
   Definition read_at (loc : Loc.t) (init : initial) (mem : t) (time : nat) :=
@@ -213,9 +224,10 @@ Module Memory.
       This is mainly for instruction fetching in this model *)
   Definition read_initial (loc : Loc.t) (init : initial) (mem : t) : option val :=
     match read_last loc init mem with
-    | (v, 0%nat) => Some v
+    | Some (v, 0%nat) => Some v
     | _ => None
     end.
+
 
   (* (** Reads from initial memory for instruction fetch (only 4 bytes aligned) *)
   (*     and fail if the memory was modified *)
@@ -234,47 +246,37 @@ Module Memory.
   (*   end. *)
 
 
-
   (** Transform a promising initial memory and memory history back to a
       TermModel memoryMap *)
-  Definition to_memMap (init : initial) (mem : t) : memoryMap :=
-    fun addr =>
-      let loc := Loc.from_addr_in addr in
-      let '(v, _) := read_last loc init mem in
-      let index := Loc.addr_index addr in
-      bv_to_bytes 8 v !! bv_unsigned index |> default (bv_0 8).
-
-  (** Adds the view number to each message given a view for the last message.
-      This is for convenient use with cut_after.
-
-      TODO: it would make sense to make a function that does cut_after
-      and this in a single step. *)
-  (* Fixpoint with_views_from (v : view) (mem : t) *)
-  (*   : list (Msg.t * view) := *)
-  (*   match mem with *)
-  (*   | [] => [] *)
-  (*   | h :: q => (v, h) :: with_views_from (v - 1) q *)
-  (*   end. *)
-
+  Definition to_memMap (init : initial) (mem : t) : memoryMap:=
+    let final :=
+      foldl (λ nmem ev,
+          if ev is Ev.Msg msg
+          then insert msg.(Msg.loc) msg.(Msg.val) nmem
+          else nmem)
+        init mem
+    in
+    map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
 
   (** Returns the list of possible reads at a location restricted by a certain
       view. The list is never empty as one can always read from at least the
       initial value. *)
   Definition read (loc : Loc.t) (v : view) (init : initial) (mem : t)
-    : list (val * view) :=
-    let first := mem |> cut_before v |> read_last loc init in
+    : option (list (val * view)) :=
+    first ← mem |> cut_before v |> read_last loc init;
     let lasts := mem |> cut_after_with_timestamps v
-                     |> list_filter_map
-                     (fun '(ev, v) =>
-                        match ev with
-                        | Ev.Msg msg =>
-                            if Msg.loc msg =? loc
-                            then Some (Msg.val msg, v)
-                            else None
-                        | Ev.Tlbi _ => None
-                        end)
+                 |> list_filter_map
+                      (fun '(ev, v) =>
+                         match ev with
+                         | Ev.Msg msg =>
+                             if Msg.loc msg =? loc
+                             then Some (Msg.val msg, v)
+                             else None
+                         | Ev.Tlbi _ => None
+                         end)
     in
-    lasts ++ [first].
+    Some (lasts ++ [first])%list.
+
 
   (** Promise a write and add it at the end of memory *)
   Definition promise (ev : Ev.t) : Exec.t t string view :=
@@ -336,247 +338,85 @@ Bind Scope fin_scope with ELp.
 Definition ELp_to_EL : ELp -> EL := FS.
 
 
+Check list_to_set.
 
-(** Any write to a register not explicitly supported by Reg.t will fail,
-    because this means that the model doesn't know which behavior it is supposed to
-    have *)
-Module Reg.
-  (** application/non-relaxed registers *)
-  Inductive app :=
-  | R (num : fin 31)
-  | SP (el : EL)
-  | ELR (el : ELp)
-  | PSTATE.
+(** * Register classification
 
-  #[global] Instance app_eq_dec : EqDecision app.
-  Proof. solve_decision. Defined.
+    Here we classify register based on which category they belong to. Register
+    that are not listed here (other than the PC) are unsupported and cannot be
+    written to (But can be read if unmodified) *)
 
-  Local Open Scope positive.
+(** Strict registers are those have non-relaxed behaviour: every read must read
+    the previous write e.g GP register, stack pointers, ... *)
+Definition strict_regs : gset reg :=
+  list_to_set [
+      GReg R0;
+      GReg R1;
+      GReg R2;
+      GReg R3;
+      GReg R4;
+      GReg R5;
+      GReg R6;
+      GReg R7;
+      GReg R8;
+      GReg R9;
+      GReg R10;
+      GReg R11;
+      GReg R12;
+      GReg R13;
+      GReg R14;
+      GReg R15;
+      GReg R16;
+      GReg R17;
+      GReg R18;
+      GReg R19;
+      GReg R20;
+      GReg R21;
+      GReg R22;
+      GReg R23;
+      GReg R24;
+      GReg R25;
+      GReg R26;
+      GReg R27;
+      GReg R28;
+      GReg R29;
+      GReg R30;
+      GReg SP_EL0;
+      GReg SP_EL1;
+      GReg SP_EL2;
+      GReg SP_EL3;
+      GReg PSTATE;
+      GReg ELR_EL1;
+      GReg ELR_EL2;
+      GReg ELR_EL3].
 
-  (* TODO Ltac2 tactic to do this *)
-  #[global] Program Instance app_countable : Countable app :=
-    {| encode a :=
-        match a with
-        | R n => (encode n)~0~0
-        | SP el => (encode el)~0~1
-        | ELR el => (encode el)~1~0
-        | PSTATE => 1~0
-        end;
-      decode p :=
-        match p with
-        | n~0~0 => (decode n) |$> R
-        | n~0~1 => (decode n) |$> SP
-        | n~1~0 => (decode n) |$> ELR
-        | 1~0 => Some PSTATE
-        | _ => None
-        end|}.
-  Next Obligation. intros []; by try rewrite decode_encode. Qed.
+(** Relaxed registers are not guaranteed to read the latest value. *)
+Definition relaxed_regs : gset reg :=
+  list_to_set [
+      GReg ESR_EL1;
+      GReg ESR_EL2;
+      GReg ESR_EL3;
+      GReg FAR_EL1;
+      GReg FAR_EL2;
+      GReg FAR_EL3;
+      GReg PAR_EL1;
+      GReg TTBR0_EL1;
+      GReg TTBR0_EL2;
+      GReg TTBR0_EL3;
+      GReg TTBR1_EL1;
+      GReg TTBR1_EL2;
+      GReg VBAR_EL1;
+      GReg VBAR_EL2;
+      GReg VBAR_EL3;
+      GReg VTTBR_EL2].
 
-  (** Relaxed system registers *)
-  Inductive sys :=
-  | ESR (el : ELp)
-  | FAR (el : ELp)
-  | PAR (* EL1 *)
-  | TTBR0 (el : ELp)
-  | TTBR1 (el2 : bool)
-  | VBAR (el : ELp)
-  | VTTBR (* EL2 *).
-
-  #[global] Instance sys_dec : EqDecision sys.
-  solve_decision.
-  Defined.
-
-  #[global] Program Instance sys_countable : Countable sys :=
-    {| encode a :=
-        match a with
-        | ESR el => (encode el)~0~0~0
-        | FAR el => (encode el)~0~0~1
-        | PAR => 1~0
-        | TTBR0 el => (encode el)~0~1~1
-        | TTBR1 el => (encode el)~1~0~0
-        | VBAR el => (encode el)~1~0~1
-        | VTTBR => 1~1~0
-        end;
-      decode p :=
-        match p with
-        | n~0~0~0 => (decode n) |$> ESR
-        | n~0~0~1 => (decode n) |$> FAR
-        | 1~0 => Some PAR
-        | n~0~1~1 => (decode n) |$> TTBR0
-        | n~1~0~0 => (decode n) |$> TTBR1
-        | n~1~0~1 => (decode n) |$> VBAR
-        | 1~1~0 => Some VTTBR
-        | _ => None
-        end|}.
-  Next Obligation. intros []; by try rewrite decode_encode. Qed.
-
-  Inductive t :=
-  | PC
-  | App (app : app)
-  | Sys (sys : sys).
-
-  #[global] Instance eq_dec : EqDecision t.
-  Proof. solve_decision. Defined.
-
-  #[global] Program Instance countable : Countable t :=
-    {| encode a :=
-        match a with
-        | PC => 1
-        | App a => (encode a)~0
-        | Sys s => (encode s)~1
-        end;
-      decode p :=
-        match p with
-        | n~0 => (decode n) |$> App
-        | n~1 => (decode n) |$> Sys
-        | 1 => Some PC
-        end|}.
-  Next Obligation. intros []; by try rewrite decode_encode. Qed.
-
-  (* for i in range (0, 31):
-         print(f"    | R{i} => Some (App (R {i}))")*)
-  Definition from_arch (r : reg) : option t :=
-    match r with
-    | _PC => Some PC
-    | R0 => Some (App (R 0))
-    | R1 => Some (App (R 1))
-    | R2 => Some (App (R 2))
-    | R3 => Some (App (R 3))
-    | R4 => Some (App (R 4))
-    | R5 => Some (App (R 5))
-    | R6 => Some (App (R 6))
-    | R7 => Some (App (R 7))
-    | R8 => Some (App (R 8))
-    | R9 => Some (App (R 9))
-    | R10 => Some (App (R 10))
-    | R11 => Some (App (R 11))
-    | R12 => Some (App (R 12))
-    | R13 => Some (App (R 13))
-    | R14 => Some (App (R 14))
-    | R15 => Some (App (R 15))
-    | R16 => Some (App (R 16))
-    | R17 => Some (App (R 17))
-    | R18 => Some (App (R 18))
-    | R19 => Some (App (R 19))
-    | R20 => Some (App (R 20))
-    | R21 => Some (App (R 21))
-    | R22 => Some (App (R 22))
-    | R23 => Some (App (R 23))
-    | R24 => Some (App (R 24))
-    | R25 => Some (App (R 25))
-    | R26 => Some (App (R 26))
-    | R27 => Some (App (R 27))
-    | R28 => Some (App (R 28))
-    | R29 => Some (App (R 29))
-    | R30 => Some (App (R 30))
-    | SP_EL0 => Some (App (SP 0))
-    | SP_EL1 => Some (App (SP 1))
-    | SP_EL2 => Some (App (SP 2))
-    | SP_EL3 => Some (App (SP 3))
-    | System_types.PSTATE => Some (App PSTATE)
-    | ELR_EL1 => Some (App (ELR 0))
-    | ELR_EL2 => Some (App (ELR 1))
-    | ELR_EL3 => Some (App (ELR 2))
-    | ESR_EL1 => Some (Sys (ESR 0))
-    | ESR_EL2 => Some (Sys (ESR 1))
-    | ESR_EL3 => Some (Sys (ESR 2))
-    | FAR_EL1 => Some (Sys (FAR 0))
-    | FAR_EL2 => Some (Sys (FAR 1))
-    | FAR_EL3 => Some (Sys (FAR 2))
-    | PAR_EL1 => Some (Sys PAR)
-    | TTBR0_EL1 => Some (Sys (TTBR0 0))
-    | TTBR0_EL2 => Some (Sys (TTBR0 1))
-    | TTBR0_EL3 => Some (Sys (TTBR0 2))
-    | TTBR1_EL1 => Some (Sys (TTBR1 false))
-    | TTBR1_EL2 => Some (Sys (TTBR1 true))
-    | VBAR_EL1 => Some (Sys (VBAR 0))
-    | VBAR_EL2 => Some (Sys (VBAR 1))
-    | VBAR_EL3 => Some (Sys (VBAR 2))
-    | VTTBR_EL2 => Some (Sys VTTBR)
-    end.
-
-
-  Equations to_arch : t → Arm.Arch.reg :=
-  | PC => _PC;
-  | App (R 0) => R0;
-  | App (R 1) => R1;
-  | App (R 2) => R2;
-  | App (R 3) => R3;
-  | App (R 4) => R4;
-  | App (R 5) => R5;
-  | App (R 6) => R6;
-  | App (R 7) => R7;
-  | App (R 8) => R8;
-  | App (R 9) => R9;
-  | App (R 10) => R10;
-  | App (R 11) => R11;
-  | App (R 12) => R12;
-  | App (R 13) => R13;
-  | App (R 14) => R14;
-  | App (R 15) => R15;
-  | App (R 16) => R16;
-  | App (R 17) => R17;
-  | App (R 18) => R18;
-  | App (R 19) => R19;
-  | App (R 20) => R20;
-  | App (R 21) => R21;
-  | App (R 22) => R22;
-  | App (R 23) => R23;
-  | App (R 24) => R24;
-  | App (R 25) => R25;
-  | App (R 26) => R26;
-  | App (R 27) => R27;
-  | App (R 28) => R28;
-  | App (R 29) => R29;
-  | App (R 30) => R30;
-  | App (SP 0) => SP_EL0;
-  | App (SP 1) => SP_EL1;
-  | App (SP 2) => SP_EL2;
-  | App (SP 3) => SP_EL3;
-  | App PSTATE => System_types.PSTATE;
-  | App (ELR 0) => ELR_EL1;
-  | App (ELR 1) => ELR_EL2;
-  | App (ELR 2) => ELR_EL3;
-  | Sys (ESR 0) => ESR_EL1;
-  | Sys (ESR 1) => ESR_EL2;
-  | Sys (ESR 2) => ESR_EL3;
-  | Sys (FAR 0) => FAR_EL1;
-  | Sys (FAR 1) => FAR_EL2;
-  | Sys (FAR 2) => FAR_EL3;
-  | Sys PAR => PAR_EL1;
-  | Sys (TTBR0 0) => TTBR0_EL1;
-  | Sys (TTBR0 1) => TTBR0_EL2;
-  | Sys (TTBR0 2) => TTBR0_EL3;
-  | Sys (TTBR1 false) => TTBR1_EL1;
-  | Sys (TTBR1 true) => TTBR1_EL2;
-  | Sys (VBAR 0) => VBAR_EL1;
-  | Sys (VBAR 1) => VBAR_EL2;
-  | Sys (VBAR 2) => VBAR_EL3;
-  | Sys VTTBR => VTTBR_EL2.
-
-
-  Ltac fin_case :=
-    match goal with
-    | n : fin 0 |- _ => dep_destruct n
-    | n : fin _ |- _ => dep_destruct n; [| clear n]
-    end.
-
-  Lemma to_from_arch (reg : t) : from_arch (to_arch reg) = Some reg.
-  Proof. funelim (to_arch reg); cbn; reflexivity. Qed.
-
-  Lemma from_to_arch (r : reg) (r' : t) : (from_arch r) = Some r' -> to_arch r' = r.
-  Proof. destruct r as [_ [[]]]; cdestruct r' |- ***.
-  Qed.
-
-End Reg.
-Coercion Reg.App : Reg.app >-> Reg.t.
-Coercion Reg.Sys : Reg.sys >-> Reg.t.
+(** * The thread state *)
 
 Module WSReg.
   Record t :=
     make {
-        sreg : Reg.sys;
-        val : bv 64;
+        sreg : reg;
+        val : reg_type sreg;
         view : nat
       }.
 
@@ -594,14 +434,13 @@ Module TState.
            Is must be ordered with oldest promises at the bottom of the list *)
         prom : list view;
 
-        (* registers values and views *)
-        pc : bv 64;
-        regs : Reg.app -> bv 64 * view;
-        regs_init : registerMap;
+        (* registers values and views. System(relaxed) registers are not
+           modified in the [regs] field directly, but instead accumulate changes *)
+        regs : dmap reg (λ reg, reg_type reg * view)%type;
         sregs : list WSReg.t;
 
         (* The coherence views *)
-        coh : Loc.t -> view;
+        coh : gmap Loc.t view;
 
 
         vrd : view; (* The maximum output view of a read  *)
@@ -619,7 +458,7 @@ Module TState.
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
            of the write. The boolean marks if the store was an exclusive*)
-        fwdb : Loc.t -> FwdItem.t;
+        fwdb : gmap Loc.t FwdItem.t;
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
@@ -637,18 +476,16 @@ Module TState.
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;pc;regs;regs_init;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
+    settable! make <prom;regs;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb;scse;tlbscses>.
 
   (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
-      pc := iregs (Reg.to_arch Reg.PC);
-      regs := fun reg => (regt_to_bv64 (iregs (Reg.to_arch reg)), 0);
-      regs_init := iregs;
+      regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
       sregs := []; (* latest event at the top of the list *)
-      coh := fun loc => 0;
+      coh := ∅;
       vrd := 0;
       vwr := 0;
       vdmbst := 0;
@@ -660,7 +497,7 @@ Module TState.
       vmsr := 0;
       vacq := 0;
       vrel := 0;
-      fwdb := fun loc => FwdItem.init;
+      fwdb := ∅;
       xclb := None;
       scse := 0;
       tlbscses := (fun _ => None)
