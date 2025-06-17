@@ -2617,6 +2617,64 @@ Proof.
         }
       }
       {
+        opose proof (seq_model_rf_acc_inv _ H_inv _ _ _ _) as H_rf; eauto; cbn in *.
+        unfold cdst_rf_acc_invP in *.
+        setoid_rewrite lookup_unfold in H_rf; cbn in *.
+        rewrite ?Hsame_itrs, ?Hsame_init in *.
+        (* setoid_rewrite H_rf. *)
+        clear (* H_rf *) H_co.
+        depelim H2.
+        opose proof (seq_model_mem_reads_inv _ H_inv _ _ _ _ (intra_trace_eid_succ 0 (trace_rev (itrs seqst_succ))) _ _ _ _ _ _ _) as H_mem_reads; eauto.
+        all: cdestruct |- *** #CDestrEqOpt.
+
+        cdestruct call, ret |- *** #CDestrMatch.
+        1: admit.
+        all: cdestruct H2 |- *** #CDestrEqOpt; rewrite ?Hsame_itrs in *;
+          cdestruct |- *** #CDestrEqOpt.
+        cbn in *.
+        rewrite Hsame_itrs, Hsame_init in *.
+        cdestruct H_mem_reads #CDestrSplitGoal.
+        {
+          eexists; split; eauto.
+          destruct (decide (y = x0)) as [->|].
+          1: right; cdestruct |- *** #CDestrSplitGoal; eexists; cdestruct |- ***
+            ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrSplitGoal.
+          eapply H_rf in H8.
+          cdestruct H8 ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrMatch.
+          left.
+          eexists _, _.
+          cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
+          1: hauto l: on.
+          ospecialize (H12 y _ _ _ _).
+          all: cdestruct H12 |- *** #CDestrEqOpt #CDestrSplitGoal.
+        }
+        {
+          exfalso.
+          eapply H8.
+          setoid_rewrite H_rf.
+          opose proof (trace_last_event_indexed
+          (λ ev1 eid,
+            is_mem_write ev1 ∧
+            get_pa ev1 = get_pa (MemRead x1 x2 &→ inl (x3, x4)) ∧
+            EID.full_po_lt eid x) (trace_rev (trace_cons (call &→ ret) (itrs seqst))) y _ _ _).
+          1: admit. (* Decision process *)
+          1: cdestruct |- *** #CDestrEqOpt.
+          1: cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+          cdestruct H11 #CDestrEqOpt.
+          eexists _, _ , _; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+          opose proof (EID.full_po_lt_connex x other_eid _ _ _) as Hconnex.
+          1-3: destruct x, other_eid; unfold lookup, lookup_ev_from_iTraces in *;
+            deintros; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+          destruct Hconnex as [->|[|]].
+          1: deintros; cdestruct |- *** #CDestrEqOpt.
+          1: by do 2 right.
+          ospecialize (H14 _ other_eid _ _); eauto.
+          1: eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto.
+          destruct H14; first by left.
+          right; left; done.
+        }
+      }
+      {
         right.
         unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
         cdestruct x, y, Hnms.
