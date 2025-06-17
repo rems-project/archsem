@@ -122,7 +122,7 @@ Section PM.
 
   Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
     let indexed_mem := attach_timestamps mem in
-    filter (fun p : ev * nat => Nat.ltb v (snd p)) indexed_mem.
+    take (length mem - v) (attach_timestamps mem).
 
 End PM.
 Arguments t : clear implicits.
