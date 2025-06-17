@@ -426,6 +426,11 @@ Module WSReg.
     else None.
 End WSReg.
 
+Module LEvent.
+  Inductive t := 
+  | Cse (t: nat)
+  | Wsreg (wsreg: WSReg.t).
+End LEvent.
 
 
 (** The thread state *)
@@ -439,8 +444,7 @@ Module TState.
         (* registers values and views. System(relaxed) registers are not
            modified in the [regs] field directly, but instead accumulate changes *)
         regs : dmap reg (λ reg, reg_type reg * view)%type;
-        (* TODO: levents *)
-        sregs : list WSReg.t;
+        levs : list LEvent.t;
 
         (* The coherence views *)
         coh : gmap Loc.t view;
@@ -466,27 +470,18 @@ Module TState.
            corresponding store exclusive has not yet run, this will contain
            the timestamp and post-view of the load exclusive*)
         xclb : option (nat * view);
-
-
-        (* TODO: Remove this and add CSE events *)
-        (* Position in sregs of the last CSE event *)
-        scse : nat;
-
-        (* Recording of all previous updates of the MMU/TLB view of the system
-           registers *)
-        tlbscses : nat -> option nat
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;regs;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
-                    vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb;scse;tlbscses>.
+    settable! make <prom;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
+                    vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb>.
 
   (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
       regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
-      sregs := []; (* latest event at the top of the list *)
+      levs := []; (* latest event at the top of the list *)
       coh := ∅;
       vrd := 0;
       vwr := 0;
@@ -501,17 +496,26 @@ Module TState.
       vrel := 0;
       fwdb := ∅;
       xclb := None;
-      scse := 0;
-      tlbscses := (fun _ => None)
     |})%nat.
 
-  Definition sreg_cur (ts : t) := length ts.(sregs).
+  Definition lev_cur (ts : t) := length ts.(levs).
 
+  Fixpoint filter_wsreg (events: list LEvent.t) : list WSReg.t :=
+    match events with
+    | nil => nil
+    | h :: t =>
+      match h with
+      | LEvent.Cse _ => filter_wsreg t
+      | LEvent.Wsreg wsreg_val => wsreg_val :: (filter_wsreg t)
+      end
+    end.
+    
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (s : nat) (sreg : reg) :=
     let newval :=
-      ts.(sregs)
-      |> drop ((sreg_cur ts) - s)
+      ts.(levs)
+      |> drop ((lev_cur ts) - s)
+      |> filter_wsreg
       |> list_filter_map (WSReg.to_val_view_if sreg)
       |> hd_error in
     newval ∪ dmap_lookup sreg ts.(regs).
@@ -523,15 +527,16 @@ Module TState.
     :=
     sync_val ← read_sreg_last ts sync sreg;
     let rest :=
-      ts.(sregs)
-      |> take ((sreg_cur ts) - sync)
+      ts.(levs)
+      |> take ((lev_cur ts) - sync)
+      |> filter_wsreg
       |> list_filter_map (WSReg.to_val_view_if sreg)
     in Some $ sync_val :: rest.
 
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
     if bool_decide (r ∈ relaxed_regs) then
-      read_sreg_last ts (sreg_cur ts) r
+      read_sreg_last ts (lev_cur ts) r
     else dmap_lookup r ts.(regs).
 
   (** Extract a plain register map from the thread state without views.
@@ -585,13 +590,12 @@ Module TState.
   Definition promise (v : view) : t -> t := set prom (v ::.).
 
   (** Perform a context synchronization event *)
-  Definition cse (v : view) (ts : t) : t :=
-    ts |> setv scse (length ts.(sregs))
-       |> update vcse v.
+  Definition cse (v : view) : t -> t :=
+    (update vcse v) ∘ (set levs (fun levs => (LEvent.Cse v) :: levs)).
 
   (** Perform a flush of the last CSE to the MMU/TLB *)
-  Definition tlbi_cse (v : view) (ts : t) : t :=
-    set tlbscses (fun_add v (Some ts.(scse))) ts.
+  (* Definition tlbi_cse (v : view) (ts : t) : t :=
+    set tlbscses (fun_add v (Some ts.(levs))) ts. *)
 End TState.
 
 (*** VA helper ***)
@@ -1137,7 +1141,6 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   guard_discard (vpre < time)%nat;;
   mset (TState.prom ∘ PPState.state) $ delete time;;
   mset PPState.state $ TState.update TState.vtlbi time;;
-  mset PPState.state $ TState.tlbi_cse time;;
   mset PPState.iis $ IIS.add time.
 
 
