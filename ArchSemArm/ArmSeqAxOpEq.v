@@ -598,26 +598,65 @@ Proof.
     cdestruct H7 #CDestrSplitGoal.
     1: lia.
     1: right; destruct eid'; sauto.
-  - admit.
-  -
+  - ospecialize (H5 (EID.make 0 x2 x1 None) x0 _ _ );
+    cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+    1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+    opose proof (H10 (l,f) (EID.iid x) _ _); try fast_done.
+    1: eapply (last_exists _ _ ev); try fast_done; by eapply elem_of_list_lookup_2.
+    destruct x; cbn in *.
+    unfold EID.full_po_lt, EID.iio_lt, EID.po_lt in *; cbn in *.
+    assert (iid = x2) as <- by (destruct H5; first lia; inversion H5; lia).
+    rewrite H9 in *; deintros; cdestruct |- ***.
+    opose proof (H8 ev ieid _ _); eauto.
+    assert (ieid = x1) as <- by (destruct H5 as [|H5]; first lia; inversion H5; lia).
+    rewrite H7 in *; deintros; cdestruct |- ***.
+    eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; eauto.
+  - revert H6.
+    eapply not_eq_None_Some.
+    eapply last_exists; first by eapply elem_of_list_lookup_2.
+    eapply last_exists; first by eapply elem_of_list_lookup_2.
+    done.
 Qed.
-    Search lookup elem_of.
-    1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-    1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto.
-    1: eapply H7.
-  unfold lookup
-  eexists.
 
+Lemma trace_last_exists `{∀ ev : iEvent, Decision (P ev)} (tr : list (iTrace ())) eid :
+  ∀ ev, tr !! eid = Some ev → P ev → is_Some (trace_find_last P tr).
+Proof.
+  cdestruct |- *** #CDestrEqOpt.
+  unfold lookup, lookup_ev_from_iTraces, trace_find_last in *.
+  cdestruct H0 |- *** #CDestrMatch #CDestrEqOpt.
+  1: eapply last_exists; first by eapply elem_of_list_lookup_2.
+  1: done.
+  exfalso.
+  revert H5.
+  eapply not_eq_None_Some.
+  eapply last_exists; first by eapply elem_of_list_lookup_2.
+  eapply last_exists; first by eapply elem_of_list_lookup_2.
+  done.
+Qed.
 
-(* Lemma trace_last_event `{∀ ev : iEvent, Decidable (P ev)} (tr : list (iTrace ())) eid ev :
+Lemma trace_last_event P `{∀ ev : iEvent, Decision (P ev)} (tr : list (iTrace ())) eid ev :
   tr !! eid = Some ev → P ev →
   ∃ ev' eid', tr !! eid' = Some ev' ∧ P ev' ∧
     ∀ ev'' eid'', tr !! eid'' = Some ev''→ P ev'' →
-      eid'' = eid' ∨ EID.full_po_lt eid'' eid'.
+      EID.full_po_lt eid'' eid' ∨ eid'' = eid'.
 Proof.
   cdestruct |- *** as Htr HPev.
-   *)
+  opose proof (trace_last_exists _ _ _ Htr HPev) as Htrlf.
+  destruct Htrlf as [lev Hlev].
+  eexists lev.
+  eapply trace_find_last_spec in Hlev.
+  cdestruct Hlev.
+  eexists.
+  cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; eauto.
+Qed.
 
+Lemma trace_last_event_indexed P `{∀ (ev : iEvent) (eid : EID.t), Decision (P ev eid)}
+    (tr : list (iTrace ())) eid ev :
+  tr !! eid = Some ev → P ev eid →
+  ∃ ev' eid', tr !! eid' = Some ev' ∧ P ev' eid' ∧
+    ∀ ev'' eid'', tr !! eid'' = Some ev''→ P ev'' eid'' →
+      EID.full_po_lt eid'' eid' ∨ eid'' = eid'.
+Admitted.
 
 Section Proof.
 Context (regs_whitelist : gset reg) (fuel : nat) (isem : iMon ()).
@@ -2555,34 +2594,28 @@ Proof.
           exfalso.
           eapply H8.
           setoid_rewrite H_rf.
-          eexists y, _, _.
-          cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
+          opose proof (trace_last_event_indexed
+          (λ ev1 eid,
+            is_mem_write ev1 ∧
+            get_pa ev1 = get_pa (MemRead x1 x2 &→ inl (x3, x4)) ∧
+            EID.full_po_lt eid x) (trace_rev (trace_cons (call &→ ret) (itrs seqst))) y _ _ _).
+          1: admit. (* Decision process *)
+          1: cdestruct |- *** #CDestrEqOpt.
+          1: cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+          cdestruct H11 #CDestrEqOpt.
+          eexists _, _ , _; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+          opose proof (EID.full_po_lt_connex x other_eid _ _ _) as Hconnex.
+          1-3: destruct x, other_eid; unfold lookup, lookup_ev_from_iTraces in *;
+            deintros; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+          destruct Hconnex as [->|[|]].
+          1: deintros; cdestruct |- *** #CDestrEqOpt.
+          1: by do 2 right.
+          ospecialize (H14 _ other_eid _ _); eauto.
+          1: eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto.
+          destruct H14; first by left.
+          right; left; done.
         }
-        1: done.
-        unfold cdst_mem_reads_invP in *.
-
-        cdestruct |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrSplitGoal.
-        2: eexists _,_.
-        2: repeat apply conj.
-        3: cdestruct |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrMatch; hauto lq: on rew: off.
-        2: cdestruct |- *** #CDestrSplitGoal.
-        3: rewrite H2; cdestruct |- *** #CDestrMatch; eauto.
-        2: rewrite <- H2.
-        2: instantiate (z := x).
-        2: cdestruct |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
-        2: hauto lq: on rew: off.
-        1: left; eexists _, _;
-          cdestruct |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrSplitGoal.
-        1,2: rewrite ?H2, ?H6; cbv; eauto.
-          1-4: hauto lq: on rew: off.
-      all: setoid_rewrite lookup_unfold.
-      1: admit.
-      1: best.
-        1: admit.
-        1: best.
-      all: cdestruct Hconnex #CDestrSplitGoal.
-      all: try solve [by left].
-      1: hauto l: on.
+      }
       {
         right.
         unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
