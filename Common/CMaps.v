@@ -560,6 +560,9 @@ Section DMap.
     FunctionalElimination (dmap_fold f b) _ 3 :=
     dmap_fold_ind (B := B) f b.
 
+  Definition dmap_to_list (d : dmap) : list (sigT F) :=
+    dmap_fold (::) [] d.
+
 End DMap.
 Arguments dmap _ {_ _} _.
 Notation "m !d! k" := (dmap_lookup k m) (at level 20).
