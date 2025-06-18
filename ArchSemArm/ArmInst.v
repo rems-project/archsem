@@ -44,9 +44,9 @@
 
 Require Export SailStdpp.Base.
 Require Export SailStdpp.ConcurrencyInterfaceTypes.
-From ASCommon Require Import Options Common Effects.
+From ASCommon Require Import Options Common Effects FMon.
 
-Require Export SailTinyArm.System_types.
+Require Export SailArm.armv9_types.
 From ArchSem Require Import
   Interface FromSail TermModels CandidateExecutions GenPromising.
 
@@ -54,15 +54,15 @@ Open Scope stdpp.
 
 (** First we import the sail generated interface modules *)
 Module Arm.
-  Module SA := System_types.Arch.
-  Module SI := System_types.Interface.
+  Module SA := armv9_types.Arch.
+  Module SI := armv9_types.Interface.
 
   (** Then we need to create a few new things for ArchSem, mostly around pas *)
   Module PAManip <: FromSail.PAManip SA.
     Import SA.
     Coercion GReg : register >-> greg.
 
-    Definition pc_reg : greg := _PC.
+    Definition pc_reg : greg := PC.
   End PAManip.
 
   (** Then we can use this to generate an ArchSem architecture module *)
@@ -103,7 +103,6 @@ Coercion GReg : register >-> greg.
 (** Make type abbreviations transparent *)
 #[export] Typeclasses Transparent bits.
 #[export] Typeclasses Transparent SA.addr_size.
-#[export] Typeclasses Transparent System_types.addr_space.
 #[export] Typeclasses Transparent SA.addr_space.
 #[export] Typeclasses Transparent SA.sys_reg_id.
 #[export] Typeclasses Transparent SA.mem_acc.
@@ -124,11 +123,13 @@ Coercion GReg : register >-> greg.
   Countable_register_values
   : typeclass_instances.
 
-Require SailTinyArm.System.
+Require SailArm.armv9.
 
-(** The semantics of instructions from system [sail-tiny-arm] by using the
-    conversion code from [ArchSem.FromSail] *)
-Definition sail_tiny_arm_sem : iMon () := iMon_from_Sail (System.fetch_and_execute ()).
+(** The semantics of instructions from [sail-arm] by using the conversion code
+    from [ArchSem.FromSail]. [SEE] need to be reset manually between
+    instructions for legacy boring reasons *)
+Definition sail_arm_sem : iMon () :=
+  iMon_from_Sail (armv9.__InstructionExecute ());; mcall (RegWrite SEE None 0).
 
 (** Make registers printable *)
 Instance pretty_reg : Pretty reg :=
