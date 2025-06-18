@@ -121,7 +121,6 @@ Section PM.
     end.
 
   Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
-    let indexed_mem := attach_timestamps mem in
     take (length mem - v) (attach_timestamps mem).
 
 End PM.
