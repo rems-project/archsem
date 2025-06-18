@@ -138,7 +138,10 @@ Coercion GReg : register >-> greg.
 
 Require SailTinyArm.System.
 
-
 (** The semantics of instructions from system [sail-tiny-arm] by using the
     conversion code from [ArchSem.FromSail] *)
 Definition sail_tiny_arm_sem : iMon () := iMon_from_Sail (System.fetch_and_execute ()).
+
+(** Make registers printable *)
+Instance pretty_reg : Pretty reg :=
+  λ '(GReg reg), string_of_register reg.

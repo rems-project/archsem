@@ -110,10 +110,11 @@ Fixpoint write_mem_seq_state (addr : address) (bytes : list (bv 8)) : seqmon uni
 Equations sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   | RegRead reg racc =>
       opt ←  mget (read_reg_seq_state reg);
-      Exec.error_none "Register not found" opt
+      Exec.error_none ("Register " ++ pretty reg ++ " not found")%string opt
   | RegWrite reg racc val =>
       opt ←  mget (read_reg_seq_state reg);
-      guard_or "Writing register not in initial state" $ is_Some opt;;
+      guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string  $
+        is_Some opt;;
       if regs_whitelist is Some rwl
       then
         if bool_decide (reg ∈ rwl)

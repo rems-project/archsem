@@ -9,7 +9,7 @@
                      CList CMaps COption Common countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap Interface list0 List list_numbers listset mapset
-                     Nat numbers option propset RecordSet
+                     Nat numbers option propset RecordSet pretty
                      sets Specif String0 strings ConcurrencyInterfaceTypes
                      Instances Values MachineWord FromSail ConcurrencyInterface
                      System_types
