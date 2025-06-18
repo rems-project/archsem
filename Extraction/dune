@@ -4,7 +4,7 @@
   (prelude ArmInstExtr)
   (theories Ltac2 stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
             ASCommon ArchSem ArchSemArm)
-  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt
+  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
                      CList CMaps COption Common countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin

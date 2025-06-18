@@ -63,6 +63,9 @@ Definition r0_extract (a : Model.Res.t ∅ 1) : result string Z :=
   | Model.Res.Unspecified e => match e with end
   end.
 
+(** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
+Definition arm_sem := sail_tiny_arm_sem true.
+
 
 (* Run EOR X0, X1, X2 at pc address 0x500, whose opcode is 0xca020020 *)
 Module EOR.
@@ -87,7 +90,7 @@ Definition initState :=
         MState.regs := [# init_reg];
         MState.address_space := PAS_NonSecure |};
     MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
+Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
 
 
 Goal r0_extract <$> test_results = Listset [Ok 0x110%Z].
@@ -117,7 +120,7 @@ Definition initState :=
         MState.regs := [# init_reg];
         MState.address_space := PAS_NonSecure |};
     MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
+Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
 
 Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
   vm_compute (_ <$> _).
@@ -148,7 +151,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
           MState.regs := [# init_reg];
           MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
-  Definition test_results := sequential_modelc None 2 sail_tiny_arm_sem 1%nat initState.
+  Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
 
   Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).

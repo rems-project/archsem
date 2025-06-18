@@ -132,4 +132,5 @@ Require SailTinyArm.System.
 
 (** The semantics of instructions from system [sail-tiny-arm] by using the
     conversion code from [ArchSem.FromSail] *)
-Definition sail_tiny_arm_sem : iMon () := iMon_from_Sail (System.fetch_and_execute ()).
+Definition sail_tiny_arm_sem (nondet : bool) : iMon () :=
+  iMon_from_Sail nondet (System.fetch_and_execute ()).
