@@ -2710,12 +2710,19 @@ Proof.
     cdestruct H_seqst_succ. *)
     admit. (* TODO: Should not be supported I guess *)
 Admitted.
+Print bvn. Locate bv_to_bvn.
+Lemma bvs_equal_get_byte_equal n (x y : bvn) :
+  bvn_n x = bvn_n y →
+  (∀ i, (i < (bvn_n x `div`n))%N → bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) → x = y.
+Admitted.
 
 Lemma seq_model_pcdst_wf :
   seq_model_outcome_invariant_preserved seq_inv_predicate
     (λ seq_st, Candidate.wf (seq_state_to_cd seq_st)).
 Proof.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
   constructor.
   - opose proof (Candidate.has_only_supported_events' _ (cd_wf _ H_inv)).
     unfold Candidate.has_only_supported_events, Candidate.unsupported_event in *.
@@ -2748,9 +2755,195 @@ Proof.
       1: sauto.
       cdestruct y, x, H3, H7 #CDestrSplitGoal.
       done.
-    + unfold Candidate.is_valid_rf.
-      cdestruct |- ***.
+    + cbn.
+      assert (Candidate.is_nms ((build_pre_exec (initSt seqst) (trace_cons (call &→ ret) (itrs seqst))))) as Hnms by admit.
+      opose proof (Candidate.rf_valid (Candidate.reads_from_wf' _ (cd_wf _ H_inv))) as H_base.
+      unfold Candidate.is_valid_rf.
+      cdestruct |- *** as.
+      opose proof (seq_model_rf_acc_inv _ H_inv _ _ _ _) as H_rf; eauto; cbn in *.
+      eapply seq_state_to_partial_cd_state_destruct;
+      cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal;
+      rewrite ?Hsame_init, ?Hsame_itrs in *;
       setoid_rewrite lookup_unfold.
+      all: try (ospecialize (H_base (_,_) _); [by eauto|]; unfold cd, Candidate.is_valid_rf in *).
+      all: cdestruct H_base #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+      all: try solve [do 7 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto)].
+      1: by rewrite intra_trace_eid_succ_byte in *.
+      cdestruct seqst_succ, call |- ***.
+      eapply (pcdst_mem_map_inv _ H_inv) in H0.
+      cdestruct H0 #CDestrEqOpt.
+      do 6 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch).
+      2,3: cdestruct ret #CDestrMatch.
+      opose proof (seq_st_mem_map_consistent _ H_inv) as H_seqst_mem_map.
+      cdestruct ret, seqst_succ, H2 #CDestrMatch.
+      1: admit.
+      unfold read_mem_seq_state, read_byte_seq_state, read_byte_seq_state_flag in *.
+      cdestruct b |- ***.
+      destruct x1; cbn in *.
+      ospecialize (Hnms (t,intra_trace_eid_succ 0 (trace_rev (itrs seqst))) _).
+      {
+        unfold Candidate.overlapping, Candidate.is_overlapping, Candidate.mem_events.
+        set_unfold.
+        setoid_rewrite lookup_unfold.
+        cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+        all: eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch; try done.
+        3,4: unfold is_mem_event, is_mem_readP, is_mem_writeP; naive_solver.
+        all: do 3 (eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch).
+        1: admit.
+        unfold pa_overlap.
+        setoid_rewrite pa_in_range_spec.
+        rewrite H3.
+        left; exists 0%N; rewrite pa_addN_zero; cdestruct |- *** #CDestrSplitGoal.
+        admit.
+      }
+      unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
+      set_unfold in Hnms.
+      cdestruct pa0, n, Hnms #CDestrEqOpt.
+      eapply (bvs_equal_get_byte_equal 8); first done; cbn.
+      replace ((8 * x0) `div` 8)%N with x0 by lia.
+      intros.
+      enough (Some (bv_get_byte 8 i value) = Some
+        (bv_get_byte 8 i
+          (bv_of_bytes (8 * x0)
+            ((λ pa0 : pa,
+                (if mem seqst !! pa0 is Some v then (v, true)
+                  else (MState.memory (initSt seqst) pa0, false)).1) <$>
+              pa_range (ReadReq.pa rr) x0)))) by (deintros; cdestruct |- *** #CDestrEqOpt).
+      assert (Some (bv_get_byte 8 i
+      (bv_of_bytes (8 * x0)
+         ((λ pa0 : pa,
+             (if mem seqst !! pa0 is Some v then (v, true)
+              else (MState.memory (initSt seqst) pa0, false)).1) <$>
+          pa_range (ReadReq.pa rr) x0))) = ((λ pa0 : pa,
+             (if mem seqst !! pa0 is Some v then (v, true)
+              else (MState.memory (initSt seqst) pa0, false)).1) <$>
+          pa_range (ReadReq.pa rr) x0) !! i) as -> by admit.
+      assert (((λ pa0 : pa,
+            (if mem seqst !! pa0 is Some v then (v, true)
+            else (MState.memory (initSt seqst) pa0, false)).1) <$>
+        pa_range (ReadReq.pa rr) x0) !! i = Some ((λ pa0 : pa,
+            (if mem seqst !! pa0 is Some v then (v, true)
+            else (MState.memory (initSt seqst) pa0, false)).1) (pa_addN (ReadReq.pa rr) i))) as -> by admit.
+    ospecialize (H_seqst_mem_map (pa_addN (ReadReq.pa rr) i) (bv_get_byte 8 i value)).
+    destruct H_seqst_mem_map as [_ H_seqst_mem_map].
+    orewrite H_seqst_mem_map; clear H_seqst_mem_map; first done.
+    setoid_rewrite lookup_unfold.
+    eexists _, _, _.
+    cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first apply H0.
+    1: unfold is_mem_writeP.
+    all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+    eapply or_comm, H4; cdestruct |- *** #CDestrEqOpt.
+    admit. (*NMS*)
+  + cbn; rewrite Hsame_init, Hsame_itrs.
+    unfold Candidate.init_mem_reads, Candidate.mem_reads, Candidate.is_valid_init_mem_read.
+    set_unfold.
+    cdestruct |- *** #CDestrEqOpt.
+    eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+    eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+    eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+    opose proof (seq_model_mem_reads_inv _ H_inv _ _ _ _ x _ _ _ _ _ _ _) as Hreads;
+      eauto; cbn; rewrite ?Hsame_itrs; cdestruct |- *** #CDestrEqOpt; eauto.
+    cdestruct Hreads #CDestrEqOpt #CDestrSplitGoal.
+    all: rewrite ?Hsame_itrs, ?Hsame_init in *.
+    1: exfalso; eauto.
+    unfold memoryMap_read.
+    replace (8 * (8 * x1) `div` 8)%N with (8 * x1)%N by lia.
+    replace ((8 * x1) `div` 8)%N with x1 by lia.
+    rewrite <- H2.
+    cdestruct x3 |- ***.
+    rewrite H2.
+    all: rewrite ?Hsame_itrs in *.
+    eapply (bvs_equal_get_byte_equal 8); first done; cbn.
+    replace ((8 * x1) `div` 8)%N with x1 by lia.
+    intros offset ?.
+    Search bv_to_bytes.
+    enough (Some (bv_get_byte 8 offset x3) =
+      Some (bv_get_byte 8 offset (bv_of_bytes (8 * x1)
+      (MState.memory (initSt seqst) <$> pa_range (ReadReq.pa x2) x1))))
+    by (deintros; cdestruct |- *** #CDestrEqOpt).
+    replace (Some (bv_get_byte 8 offset (bv_of_bytes (8 * x1) (MState.memory (initSt seqst) <$> pa_range (ReadReq.pa x2) x1))))
+    with ((MState.memory (initSt seqst) <$> pa_range (ReadReq.pa x2) x1) !! offset) by admit.
+    Print memoryMap.
+    replace ((MState.memory (initSt seqst) <$> pa_range (ReadReq.pa x2) x1) !! offset)
+    with (Some((MState.memory (initSt seqst)) (pa_addN (ReadReq.pa x2) offset))).
+    with
+
+
+    1: rewrite lookup_unfold; eauto.
+    eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+
+     {
+        eapply H_seqst_mem_map in H7.
+        cdestruct b, H7 #CDestrEqOpt.
+        setoid_rewrite lookup_unfold in H10.
+        ospecialize (H10 _ _ H0 _); first unfold is_mem_writeP; cbn.
+        1: eapply pa_in_range_spec; eexists offset; cdestruct |- *** #CDestrSplitGoal.
+        setoid_rewrite lookup_unfold in H4.
+        ospecialize (H4 _ _ H7 _ _); first done.
+        1: admit. (*NMS*)
+        cdestruct x1, t, H10, H4 #CDestrSplitGoal #CDestrEqOpt.
+        destruct x4; cbn in *. About bv_get_byte.
+        assert (x3 = x0) as -> by admit. (*NMS*)
+        f_equal.
+        1: admit.
+        by depelim H0.
+     }
+     exfalso.
+     revert H7.
+     eapply not_eq_None_Some.
+     unfold is_Some.
+     eexists.
+     eapply H_seqst_mem_map.
+     setoid_rewrite lookup_unfold.
+     eexists _, _, offset; cdestruct |- *** #CDestrSplitGoal.
+     1: eapply H0.
+     1: unfold is_mem_writeP.
+     ospecialize (H_seqst_mem_map (pa_addN (ReadReq.pa rr) offset)).
+
+        assert (offset = x2) as -> by admit.
+        enough (value = value0) as -> by reflexivity.
+        f_equal.
+        Set Printing All.
+
+        f_equal.
+        f_equal.
+        cdestruct H10
+
+        1: eapply H0.
+        assert (WriteReq.pa x4 = ReadReq.pa rr) by admit. (* NMS *)
+        assert (x2 = offset) as -> by admit.
+
+      cdestruct |- *** #CDestrEqOpt.
+      rewrite lookup_unfold.
+      unfold bv_of_bytes.
+
+      enough (bv_to_bytes 8 value = ((λ pa,
+      (if mem seqst !! pa is Some v then (v, true) else (MState.memory (initSt seqst) pa, false)).1) <$>
+   pa_range (ReadReq.pa rr) n)) by admit.
+   ospecialize (H6 pa0).
+      eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal
+      2: { }
+      1: do 7 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto).
+      cdestruct H0 #CDestrEqOpt #CDestrMatch.
+      2: ospecialize (H_base (_,_) _); eauto; unfold cd, Candidate.is_valid_rf in *.
+      2: cdestruct H_base #CDestrEqOpt #CDestrMatch.
+      2-3: do 8 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal).
+      * ospecialize (H_base (_,_) _); eauto; unfold cd, Candidate.is_valid_rf in *.
+        cdestruct H_base #CDestrEqOpt #CDestrMatch.
+        all: do 8 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal).
+      * ospecialize (H_base (_,_) _); eauto; unfold cd, Candidate.is_valid_rf in *.
+        cdestruct H_base #CDestrEqOpt #CDestrMatch.
+        all: do 8 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal).
+
+        eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
+      1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      setoid_rewrite H_rf.
+      *
+
       opose proof (seq_model_rf_acc_inv _ H_inv _ _ _ _) as H_rf; eauto; cbn in *.
       eapply H_rf in H; clear H_rf; cdestruct H #CDestrEqOpt.
       eexists; cdestruct |- *** #CDestrSplitGoal; eauto.
@@ -2763,6 +2956,7 @@ Proof.
       1: unfold lookup, lookup_ev_from_iTraces in *;
         deintros; cdestruct |- *** #CDestrEqOpt.
       opose proof (seq_st_mem_map_consistent _ H_inv) as H_seqst_mem_map; try done; cbn in H_seqst_mem_map.
+      unfold seq_st_mem_map_consistentP in *.
 
       lookup_ev_from_iTracesm
 
