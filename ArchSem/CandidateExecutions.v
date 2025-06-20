@@ -1193,7 +1193,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         co_contains_overlapping_writes:
         ∀ weid1 weid2 ∈ mem_writes cd,
           is_overlapping cd weid1 weid2 →
-          (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
+          weid1 = weid2 ∨ (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
     #[global] Arguments coherence_wf : clear implicits.
 
