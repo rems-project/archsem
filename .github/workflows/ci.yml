@@ -39,6 +39,7 @@ jobs:
       with:
         path: ~/.opam
         key: pin-${{ matrix.version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        retention-days: 90
 
     # Cache with only repo dependencies, in particular Ocaml and Rocq
     - name: Restore base OPAM cache
@@ -48,6 +49,7 @@ jobs:
       with:
         path: ~/.opam
         key: ${{ matrix.version }}-${{ matrix.rocq-version }}
+        retention-days: 90
 
     - name: Setup base OPAM
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' &&
@@ -69,6 +71,7 @@ jobs:
       with:
         path: ~/.opam
         key: ${{ matrix.version }}-${{ matrix.rocq-version }}
+        retention-days: 90
 
     - name: Install pinned dependencies
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
@@ -85,6 +88,7 @@ jobs:
       with:
         path: ~/.opam
         key: pin-${{ matrix.version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        retention-days: 90
 
     - name: Build
       run: |
