@@ -543,7 +543,7 @@ Module TState.
 
   (** Read all possible system register values from the position of the most recent event *)
   Definition read_sreg_direct (ts : t) (sreg : reg) :=
-    read_sreg_by_cse ts sreg (lev_cur ts).
+    read_sreg_last ts sreg (lev_cur ts).
 
   (** Read system register values from the position of the most recent CSE *)
   Definition read_sreg_indirect (ts : t) (sreg : reg) :=
@@ -563,12 +563,11 @@ Module TState.
            |> hd 0%nat
     in
     read_sreg_by_cse ts sreg last_cse
-      |> option_map (
-        list_filter_map (
+      |$> list_filter_map (
             λ valv, 
-              if bool_decide (valv.2 <= t) 
+              if bool_decide (valv.2 ≤ t) 
               then Some valv
-              else None)).
+              else None).
 
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
@@ -628,7 +627,7 @@ Module TState.
 
   (** Perform a context synchronization event *)
   Definition cse (v : view) : t -> t :=
-    (update vcse v) ∘ (set levs (fun levs => (LEvent.Cse v) :: levs)).
+    (update vcse v) ∘ (set levs (LEvent.Cse v ::.)).
 End TState.
 
 (*** VA helper ***)
@@ -747,15 +746,13 @@ Module TLB.
 
   Record t :=
     make {
-        scse : nat;
         vatlb : VATLB.t
       }.
 
-  Definition init := make 0 VATLB.init.
+  Definition init := make VATLB.init.
 
   Definition read_sreg (tlb : t) (ts : TState.t) (time : view) (sreg : reg) :=
-    TState.read_sreg_by_cse ts sreg tlb.(scse)
-    |$> filter (λ '(val, v), v <= time)%nat.
+    TState.read_sreg_at ts sreg time.
 
 
 
