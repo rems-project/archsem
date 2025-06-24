@@ -509,7 +509,17 @@ Module TState.
       | LEvent.Wsreg wsreg_val => wsreg_val :: (filter_wsreg t)
       end
     end.
-    
+
+  Fixpoint filter_cse (events: list LEvent.t) : list nat :=
+    match events with
+    | nil => nil
+    | h :: t =>
+      match h with
+      | LEvent.Cse sync => sync :: filter_cse t
+      | LEvent.Wsreg _ => filter_cse t
+      end
+    end.
+
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (s : nat) (sreg : reg) :=
     let newval :=
@@ -522,16 +532,45 @@ Module TState.
 
   (** Read all possible system register values for sreg assuming the last
       synchronization at position sync *)
-  Definition read_sreg (ts : t) (sync : nat) (sreg : reg)
+  Definition read_sreg_by_cse (ts : t) (s : nat) (sreg : reg)
     : option (list (reg_type sreg * view))
     :=
-    sync_val ← read_sreg_last ts sync sreg;
+    sync_val ← read_sreg_last ts s sreg;
     let rest :=
       ts.(levs)
-      |> take ((lev_cur ts) - sync)
+      |> take ((lev_cur ts) - s)
       |> filter_wsreg
       |> list_filter_map (WSReg.to_val_view_if sreg)
     in Some $ sync_val :: rest.
+
+  (** Read all possible system register values from the position of the most recent event *)
+  Definition read_sreg_direct (ts : t) (sreg : reg) :=
+    read_sreg_by_cse ts (lev_cur ts) sreg.
+
+  (** Read system register values from the position of the most recent CSE *)
+  Definition read_sreg_indirect (ts : t) (sreg : reg) :=
+    let max_cse :=
+      ts.(levs)
+           |> filter_cse
+           |> hd 0%nat
+    in
+    read_sreg_by_cse ts max_cse sreg.
+
+  (** Read system register values at the timestamp t *)
+  Definition read_sreg_at (ts : t) (t : nat) (sreg : reg) :=
+    let last_cse :=
+      ts.(levs)
+           |> filter_cse
+           |> filter (fun tcse => tcse < t)
+           |> hd 0%nat
+    in
+    read_sreg_by_cse ts last_cse sreg
+      |> option_map (
+        list_filter_map (
+            λ valv, 
+              if bool_decide (valv.2 <= t) 
+              then Some valv
+              else None)).
 
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
@@ -592,10 +631,6 @@ Module TState.
   (** Perform a context synchronization event *)
   Definition cse (v : view) : t -> t :=
     (update vcse v) ∘ (set levs (fun levs => (LEvent.Cse v) :: levs)).
-
-  (** Perform a flush of the last CSE to the MMU/TLB *)
-  (* Definition tlbi_cse (v : view) (ts : t) : t :=
-    set tlbscses (fun_add v (Some ts.(levs))) ts. *)
 End TState.
 
 (*** VA helper ***)
@@ -721,7 +756,7 @@ Module TLB.
   Definition init := make 0 VATLB.init.
 
   Definition read_sreg (tlb : t) (ts : TState.t) (time : view) (sreg : reg) :=
-    TState.read_sreg ts tlb.(scse) sreg
+    TState.read_sreg_by_cse ts tlb.(scse) sreg
     |$> filter (λ '(val, v), v <= time)%nat.
 
 
