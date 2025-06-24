@@ -521,7 +521,7 @@ Module TState.
     end.
 
   (** Read the last system register write at system register position s *)
-  Definition read_sreg_last (ts : t) (s : nat) (sreg : reg) :=
+  Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
       ts.(levs)
       |> drop ((lev_cur ts) - s)
@@ -532,10 +532,10 @@ Module TState.
 
   (** Read all possible system register values for sreg assuming the last
       synchronization at position sync *)
-  Definition read_sreg_by_cse (ts : t) (s : nat) (sreg : reg)
+  Definition read_sreg_by_cse (ts : t) (sreg : reg) (s : nat)
     : option (list (reg_type sreg * view))
     :=
-    sync_val ← read_sreg_last ts s sreg;
+    sync_val ← read_sreg_last ts sreg s;
     let rest :=
       ts.(levs)
       |> take ((lev_cur ts) - s)
@@ -545,7 +545,7 @@ Module TState.
 
   (** Read all possible system register values from the position of the most recent event *)
   Definition read_sreg_direct (ts : t) (sreg : reg) :=
-    read_sreg_by_cse ts (lev_cur ts) sreg.
+    read_sreg_by_cse ts sreg (lev_cur ts).
 
   (** Read system register values from the position of the most recent CSE *)
   Definition read_sreg_indirect (ts : t) (sreg : reg) :=
@@ -554,17 +554,17 @@ Module TState.
            |> filter_cse
            |> hd 0%nat
     in
-    read_sreg_by_cse ts max_cse sreg.
+    read_sreg_by_cse ts sreg max_cse.
 
   (** Read system register values at the timestamp t *)
-  Definition read_sreg_at (ts : t) (t : nat) (sreg : reg) :=
+  Definition read_sreg_at (ts : t) (sreg : reg) (t : nat) :=
     let last_cse :=
       ts.(levs)
            |> filter_cse
-           |> filter (fun tcse => tcse < t)
+           |> filter (λ tcse, tcse < t)
            |> hd 0%nat
     in
-    read_sreg_by_cse ts last_cse sreg
+    read_sreg_by_cse ts sreg last_cse
       |> option_map (
         list_filter_map (
             λ valv, 
@@ -575,7 +575,7 @@ Module TState.
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
     if bool_decide (r ∈ relaxed_regs) then
-      read_sreg_last ts (lev_cur ts) r
+      read_sreg_last ts r (lev_cur ts)
     else dmap_lookup r ts.(regs).
 
   (** Extract a plain register map from the thread state without views.
@@ -756,7 +756,7 @@ Module TLB.
   Definition init := make 0 VATLB.init.
 
   Definition read_sreg (tlb : t) (ts : TState.t) (time : view) (sreg : reg) :=
-    TState.read_sreg_by_cse ts tlb.(scse) sreg
+    TState.read_sreg_by_cse ts sreg tlb.(scse)
     |$> filter (λ '(val, v), v <= time)%nat.
 
 
