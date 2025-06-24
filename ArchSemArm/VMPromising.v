@@ -428,8 +428,20 @@ End WSReg.
 
 Module LEvent.
   Inductive t := 
-  | Cse (t: nat)
-  | Wsreg (wsreg: WSReg.t).
+  | Cse (t : nat)
+  | Wsreg (wsreg : WSReg.t).
+
+  Definition get_cse (lev : t) : option view :=
+    match lev with
+    | Cse t => Some t
+    | _ => None
+    end.
+
+  Definition get_wsreg (lev : t) : option WSReg.t :=
+    match lev with
+    | Wsreg wsreg => Some wsreg
+    | _ => None
+    end.
 End LEvent.
 
 
@@ -500,26 +512,12 @@ Module TState.
 
   Definition lev_cur (ts : t) := length ts.(levs).
 
-  Fixpoint filter_wsreg (events: list LEvent.t) : list WSReg.t :=
-    match events with
-    | nil => nil
-    | h :: t =>
-      match h with
-      | LEvent.Cse _ => filter_wsreg t
-      | LEvent.Wsreg wsreg_val => wsreg_val :: (filter_wsreg t)
-      end
-    end.
+  Definition filter_wsreg (levs : list LEvent.t) : list WSReg.t :=
+    levs |> list_filter_map LEvent.get_wsreg.
 
-  Fixpoint filter_cse (events: list LEvent.t) : list nat :=
-    match events with
-    | nil => nil
-    | h :: t =>
-      match h with
-      | LEvent.Cse sync => sync :: filter_cse t
-      | LEvent.Wsreg _ => filter_cse t
-      end
-    end.
-
+  Definition filter_cse (levs: list LEvent.t) : list view :=
+    levs |> list_filter_map LEvent.get_cse.
+    
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
