@@ -141,6 +141,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
       destruct x,y; unfold full_po_lt, po_lt, iio_lt; cbn in *; naive_solver.
     Qed.
 
+    #[global] Instance full_po_lt_dec x y : Decision (x <ₚ₊ᵢ y).
+    Proof. unfold EID.full_po_lt, EID.iio_lt, EID.po_lt. tc_solve. Qed.
+
   End EID.
 
   (* Namespace *)

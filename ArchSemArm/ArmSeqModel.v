@@ -119,36 +119,42 @@ Definition seq_state_to_init (seqs : seq_state) : MState.init 1 :=
      MState.termCond := seqs.(initSt).(MState.termCond) |}.
 
 (** This is the effect handler for the outcome effect in the sequential model *)
-Program Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
+Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
   match call with
-  | RegRead reg racc => mget (read_reg_seq_state reg)
+  | RegRead reg racc =>
+    guard_or "Register access type is None" (racc = None);;
+    mget (read_reg_seq_state reg)
   | RegWrite reg racc val =>
+    guard_or "Register access type is None" (racc = None);;
     if regs_whitelist is Some rwl
-    then if bool_decide (reg ∈ rwl)
-      then msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
-      else mthrow "Write to illegal register"
+    then
+      guard_or "Write to illegal register" (reg ∈ rwl);;
+      msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
     else msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
   | MemRead n rr =>
     guard_or "Read exceeds max size" (n < max_mem_acc_size)%N;;
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then
       '(read, flag) ← mget (read_mem_seq_state_flag n rr.(ReadReq.pa));
-      if (flag : bool)
-      then mthrow "iFetch or TTW read from modified memory"
-      else mret (inl (read, None))
+      guard_or "iFetch or TTW read from modified memory" (flag = true);;
+      mret (inl (read, None))
     else
+      guard_or "Read accesses need to be explicit, iFetch, or TTW"
+        (is_explicit rr.(ReadReq.access_kind));;
       read ← mget (read_mem_seq_state n rr.(ReadReq.pa));
       mret (inl (read, None))
   | MemWriteAddrAnnounce _ _ _ _ => mret ()
   | MemWrite n wr =>
     guard_or "Write exceeds max size" (n < max_mem_acc_size)%N;;
+    guard_or "Write accesses need to be explicit"
+      (is_explicit wr.(WriteReq.access_kind));;
     write_mem_seq_state wr.(WriteReq.pa) (wr.(WriteReq.value) |> bv_to_bytes 8);;
     mret (inl true)
   | Barrier _ => mret ()
   | CacheOp _ => mret ()
   | TlbOp _ => mret ()
   | TakeException _ => mthrow "Taking exception is not supported"
-  | ReturnException => mret () (* Make crash *)
+  | ReturnException => mthrow "Returning exception is not supported"
   | TranslationStart _ => mret ()
   | TranslationEnd _ => mret ()
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
