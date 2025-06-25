@@ -541,11 +541,11 @@ Module TState.
       |> list_filter_map (WSReg.to_val_view_if sreg)
     in Some $ sync_val :: rest.
 
-  (** Read all possible system register values from the position of the most recent event *)
+  (** Read the most recent system register write (for MRS implementation). *)
   Definition read_sreg_direct (ts : t) (sreg : reg) :=
     read_sreg_last ts sreg (lev_cur ts).
 
-  (** Read system register values from the position of the most recent CSE *)
+  (** Read possible system register values from the position of the most recent CSE *)
   Definition read_sreg_indirect (ts : t) (sreg : reg) :=
     let max_cse :=
       ts.(levs)
