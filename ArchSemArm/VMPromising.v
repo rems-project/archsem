@@ -426,6 +426,23 @@ Module WSReg.
     else None.
 End WSReg.
 
+Module LEvent.
+  Inductive t := 
+  | Cse (t : nat)
+  | Wsreg (wsreg : WSReg.t).
+
+  Definition get_cse (lev : t) : option view :=
+    match lev with
+    | Cse t => Some t
+    | _ => None
+    end.
+
+  Definition get_wsreg (lev : t) : option WSReg.t :=
+    match lev with
+    | Wsreg wsreg => Some wsreg
+    | _ => None
+    end.
+End LEvent.
 
 
 (** The thread state *)
@@ -439,8 +456,7 @@ Module TState.
         (* registers values and views. System(relaxed) registers are not
            modified in the [regs] field directly, but instead accumulate changes *)
         regs : dmap reg (λ reg, reg_type reg * view)%type;
-        (* TODO: levents *)
-        sregs : list WSReg.t;
+        levs : list LEvent.t;
 
         (* The coherence views *)
         coh : gmap Loc.t view;
@@ -466,27 +482,18 @@ Module TState.
            corresponding store exclusive has not yet run, this will contain
            the timestamp and post-view of the load exclusive*)
         xclb : option (nat * view);
-
-
-        (* TODO: Remove this and add CSE events *)
-        (* Position in sregs of the last CSE event *)
-        scse : nat;
-
-        (* Recording of all previous updates of the MMU/TLB view of the system
-           registers *)
-        tlbscses : nat -> option nat
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;regs;sregs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
-                    vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb;scse;tlbscses>.
+    settable! make <prom;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
+                    vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb>.
 
   (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
       prom := [];
       regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
-      sregs := []; (* latest event at the top of the list *)
+      levs := []; (* latest event at the top of the list *)
       coh := ∅;
       vrd := 0;
       vwr := 0;
@@ -501,37 +508,71 @@ Module TState.
       vrel := 0;
       fwdb := ∅;
       xclb := None;
-      scse := 0;
-      tlbscses := (fun _ => None)
     |})%nat.
 
-  Definition sreg_cur (ts : t) := length ts.(sregs).
+  Definition lev_cur (ts : t) := length ts.(levs).
 
+  Definition filter_wsreg (levs : list LEvent.t) : list WSReg.t :=
+    levs |> list_filter_map LEvent.get_wsreg.
+
+  Definition filter_cse (levs: list LEvent.t) : list view :=
+    levs |> list_filter_map LEvent.get_cse.
+    
   (** Read the last system register write at system register position s *)
-  Definition read_sreg_last (ts : t) (s : nat) (sreg : reg) :=
+  Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
-      ts.(sregs)
-      |> drop ((sreg_cur ts) - s)
+      ts.(levs)
+      |> drop ((lev_cur ts) - s)
+      |> filter_wsreg
       |> list_filter_map (WSReg.to_val_view_if sreg)
       |> hd_error in
     newval ∪ dmap_lookup sreg ts.(regs).
 
   (** Read all possible system register values for sreg assuming the last
       synchronization at position sync *)
-  Definition read_sreg (ts : t) (sync : nat) (sreg : reg)
+  Definition read_sreg_by_cse (ts : t) (sreg : reg) (s : nat)
     : option (list (reg_type sreg * view))
     :=
-    sync_val ← read_sreg_last ts sync sreg;
+    sync_val ← read_sreg_last ts sreg s;
     let rest :=
-      ts.(sregs)
-      |> take ((sreg_cur ts) - sync)
+      ts.(levs)
+      |> take ((lev_cur ts) - s)
+      |> filter_wsreg
       |> list_filter_map (WSReg.to_val_view_if sreg)
     in Some $ sync_val :: rest.
+
+  (** Read the most recent system register write (for MRS implementation). *)
+  Definition read_sreg_direct (ts : t) (sreg : reg) :=
+    read_sreg_last ts sreg (lev_cur ts).
+
+  (** Read possible system register values from the position of the most recent CSE *)
+  Definition read_sreg_indirect (ts : t) (sreg : reg) :=
+    let max_cse :=
+      ts.(levs)
+           |> filter_cse
+           |> hd 0%nat
+    in
+    read_sreg_by_cse ts sreg max_cse.
+
+  (** Read system register values at the timestamp t *)
+  Definition read_sreg_at (ts : t) (sreg : reg) (t : nat) :=
+    let last_cse :=
+      ts.(levs)
+           |> filter_cse
+           |> filter (λ tcse, tcse < t)
+           |> hd 0%nat
+    in
+    read_sreg_by_cse ts sreg last_cse
+      |$> list_filter_map (
+            λ valv, 
+              if bool_decide (valv.2 ≤ t) 
+              then Some valv
+              else None).
 
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
     if bool_decide (r ∈ relaxed_regs) then
-      read_sreg_last ts (sreg_cur ts) r
+      read_sreg_last ts r (lev_cur ts)
     else dmap_lookup r ts.(regs).
 
   (** Extract a plain register map from the thread state without views.
@@ -585,13 +626,8 @@ Module TState.
   Definition promise (v : view) : t -> t := set prom (v ::.).
 
   (** Perform a context synchronization event *)
-  Definition cse (v : view) (ts : t) : t :=
-    ts |> setv scse (length ts.(sregs))
-       |> update vcse v.
-
-  (** Perform a flush of the last CSE to the MMU/TLB *)
-  Definition tlbi_cse (v : view) (ts : t) : t :=
-    set tlbscses (fun_add v (Some ts.(scse))) ts.
+  Definition cse (v : view) : t -> t :=
+    (update vcse v) ∘ (set levs (LEvent.Cse v ::.)).
 End TState.
 
 (*** VA helper ***)
@@ -710,15 +746,13 @@ Module TLB.
 
   Record t :=
     make {
-        scse : nat;
         vatlb : VATLB.t
       }.
 
-  Definition init := make 0 VATLB.init.
+  Definition init := make VATLB.init.
 
   Definition read_sreg (tlb : t) (ts : TState.t) (time : view) (sreg : reg) :=
-    TState.read_sreg ts tlb.(scse) sreg
-    |$> filter (λ '(val, v), v <= time)%nat.
+    TState.read_sreg_at ts sreg time.
 
 
 
@@ -1137,7 +1171,6 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   guard_discard (vpre < time)%nat;;
   mset (TState.prom ∘ PPState.state) $ delete time;;
   mset PPState.state $ TState.update TState.vtlbi time;;
-  mset PPState.state $ TState.tlbi_cse time;;
   mset PPState.iis $ IIS.add time.
 
 
