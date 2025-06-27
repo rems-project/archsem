@@ -92,7 +92,7 @@ Module Type Arch.
   Parameter pc_reg : reg.
 
   Parameter CHERI : bool.
-  Parameter cap_size : N.
+  Parameter cap_size_log : N.
 
   Parameter addr_size : N.
   Parameter addr_space : Type.
@@ -121,11 +121,10 @@ Module Type Arch.
 
   (** Is this access relaxed, aka. no acquire or release strength *)
   Parameter is_relaxed : mem_acc → bool.
-  (** Is this an acquire or a release access (Depending on whether this is a
-      read or write *)
-  Parameter is_rel_acq : mem_acc → bool.
-  (** Is this a weak PC acquire (not ordered after write release *)
-  Parameter is_acq_rcpc : mem_acc → bool.
+  (** Is this an acquire or a release access with SC consistency (C SC atomics) *)
+  Parameter is_rel_acq_rcsc : mem_acc → bool.
+  (** Is this an acquire or a release access with PC consistency *)
+  Parameter is_rel_acq_rcpc : mem_acc → bool.
   (** Is this a standalone access, aka. not part of an exclusive or RMW pair.
       This is based on the access type, so an unmatched exclusive load would not be
       "standalone" *)
@@ -155,16 +154,16 @@ Module Type Arch.
   #[export] Existing Instance cache_op_eq.
 
   (** TLB operations *)
-  Parameter tlb_op : Type.
+  Parameter tlbi : Type.
 
-  Parameter tlb_op_eq : EqDecision tlb_op.
-  #[export] Existing Instance tlb_op_eq.
+  Parameter tlbi_eq : EqDecision tlbi.
+  #[export] Existing Instance tlbi_eq.
 
-  (** Fault type for a architectural fault or exception *)
-  Parameter fault : Type.
+  (** Exception type for a architectural fault or exception *)
+  Parameter exn : Type.
 
-  Parameter fault_eq : EqDecision fault.
-  #[export] Existing Instance fault_eq.
+  Parameter exn_eq : EqDecision exn.
+  #[export] Existing Instance exn_eq.
 
   (** Payload for a translation start outcome. This should contain at least TLB
       indexing information, in particular the VA *)
@@ -189,11 +188,18 @@ Module Interface (A : Arch).
   Import A.
   #[local] Open Scope N.
 
+  Create HintDb addr discriminated.
+  #[export] Hint Constants Transparent : addr.
+
+  (** ** Memory access type utilities *)
+
+  Definition is_rel_acq macc := is_rel_acq_rcsc macc && is_rel_acq_rcpc macc.
+
   (** ** Memory utility *)
-  (** Virtual address are tag-less bitvectors *)
   Definition address := bv addr_size.
   #[export] Typeclasses Transparent address.
   #[export] Hint Transparent address : bv_unfold_db.
+  #[global] Arguments address /.
 
   Definition addr_addN (addr : address) n := (addr `+Z` (Z.of_N n))%bv.
   Lemma addr_addN_assoc addr n n':
@@ -253,8 +259,7 @@ Module Interface (A : Arch).
     setoid_rewrite addr_in_range_spec.
     split.
     - cdestruct addr1,addr2 |- ? # CDestrSplitGoal;
-        setoid_rewrite addr_addN_assoc;
-        typeclasses eauto with core lia addr.
+        setoid_rewrite addr_addN_assoc; typeclasses eauto with core lia addr.
     - cdestruct |- *** as n1 n2 H1 H2 H #CDestrSplitGoal.
       all: try lia.
       destruct decide (n1 ≤ n2).
@@ -331,6 +336,7 @@ Module Interface (A : Arch).
   End WriteReq.
 
 
+
   (** ** Outcomes *)
 
   (** The effect type used by ISA models *)
@@ -371,9 +377,9 @@ Module Interface (A : Arch).
     (** Issues a cache operation such as DC or IC (for Arm) *)
   | CacheOp (cop : cache_op)
     (** Issues a TLB maintenance operation, such as TLBI (for Arm) *)
-  | TlbOp (tlbop : tlb_op)
+  | TlbOp (t : tlbi)
     (** Take an exception. Includes hardware faults and physical interrupts *)
-  | TakeException (flt : fault)
+  | TakeException (e : exn)
     (** Return from an exception to this address e.g. ERET (for Arm) or
         IRET (for x86) *)
   | ReturnException
@@ -545,15 +551,15 @@ Module Interface (A : Arch).
 
   (** Get the content of a TLB operation, returns none if not a TLB operation
         (or is an invalid EID) *)
-  Definition get_tlbop (ev : iEvent) : option tlb_op :=
+  Definition get_tlbi (ev : iEvent) : option tlbi :=
     match ev with
-    | TlbOp to &→ () => Some to
+    | TlbOp t &→ () => Some t
     | _ => None
     end.
 
-  Definition get_fault (ev : iEvent) : option fault :=
+  Definition get_exn (ev : iEvent) : option exn :=
     match ev with
-    | TakeException flt &→ () => Some flt
+    | TakeException e &→ () => Some e
     | _ => None
     end.
 
@@ -844,15 +850,15 @@ Module Interface (A : Arch).
 
   (** ** Tlbop *)
   Section isTlbop.
-    Context (P : tlb_op → Prop).
+    Context (P : tlbi → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_tlbopP ev: Prop :=
-      if ev is TlbOp c &→ _ then P c else False.
+      if ev is TlbOp t &→ _ then P t else False.
     Typeclasses Opaque is_tlbopP.
 
     Definition is_tlbopP_spec ev:
-      is_tlbopP ev ↔ ∃ tlbop, ev = TlbOp tlbop &→ () ∧ P tlbop.
+      is_tlbopP ev ↔ ∃ tlbi, ev = TlbOp tlbi &→ () ∧ P tlbi.
     Proof.
       destruct ev as [[] fret];
         split; cdestruct |- ?; destruct fret; naive_solver.
@@ -865,7 +871,7 @@ Module Interface (A : Arch).
   Notation is_tlbop := (is_tlbopP (λ _, True)).
 
   Section isTakeException.
-    Context (P : fault → Prop).
+    Context (P : exn → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_take_exceptionP ev: Prop :=

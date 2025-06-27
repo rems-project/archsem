@@ -487,12 +487,12 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Definition mem_relaxed := (mem_by_kind is_relaxed).
       Definition relaxed_reads := (reads_by_kind is_relaxed).
       Definition relaxed_writes := (writes_by_kind is_relaxed).
-      Definition mem_rel_acq := (mem_by_kind is_rel_acq).
-      Definition rel_acq_reads := (reads_by_kind is_rel_acq).
-      Definition rel_acq_writes := (writes_by_kind is_rel_acq).
-      Definition mem_acq_rcpc := (mem_by_kind is_acq_rcpc).
-      Definition acq_rcpc_reads := (reads_by_kind is_acq_rcpc).
-      Definition acq_rcpc_writes := (writes_by_kind is_acq_rcpc).
+      Definition mem_rel_acq_rcsc := (mem_by_kind is_rel_acq_rcsc).
+      Definition rel_acq_rcsc_reads := (reads_by_kind is_rel_acq_rcsc).
+      Definition rel_acq_rcsc_writes := (writes_by_kind is_rel_acq_rcsc).
+      Definition mem_rel_acq_rcpc := (mem_by_kind is_rel_acq_rcpc).
+      Definition rel_acq_rcpc_reads := (reads_by_kind is_rel_acq_rcpc).
+      Definition rel_acq_rcpc_writes := (writes_by_kind is_rel_acq_rcpc).
       Definition mem_standalone := (mem_by_kind is_standalone).
       Definition standalone_reads := (reads_by_kind is_standalone).
       Definition standalone_writes := (writes_by_kind is_standalone).
@@ -514,9 +514,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Typeclasses Opaque cacheops.
 
       (** Get the set of all TLB operations *)
-      Definition tlbops pe :=
-        collect_all (λ _ event, is_Some (get_tlbop event)) pe.
-      Typeclasses Opaque tlbops.
+      Definition tlbis pe :=
+        collect_all (λ _ event, is_Some (get_tlbi event)) pe.
+      Typeclasses Opaque tlbis.
 
 
       (** * Supported events
@@ -834,8 +834,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         is_overlapping pe eid1 eid2 → is_overlapping pe eid2 eid1.
       Proof.
         unfold is_overlapping, is_Some in *.
-        cdestruct |- ? # CDestrEqOpt.
-        typeclasses eauto with core addr option.
+        cdestruct |- *** # CDestrEqOpt.
+        eauto 15 with core addr option.
       Qed.
 
       Lemma is_overlapping_sym_iff pe eid1 eid2 :

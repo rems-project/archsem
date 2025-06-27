@@ -3,8 +3,8 @@
     now is pa manipulation functions *)
 
 
-Require Import SailStdpp.ConcurrencyInterfaceTypes.
-Require Import SailStdpp.ConcurrencyInterface.
+Require Import SailStdpp.ConcurrencyInterfaceTypesV2.
+Require Import SailStdpp.ConcurrencyInterfaceV2.
 Require Import SailStdpp.Values.
 Require Import SailStdpp.Instances.
 
@@ -42,20 +42,7 @@ an architecture instantiation that is missing from the Sail generated code *)
 Module Type PAManip (SA : SailArch).
   Import SA.
 
-  Parameter addr_size : N.
-  Parameter addr_space : Type.
-  Parameter addr_space_eq : EqDecision addr_space.
-  #[export] Existing Instance addr_space_eq.
-  Parameter addr_space_countable : @Countable addr_space addr_space_eq.
-  #[export] Existing Instance addr_space_countable.
-
-  Parameter pa_to_address : pa → bv addr_size.
-  Parameter pa_to_addr_space : pa → addr_space.
-  Parameter pa_of_addr_and_space : bv addr_size → addr_space → pa.
-  (* TODO do I need a round-trip lemma *)
-
   Parameter pc_reg : greg.
-
 End PAManip.
 
 (** * Convert from Sail generated instantiations to ArchSem ones *)
@@ -97,39 +84,43 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   #[local] Existing Instance SA.sys_reg_id_eq.
   Definition reg_acc_eq : EqDecision reg_acc := _.
 
-  Definition CHERI := false.
-  #[export] Typeclasses Transparent CHERI.
-  Definition cap_size := 16%N. (* dummy value since CHERI is off*)
-  #[export] Typeclasses Transparent cap_size.
 
-  Definition mem_acc := Access_kind SA.arch_ak.
+  Definition addr_size := SA.addr_size.
+  #[export] Typeclasses Transparent addr_size.
+  Definition addr_space := SA.addr_space.
+  #[export] Typeclasses Transparent addr_space.
+  Definition addr_space_eq := SA.addr_space_eq.
+  #[export] Typeclasses Transparent addr_space_eq.
+  Definition addr_space_countable := SA.addr_space_countable.
+  #[export] Typeclasses Transparent addr_space_countable.
+
+  Definition CHERI := SA.CHERI.
+  #[export] Typeclasses Transparent CHERI.
+  Definition cap_size_log := SA.cap_size_log.
+  #[export] Typeclasses Transparent cap_size_log.
+
+  Definition mem_acc := SA.mem_acc.
   #[export] Typeclasses Transparent mem_acc.
   Definition mem_acc_eq : EqDecision mem_acc := _.
   #[export] Typeclasses Transparent mem_acc_eq.
-  Definition is_explicit (acc : mem_acc) :=
-    if acc is AK_explicit _ then true else false.
-  Definition is_ifetch (acc : mem_acc) :=
-    if acc is AK_ifetch _ then true else false.
-  Definition is_ttw (acc : mem_acc) :=
-    if acc is AK_ttw _ then true else false.
-  Definition is_relaxed (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_strength) =? AS_normal else false.
-  Definition is_rel_acq (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_strength) =? AS_rel_or_acq else false.
-  Definition is_acq_rcpc (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_strength) =? AS_acq_rcpc else false.
-  Definition is_standalone (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_variety) =? AV_plain else false.
-  Definition is_exclusive (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_variety) =? AV_exclusive else false.
-  Definition is_atomic_rmw (acc : mem_acc) :=
-    if acc is AK_explicit eak then
-      eak.(Explicit_access_kind_variety) =? AV_atomic_rmw else false.
+  Definition is_explicit := SA.mem_acc_is_explicit.
+  #[export] Typeclasses Transparent is_explicit.
+  Definition is_ifetch := SA.mem_acc_is_ifetch.
+  #[export] Typeclasses Transparent is_ifetch.
+  Definition is_ttw := SA.mem_acc_is_ttw.
+  #[export] Typeclasses Transparent is_ttw.
+  Definition is_relaxed := SA.mem_acc_is_relaxed.
+  #[export] Typeclasses Transparent is_relaxed.
+  Definition is_rel_acq_rcpc := SA.mem_acc_is_rel_acq_rcpc.
+  #[export] Typeclasses Transparent is_rel_acq_rcpc.
+  Definition is_rel_acq_rcsc := SA.mem_acc_is_rel_acq_rcsc.
+  #[export] Typeclasses Transparent is_rel_acq_rcsc.
+  Definition is_standalone := SA.mem_acc_is_standalone.
+  #[export] Typeclasses Transparent is_standalone.
+  Definition is_exclusive := SA.mem_acc_is_exclusive.
+  #[export] Typeclasses Transparent is_exclusive.
+  Definition is_atomic_rmw := SA.mem_acc_is_atomic_rmw.
+  #[export] Typeclasses Transparent is_atomic_rmw.
 
   Definition abort := SA.abort.
   #[export] Typeclasses Transparent abort.
@@ -142,14 +133,14 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   #[export] Typeclasses Transparent cache_op.
   Definition cache_op_eq := SA.cache_op_eq.
   #[export] Typeclasses Transparent cache_op_eq.
-  Definition tlb_op := SA.tlb_op.
-  #[export] Typeclasses Transparent tlb_op.
-  Definition tlb_op_eq := SA.tlb_op_eq.
-  #[export] Typeclasses Transparent tlb_op_eq.
-  Definition fault := SA.fault.
-  #[export] Typeclasses Transparent fault.
-  Definition fault_eq := SA.fault_eq.
-  #[export] Typeclasses Transparent fault_eq.
+  Definition tlbi := SA.tlbi.
+  #[export] Typeclasses Transparent tlbi.
+  Definition tlbi_eq := SA.tlbi_eq.
+  #[export] Typeclasses Transparent tlbi_eq.
+  Definition exn := SA.exn.
+  #[export] Typeclasses Transparent exn.
+  Definition exn_eq := SA.exn_eq.
+  #[export] Typeclasses Transparent exn_eq.
   Definition trans_start := SA.trans_start.
   #[export] Typeclasses Transparent trans_start.
   Definition trans_start_eq := SA.trans_start_eq.
@@ -171,43 +162,48 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Import I.
   Import (coercions) SA.
 
-  Definition ReadReq_from_sail {n} (rr : SI.ReadReq.t n) : ReadReq.t n 0 :=
-    {|ReadReq.address := pa_to_address rr.(SI.ReadReq.pa);
+  Definition ReadReq_from_sail {n nt} (rr : SI.ReadReq.t n nt) : ReadReq.t n nt :=
+    {|ReadReq.address := rr.(SI.ReadReq.address);
       ReadReq.access_kind := rr.(SI.ReadReq.access_kind);
-      ReadReq.address_space := pa_to_addr_space rr.(SI.ReadReq.pa);
+      ReadReq.address_space := rr.(SI.ReadReq.address_space);
     |}.
 
-  Definition WriteReq_from_sail {n} (rr : SI.WriteReq.t n) : WriteReq.t n 0 :=
-    {|WriteReq.address := pa_to_address rr.(SI.WriteReq.pa);
+  Definition WriteReq_from_sail {n nt} (rr : SI.WriteReq.t n nt) : WriteReq.t n nt :=
+    {|WriteReq.address := rr.(SI.WriteReq.address);
       WriteReq.access_kind := rr.(SI.WriteReq.access_kind);
-      WriteReq.address_space := pa_to_addr_space rr.(SI.WriteReq.pa);
+      WriteReq.address_space := rr.(SI.WriteReq.address_space);
       WriteReq.value := rr.(SI.WriteReq.value);
-      WriteReq.tags := bv_0 0
+      WriteReq.tags := rr.(SI.WriteReq.tags)
     |}.
 
   Definition Sail_outcome_interp {A eo} (out : SI.outcome eo A) : I.iMon A :=
     match out with
     | SI.RegRead reg acc => mcall (RegRead reg acc)
     | SI.RegWrite reg acc regval => mcall (RegWrite reg acc regval)
-    | SI.MemRead n rr =>
-        mcall (MemRead n 0 (ReadReq_from_sail rr)) |$>
+    | SI.MemRead n nt rr =>
+        mcall (MemRead n nt (ReadReq_from_sail rr)) |$>
           (λ o, match o with
-                | Ok (b, _) => inl (b, None)
+                | Ok (val, tags) => inl (val, tags)
                 | Error a => inr a
                 end)
-    | SI.MemWrite n wr =>
-        mcall (MemWrite n 0 (WriteReq_from_sail wr)) |$>
+    | SI.MemWrite n nt wr =>
+        mcall (MemWrite n nt (WriteReq_from_sail wr)) |$>
           (λ o, match o with
                 | Ok () => inl (Some true)
                 | Error a => inr a
                 end)
+    | SI.MemAddressAnnounce n nt aa =>
+        mcall (MemWriteAddrAnnounce n nt
+                 aa.(SI.AddressAnnounce.address)
+                 aa.(SI.AddressAnnounce.access_kind)
+                 aa.(SI.AddressAnnounce.address_space))
     | SI.InstrAnnounce _ => mret ()
     | SI.BranchAnnounce _ _ => mret ()
     | SI.Barrier b => mcall (Barrier b)
     | SI.CacheOp cop => mcall (CacheOp cop)
     | SI.TlbOp top => mcall (TlbOp top)
     | SI.TakeException fault => mcall (TakeException fault)
-    | SI.ReturnException _ => mcall ReturnException
+    | SI.ReturnException => mcall ReturnException
     | SI.TranslationStart ts => mcall (TranslationStart ts)
     | SI.TranslationEnd te => mcall (TranslationEnd te)
     | SI.GenericFail msg => mcall_noret (GenericFail msg)
@@ -217,6 +213,7 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | SI.Choose (ChooseBitvector n) => mchoosef (* might blow up *)
     | SI.Choose _ => mcall_noret (GenericFail "Choosing non boolean in Sail")
     | SI.Discard => mdiscard
+    | SI.Message _ => mret () (* TODO support this *)
     | SI.ExtraOutcome e => mcall_noret (GenericFail "ExtraOutcome not supported")
     end.
 

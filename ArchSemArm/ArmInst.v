@@ -61,20 +61,6 @@ Module Arm.
   Module PAManip <: FromSail.PAManip SA.
     Import SA.
     Coercion GReg : register >-> greg.
-    Bind Scope bv_scope with pa.
-
-    Definition addr_size := 56%N.
-    #[export] Typeclasses Transparent addr_size.
-    Definition addr_space := ()%type.
-    #[export] Typeclasses Transparent addr_space.
-    Definition addr_space_eq : EqDecision addr_space := _.
-    #[export] Typeclasses Transparent addr_space_eq.
-    Definition addr_space_countable : Countable addr_space := _.
-    #[export] Typeclasses Transparent addr_space_countable.
-
-    Definition pa_to_address : pa → bv addr_size := λ x, x.
-    Definition pa_to_addr_space : pa → addr_space := λ x, ().
-    Definition pa_of_addr_and_space : bv addr_size → addr_space → pa := λ x '(), x.
 
     Definition pc_reg : greg := _PC.
   End PAManip.
@@ -116,14 +102,16 @@ Coercion GReg : register >-> greg.
 
 (** Make type abbreviations transparent *)
 #[export] Typeclasses Transparent bits.
-#[export] Typeclasses Transparent SA.pa.
+#[export] Typeclasses Transparent SA.addr_size.
+#[export] Typeclasses Transparent System_types.addr_space.
+#[export] Typeclasses Transparent SA.addr_space.
 #[export] Typeclasses Transparent SA.sys_reg_id.
-#[export] Typeclasses Transparent SA.arch_ak.
+#[export] Typeclasses Transparent SA.mem_acc.
 #[export] Typeclasses Transparent SA.abort.
 #[export] Typeclasses Transparent SA.barrier.
 #[export] Typeclasses Transparent SA.cache_op.
-#[export] Typeclasses Transparent SA.tlb_op.
-#[export] Typeclasses Transparent SA.fault.
+#[export] Typeclasses Transparent SA.tlbi.
+#[export] Typeclasses Transparent SA.exn.
 #[export] Typeclasses Transparent SA.trans_start.
 #[export] Typeclasses Transparent SA.trans_end.
 

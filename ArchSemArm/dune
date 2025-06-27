@@ -22,5 +22,6 @@
 )
 
 ; This alias is useful to build all the coq libaries without extraction
+(alias (name arm) (deps (alias all)))
 (alias (name coq) (deps (alias all)))
 (alias (name default) (deps (alias all)))

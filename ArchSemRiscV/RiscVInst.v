@@ -310,7 +310,7 @@ Module RiscV.
     Definition pc_reg := "_PC".
 
     Definition CHERI := false.
-    Definition cap_size := 16%N. (* dummy value *)
+    Definition cap_size_log := 0%N. (* dummy value *)
 
     Definition addr_size := 64%N.
     #[export] Typeclasses Transparent addr_size.
@@ -340,9 +340,9 @@ Module RiscV.
     Definition is_relaxed (acc : mem_acc) :=
       if acc is AK_explicit eak then
         eak.(Explicit_access_kind_strength) =? AS_normal else false.
-    Definition is_rel_acq (acc : mem_acc) :=
+    Definition is_rel_acq_rcsc (acc : mem_acc) :=
       if acc is AK_arch _ then true else false.
-    Definition is_acq_rcpc (acc : mem_acc) :=
+    Definition is_rel_acq_rcpc (acc : mem_acc) :=
       if acc is AK_explicit eak then
         eak.(Explicit_access_kind_strength) =? AS_rel_or_acq else false.
     Definition is_standalone (acc : mem_acc) :=
@@ -372,12 +372,12 @@ Module RiscV.
     Definition cache_op := ∅%type.
     #[export] Typeclasses Transparent cache_op.
     Definition cache_op_eq : EqDecision cache_op := _.
-    Definition tlb_op := ∅%type.
-    #[export] Typeclasses Transparent tlb_op.
-    Definition tlb_op_eq : EqDecision tlb_op := _.
-    Definition fault := ∅%type.
-    #[export] Typeclasses Transparent fault.
-    Definition fault_eq : EqDecision fault := _.
+    Definition tlbi := ∅%type.
+    #[export] Typeclasses Transparent tlbi.
+    Definition tlbi_eq : EqDecision tlbi := _.
+    Definition exn := ∅%type.
+    #[export] Typeclasses Transparent exn.
+    Definition exn_eq : EqDecision exn := _.
     Definition trans_start := ∅%type.
     #[export] Typeclasses Transparent trans_start.
     Definition trans_start_eq : EqDecision trans_start := _.

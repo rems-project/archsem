@@ -137,9 +137,9 @@ Module AxRiscVNames.
   Notation Wx := (exclusive_writes pe).
   Notation Rx := (exclusive_writes pe).
   Notation X := (mem_exclusive pe).
-  Definition RL := (acq_rcpc_writes pe) ∪ (rel_acq_writes pe).
-  Definition AQ := (acq_rcpc_reads pe) ∪ (rel_acq_reads pe).
-  Notation RCsc := (mem_rel_acq pe).
+  Definition RL := (rel_acq_rcpc_writes pe) ∪ (rel_acq_rcsc_writes pe).
+  Definition AQ := (rel_acq_rcpc_reads pe) ∪ (rel_acq_rcsc_reads pe).
+  Notation RCsc := (mem_rel_acq_rcsc pe).
   Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
 
