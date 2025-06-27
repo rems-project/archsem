@@ -401,7 +401,13 @@ Definition relaxed_regs : gset reg :=
       GReg VBAR_EL3;
       GReg VTTBR_EL2].
 
-(** * The thread state *)
+(** Determine if input register is an unknown register from the architecture *)
+  Definition reg_unknown (r : reg) : Prop :=
+    ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+  Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
+  Proof. unfold reg_unknown; solve_decision. Qed.
+
+  (** * The thread state *)
 
 Module WSReg.
   Record t :=
@@ -415,6 +421,8 @@ Module WSReg.
     if decide (wsreg.(sreg) = sr) is left eq
     then Some $ (ctrans eq wsreg.(val), wsreg.(view))
     else None.
+  
+  #[global] Instance eta : Settable _ := settable! make <sreg;val;view>.
 End WSReg.
 
 Module LEvent.
@@ -573,10 +581,15 @@ Module TState.
     dmap_map (λ _, fst) ts.(regs).
 
   (** Sets the value of a register *)
-  Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
+  Definition set_reg (ts : t) (reg : reg) (rv : reg_type reg * view) : option t :=
     if decide (is_Some (dmap_lookup reg ts.(regs))) then
       Some $ set regs (dmap_insert reg rv) ts
     else None.
+
+  (** Add a system register write event to the local event *)
+  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) :=
+    let lev := LEvent.Wsreg (WSReg.make sreg val v) in
+    set levs (lev::.).
 
   (** Sets the coherence view of a location *)
   Definition set_coh (loc : Loc.t) (v : view) : t → t :=
@@ -964,6 +977,55 @@ Definition read_pte (vaddr : view) :
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
 
+(** Run a RegRead outcome. 
+    Returns the register value and the view. *)
+Definition run_reg_read (reg : reg) (racc : reg_acc) :
+    Exec.t TState.t string (reg_type reg) :=
+  ts ← mGet;
+  valv ← 
+    (if decide (reg ∈ relaxed_regs) then 
+      if decide (is_Some racc) 
+        then Exec.error_none "Register unmapped on direct read" 
+              $ TState.read_sreg_direct ts reg
+        else 
+          valvs ← Exec.error_none "Register unmapped on indirect read" 
+                  $ TState.read_sreg_indirect ts reg;
+          mchoosel valvs
+    else
+      Exec.error_none "Register unmapped; cannot read" $ TState.read_reg ts reg);
+  mret (valv.1).
+
+(** Run a RegWrite outcome. 
+    Updates the thread state using a register value *)
+Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
+  guard_or
+    "Cannot write to unknown register"
+    (reg_unknown reg);;
+  guard_or
+    "Non trivial write reg access types unsupported"
+    (racc = None);;
+  iis ← mget PPState.iis;
+  ts ← mget PPState.state;
+  let vreg := IIS.strict iis in
+  vreg' ←
+    (if reg =? pc_reg
+      then
+        mset PPState.state $ TState.update TState.vspec vreg;;
+        mret 0%nat
+      else mret vreg);
+  if decide (reg ∈ relaxed_regs) then
+    valvi ← Exec.error_none "Register unmapped on direct read" $ TState.read_sreg_direct ts reg;
+    let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ valvi.2 in
+    let vpost := vreg' ⊔ vpre in
+    let vmsr := ts.(TState.vmsr) ⊔ vpost in
+    mset PPState.state $ TState.add_wsreg reg val vpost;;
+    mset PPState.state $ TState.update TState.vmsr vmsr
+  else
+    nts ← Exec.error_none "Register unmapped; cannot write" $
+            TState.set_reg ts reg (val, vreg');
+    msetv PPState.state nts.
+
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
@@ -1151,30 +1213,14 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
 (** Runs an outcome. *)
 Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
+
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
   | RegWrite reg racc val =>
-      guard_or
-        "Non trivial write reg access types unsupported"
-        (bool_decide (racc ≠ None));;
-      iis ← mget PPState.iis;
-      let vreg := IIS.strict iis in
-      vreg' ←
-        (if reg =? pc_reg
-         then
-           mset PPState.state $ TState.update TState.vspec vreg;;
-           mret 0%nat
-         else mret vreg);
-      if decide (reg ∈ relaxed_regs) then
-        mthrow "TODO"
-      else
-        ts ← mget PPState.state;
-        nts ← Exec.error_none "Register isn't mapped, can't write" $
-                TState.set_reg reg (val, vreg') ts;
-        msetv PPState.state nts
-  | RegRead reg direct => mthrow "TODO"
+      run_reg_write reg racc val
+  | RegRead reg racc =>
+      Exec.liftSt PPState.state $ (run_reg_read reg racc)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       val ← run_mem_read addr macc initmem;
       mret (Ok (val, 0%bv))
