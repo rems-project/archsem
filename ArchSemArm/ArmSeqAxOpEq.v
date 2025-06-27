@@ -671,9 +671,6 @@ Lemma trace_last_event_indexed P `{∀ (ev : iEvent) (eid : EID.t), Decision (P 
       EID.full_po_lt eid'' eid' ∨ eid'' = eid'.
 Admitted.
 
-Section Proof.
-Context (regs_whitelist : gset reg) (fuel : nat) (isem : iMon ()).
-
 Notation seqmon := (Exec.t seq_state string).
 Notation initss := {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |}.
 
@@ -777,28 +774,103 @@ Lemma pa_not_in_range_write size pa pa' st st' (l : list (bv 8)) :
   → (st', ()) ∈ write_mem_seq_state pa l st
   → length l = N.to_nat size
   → mem st' !! pa' = mem st !! pa'.
+Proof.
+  setoid_rewrite pa_in_range_spec.
+  revert dependent size pa st.
+  elim l; cdestruct pa' |- ***.
+  erewrite (H (N.pred size) (pa_addZ pa0 1) (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)); eauto.
+  3: lia.
+  - destruct st; cbn; unfold Setter_finmap.
+    assert (pa' ≠ pa0).
+    { intros ->.
+      eapply H0.
+      eexists 0%N.
+      rewrite pa_addN_zero.
+      cdestruct |- *** #CDestrSplitGoal.
+      destruct size; lia. }
+    admit.
+  - unfold not; cdestruct |- ***.
+    cdestruct pa'.
+    eapply H0.
+    unfold pa_addN; rewrite pa_addZ_assoc.
+    eexists (N.succ x); cdestruct |- *** #CDestrSplitGoal.
+    1: f_equal; lia.
+    lia.
 Admitted.
 
-Lemma pa_offset_in_range_write pa pa' offset size (v: bv (8*size)) st st' :
-  (st', ()) ∈ write_mem_seq_state pa (bv_to_bytes 8 v) st
-  → pa_addN pa offset = pa'
-  → (offset < size)%N
-  → mem st' !! pa' = Some (bv_get_byte 8 offset v).
+Lemma write_mem_seq_state_snoc l x pa st st' :
+  (st', ()) ∈ write_mem_seq_state pa (l ++ [x]) st →
+  mem st' !! pa_addN pa (N.of_nat (length l)) = Some x.
 Proof.
-  remember (bv_to_bytes 8 v); deintro.
-  induction l; cdestruct |- ***.
-  - epose proof length_bv_to_bytes (8 * size) 8 v.
-    enough (size = 0)%N by lia.
-    rewrite <- Heql in *.
-    cbn in *.
-    unfold div_round_up in *.
-    lia.
-  - destruct offset.
-    + rewrite pa_addN_zero in H0; subst.
-      epose proof length_bv_to_bytes (8 * size) 8 v.
-      rewrite div_round_up_divisible in *; last done.
-      epose proof pa_not_in_range_write.
+  revert dependent pa st.
+  elim l; cdestruct st' |- ***.
+  1: rewrite pa_addN_zero; unfold Setter_finmap.
+  (* Set Typeclasses Debug Verbosity 2. *)
+  (* 1: rewrite lookup_unfold. *)
+  1: admit. (* Thibaut *)
+  eapply H in H0.
+  rewrite <- H0.
+  unfold pa_addN.
+  rewrite pa_addZ_assoc.
+  do 2 f_equal.
+  lia.
 Admitted.
+
+Lemma write_mem_seq_state_app pa l st st' x :
+  (st', ()) ∈ write_mem_seq_state pa (l ++ [x]) st →
+  (st', ()) ∈ write_mem_seq_state pa l (setv ((.!! pa_addN pa (N.of_nat (length l))) ∘ mem) (Some x) st).
+Proof.
+  revert dependent pa st x.
+  elim l; cdestruct st' |- *** #CDestrSplitGoal.
+  1: rewrite pa_addN_zero; done.
+  eexists _, (); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+  2: eapply H.
+  2: eapply H0.
+  eexists _, _; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+  destruct st; cbv [set setv].
+  unfold Setter_compose.
+  f_equal; cbn.
+  unfold Setter_finmap.
+  erewrite partial_alter_commute.
+  2: admit.
+  unfold pa_addN.
+  rewrite pa_addZ_assoc.
+  do 3 f_equal.
+  lia.
+Admitted.
+
+Lemma pa_in_range_write pa pa' size (v: bv (8*size)) st st' :
+  (st', ()) ∈ write_mem_seq_state pa (bv_to_bytes 8 v) st →
+  pa_in_range pa size pa' →
+  ∃ offset, (offset < size)%N ∧ pa' = pa_addN pa offset ∧
+    mem st' !! pa' = Some (bv_get_byte 8 offset v).
+Proof.
+  intros ??%pa_in_range_spec;
+  deintros; cdestruct |- *** as pa i size v st st' Hw Hs.
+  exists i.
+  enough (mem st' !! pa_addN pa i = bv_to_bytes 8 v !! i) as ->
+  by (setoid_rewrite bv_to_bytes_bv_get_byte; repeat apply conj; try done; lia).
+  assert (length (bv_to_bytes 8 v) = N.to_nat size)
+    by (rewrite length_bv_to_bytes, div_round_up_divisible; done).
+  revert dependent pa st i.
+  generalize dependent (bv_to_bytes 8 v).
+  clear v.
+  intro; revert size.
+  elim l using rev_ind; cdestruct st' |- ***; first lia.
+  destruct (decide (i = N.of_nat (length l0))) as [->|]; cbn.
+  - unfold lookup at 2, list_lookupN.
+    rewrite Nat2N.id, lookup_app.
+    cdestruct |- *** #CDestrMatch #CDestrEqOpt; first by rewrite lookup_unfold in *.
+    rewrite Nat.sub_diag; cbn.
+    by eapply write_mem_seq_state_snoc.
+  - unfold lookup at 2, list_lookupN.
+    rewrite length_app in *; cbn in *.
+    rewrite lookup_app.
+    cdestruct |- *** #CDestrMatch #CDestrEqOpt; last rewrite lookup_unfold in *.
+    2: opose proof (lookup_lt_is_Some_2 l0 (N.to_nat i) _); first lia; sauto.
+    erewrite (H (N.pred size)); try done; try lia.
+    eapply write_mem_seq_state_app; eauto.
+Qed.
 
 Lemma write_mem_seq_state_same_itrs bytes :
   ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → itrs st' = itrs st.
@@ -807,6 +879,9 @@ Proof.
   change (itrs st) with (itrs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
   eapply IHbytes, H.
 Qed.
+
+Section Proof.
+Context (regs_whitelist : gset reg).
 
 Lemma sequential_model_outcome_same_itrs st st' call r s :
   (st', r) ∈ sequential_model_outcome (Some regs_whitelist) s call st → itrs st' = itrs st.
@@ -975,7 +1050,7 @@ Proof.
   apply pa_in_range_spec in p.
   cdestruct p as offset H_pa H_offset.
   assert (mem st' !! pa = Some (bv_get_byte 8 offset (WriteReq.value wr))) as ->
-  by (eapply pa_offset_in_range_write; eauto).
+  by (eapply pa_in_range_write; eauto).
   cdestruct |- *** #CDestrSplitGoal.
   - eexists; cdestruct |- *** #CDestrSplitGoal; eauto.
   - cdestruct v, pa |- ***.
@@ -1026,7 +1101,7 @@ Definition mem_write_upd_partial_cd_state (pa : pa) (weid : EID.t) (st : partial
     (if cdst.(pa_writes_set_map) !! pa is Some prev_weids
     then (peids.1 ∈ prev_weids ∧ peids.2 = weid) ∨ P
     else P).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   destruct peids as [eid1 eid2].
   unfold mem_write_upd_partial_cd_state.
@@ -1054,7 +1129,7 @@ Qed.
 #[local] Instance elem_of_unfold_cdst_mem_write_rf pa weid cdst peids P :
   SetUnfoldElemOf peids cdst.(rf_acc) P →
   SetUnfoldElemOf peids (mem_write_upd_partial_cd_state pa weid cdst).(rf_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_write_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1063,7 +1138,7 @@ Qed.
 #[local] Instance elem_of_unfold_cdst_mem_write_rrf pa weid cdst peids P :
   SetUnfoldElemOf peids cdst.(rrf_acc) P →
   SetUnfoldElemOf peids (mem_write_upd_partial_cd_state pa weid cdst).(rrf_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_write_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1096,7 +1171,7 @@ Qed.
     (if decide (pa' = pa)
     then (if o is Some ws then (Some ({[weid]} ∪ ws)) else Some {[weid]})
     else o).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_write_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1130,7 +1205,7 @@ Lemma eq_some_unfold_cdst_memw_upd_pa_ws_set_map cdst pa pa' weid ws (P : gset E
     ws
     (pa' = pa ∧ ((∃ ws', P ws' ∧ ws = ({[weid]} ∪ ws')) ∨ Q ∧ ws = {[weid]}) ∨
     pa' ≠ pa ∧ ((∃ ws', P ws' ∧ ws = ws') ∨ False)).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   clear dependent Q.
   rewrite lookup_unfold.
@@ -1144,7 +1219,7 @@ Lemma eq_none_unfold_cdst_memw_upd_pa_ws_set_map cdst pa pa' weid Q :
   EqNoneUnfold (cdst.(pa_writes_set_map) !! pa') Q →
   EqNoneUnfold ((mem_write_upd_partial_cd_state pa weid cdst).(pa_writes_set_map) !! pa')
     (pa' ≠ pa ∧ Q).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   rewrite lookup_unfold.
   cdestruct |- *** #CDestrMatch #CDestrSplitGoal #CDestrEqOpt.
@@ -1159,7 +1234,7 @@ Definition mem_read_upd_partial_cd_state (pa : pa) (reid : EID.t) (st : partial_
 #[local] Instance elem_of_unfold_cdst_mem_read_co pa reid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
   SetUnfoldElemOf peids (mem_read_upd_partial_cd_state pa reid cdst).(co_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1171,7 +1246,7 @@ Qed.
     (if cdst.(pa_write_map) !! pa is Some weid
     then (peids.1 = weid ∧ peids.2 = reid) ∨ P
     else P).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1181,7 +1256,7 @@ Qed.
 #[local] Instance elem_of_unfold_cdst_mem_read_rrf pa reid cdst peids P :
   SetUnfoldElemOf peids cdst.(rrf_acc) P →
   SetUnfoldElemOf peids (mem_read_upd_partial_cd_state pa reid cdst).(rrf_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold mem_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1233,17 +1308,17 @@ Definition reg_write_upd_partial_cd_state (reg : reg) (weid : EID.t) : partial_c
 #[local] Instance elem_of_unfold_cdst_reg_write_co reg weid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
   SetUnfoldElemOf peids (reg_write_upd_partial_cd_state reg weid cdst).(co_acc) P.
-Proof using fuel isem regs_whitelist. by tcclean. Qed.
+Proof using regs_whitelist. by tcclean. Qed.
 
 #[local] Instance elem_of_unfold_cdst_reg_write_rf reg weid cdst peids P :
   SetUnfoldElemOf peids cdst.(rf_acc) P →
   SetUnfoldElemOf peids (reg_write_upd_partial_cd_state reg weid cdst).(rf_acc) P.
-Proof using fuel isem regs_whitelist. by tcclean. Qed.
+Proof using regs_whitelist. by tcclean. Qed.
 
 #[local] Instance elem_of_unfold_cdst_reg_write_rrf reg weid cdst peids P :
   SetUnfoldElemOf peids cdst.(rrf_acc) P →
   SetUnfoldElemOf peids (reg_write_upd_partial_cd_state reg weid cdst).(rrf_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold reg_write_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1295,7 +1370,7 @@ Definition reg_read_upd_partial_cd_state (reg : reg) (reid : EID.t) (st : partia
 #[local] Instance elem_of_unfold_cdst_reg_read_co reg reid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
   SetUnfoldElemOf peids (reg_read_upd_partial_cd_state reg reid cdst).(co_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold reg_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch.
@@ -1304,7 +1379,7 @@ Qed.
 #[local] Instance elem_of_unfold_cdst_reg_read_rf reg reid cdst peids P :
   SetUnfoldElemOf peids cdst.(rf_acc) P →
   SetUnfoldElemOf peids (reg_read_upd_partial_cd_state reg reid cdst).(rf_acc) P.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold reg_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch.
@@ -1316,7 +1391,7 @@ Qed.
     (if cdst.(reg_write_map) !! reg is Some weid
     then (peids.1 = weid ∧ peids.2 = reid) ∨ P
     else P).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   tcclean.
   unfold reg_read_upd_partial_cd_state.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
@@ -1584,7 +1659,7 @@ Lemma eq_some_unfold_lookup_eid_trace_snoc itrs eid ev ev' :
     else eid = intra_trace_eid_succ 0 itrs ∧ ev = ev').
 Proof.
   tcclean.
-  clear dependent isem regs_whitelist fuel.
+  clear dependent regs_whitelist.
   cdestruct |- *** as #CDestrMatch #CDestrEqOpt.
   - intros ev'' H_itrs.
     destruct (decide (itrs = [])) as [->|Hne].
@@ -1713,7 +1788,7 @@ Qed.
   EqNoneUnfold (itrs !! eid) P →
   EqNoneUnfold (trace_snoc ev itrs !! eid) (P ∧ eid ≠ intra_trace_eid_succ 0 itrs).
 Proof.
-  clear regs_whitelist fuel isem.
+  clear regs_whitelist.
   tcclean.
   cdestruct eid, ev |- *** as ? _ ? HNone ##eq_some_unfold_lookup_eid_trace_snoc #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
   all: intros.
@@ -2095,9 +2170,7 @@ Proof.
   - destruct call; unfold is_mem_writeP in *; try done.
     cdestruct ret, H_seqst_succ.
     destruct (decide (pa_in_range (WriteReq.pa wr) n pa)).
-    + eapply pa_in_range_spec in p.
-      cdestruct p.
-      opose proof (pa_offset_in_range_write _ _ _ _ _ _ _ _ _ _) as ->; eauto.
+    + opose proof (pa_in_range_write _ _ _ _ _ _ _ _) as [offest (? & ? & ->)]; eauto.
       cdestruct seqst_succ |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
       * eexists _, (intra_trace_eid_succ 0 (trace_rev (itrs seqst))), _.
@@ -2107,15 +2180,16 @@ Proof.
         left.
         by eapply eid_full_po_lt_intra_trace_eid_succ.
       * exfalso.
-        ospecialize (H8 (intra_trace_eid_succ 0 (trace_rev (itrs seqst))) _ _ _).
+        ospecialize (H9 (intra_trace_eid_succ 0 (trace_rev (itrs seqst))) _ _ _).
         (* Set Typeclasses Debug Verbosity 2.
         1: cdestruct |- *** #CDestrEqOpt.
         (* TODO: ask Thibaut (search for hd in debug) *)
         *)
         1: rewrite lookup_unfold; done.
         1: cbn; eapply pa_in_range_spec; eauto.
-        cdestruct x1, H7 #CDestrSplitGoal #CDestrEqOpt.
-      * cdestruct pa, v.
+        cdestruct x0, H9 #CDestrSplitGoal #CDestrEqOpt.
+      * clear H_inv H8 p.
+        cdestruct pa, v.
         admit.
     + erewrite pa_not_in_range_write; eauto.
       2: erewrite length_bv_to_bytes, div_round_up_divisible; done.
@@ -2123,7 +2197,7 @@ Proof.
       all: cdestruct |- *** as size wr' b eid offset Htr H_wb H_otherw #CDestrSplitGoal.
       all: cdestruct Htr, H_wb |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
-      3: exfalso; eapply n0, pa_in_range_spec; depelim H3;
+      3: exfalso; eapply n0, pa_in_range_spec; depelim H4;
         eexists; cdestruct |- *** #CDestrSplitGoal; eauto.
       all: eexists _, eid, _.
       all: cdestruct eid, seqst_succ, b |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
@@ -2204,7 +2278,6 @@ Proof.
   erewrite pcdst_mem_map_inv_seq_state_equal;
   last by eapply seq_state_trace_cons_equal.
   opose proof (pcdst_mem_map_inv _ H_inv) as H_base.
-  clear dependent fuel isem.
   unfold pcdst_mem_map_invP in *.
   cbn.
   setoid_rewrite lookup_unfold.
@@ -2244,11 +2317,10 @@ Proof.
       2: naive_solver.
       1: right; by eapply eid_full_po_lt_intra_trace_eid_succ.
     + exfalso.
-      ospecialize (H4 (intra_trace_eid_succ 0 (trace_rev (itrs seq_st))) _ _ _ _).
+      ospecialize (H5 (intra_trace_eid_succ 0 (trace_rev (itrs seq_st))) _ _ _ _).
       1: by rewrite lookup_unfold.
       1,2: done.
-      cdestruct eid, H3 |- *** #CDestrSplitGoal.
-      1: by rewrite lookup_unfold in *.
+      cdestruct eid, H5 |- *** #CDestrSplitGoal #CDestrEqOpt.
   - eapply seq_state_to_partial_cd_state_destruct.
     5: unfold is_mem_writeP in *; deintros; by cdestruct |- ***.
     all: cdestruct |- *** #CDestrEqOpt.
@@ -2269,7 +2341,7 @@ Qed.
 
 Lemma seq_model_pcdst_mem_set_map_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate pcdst_mem_set_map_invP.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   unfold seq_model_outcome_invariant_preserved, pcdst_mem_set_map_invP.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ eid pa
     #CDestrEqOpt.
@@ -2314,7 +2386,7 @@ Qed.
 
 Lemma seq_model_co_acc_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate cdst_co_acc_invP.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   unfold seq_model_outcome_invariant_preserved, cdst_co_acc_invP.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ eid1 eid2.
   setoid_rewrite lookup_unfold.
@@ -2327,7 +2399,7 @@ Proof using fuel isem regs_whitelist.
   - eapply seq_state_to_partial_cd_state_destruct.
     all: cdestruct call |- *** as.
     1: by unfold is_mem_writeP in *.
-    cdestruct eid2 |- *** as size wr _ ??.
+    cdestruct eid2 |- *** as size wr _ ???.
     opose proof (pcdst_mem_set_map_inv _ H_inv eid1 (WriteReq.pa wr)) as H_mem_set.
     setoid_rewrite lookup_unfold in H_mem_set.
     set_unfold.
@@ -2373,7 +2445,7 @@ Qed.
 
 Lemma seq_model_rf_acc_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate cdst_rf_acc_invP.
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   unfold seq_model_outcome_invariant_preserved, cdst_rf_acc_invP.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ eid1 eid2.
   setoid_rewrite lookup_unfold.
@@ -2391,14 +2463,14 @@ Proof using fuel isem regs_whitelist.
   - eapply seq_state_to_partial_cd_state_destruct.
     all: cdestruct call |- *** as.
     1: by unfold is_mem_readP in *.
-    cdestruct eid2 |- *** as size wr val ? _ H_step ??.
+    cdestruct eid2 |- *** as size wr val ? _ H_step ???.
     set_unfold.
     cdestruct |- *** #CDestrMatch #CDestrEqOpt.
     2: {
       opose proof (pcdst_mem_map_inv _ H_inv).
       cdestruct H_step |- *** #CDestrMatch #CDestrEqOpt.
-      all: setoid_rewrite H_base; clear H_base.
-      all: cdestruct eid1 |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
+      setoid_rewrite H_base; clear H_base.
+      cdestruct eid1, H1 |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
       all: exfalso.
       all: eapply eq_None_not_Some; first eapply H.
@@ -2436,7 +2508,8 @@ Proof using fuel isem regs_whitelist.
       #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
     all: ospecialize (H_fullpo _ _ _ _ _); eauto.
     all: cdestruct |- ***.
-    all: naive_solver.
+    all: cdestruct H_fullpo |- *** #CDestrSplitGoal.
+    all: left+(right;left)+(right;right); done.
   - eapply seq_state_to_partial_cd_state_destruct.
     all: cdestruct call |- ***.
     4: cdestruct ret, H_call #CDestrSplitGoal.
@@ -2445,8 +2518,7 @@ Proof using fuel isem regs_whitelist.
     all: cdestruct |- *** as #CDestrMatch.
     all: setoid_rewrite H_base; clear H_base.
     all: cdestruct eid1, eid2 |- *** as #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
-    all: try cdestruct H0 #CDestrMatch.
-    17: try solve [cdestruct H0 #CDestrMatch; unfold is_mem_readP in *; cbn; done]. (* TODO: simpl instances *)
+    all: try cdestruct H0, H1 #CDestrMatch.
     all: try intros ??????????? Hl1 Hl2 ?? H_rf_fullpo.
     all: try intros ?????????? Hl1 Hl2 ?? H_rf_fullpo.
     all: try intros ????????? Hl1 Hl2 ?? H_rf_fullpo.
@@ -2525,7 +2597,7 @@ Qed.
 Lemma seq_model_pcdst_montonone :
   seq_model_outcome_invariant_preserved seq_inv_predicate
     (λ seq_st, cd_monotone (seq_state_to_cd seq_st)).
-Proof using fuel isem regs_whitelist.
+Proof using regs_whitelist.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ.
   opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
   opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
@@ -2740,7 +2812,7 @@ Proof.
     * unfold not.
       cdestruct seqst_succ, call, ret, H_base |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
       all: try solve [eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal].
-      admit. (* bv facts / byte flags -> mem map doesn't include value -> wasn't written to that pa *)
+      all: admit. (* bv facts / byte flags -> mem map doesn't include value -> wasn't written to that pa *)
     * unfold not.
       intros Hor.
       ospecialize (H_base x _).
@@ -2795,7 +2867,7 @@ Proof.
       destruct call; unfold is_mem_event, is_mem_readP, is_mem_writeP in *;
       cdestruct H |- *** #CDestrSplitGoal #CDestrMatch; cdestruct ret #CDestrMatch.
       1,2: cdestruct o.
-      1: eapply orb_true_iff in H0; cdestruct H0 |- *** #CDestrSplitGoal; [right|left; right];
+      1: eapply orb_true_iff in H1; cdestruct H1 |- *** #CDestrSplitGoal; [right|left; right];
         unfold is_mem_read_kindP, is_mem_readP; eexists;
         cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; naive_solver.
       all: left; left.
@@ -2819,9 +2891,69 @@ Proof.
 Admitted.
 
 Lemma bvs_equal_get_byte_equal n (x y : bvn) :
-  bvn_n x = bvn_n y →
-  (∀ i, (i < (bvn_n x `div`n))%N → bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) → x = y.
-Admitted.
+  n ≠ 0%N → bvn_n x = bvn_n y →
+  (∀ i, (i * n < bvn_n x)%N →
+    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
+  x = y.
+Proof.
+  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
+  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
+  f_equal.
+  apply list_eq.
+  intros.
+  apply option_eq.
+  intro b.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
+  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
+  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: rewrite Hbytes in *; done.
+Qed.
+
+Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
+	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
+Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
+
+Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
+  n ≠ 0%N → m = N.of_nat (length l) →
+  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
+Proof.
+  intros ? ->.
+  unfold bv_to_bytes, bv_of_bytes.
+  rewrite div_round_up_divisible; last done.
+  bv_simplify.
+  unfold bv_wrap.
+  rewrite Z.mod_small.
+  2: {
+    pose proof (little_endian_to_bv_bound n l).
+    unfold bv_modulus.
+    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
+    done.
+  }
+  rewrite bv_to_little_endian_to_bv.
+  2: lia.
+  done.
+Qed.
+
+Lemma Some_inj {A} (x y : A) :
+  Some x = Some y ↔ x = y.
+Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
+
+Lemma pa_range_lookup pa size i :
+  (i < size)%N →
+  pa_range pa size !! i = Some (pa_addN pa i).
+Proof.
+  intros.
+  unfold pa_range.
+  setoid_rewrite list_lookup_fmap.
+  unfold seqN.
+  setoid_rewrite list_lookup_fmap.
+  rewrite lookup_seq_lt; last lia.
+  cbn.
+  do 2 f_equal.
+  lia.
+Qed.
 
 Lemma seq_model_pcdst_wf :
   seq_model_outcome_invariant_preserved seq_inv_predicate
@@ -2831,9 +2963,32 @@ Proof.
   opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
   opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
   constructor.
-  - opose proof (Candidate.has_only_supported_events' _ (cd_wf _ H_inv)).
-    unfold Candidate.has_only_supported_events, Candidate.unsupported_event in *.
-    admit.
+  - unfold Candidate.has_only_supported_events in *.
+    set_unfold.
+    apply elem_of_nil_inv.
+    unfold not; cdestruct |- *** as tid iid ieid ???%Candidate.iEvent_list_match.
+    assert (build_pre_exec (initSt seqst_succ) (trace_cons (call &→ ret) (itrs seqst_succ)) !! EID.make tid iid ieid None = Some i).
+    1: unfold lookup, Candidate.lookup_eid_pre; cdestruct H0 |- *** #CDestrEqOpt;
+      eexists; cdestruct H0 |- *** #CDestrEqOpt #CDestrSplitGoal.
+    clear H0; cdestruct H1 ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrMatch.
+    + opose proof (Candidate.has_only_supported_events' _ (cd_wf _ H_inv)) as H_base.
+      eapply (filter_nil_not_elem_of _ _ (tid,iid,ieid,i) H_base); first done.
+      eapply Candidate.iEvent_list_match.
+      unfold lookup, lookup_ev_from_iTraces, Candidate.lookup_iEvent, Candidate.lookup_instruction in *.
+      cdestruct H0 |- *** #CDestrEqOpt.
+      unfold build_pre_exec in *.
+      eexists (_,_).
+      cdestruct H0 |- *** #CDestrEqOpt #CDestrSplitGoal; last eauto.
+      eexists.
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; last eauto.
+      assert (tid < 1) by lia.
+      eexists H3; rewrite lookup_total_unfold.
+      by f_equal.
+    + unfold Candidate.unsupported_event in *.
+      destruct i as [[]]; unfold is_mem_read_reqP, is_mem_write_reqP in *; cbn in *;
+      try solve [destruct H; fast_done].
+      all: deintros; cdestruct |- *** #CDestrMatch; rewrite H0 in *.
+      all: sauto.
   - constructor.
     + set_unfold.
       cdestruct |- ***.
@@ -2899,47 +3054,35 @@ Proof.
         all: do 3 (eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch).
         unfold pa_overlap.
         setoid_rewrite pa_in_range_spec.
-        rewrite H3.
+        cdestruct pa0.
         left; exists 0%N; rewrite pa_addN_zero; cdestruct |- *** #CDestrSplitGoal.
+        enough (x0 ≠ 0)%N by lia.
         admit.
       }
       unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
       set_unfold in Hnms.
       cdestruct pa0, n, Hnms #CDestrEqOpt.
-      eapply (bvs_equal_get_byte_equal 8); first done; cbn.
-      replace ((8 * x0) `div` 8)%N with x0 by lia.
+      eapply (bvs_equal_get_byte_equal 8); try done.
       intros.
-      enough (Some (bv_get_byte 8 i value) = Some
-        (bv_get_byte 8 i
-          (bv_of_bytes (8 * x0)
-            ((λ pa0 : pa,
-                (if mem seqst !! pa0 is Some v then (v, true)
-                  else (MState.memory (initSt seqst) pa0, false)).1) <$>
-              pa_range (ReadReq.pa rr) x0)))) by (deintros; cdestruct |- *** #CDestrEqOpt).
-      assert (Some (bv_get_byte 8 i
-      (bv_of_bytes (8 * x0)
-         ((λ pa0 : pa,
-             (if mem seqst !! pa0 is Some v then (v, true)
-              else (MState.memory (initSt seqst) pa0, false)).1) <$>
-          pa_range (ReadReq.pa rr) x0))) = ((λ pa0 : pa,
-             (if mem seqst !! pa0 is Some v then (v, true)
-              else (MState.memory (initSt seqst) pa0, false)).1) <$>
-          pa_range (ReadReq.pa rr) x0) !! i) as -> by admit.
-      assert (((λ pa0 : pa,
-            (if mem seqst !! pa0 is Some v then (v, true)
-            else (MState.memory (initSt seqst) pa0, false)).1) <$>
-        pa_range (ReadReq.pa rr) x0) !! i = Some ((λ pa0 : pa,
-            (if mem seqst !! pa0 is Some v then (v, true)
-            else (MState.memory (initSt seqst) pa0, false)).1) (pa_addN (ReadReq.pa rr) i))) as -> by admit.
+      eapply Some_inj.
+      cbn in *.
+      setoid_rewrite <- bv_to_bytes_bv_get_byte2 at 2; try lia.
+      rewrite bv_to_bytes_bv_of_bytes; try done.
+      2: by rewrite length_fmap, pa_range_length, N2Nat.id.
+      setoid_rewrite list_lookup_fmap.
+      erewrite fmap_Some_2.
+      2: eapply pa_range_lookup; lia.
       ospecialize (H_seqst_mem_map (pa_addN (ReadReq.pa rr) i) (bv_get_byte 8 i value)).
       destruct H_seqst_mem_map as [_ H_seqst_mem_map].
-      orewrite H_seqst_mem_map; clear H_seqst_mem_map; first done.
+      orewrite H_seqst_mem_map; clear H_seqst_mem_map.
+      1: done.
       setoid_rewrite lookup_unfold.
       eexists _, _, _.
       cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first apply H0.
       1: unfold is_mem_writeP.
       all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-      eapply or_comm, H4; cdestruct |- *** #CDestrEqOpt.
+      1: cbn in *; lia.
+      eapply or_comm, H5; cdestruct |- *** #CDestrEqOpt.
       admit. (*NMS*)
     + cbn; rewrite Hsame_init, Hsame_itrs.
       unfold Candidate.init_mem_reads, Candidate.mem_reads, Candidate.is_valid_init_mem_read.
