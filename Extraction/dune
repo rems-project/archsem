@@ -10,8 +10,8 @@
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap Interface list0 List list_numbers listset mapset
                      Nat numbers option propset RecordSet pretty
-                     sets Specif String0 strings ConcurrencyInterfaceTypes
-                     Instances Values MachineWord FromSail ConcurrencyInterface
+                     sets Specif String0 strings
+                     Instances Values MachineWord FromSail ConcurrencyInterfaceV2
                      System_types
                      TermModels vector0 VectorDef Vector)
 )

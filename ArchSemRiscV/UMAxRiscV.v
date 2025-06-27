@@ -103,7 +103,7 @@ Section UMArm.
   Notation X := (mem_exclusive pe).
   Notation RL := (RL cd).
   Notation AQ := (AQ cd).
-  Notation RCsc := (mem_rel_acq pe).
+  Notation RCsc := (mem_rel_acq_rcsc pe).
   Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
 

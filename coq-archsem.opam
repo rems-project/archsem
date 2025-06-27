@@ -38,5 +38,5 @@ build: [
 ]
 dev-repo: "git+https://github.com/rems-project/archsem.git"
 pin-depends: [
-  [ "coq-sail-stdpp.0.19.1" "git+https://github.com/rems-project/coq-sail.git#b762359"]
+  [ "coq-sail-stdpp.0.19.1" "git+https://github.com/rems-project/coq-sail.git#abe978f"]
 ]

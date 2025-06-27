@@ -58,7 +58,6 @@ Require Import ArmInst.
 Require Import ASCommon.CResult.
 
 
-
 (** The goal of this module is to define an User-mode promising model,
     without mixed-size on top of the new interface *)
 
@@ -69,6 +68,8 @@ Require Import ASCommon.CResult.
     So in order to get the physical address you need to append 3 zeros. *)
 Module Loc.
   Definition t := bv 53.
+  #[export] Typeclasses Transparent t.
+  #[export] Hint Transparent t : bv_unfold_db.
 
   #[global] Instance dec : EqDecision t.
   Proof. unfold t. solve_decision. Defined.
@@ -86,15 +87,15 @@ Module Loc.
   Lemma to_from_addr (addr : address) (loc : t) :
     from_addr addr = Some loc → to_addr loc = addr.
   Proof.
-    unfold from_addr,to_addr, address, addr_size in *.
-    unfold t in *.
-    cdestruct loc |- ** #CDestrMatch.
+    unfold from_addr,to_addr in *.
+    cdestruct addr,loc |- *** #CDestrMatch.
     bv_solve'.
   Qed.
 
   Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
+    unfold t in *.
     unfold from_addr, to_addr.
-    hauto solve:bv_solve'.
+    cdestruct |- *** #CDestrMatch; bv_solve'.
   Qed.
 
   (** Convert a location to a list of covered physical addresses *)
@@ -108,7 +109,7 @@ Module Loc.
 
   Lemma from_addr_addr_in addr loc :
     from_addr addr = Some loc → from_addr_in addr = loc.
-  Proof. unfold from_addr,from_addr_in. hauto. Qed.
+  Proof. unfold from_addr,from_addr_in. cdestruct |- *** #CDestrMatch. Qed.
 
   Lemma from_addr_in_to_addrs loc :
     ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
@@ -130,7 +131,7 @@ Module Loc.
     else None.
 
 End Loc.
-#[export] Typeclasses Transparent Loc.t.
+Export (hints) Loc.
 
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
@@ -396,22 +397,20 @@ End TState.
 Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
 
 (** The view of a read from a forwarded write *)
-Definition read_fwd_view (ak : Explicit_access_kind) (f : FwdItem.t) :=
-  if f.(FwdItem.xcl) && negb (ak.(Explicit_access_kind_strength) =? AS_normal)
+Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
+  if f.(FwdItem.xcl) && is_rel_acq macc
   then f.(FwdItem.time) else f.(FwdItem.view).
 
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
-Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
+Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
            (init : Memory.initial) (mem : Memory.t) :
     Exec.t TState.t string (view * val) :=
-  let acs := ak.(Explicit_access_kind_strength) in
-  let acv := ak.(Explicit_access_kind_variety) in
-  guard_or "Atomic RMV unsupported" (acv = AV_atomic_rmw);;
+  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
-                (* Strong Acquire loads are ordered after Release stores *)
-              ⊔ view_if (acs =? AS_rel_or_acq) ts.(TState.vrel) in
+                (* SC Acquire loads are ordered after Release stores *)
+              ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
   let vread := vpre ⊔ (ts.(TState.coh) !!! loc) in
   reads ← Exec.error_none "Reading from unmapped memory" $
@@ -419,14 +418,14 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
   '(res, time) ← mchoosel reads;
   let read_view :=
     if (ts.(TState.fwdb) !! loc) is Some fwd then
-      if (fwd.(FwdItem.time) =? time) then read_fwd_view ak fwd else time
+      if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
     else time in
   let vpost := vpre ⊔ read_view in
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vrd vpost;;
-  mSet $ TState.update TState.vacq (view_if (negb (acs =? AS_normal)) vpost);;
+  mSet $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mSet $ TState.update TState.vcap vaddr;;
-  ( if acv =? AV_exclusive
+  ( if is_exclusive macc
     then mSet $ TState.set_xclb (time, vpost)
     else mret ());;
   mret (vpost, res).
@@ -436,10 +435,10 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (ak : Explicit_access_kind)
 
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
-           (acs : Access_strength) (mem : Memory.t)
+           (macc : mem_acc) (mem : Memory.t)
            (data : val) : Exec.t TState.t string (Memory.t * view):=
   let msg := Msg.make tid loc data in
-  let is_release := acs =? AS_rel_or_acq in
+  let is_release := is_rel_acq macc in
   ts ← mGet;
   let '(time, mem) :=
     match Memory.fulfill msg (TState.prom ts) mem with
@@ -466,26 +465,24 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t)
-           (vdata : view) (ak : Explicit_access_kind)
+           (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
   : Exec.t TState.t string Memory.t :=
-  let acs := Explicit_access_kind_strength ak in
-  let acv := Explicit_access_kind_variety ak in
-  guard_or "Atomic RMV unsupported" (acv = AV_atomic_rmw) ;;
-  let xcl := acv =? AV_exclusive in
+  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  let xcl := is_exclusive macc in
   if xcl then
-    '(mem, time) ← write_mem tid loc vdata acs mem data;
+    '(mem, time) ← write_mem tid loc vdata macc mem data;
     ts ← mGet;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
         guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
     end;;
-    (* let ts := TState.set_fwdb loc (FwdItem.make time (vaddr ⊔ vdata) true) ts in *)
+    mSet $ TState.set_fwdb loc (FwdItem.make time vdata true);;
     mSet TState.clear_xclb;;
     mret mem
   else
-    '(mem, time) ← write_mem tid loc vdata acs mem data;
+    '(mem, time) ← write_mem tid loc vdata macc mem data;
     mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
     mret mem.
 
@@ -532,41 +529,38 @@ Section RunOutcome.
   | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       ts ← mget PPState.state;
-    '(val, view) ← Exec.error_none "Register isn't mapped can't read" $
-       dmap_lookup reg ts.(TState.regs);
+      '(val, view) ← Exec.error_none "Register isn't mapped can't read" $
+          dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret val
   | MemRead 8 0 rr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_addr rr.(ReadReq.address);
-    match rr.(ReadReq.access_kind) with
-    | AK_explicit eak =>
+      let macc := rr.(ReadReq.access_kind) in
+      if is_ifetch macc then
+        mthrow "TODO ifetch"
+      else if is_explicit macc then
         let initmem := Memory.initial_from_memMap initmem in
         vaddr ← mget (IIS.strict ∘ PPState.iis);
-      mem ← mget PPState.mem;
-      '(view, val) ← Exec.liftSt PPState.state (read_mem addr vaddr eak initmem mem);
-      mset PPState.iis $ IIS.add view;;
-      mret (Ok (val, bv_0 0))
-    | AK_ifetch () => mthrow "TODO ifetch"
-    | _ => mthrow "Only ifetch and explicit accesses supported"
-    end
+        mem ← mget PPState.mem;
+        '(view, val) ← Exec.liftSt PPState.state (read_mem addr vaddr macc initmem mem);
+        mset PPState.iis $ IIS.add view;;
+        mret (Ok (val, bv_0 0))
+      else mthrow "Read is not explicit or ifetch"
   | MemRead _ _ _ => mthrow "Memory read of size other than 8"
   | MemWriteAddrAnnounce _ _ _ _ _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
     mset PPState.state $ TState.update TState.vcap vaddr
   | MemWrite 8 0 wr =>
       addr ← Exec.error_none "PA not supported" $ Loc.from_addr wr.(WriteReq.address);
-    let data := wr.(WriteReq.value) in
-    match wr.(WriteReq.access_kind) with
-    | AK_explicit eak =>
+      let macc := wr.(WriteReq.access_kind) in
+      let data := wr.(WriteReq.value) in
+      if is_explicit macc then
         mem ← mget PPState.mem;
-      vdata ← mget (IIS.strict ∘ PPState.iis);
-      mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata eak mem data);
-      msetv PPState.mem mem;;
-      mret (Ok ())
-    | AK_ifetch () => mthrow "Write of type ifetch ???"
-    | AK_ttw () => mthrow "Write of type TTW ???"
-    | _ => mthrow "Unsupported non-explicit write"
-    end
+        vdata ← mget (IIS.strict ∘ PPState.iis);
+        mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata macc mem data);
+        msetv PPState.mem mem;;
+        mret (Ok ())
+      else mthrow "Unsupported non-explicit write"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
     match dmb.(DxB_types) with
@@ -599,7 +593,7 @@ Definition UMPromising_nocert' : PromisingModel :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
-    address_space := ();
+    address_space := PAS_NonSecure;
     mEvent := Msg.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_nocert;
@@ -640,7 +634,7 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;
-    address_space := ();
+    address_space := PAS_NonSecure;
     mEvent := Msg.t;
     handler := run_outcome;
     allowed_promises := allowed_promises_cert isem;

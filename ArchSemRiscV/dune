@@ -17,7 +17,5 @@
 )
 
 ; This alias is useful to build all the coq libaries without extraction
-(alias
- (name coq)
- (deps (alias_rec all))
-)
+(alias (name coq) (deps (alias_rec all)))
+(alias (name riscv) (deps (alias_rec all)))

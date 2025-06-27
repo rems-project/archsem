@@ -118,9 +118,9 @@ Section Phase1.
   Notation M := (mem_explicit pe).
   Notation Wx := (exclusive_writes pe).
   Notation Rx := (exclusive_reads pe).
-  Notation L := (rel_acq_writes pe).
-  Notation A := (rel_acq_reads pe).
-  Notation Q := (acq_rcpc_reads pe).
+  Notation L := (rel_acq_rcsc_writes pe).
+  Notation A := (rel_acq_rcsc_reads pe).
+  Notation Q := (rel_acq_rcpc_reads pe).
   Notation T := (ttw_reads pe).
   Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
