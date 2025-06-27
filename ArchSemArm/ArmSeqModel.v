@@ -123,14 +123,17 @@ Equations sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       else mSet $ write_reg_seq_state reg val
   | MemRead n 0 rr =>
       check_address_space rr.(ReadReq.address_space);;
-      ( if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
+      let macc := rr.(ReadReq.access_kind) in
+      ( if is_ifetch macc || is_ttw macc
         then
           was_written ← mget (mem_was_written n rr.(ReadReq.address));
           guard_or "Ifetch or TTW reading from modified memory" (negb was_written);;
           mret ()
         else mret ());;
       opt ← mget (read_mem_seq_state n rr.(ReadReq.address));
-      read ← Exec.error_none "Memory not found" opt;
+      read ← Exec.error_none
+        ("Memory not found at " ++ (pretty rr.(ReadReq.address)))%string
+        opt;
       mret (Ok (read, bv_0 _))
   | MemRead _ _ _ => mthrow "CHERI tags are unsupported for now"
   | MemWriteAddrAnnounce _ _ _ _ pas => check_address_space pas
