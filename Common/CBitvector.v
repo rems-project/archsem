@@ -50,6 +50,7 @@ Require Import Lia.
 Require Import stdpp.decidable.
 Require Import stdpp.countable.
 Require Import stdpp.vector.
+Require Import stdpp.pretty.
 Require Export stdpp.bitvector.bitvector.
 Require Export stdpp.bitvector.tactics.
 Require Import CBase.
@@ -65,6 +66,13 @@ Proof using.
   - left. abstract naive_solver use bv_eq.
   - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
 Defined.
+
+Instance pretty_bv {n} : Pretty (bv n) :=
+  λ b, pretty (bv_unsigned b).
+Instance pretty_bvn : Pretty (bvn) :=
+  λ b, pretty (bvn_unsigned b).
+
+
 
 
 
