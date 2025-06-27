@@ -229,7 +229,11 @@ Proof. tcclean. naive_solver. Qed.
 Proof. tcclean. naive_solver. Qed.
 
 (** * Hint database for options *)
-Hint Extern 5 (_ = Some _) => progress (apply eq_some_unfold) : option.
-Hint Extern 5 (Some _ = _) => progress (apply eq_some_unfold) : option.
-Hint Extern 5 (_ = None) => progress (apply eq_none_unfold) : option.
-Hint Extern 5 (None = _) => progress (apply eq_none_unfold) : option.
+Hint Extern 5 (?v = Some ?o) =>
+       progress (apply (iffRL (@eq_some_unfold _ v o _ _))) : option.
+Hint Extern 5 (Some ?o = ?v) =>
+       progress (symmetry;apply (iffRL (@eq_some_unfold _ v o _ _))) : option.
+Hint Extern 5 (?v = None) =>
+       progress (apply (iffRL (@eq_none_unfold _ v _ _))) : option.
+Hint Extern 5 (None = ?v) =>
+       progress (symmetry;apply (iffRL (@eq_none_unfold _ v _ _))) : option.
