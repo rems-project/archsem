@@ -980,9 +980,9 @@ Definition read_pte (vaddr : view) :
 (** Run a RegRead outcome. 
     Returns the register value and the view. *)
 Definition run_reg_read (reg : reg) (racc : reg_acc) :
-    Exec.t TState.t string (reg_type reg) :=
-  ts ← mGet;
-  valv ← 
+    Exec.t (TState.t * IIS.t) string (reg_type reg) :=
+  ts ← mget fst;
+  '(val, view) ← 
     (if decide (reg ∈ relaxed_regs) then 
       if decide (is_Some racc) 
         then Exec.error_none "Register unmapped on direct read" 
@@ -993,7 +993,8 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
           mchoosel valvs
     else
       Exec.error_none "Register unmapped; cannot read" $ TState.read_reg ts reg);
-  mret (valv.1).
+  mset snd $ IIS.add view;;
+  mret val.
 
 (** Run a RegWrite outcome. 
     Updates the thread state using a register value *)
@@ -1015,12 +1016,13 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
         mret 0%nat
       else mret vreg);
   if decide (reg ∈ relaxed_regs) then
-    valvi ← Exec.error_none "Register unmapped on direct read" $ TState.read_sreg_direct ts reg;
-    let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ valvi.2 in
+    '(val, view) ← Exec.error_none "Register unmapped on direct read" $ TState.read_sreg_direct ts reg;
+    let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
     let vpost := vreg' ⊔ vpre in
     let vmsr := ts.(TState.vmsr) ⊔ vpost in
     mset PPState.state $ TState.add_wsreg reg val vpost;;
-    mset PPState.state $ TState.update TState.vmsr vmsr
+    mset PPState.state $ TState.update TState.vmsr vmsr;;
+    mset PPState.iis $ IIS.add vpost
   else
     nts ← Exec.error_none "Register unmapped; cannot write" $
             TState.set_reg ts reg (val, vreg');
@@ -1219,7 +1221,7 @@ Section RunOutcome.
   | RegWrite reg racc val =>
       run_reg_write reg racc val
   | RegRead reg racc =>
-      Exec.liftSt PPState.state $ (run_reg_read reg racc)
+      Exec.liftSt (PPState.state ×× PPState.iis) $ (run_reg_read reg racc)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
       let initmem := Memory.initial_from_memMap initmem in
       val ← run_mem_read addr macc initmem;
