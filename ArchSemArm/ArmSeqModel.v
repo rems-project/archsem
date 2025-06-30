@@ -121,25 +121,25 @@ Equations sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
         then mSet $ write_reg_seq_state reg val
         else mthrow "Write to illegal register (not in whitelist)"
       else mSet $ write_reg_seq_state reg val
-  | MemRead n 0 rr =>
-      check_address_space rr.(ReadReq.address_space);;
-      let macc := rr.(ReadReq.access_kind) in
+  | MemRead (MemReq.make macc addr addr_space size 0) =>
+      check_address_space addr_space;;
       ( if is_ifetch macc || is_ttw macc
         then
-          was_written ← mget (mem_was_written n rr.(ReadReq.address));
+          was_written ← mget (mem_was_written size addr);
           guard_or "Ifetch or TTW reading from modified memory" (negb was_written);;
           mret ()
         else mret ());;
-      opt ← mget (read_mem_seq_state n rr.(ReadReq.address));
+      opt ← mget (read_mem_seq_state size addr);
       read ← Exec.error_none
-        ("Memory not found at " ++ (pretty rr.(ReadReq.address)))%string
+        ("Memory not found at " ++ (pretty addr))%string
         opt;
       mret (Ok (read, bv_0 _))
-  | MemRead _ _ _ => mthrow "CHERI tags are unsupported for now"
-  | MemWriteAddrAnnounce _ _ _ _ pas => check_address_space pas
-  | MemWrite n 0 wr =>
-      check_address_space wr.(WriteReq.address_space);;
-      write_mem_seq_state wr.(WriteReq.address) (wr.(WriteReq.value) |> bv_to_bytes 8);;
+  | MemRead _ => mthrow "CHERI tags are unsupported for now"
+  | MemWriteAddrAnnounce mr => check_address_space mr.(MemReq.address_space)
+  | MemWrite (MemReq.make macc addr addr_space size 0) val _ =>
+      guard_or "Non-explicit write" $ is_explicit macc;;
+      check_address_space addr_space;;
+      write_mem_seq_state addr (val |> bv_to_bytes 8);;
     mret (Ok ())
   | MemWrite _ _ _ => mthrow "CHERI tags are unsupported for now"
   | Barrier _ => mret ()

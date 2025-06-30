@@ -533,31 +533,31 @@ Section RunOutcome.
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret val
-  | MemRead 8 0 rr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_addr rr.(ReadReq.address);
-      let macc := rr.(ReadReq.access_kind) in
+  | MemRead (MemReq.make macc addr addr_space 8 0) =>
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      addr ← Exec.error_none "PA not supported" $ Loc.from_addr addr;
       if is_ifetch macc then
         mthrow "TODO ifetch"
       else if is_explicit macc then
         let initmem := Memory.initial_from_memMap initmem in
         vaddr ← mget (IIS.strict ∘ PPState.iis);
         mem ← mget PPState.mem;
-        '(view, val) ← Exec.liftSt PPState.state (read_mem addr vaddr macc initmem mem);
+        '(view, val) ← Exec.liftSt
+          PPState.state (read_mem addr vaddr macc initmem mem);
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0))
       else mthrow "Read is not explicit or ifetch"
-  | MemRead _ _ _ => mthrow "Memory read of size other than 8"
-  | MemWriteAddrAnnounce _ _ _ _ _ =>
+  | MemRead _ => mthrow "Memory read of size other than 8"
+  | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
-    mset PPState.state $ TState.update TState.vcap vaddr
-  | MemWrite 8 0 wr =>
-      addr ← Exec.error_none "PA not supported" $ Loc.from_addr wr.(WriteReq.address);
-      let macc := wr.(WriteReq.access_kind) in
-      let data := wr.(WriteReq.value) in
+      mset PPState.state $ TState.update TState.vcap vaddr
+  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      addr ← Exec.error_none "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
-        mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata macc mem data);
+        mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata macc mem val);
         msetv PPState.mem mem;;
         mret (Ok ())
       else mthrow "Unsupported non-explicit write"

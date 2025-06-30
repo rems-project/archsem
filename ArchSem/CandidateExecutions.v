@@ -154,8 +154,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       match et with
       | MS =>
           match ev with
-          (* nt is assumed to be 0 here *)
-          | MemRead n nt rr &→ _ => seqN 0 n |$> Some
+          (* rr.(MemReq.num_tag) is assumed to be 0 here *)
+          | MemRead rr &→ _ => seqN 0 rr.(MemReq.size) |$> Some
           | _ => [None]
           end
       | NMS => [None]
@@ -428,7 +428,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Definition mem_read_reqs:= collect_all (λ _, is_mem_read_req).
       Typeclasses Opaque mem_read_reqs.
       Definition mem_read_aborts :=
-        collect_all (λ _, is_mem_read_reqP (λ _ _ _, is_Error)).
+        collect_all (λ _, is_mem_read_reqP (λ _, is_Error)).
       Typeclasses Opaque mem_read_aborts.
 
       Lemma mem_read_reqs_union pe :
@@ -525,8 +525,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         - memory tags
         - Rejecting exclusive memory writes *)
       Definition unsupported_event (ev : iEvent) : Prop :=
-        is_mem_read_reqP (λ _ nt _ _, nt ≠ 0)%N ev ∨
-        is_mem_write_reqP (λ _ nt _ _, nt ≠ 0)%N ev.
+        is_mem_read_reqP (λ mr _, mr.(MemReq.num_tag) ≠ 0)%N ev ∨
+        is_mem_write_reqP (λ mr _ _ _, mr.(MemReq.num_tag) ≠ 0)%N ev.
       #[global] Typeclasses Transparent unsupported_event.
 
       Definition has_only_supported_events pe : Prop :=
@@ -1047,11 +1047,11 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       foldl
         (λ mmap '(eid, ev),
           match ev with
-          | MemWrite n _ wr &→ _ =>
+          | MemWrite wr val _ &→ _ =>
               foldl
                 (λ mmap i,
-                  let addr := (WriteReq.address wr `+Z` Z.of_nat i)%bv in
-                  let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
+                  let addr := (MemReq.address wr `+Z` Z.of_nat i)%bv in
+                  let byte := bv_get_byte 8 (N.of_nat i) val in
                   match mmap !! addr with
                   | Some (eid', _) =>
                       match decide ((eid, eid') ∈ cd.(coherence)) with
@@ -1059,7 +1059,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
                       | right _ => <[addr := (eid, byte)]> mmap
                       end
                   | None => <[addr := (eid, byte)]> mmap
-                  end) mmap (seq 0 (N.to_nat n))
+                  end) mmap (seq 0 (N.to_nat wr.(MemReq.size)))
           | _ => mmap
           end) ∅ (event_list cd).
 

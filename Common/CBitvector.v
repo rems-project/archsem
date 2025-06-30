@@ -73,8 +73,9 @@ Instance pretty_bvn : Pretty (bvn) :=
   λ b, pretty (bvn_unsigned b).
 
 
-
-
+(** Allow better solving of [BvWf] when the size expression has free-variables
+    that are irrelevant and can be removed by [cbn] *)
+Hint Extern 15 (BvWf _ _) => cbn; solve_BvWf : typeclass_instances.
 
 (** This make lia slower and more powerful. I think it's better with it on *)
 Ltac Zify.zify_convert_to_euclidean_division_equations_flag ::= constr:(true).

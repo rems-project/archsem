@@ -162,18 +162,28 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Import I.
   Import (coercions) SA.
 
-  Definition ReadReq_from_sail {n nt} (rr : SI.ReadReq.t n nt) : ReadReq.t n nt :=
-    {|ReadReq.address := rr.(SI.ReadReq.address);
-      ReadReq.access_kind := rr.(SI.ReadReq.access_kind);
-      ReadReq.address_space := rr.(SI.ReadReq.address_space);
+  Definition MemReq_from_sail_read {n nt} (rr : SI.ReadReq.t n nt) : MemReq.t :=
+    {|MemReq.address := rr.(SI.ReadReq.address);
+      MemReq.access_kind := rr.(SI.ReadReq.access_kind);
+      MemReq.address_space := rr.(SI.ReadReq.address_space);
+      MemReq.size := n;
+      MemReq.num_tag := nt;
     |}.
 
-  Definition WriteReq_from_sail {n nt} (rr : SI.WriteReq.t n nt) : WriteReq.t n nt :=
-    {|WriteReq.address := rr.(SI.WriteReq.address);
-      WriteReq.access_kind := rr.(SI.WriteReq.access_kind);
-      WriteReq.address_space := rr.(SI.WriteReq.address_space);
-      WriteReq.value := rr.(SI.WriteReq.value);
-      WriteReq.tags := rr.(SI.WriteReq.tags)
+  Definition MemReq_from_sail_announce {n nt} (rr : SI.AddressAnnounce.t n nt) : MemReq.t :=
+    {|MemReq.address := rr.(SI.AddressAnnounce.address);
+      MemReq.access_kind := rr.(SI.AddressAnnounce.access_kind);
+      MemReq.address_space := rr.(SI.AddressAnnounce.address_space);
+      MemReq.size := n;
+      MemReq.num_tag := nt;
+    |}.
+
+  Definition MemReq_from_sail_write {n nt} (rr : SI.WriteReq.t n nt) : MemReq.t :=
+    {|MemReq.address := rr.(SI.WriteReq.address);
+      MemReq.access_kind := rr.(SI.WriteReq.access_kind);
+      MemReq.address_space := rr.(SI.WriteReq.address_space);
+      MemReq.size := n;
+      MemReq.num_tag := nt;
     |}.
 
   Definition Sail_outcome_interp {A eo} (out : SI.outcome eo A) : I.iMon A :=
@@ -181,22 +191,20 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | SI.RegRead reg acc => mcall (RegRead reg acc)
     | SI.RegWrite reg acc regval => mcall (RegWrite reg acc regval)
     | SI.MemRead n nt rr =>
-        mcall (MemRead n nt (ReadReq_from_sail rr)) |$>
-          (λ o, match o with
-                | Ok (val, tags) => inl (val, tags)
-                | Error a => inr a
-                end)
+        mcall (MemRead (MemReq_from_sail_read rr))
+          |$> (λ o, match o with
+                    | Ok (val, tags) => inl (val, tags)
+                    | Error a => inr a
+                    end)
     | SI.MemWrite n nt wr =>
-        mcall (MemWrite n nt (WriteReq_from_sail wr)) |$>
-          (λ o, match o with
-                | Ok () => inl (Some true)
-                | Error a => inr a
-                end)
+        mcall (MemWrite (MemReq_from_sail_write wr)
+                 wr.(SI.WriteReq.value) wr.(SI.WriteReq.tags))
+          |$> (λ o, match o with
+                    | Ok () => inl (Some true)
+                    | Error a => inr a
+                    end)
     | SI.MemAddressAnnounce n nt aa =>
-        mcall (MemWriteAddrAnnounce n nt
-                 aa.(SI.AddressAnnounce.address)
-                 aa.(SI.AddressAnnounce.access_kind)
-                 aa.(SI.AddressAnnounce.address_space))
+        mcall (MemWriteAddrAnnounce (MemReq_from_sail_announce aa))
     | SI.InstrAnnounce _ => mret ()
     | SI.BranchAnnounce _ _ => mret ()
     | SI.Barrier b => mcall (Barrier b)

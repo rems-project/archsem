@@ -258,7 +258,7 @@ Module AxArmNames.
 
   (* A MemRead with ttw and value 0 *)
   Definition is_translation_read_fault :=
-    is_mem_readP (λ n nt rr val _, is_ttw rr.(ReadReq.access_kind) ∧ bv_extract 0 1 val = 0%bv).
+    is_mem_readP (λ mr val _, is_ttw mr.(MemReq.access_kind) ∧ bv_extract 0 1 val = 0%bv).
   #[export] Instance is_translation_read_fault_dec ev :
     Decision (is_translation_read_fault ev).
   Proof. unfold_decide. Defined.

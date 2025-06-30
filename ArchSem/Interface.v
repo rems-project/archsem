@@ -293,49 +293,29 @@ Module Interface (A : Arch).
     addr_overlap addr1 size1 addr2 size2 ↔ addr_overlap addr2 size2 addr1 size1.
   Proof. unfold addr_overlap. tauto. Qed.
 
-  (** ** Memory read request *)
-  Module ReadReq.
+  (** ** Memory request *)
+  Module MemReq.
     #[local] Open Scope N.
-    Record t {n : N} {nt : N} :=
+    Record t :=
       make
         { access_kind : mem_acc;
           address : address;
           address_space : addr_space;
+          size : N;
+          num_tag : N;
         }.
+
     Arguments t : clear implicits.
 
-    #[global] Instance eq_dec n nt : EqDecision (t n nt).
+    Instance eta : Settable t :=
+      settable! @make <access_kind;address;address_space;size;num_tag>.
+
+    Instance eq_dec : EqDecision t.
     Proof. solve_decision. Defined.
 
-    #[global] Instance jmeq_dec : EqDep2Decision t.
-    Proof. intros ? ? ? ? ? ? [] []. decide_jmeq. Defined.
-
-    Definition range `(rr : t n nt) := addr_range (address rr) n.
-  End ReadReq.
-
-  (** ** Memory write request *)
-  Module WriteReq.
-    #[local] Open Scope N.
-    Record t {n : N} {nt : N} :=
-      make
-        { access_kind : mem_acc;
-          address : address;
-          address_space : addr_space;
-          value : bv (8 * n);
-          tags : bv nt;
-        }.
-    Arguments t : clear implicits.
-
-    #[global] Instance eq_dec n nt : EqDecision (t n nt).
-    Proof. solve_decision. Defined.
-
-    #[global] Instance jmeq_dec : EqDep2Decision t.
-    Proof. intros ? ? ? ? ? ? [] []. decide_jmeq. Defined.
-
-    Definition range `(wr : t n nt) := addr_range (address wr) n.
-  End WriteReq.
-
-
+    Definition range `(mr : t) := addr_range (address mr) (size mr).
+  End MemReq.
+  Export (hints) MemReq.
 
   (** ** Outcomes *)
 
@@ -354,13 +334,11 @@ Module Interface (A : Arch).
         The result is either a success (value read and optional tag) or a
         error (intended for physical memory errors, not translation, access
         control, or segmentation faults *)
-  | MemRead (n : N) (nt : N) (rr: ReadReq.t n nt)
+  | MemRead (mr: MemReq.t)
 
     (** Announce the address or a subsequent write, all the parameters must
         match up with the content of the later write *)
-  | MemWriteAddrAnnounce (n : N) (nt : N) (addr : address)
-      (acc : mem_acc) (pas : addr_space)
-
+  | MemWriteAddrAnnounce (mr : MemReq.t)
     (** Write [n] bytes of memory in a single access (Single Copy Atomic in
         Arm terminology). See [WriteReq.t] for the various required fields.
 
@@ -370,7 +348,8 @@ Module Interface (A : Arch).
           could not be achieved (e.g. exclusive failure)
         - inr abort: The write was attempted, but a physical abort happened
           *)
-  | MemWrite (n : N) (nt : N) (wr : WriteReq.t n nt)
+  | MemWrite (mr : MemReq.t) (value : bv (8 * mr.(MemReq.size)))
+      (tags : bv mr.(MemReq.num_tag))
 
     (** Issues a barrier such as DMB (for Arm), fence.XX (for RISC-V), ... *)
   | Barrier (b : barrier)
@@ -397,8 +376,8 @@ Module Interface (A : Arch).
   #[export] Instance outcome_ret : Effect outcome :=
     λ out, match out with
             | RegRead r _ => reg_type r
-            | MemRead n nt _ =>
-                result abort (bv (8 * n) * bv nt)%type
+            | MemRead mr =>
+                result abort (bv (8 * mr.(MemReq.size)) * bv mr.(MemReq.num_tag))%type
             | MemWrite _ _ _ => (result abort ())%type
             | GenericFail _ => ∅%type
             | _ => unit
@@ -484,37 +463,35 @@ Module Interface (A : Arch).
     | _ => None
     end.
 
-  (** Get the physical address out of an memory event *)
-  Definition get_addr (e : iEvent) : option address:=
-    match e with
-    | MemRead _ _ rr &→ _ => Some rr.(ReadReq.address)
-    | MemWriteAddrAnnounce _ _ addr _ _ &→ _ => Some addr
-    | MemWrite _ _ wr &→ _ => Some wr.(WriteReq.address)
+  (** Extract the memory request of a memory event *)
+  Definition get_mem_req (ev : iEvent) : option MemReq.t :=
+    match ev with
+    | MemRead mr &→ _ => Some mr
+    | MemWriteAddrAnnounce mr &→ _ => Some mr
+    | MemWrite mr _ _ &→ _ => Some mr
     | _ => None
     end.
 
+  (** Get the address of a memory event *)
+  Definition get_addr (ev : iEvent) : option address :=
+    get_mem_req ev |$> MemReq.address.
+
+  (** Get the address space of a memory event *)
   Definition get_addr_space (ev : iEvent) : option addr_space :=
-    match ev with
-    | MemRead _ _ rr &→ _ => Some rr.(ReadReq.address_space)
-    | MemWriteAddrAnnounce _ _ _ _ pas &→ _ => Some pas
-    | MemWrite _ _ wr &→ _ => Some wr.(WriteReq.address_space)
-    | _ => None
-    end.
+    get_mem_req ev |$> MemReq.address_space.
 
-  (** Get the size out of an memory event *)
+  (** Get the size of a memory event *)
   Definition get_size (ev : iEvent) : option N :=
-    match ev with
-    | MemRead n nt _ &→ _ => Some n
-    | MemWriteAddrAnnounce n _ _ _ _ &→ _ => Some n
-    | MemWrite n _ _ &→ _ => Some n
-    | _ => None
-    end.
+    get_mem_req ev |$> MemReq.size.
+
+  Definition get_access_kind (ev : iEvent) : option mem_acc :=
+    get_mem_req ev |$> MemReq.access_kind.
 
   (** Get the value out of a memory event *)
   Definition get_mem_value (ev : iEvent) : option bvn :=
     match ev with
-    | MemRead n _ _ &→ Ok (bv, _) => Some (bv : bvn)
-    | MemWrite n _ wr &→ _ => Some (wr.(WriteReq.value) : bvn)
+    | MemRead _ &→ Ok (val, _) => Some (val : bvn)
+    | MemWrite _ val _ &→ _ => Some (val : bvn)
     | _ => None
     end.
 
@@ -524,14 +501,6 @@ Module Interface (A : Arch).
     destruct ev as [[] ?];
       cdestruct bv |- ** #CDestrMatch; cbn; f_equal; lia.
   Qed.
-
-  Definition get_access_kind (ev : iEvent) : option mem_acc :=
-    match ev with
-    | MemRead _ _ rr &→ _ => Some rr.(ReadReq.access_kind)
-    | MemWrite _ _ wr &→ _ => Some wr.(WriteReq.access_kind)
-    | _ => None
-    end.
-
 
   (** Get the content of a barrier, returns none if not a barrier (or is an
         invalid EID) *)
@@ -636,75 +605,76 @@ Module Interface (A : Arch).
       This is the general case for both failed and successful memory reads *)
   Section isMemReadReq.
     Context
-    (P : ∀ n nt : N, ReadReq.t n nt → (result abort (bv (8 * n) * bv nt)) → Prop).
+    (P : ∀ mr : MemReq.t, result abort (bv (8 * mr.(MemReq.size)) *
+                                        bv mr.(MemReq.num_tag)) → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_mem_read_reqP ev : Prop :=
       match ev with
-      | MemRead n nt rr &→ rres => P n nt rr rres
+      | MemRead mr &→ rres => P mr rres
       | _ => False
       end.
     #[export] Typeclasses Opaque is_mem_read_reqP.
 
     Definition is_mem_read_reqP_spec ev:
       is_mem_read_reqP ev ↔
-        ∃ n nt rr rres, ev = MemRead n nt rr &→ rres ∧ P n nt rr rres.
+        ∃ mr rres, ev = MemRead mr &→ rres ∧ P mr rres.
     Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
     Definition is_mem_read_reqP_cdestr ev := cdestr_simpl false (is_mem_read_reqP_spec ev).
     #[global] Existing Instance is_mem_read_reqP_cdestr.
 
-    Context `{Pdec : ∀ n nt rr rres, Decision (P n nt rr rres)}.
+    Context `{Pdec : ∀ mr rres, Decision (P mr rres)}.
     #[global] Instance is_mem_read_reqP_dec ev : Decision (is_mem_read_reqP ev).
     Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemReadReq.
-  Notation is_mem_read_req := (is_mem_read_reqP (λ _ _ _ _, True)).
+  Notation is_mem_read_req := (is_mem_read_reqP (λ _ _, True)).
 
   (** *** Successful memory reads *)
   Section IsMemRead.
-    Context (P : ∀ n nt : N, ReadReq.t n nt → bv (8 * n) → bv nt → Prop).
+    Context (P : ∀ mr : MemReq.t, bv (8 * mr.(MemReq.size)) →
+                                  bv mr.(MemReq.num_tag) → Prop).
     Implicit Type ev : iEvent.
 
     (** Filters memory read that are successful (that did not get a physical
         memory abort *)
     Definition is_mem_readP ev : Prop :=
-      is_mem_read_reqP (λ n nt rr rres,
-          match rres with
-          | Ok (rval, tags) => P n nt rr rval tags
-          | _ => False end) ev.
+      is_mem_read_reqP (λ mr rres,
+          if rres is Ok (rval, tags) then P mr rval tags else False)
+        ev.
     #[export] Typeclasses Opaque is_mem_readP.
 
     Definition is_mem_readP_spec ev:
       is_mem_readP ev ↔
-        ∃ n nt rr rval tags,
-          ev = MemRead n nt rr &→ Ok (rval, tags) ∧ P n nt rr rval tags.
+        ∃ mr rval tags,
+          ev = MemRead mr &→ Ok (rval, tags) ∧ P mr rval tags.
     Proof. unfold is_mem_readP. rewrite is_mem_read_reqP_spec. hauto l:on. Qed.
     Definition is_mem_readP_cdestr ev := cdestr_simpl false (is_mem_readP_spec ev).
     #[global] Existing Instance is_mem_readP_cdestr.
 
-    Context `{Pdec: ∀ n nt rr rval otag, Decision (P n nt rr rval otag)}.
+    Context `{Pdec: ∀ mr rval tags, Decision (P mr rval tags)}.
     #[global] Instance is_mem_readP_dec ev: Decision (is_mem_readP ev).
     Proof using Pdec. unfold is_mem_readP. solve_decision. Defined.
   End IsMemRead.
-  Notation is_mem_read := (is_mem_readP (λ _ _ _ _ _, True)).
+  Notation is_mem_read := (is_mem_readP (λ _ _ _, True)).
 
   (** ** Memory writes *)
 
   (** *** Memory write address announce *)
   Section isMemWriteAddrAnnounce.
     Context
-      (P : N → N → address → mem_acc → addr_space → Prop).
+      (P : MemReq.t → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_mem_write_addr_announceP ev : Prop :=
       match ev with
-      | MemWriteAddrAnnounce n nt addr acc pas &→ () => P n nt addr acc pas
+      | MemWriteAddrAnnounce mr &→ () => P mr
       | _ => False
       end.
 
     Definition is_mem_write_addr_announceP_spec ev:
       is_mem_write_addr_announceP ev ↔
-        ∃ n nt addr acc pas,
-          ev = MemWriteAddrAnnounce n nt addr acc pas &→ () ∧ P n nt addr acc pas.
+        ∃ mr,
+          ev = MemWriteAddrAnnounce mr &→ () ∧ P mr.
     Proof.
       destruct ev as [[] fret];
         split; cdestruct |- ?; destruct fret; naive_solver.
@@ -714,13 +684,13 @@ Module Interface (A : Arch).
       cdestr_simpl false (is_mem_write_addr_announceP_spec ev).
     #[global] Existing Instance is_mem_write_addr_announceP_cdestr.
 
-    Context `{Pdec: ∀ n nt addr acc pas, Decision (P n nt addr acc pas)}.
+    Context `{Pdec: ∀ mr, Decision (P mr)}.
     #[global] Instance is_mem_write_addr_announceP_dec ev:
       Decision (is_mem_write_addr_announceP ev).
     Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemWriteAddrAnnounce.
   Notation is_mem_write_addr_announce :=
-    (is_mem_write_addr_announceP (λ _ _ _ _ _, True)).
+    (is_mem_write_addr_announceP (λ _, True)).
 
 
   (** *** Memory write requests
@@ -728,7 +698,8 @@ Module Interface (A : Arch).
       This is the general case for both failed and successful memory writes. *)
   Section isMemWriteReq.
     Context
-      (P : ∀ n nt : N, WriteReq.t n nt → (result abort ()) → Prop).
+      (P : ∀ mr : MemReq.t, bv (8 * mr.(MemReq.size)) →
+                            bv mr.(MemReq.num_tag) → (result abort ()) → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_mem_write_reqP ev : Prop :=
@@ -740,12 +711,12 @@ Module Interface (A : Arch).
 
     Definition is_mem_write_reqP_spec ev:
       is_mem_write_reqP ev ↔
-        ∃ n nt wr wres, ev = MemWrite n nt wr &→ wres ∧ P n nt wr wres.
+        ∃ mr val tags wres, ev = MemWrite mr val tags &→ wres ∧ P mr val tags wres.
     Proof. destruct ev as [[] ?]; split; cdestruct |- ?; naive_solver. Qed.
     Definition is_mem_write_reqP_cdestr ev := cdestr_simpl false (is_mem_write_reqP_spec ev).
     #[global] Existing Instance is_mem_write_reqP_cdestr.
 
-    Context `{Pdec: ∀ n nt wr wres, Decision (P n nt wr wres)}.
+    Context `{Pdec: ∀ mr val tags wres, Decision (P mr val tags wres)}.
     #[global] Instance is_mem_write_reqP_dec ev: Decision (is_mem_write_reqP ev).
     Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
   End isMemWriteReq.
@@ -755,26 +726,26 @@ Module Interface (A : Arch).
   (** *** Successful memory writes *)
   Section isMemWrite.
     Context
-      (P : ∀ n nt : N, WriteReq.t n nt → Prop).
+      (P : ∀ mr : MemReq.t, bv (8 * mr.(MemReq.size)) →
+                            bv mr.(MemReq.num_tag) → Prop).
     Implicit Type ev : iEvent.
 
     (** Filters memory writes that are successful (that did not get a physical
         memory abort, or an exclusive failure).*)
     Definition is_mem_writeP ev: Prop :=
-      is_mem_write_reqP (λ n nt wr wres,
-          match wres with
-          | Ok () => P n nt wr
-          | _ => False end) ev.
+      is_mem_write_reqP (λ mr val tags wres,
+          if wres is Ok () then P mr val tags else False)
+        ev.
     Typeclasses Opaque is_mem_writeP.
 
     Definition is_mem_writeP_spec ev:
       is_mem_writeP ev ↔
-        ∃ n nt wr, ev = MemWrite n nt wr &→ Ok () ∧ P n nt wr.
+        ∃ mr val tags, ev = MemWrite mr val tags &→ Ok () ∧ P mr val tags.
     Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
     Definition is_mem_writeP_cdestr ev := cdestr_simpl false (is_mem_writeP_spec ev).
     #[global] Existing Instance is_mem_writeP_cdestr.
 
-    Context `{Pdec: ∀ n nt wr, Decision (P n nt wr)}.
+    Context `{Pdec: ∀ mr val tags, Decision (P mr val tags)}.
     #[global] Instance is_mem_writeP_dec ev: Decision (is_mem_writeP ev).
     Proof using Pdec. unfold is_mem_writeP. solve_decision. Defined.
   End isMemWrite.
@@ -791,10 +762,10 @@ Module Interface (A : Arch).
     Implicit Type ev : iEvent.
 
     Definition is_mem_read_kindP :=
-      is_mem_readP (λ _ _ rr _ _, P rr.(ReadReq.access_kind)).
+      is_mem_readP (λ mr _ _, P mr.(MemReq.access_kind)).
     #[global] Typeclasses Transparent is_mem_read_kindP.
     Definition is_mem_write_kindP :=
-      is_mem_writeP (λ _ _ wr, P wr.(WriteReq.access_kind)).
+      is_mem_writeP (λ mr _ _, P mr.(MemReq.access_kind)).
     #[global] Typeclasses Transparent is_mem_write_kindP.
 
     Definition is_mem_event_kindP (ev : iEvent) :=

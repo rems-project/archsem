@@ -966,13 +966,11 @@ Definition read_pte (vaddr : view) :
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (rr : ReadReq.t 8 0) (init : Memory.initial) :
+Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  addr ← Exec.error_none "Address not supported" $
-           Loc.from_addr rr.(ReadReq.address);
+  addr ← Exec.error_none "Address not supported" $ Loc.from_addr addr;
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
-  let macc := rr.(ReadReq.access_kind) in
   if is_explicit macc then
     tres_opt ← mget (IIS.trs ∘ PPState.iis);
     trans_res ← Exec.error_none "Explicit access before translation" tres_opt;
@@ -997,10 +995,9 @@ Definition run_mem_read (rr : ReadReq.t 8 0) (init : Memory.initial) :
     mret val
   else mthrow "Unsupported 8 bytes access".
 
-Definition run_mem_read4 (rr : ReadReq.t 4 0) (init : Memory.initial) :
+Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t Memory.t string (bv 32) :=
-  if is_ifetch rr.(ReadReq.access_kind) then
-    let addr := rr.(ReadReq.address) in
+  if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
     let bit2 := bv_get_bit 2 addr in
     loc ← Exec.error_none "Address not supported" $ Loc.from_addr aligned_addr;
@@ -1176,27 +1173,27 @@ Section RunOutcome.
                 TState.set_reg reg (val, vreg') ts;
         msetv PPState.state nts
   | RegRead reg direct => mthrow "TODO"
-  | MemRead 8 0 rr =>
+  | MemRead (MemReq.make macc addr addr_space 8 0) =>
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
-      val ← run_mem_read rr initmem;
+      val ← run_mem_read addr macc initmem;
       mret (Ok (val, 0%bv))
-  | MemRead 4 0 rr => (* ifetch *)
+  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
-      opcode ← Exec.liftSt PPState.mem $ run_mem_read4 rr initmem;
+      opcode ← Exec.liftSt PPState.mem $ run_mem_read4 addr macc initmem;
       mret (Ok (opcode, 0%bv))
-  | MemRead _ _ _ => mthrow "Memory read of size other than 8 or 4, or with tags"
-  | MemWriteAddrAnnounce _ _ _ _ _ =>
+  | MemRead _ => mthrow "Memory read of size other than 8 or 4, or with tags"
+  | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vspec vaddr
-  | MemWrite 8 0 wr =>
-      addr ← Exec.error_none "Address not supported" $
-          Loc.from_addr wr.(WriteReq.address);
+  | MemWrite (MemReq.make macc addr addr_space 8 0) val _ =>
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      addr ← Exec.error_none "Address not supported" $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
-      let data := wr.(WriteReq.value) in
-      let macc := wr.(WriteReq.access_kind) in
       if is_explicit macc then
         Exec.liftSt (PPState.state ×× PPState.mem) $
-            write_mem_xcl tid addr viio macc data;;
+            write_mem_xcl tid addr viio macc val;;
         mret (Ok ())
       else mthrow "Unsupported non-explicit write"
   | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
