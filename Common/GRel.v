@@ -811,6 +811,9 @@ Section GRel.
 
   Definition grel_acyclic (r : grel) := grel_irreflexive (r⁺).
 
+  #[global] Instance grel_acyclic_decision r : Decision (grel_acyclic r).
+  Proof using. unfold grel_acyclic. solve_decision. Qed.
+
   (*** Transitive ***)
 
   Definition grel_transitive (r : grel) := r⁺ = r.

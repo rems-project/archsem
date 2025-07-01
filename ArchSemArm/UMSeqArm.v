@@ -182,22 +182,31 @@ Section UMSeqArm.
       no_exceptions: TE ∪ ERET = ∅
     }.
 
+  #[global] Instance is_nms_Decision :
+    Decision (is_nms cd).
+  Proof. unfold is_nms. tc_solve. Qed.
+
+  #[global] Instance consistent_Decision :
+    Decision consistent.
+  Proof.
+    destruct (decide (grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf))).
+    1: destruct (decide (rmw ∩ (fre⨾ coe) = ∅)).
+    1: destruct (decide ((T ∪ IF) ⊆ IR)).
+    1: destruct (decide (Illegal_RW = ∅)).
+    1: destruct (decide (Illegal_RR = ∅)).
+    1: destruct (decide ((mem_events cd) ⊆ M ∪ T ∪ IF)).
+    1: destruct (decide (is_nms cd)).
+    1: destruct (decide (TE ∪ ERET = ∅)).
+    1: left.
+    1: by constructor.
+    all: right.
+    all: by intros [].
+  Qed.
+
 End UMSeqArm.
 
-(* #[global] Instance consistent_Decision rwl nmth cd :
-  Decision (consistent (nmth := nmth) rwl cd).
-Proof.
-  destruct cd as [[]].
-  Set Printing Implicit.
-  unfold Decision.
-
-  tcclean.
-  constructor; cbn.
-  1: tc_solve.
-  destruct consistent.
-  unfold consistent.
-
-About consistent.
-Program Definition AxUMSeqArm rwl et : Ax.t et ∅ :=
-λ nmth cd, if decide (consistent rwl cd) then _ else _.
-Next Obligation. *)
+Definition AxUMSeqArm rwl  : Ax.t (Candidate.NMS) ∅ :=
+  λ nmth (cd : Ax.cand Candidate.NMS nmth),
+    if decide (@consistent rwl nmth cd)
+    then CResult.Ok Ax.Allowed
+    else CResult.Ok Ax.Rejected.
