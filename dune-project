@@ -44,7 +44,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
  (depends
    coq-archsem
-   (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
  )
 )
 
