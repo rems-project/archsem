@@ -159,6 +159,18 @@ Module Ev.
     | Msg msg => Msg.loc msg =? loc
     | Tlbi _ => false
     end.
+
+  Definition get_msg (ev : t) : option Msg.t :=
+    match ev with
+    | Msg msg => Some msg
+    | _ => None
+    end.
+  
+  Definition get_tlbi (ev : t) : option TLBI.t :=
+    match ev with
+    | Tlbi tlbi => Some tlbi
+    | _ => None
+    end.
 End Ev.
 Coercion Ev.Msg : Msg.t >-> Ev.t.
 Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
@@ -199,8 +211,6 @@ Module Memory.
 
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
-
-
 
  (** Reads the last write to a location in some memory. Gives the value and the
      timestamp of the write that it read from.
@@ -298,7 +308,7 @@ Module Memory.
 
   (** Check that the write at the provided timestamp is indeed to that location
       and that no write to that location have been made by any other thread *)
-  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool:=
+  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool :=
     match mem !! v with
     | Some (Ev.Msg msg) =>
         if Msg.loc msg =? loc then
@@ -314,7 +324,6 @@ Module Memory.
         else false
     | _ => false
     end.
-
 End Memory.
 Import (hints) Memory.
 
@@ -425,7 +434,7 @@ Module WSReg.
   #[global] Instance eta : Settable _ := settable! make <sreg;val;view>.
 End WSReg.
 
-Module LEvent.
+Module LEv.
   Inductive t := 
   | Cse (t : nat)
   | Wsreg (wsreg : WSReg.t).
@@ -441,7 +450,9 @@ Module LEvent.
     | Wsreg wsreg => Some wsreg
     | _ => None
     end.
-End LEvent.
+End LEv.
+Coercion LEv.Cse : nat >-> LEv.t.
+Coercion LEv.Wsreg : WSReg.t >-> LEv.t.
 
 
 (** The thread state *)
@@ -455,7 +466,7 @@ Module TState.
         (* registers values and views. System(relaxed) registers are not
            modified in the [regs] field directly, but instead accumulate changes *)
         regs : dmap reg (λ reg, reg_type reg * view)%type;
-        levs : list LEvent.t;
+        levs : list LEv.t;
 
         (* The coherence views *)
         coh : gmap Loc.t view;
@@ -511,11 +522,11 @@ Module TState.
 
   Definition lev_cur (ts : t) := length ts.(levs).
 
-  Definition filter_wsreg (levs : list LEvent.t) : list WSReg.t :=
-    levs |> list_filter_map LEvent.get_wsreg.
+  Definition filter_wsreg (levs : list LEv.t) : list WSReg.t :=
+    levs |> list_filter_map LEv.get_wsreg.
 
-  Definition filter_cse (levs: list LEvent.t) : list view :=
-    levs |> list_filter_map LEvent.get_cse.
+  Definition filter_cse (levs: list LEv.t) : list view :=
+    levs |> list_filter_map LEv.get_cse.
     
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
@@ -586,9 +597,9 @@ Module TState.
       Some $ set regs (dmap_insert reg rv) ts
     else None.
 
-  (** Add a system register write event to the local event list *)
-  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) : t → t :=
-    let lev := LEvent.Wsreg (WSReg.make sreg val v) in
+  (** Add a system register write event to the local event *)
+  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) :=
+    let lev := LEv.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
   (** Sets the coherence view of a location *)
@@ -631,7 +642,7 @@ Module TState.
 
   (** Perform a context synchronization event *)
   Definition cse (v : view) : t -> t :=
-    (update vcse v) ∘ (set levs (LEvent.Cse v ::.)).
+    (update vcse v) ∘ (set levs (LEv.Cse v ::.)).
 End TState.
 
 (*** VA helper ***)
