@@ -647,6 +647,8 @@ End TState.
 
 (*** VA helper ***)
 
+Definition bv_1 (n : N) : bv n := Z_to_bv n 1.
+
 Definition Level := fin 4.
 #[export] Typeclasses Transparent Level.
 
@@ -664,6 +666,9 @@ Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
+Definition match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : Prop :=
+  level_prefix va lvl = level_prefix va' lvl.
+
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
   bv_extract 0 9 (level_prefix va lvl).
 
@@ -672,6 +677,22 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 
 Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
+
+Definition is_valid (e : val) : Prop :=
+  (bv_extract 0 1 e) = bv_1 1.
+
+Definition is_table (e : val) : Prop :=
+  (bv_extract 0 2 e) = (Z_to_bv 2 3).
+
+Definition is_block (e : val) : Prop :=
+  (bv_extract 0 2 e) = bv_1 2.
+
+Definition is_final (lvl : Level) (e : val) : Prop :=
+  (fin_to_nat lvl = 3 ∧ (bv_extract 0 2 e) = (Z_to_bv 2 3))
+  ∨ (fin_to_nat lvl < 3 ∧ is_block e).
+
+Definition is_global (lvl : Level) (e : val) : Prop :=
+  is_final lvl e ∧ ((bv_extract 11 1 e) = bv_0 1).
 
 (*** TLB ***)
 
