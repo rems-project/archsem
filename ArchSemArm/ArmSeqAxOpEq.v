@@ -3468,6 +3468,77 @@ Proof.
   - admit. (* reg reads wf *)
 Admitted.
 
+Lemma seq_model_seq_inv_predicate_preserved :
+  seq_model_outcome_invariant_preserved seq_inv_predicate
+    seq_inv_predicate.
+Proof using regs_whitelist.
+  cdestruct |- *** as seqst H_seq_inv call seqst_succ H_succ.
+  constructor.
+  - by eapply seq_model_seq_st_mem_map_consistent_inv.
+  - by eapply seq_model_mem_writes_succeed_inv.
+  - by eapply seq_model_pcdst_mem_map_inv.
+  - by eapply seq_model_pcdst_mem_set_map_inv.
+  - by eapply seq_model_pcdst_reg_map_inv; done.
+  - by eapply seq_model_co_acc_inv.
+  - by eapply seq_model_rf_acc_inv.
+  - by eapply seq_model_mem_reads_inv.
+  - by eapply seq_model_pcdst_montonone.
+  - by eapply seq_model_pcdst_wf.
+  - by eapply seq_model_pcdst_consistent.
+Qed.
+
+Lemma op_model_exists_consistent_cd fuel isem initSt :
+  ∀ '((st, fs) : seq_state * MState.final 1)
+    ∈ sequential_model_seqmon (Some regs_whitelist) (Z.to_N (bv_modulus 52)) fuel isem
+      {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |},
+    ∃ cd, cd.(Candidate.pre_exec) = (seq_state_to_cd st) ∧
+      consistent regs_whitelist cd ∧ Candidate.wf cd.
+Proof.
+  assert (seq_inv_predicate {| initSt := initSt; mem := ∅; regs := ∅; itrs := [] |}) by admit.
+  generalize dependent {| initSt := initSt; mem := ∅; regs := ∅; itrs := [] |}.
+  revert dependent fuel.
+  elim isem.
+  - intros ??; elim fuel; cdestruct ret |- *** #CDestrMatch.
+    + eexists (seq_state_to_cd (set itrs (λ l : list (iTrace ()), ((hd FTNothing l).1, FTERet ()) :: tail l) (set itrs (cons FTNothing) s))).
+      cdestruct |- *** #CDestrSplitGoal.
+      all: admit.
+    + unshelve eapply (H _ _ (_,_) H2).
+      admit.
+  - destruct fuel; cdestruct |- *** #CDestrMatch.
+    1: admit.
+    + destruct call;
+      unfold sequential_model_outcome_logged, fHandler_logger in *;
+        deintros; cdestruct |- *** #CDestrEqOpt.
+      2: admit.
+      opose proof (seq_model_seq_inv_predicate_preserved (set itrs (cons FTNothing) s) _ _ _ _ _); eauto.
+      1: admit.
+      opose proof (H x3 (S fuel) _ _ (s0,f) _).
+      1: eapply H5.
+      1: unfold sequential_model_seqmon.
+      1: deintros; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+      1: eexists _, (); cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+      1: eexists _, _; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      1: cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
+      1: eexists _, _; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      1: unfold cinterp, sequential_model_outcome_logged, fHandler_logger.
+      1: eapply H2.
+
+      1: unfold sequential_model_seqmon in H4.
+      2: eapply H1.
+      1: eapply H4.
+
+
+    2: eapply
+      cdestruct IHfuel.
+      sauto.
+  -
+     eapply IHfuel.
+  - destruct fuel; deintros; cdestruct |- *** #CDestrMatch.
+   destruct fuel; deintros; cdestruct |- *** #CDestrMatch.
+   unfold sequential_model_seqmon in *.
+
+
+
 Theorem op_model_soundness max_mem_acc_size isem fuel initSt:
   Model.Res.weaker
     ((Model.to_nc $ sequential_modelc (Some regs_whitelist) max_mem_acc_size fuel isem) 1 initSt)
@@ -3496,27 +3567,36 @@ Proof.
     unfold Exec.to_stateful_result_list in *.
     set_unfold.
     cdestruct H0 #CDestrSplitGoal.
+    (*assert (seq_inv_predicate s).
+     {
+      revert dependent s isem.
+      elim fuel; cdestruct |- *** #CDestrEqOpt #CDestrMatch.
+
+
+    } *)
     revert dependent s isem.
     elim fuel; cdestruct |- *** #CDestrEqOpt #CDestrMatch.
-    1: destruct isem; deintros; cdestruct  |- *** #CDestrEqOpt.
-    1: unfold set, MState.finalize in *; cdestruct H1 |- *** #CDestrMatch #CDestrEqOpt.
-    1: depelim H1.
-    1: eexists (Candidate.make _ (Candidate.make_pre _ _ [# [FTRet ()]]) ∅ ∅ ∅ ∅); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-    2: {
-      unfold Candidate.ISA_match; cdestruct |- ***.
-      rewrite lookup_total_unfold in *.
-      cdestruct l, f, H0.
-      constructor.
-    }
-    1: admit.
-    1: unfold Ax.to_ModelResult, Ax.Res.to_ModelResult, AxUMSeqArm, Candidate.cd_to_MState_final,
-    MState.finalize, MState.is_terminated, Is_true, seq_state_to_init_regs in *.
-    1: deintros; cdestruct |- *** #CDestrMatch.
-    1: f_equal.
-    1: erewrite Is_true_pi; eauto.
-    1: eapply n0.
-    1: admit.
-    1: eexists (Candidate.make _ (Candidate.make_pre _ _ [# [FTRet ()]]) ∅ ∅ ∅ ∅); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+    + destruct isem; deintros; cdestruct  |- *** #CDestrEqOpt.
+      { unfold set, MState.finalize in *; cdestruct H1 |- *** #CDestrMatch #CDestrEqOpt.
+        depelim H1.
+        eexists (Candidate.make _ (Candidate.make_pre _ _ [# [FTRet ()]]) ∅ ∅ ∅ ∅); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+        2: {
+          unfold Candidate.ISA_match; cdestruct |- ***.
+          rewrite lookup_total_unfold in *.
+          cdestruct l, f, H0.
+          constructor.
+        }
+        1: admit.
+        unfold Ax.to_ModelResult, Ax.Res.to_ModelResult, AxUMSeqArm, Candidate.cd_to_MState_final,
+          MState.finalize, MState.is_terminated, Is_true, seq_state_to_init_regs in *.
+        1: deintros; cdestruct |- *** #CDestrMatch.
+        1: f_equal.
+        1: erewrite Is_true_pi; eauto.
+        1: eapply n0.
+        1: admit.
+      }
+      opose proof (seq_model_seq_inv_predicate_preserved x0 _ ).
+      eexists (Candidate.make _ (Candidate.make_pre _ _ [# [FTRet ()]]) _ _ _ _); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
 
     Search Is_true.
     Print ProofIrrel.
@@ -3844,20 +3924,7 @@ Admitted. (*
     all: lia.
   Admitted.
  *)
-Lemma seq_model_seq_inv_predicate_preserved :
-  seq_model_outcome_invariant_preserved seq_inv_predicate
-    seq_inv_predicate.
-Proof using fuel
-isem regs_whitelist.
-  cdestruct |- *** as seqst H_seq_inv call seqst_succ H_succ.
-  constructor.
-  - eapply seq_model_mem_writes_succeed_inv; done.
-  - eapply seq_model_pcdst_mem_map_inv; done.
-  - eapply seq_model_pcdst_reg_map_inv; done.
-  - eapply seq_model_pcdst_montonone; done.
-  - eapply seq_model_pcdst_wf; done.
-  - eapply seq_model_pcdst_consistent; done.
-Qed.
+
 
 Lemma seq_model_consistent :
   seq_model_outcome_invariant_preserved seq_inv_predicate.
