@@ -53,6 +53,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
  (depends
    coq-archsem
+   (coq-sail-riscv :dev) ; See coq-archsem-arm.opam.template for the commit number
  )
 )
 
