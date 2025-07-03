@@ -30,7 +30,7 @@ jobs:
     - name: System dependencies (ubuntu)
       run: |
         sudo apt update
-        sudo apt install -y build-essential opam z3
+        sudo apt install -y build-essential opam z3 cmake
 
     # Cache with local pinned dependencies
     - name: Restore pinned OPAM cache
@@ -79,7 +79,7 @@ jobs:
         eval $(opam env)
         opam install --deps-only --confirm-level=unsafe-yes .
         # This is needed with opam 2.1, not with opam 2.3. I haven't tested 2.2
-        opam install --yes sail coq-sail-tiny-arm
+        opam install --yes sail coq-sail-tiny-arm coq-sail-riscv
         opam clean
         opam clean -r
 
