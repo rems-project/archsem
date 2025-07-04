@@ -33,7 +33,6 @@ archive: $(TARBALL)
 
 BSD2-SRC=$(foreach dir, $(DIRS), $(wildcard $(dir)/*.v $(dir)/tests/*.v))
 BSD2-SRC:=$(filter-out %/SailArmInstTypes.v, $(BSD2-SRC))
-BSD2-SRC:=$(filter-out %/SailRiscVInstTypes.v, $(BSD2-SRC))
 
 headers:
 	headache -c etc/head_config -h etc/header ${BSD2-SRC}
