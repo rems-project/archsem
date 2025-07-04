@@ -54,7 +54,7 @@ Require Import SailStdpp.ConcurrencyInterfaceTypes.
 Require Export Riscv.rv64d_types.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
-From ASCommon Require Import Common Effects CDestruct.
+From ASCommon Require Import Common Effects CDestruct FMon.
 From ArchSem Require Import Interface FromSail TermModels CandidateExecutions GenPromising.
 
 
@@ -70,6 +70,7 @@ Require Import stdpp.list.
 
 Module RiscV.
   Module SA := rv64d_types.Arch.
+  Module SI := rv64d_types.Interface.
 
   Module PAManip <: FromSail.PAManip SA.
     Import SA.
@@ -81,10 +82,10 @@ Module RiscV.
   Module Arch := ArchFromSail SA PAManip.
 
   Module Interface := Interface Arch.
-  (* Module IWA <: InterfaceWithArch. *)
-  (*   Module Arch := Arch. *)
-  (*   Module Interface := Interface. *)
-  (* End IWA. *)
+
+  (** Finally we can generate a conversion function from the sail monad to an
+      ArchSem's [iMon] *)
+  Module IMonFromSail := IMonFromSail SA SI PAManip Arch Interface.
 End RiscV.
 
 Module NoCHERI.
@@ -100,6 +101,7 @@ Module RiscVGenPro := GenPromising RiscV RiscVTM.
 Export RiscV.
 Export RiscV.Arch.
 Export RiscV.Interface.
+Export RiscV.IMonFromSail.
 Export RiscVTM.
 Export RiscVCand.
 Export RiscVGenPro.
@@ -129,3 +131,13 @@ Coercion GReg : register >-> greg.
   Inhabited_register_values
   Countable_register_values
   : typeclass_instances.
+
+Require Riscv.rv64d.
+(** The semantics of instructions from [sail-riscv] by using the conversion code
+    from [ArchSem.FromSail]. *)
+Definition sail_riscv_sem : iMon () :=
+  r ← iMon_from_Sail (rv64d.try_step 0 true); mret ().
+
+(** Make registers printable *)
+Instance pretty_reg : Pretty reg :=
+  λ '(GReg reg), string_of_register reg.
