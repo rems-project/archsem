@@ -1,0 +1,11 @@
+(coq.theory
+ (name ArchSemRiscV.tests)
+ (modules RiscVSeqModelTest)
+ (theories ArchSemRiscV)
+)
+; Do not build this folder by default but do it when running @runtest
+(alias (name default))
+(alias
+ (name runtest)
+ (deps (alias all))
+)
