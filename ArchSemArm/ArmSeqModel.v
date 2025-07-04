@@ -51,7 +51,7 @@ Require Import ASCommon.Effects.
 
 Section Seq.
 
-Context (regs_whitelist : option (gset reg)) (max_mem_acc_size : N).
+Context (regs_whitelist : option (gset reg)).
 
 (** A sequential state for bookkeeping reads and writes to registers/memory in
     gmaps, as well as, the initial state *)
@@ -132,12 +132,11 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
     else msetv (lookup reg ∘ regs) (Some (regt_to_bv64 val))
   | MemRead n rr =>
-    guard_or "Read exceeds max size" (n < max_mem_acc_size)%N;;
     guard_or "Tags are unsupported" (rr.(ReadReq.tag) = false);;
     if is_ifetch rr.(ReadReq.access_kind) || is_ttw rr.(ReadReq.access_kind)
     then
       '(read, flag) ← mget (read_mem_seq_state_flag n rr.(ReadReq.pa));
-      guard_or "iFetch or TTW read from modified memory" (Is_true flag);;
+      guard_or "iFetch or TTW read from modified memory" (flag = false);;
       mret (inl (read, None))
     else
       guard_or "Read accesses need to be explicit, iFetch, or TTW"
@@ -146,7 +145,6 @@ Definition sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       mret (inl (read, None))
   | MemWriteAddrAnnounce _ _ _ _ => mret ()
   | MemWrite n wr =>
-    guard_or "Write exceeds max size" (n < max_mem_acc_size)%N;;
     guard_or "Write accesses need to be explicit"
       (is_explicit wr.(WriteReq.access_kind));;
     guard_or "Tags are unsupported" (wr.(WriteReq.tag) = None);;
