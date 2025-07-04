@@ -103,9 +103,9 @@ Qed.
 
 Lemma finterp_inv_induct `{Effect Eff} {St E A}
   (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
-  (I : St → Prop) (initSt : St)
+  (I : St → Prop) (Imon : Eff → Prop) (initSt : St)
   : I initSt
-    → (∀ st call, I st → ∀ st' ret, (st',ret) ∈ handler call st → I st')
+    → (∀ st call, I st → Imon mon → ∀ st' ret, (st',ret) ∈ handler call st → I st')
     → ∀ st' ret, (st',ret) ∈ FMon.finterp handler mon initSt → I st'.
 Proof.
   intros Hinit Hstep.
@@ -2888,7 +2888,7 @@ Proof using regs_whitelist.
       all: cdestruct eid1 |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrEqOpt #CDestrSplitGoal #CDestrMatch; eauto.
       all: cdestruct |- ***.
-      1: ospecialize (H8 eid' _ _ _ _).
+      1: ospecialize (H7 eid' _ _ _ _).
       all: try ospecialize (H8 eid' _ _ _ _).
       all: cdestruct eid1 |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
@@ -3004,8 +3004,8 @@ Lemma seq_model_pcdst_montonone :
     (λ seq_st, cd_monotone (seq_state_to_cd seq_st)).
 Proof using regs_whitelist.
   cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ.
-  opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
-  opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  opose proof (sequential_model_outcome_same_initSt _ _ _ _ H_seqst_succ) as Hsame_init.
   cbn.
   rewrite ?Hsame_init, ?Hsame_itrs in *.
   opose proof (cd_from_seq_state_monotone _ H_inv); destruct H; deintros;
@@ -3060,8 +3060,8 @@ Proof.
   first (cdestruct |- ***; eauto).
   cbn in *.
   unfold sequential_model_outcome_logged, fHandler_logger in *.
-  opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
-  opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  opose proof (sequential_model_outcome_same_initSt _ _ _ _ H_seqst_succ) as Hsame_init.
   rewrite Hsame_init, Hsame_itrs in *.
   constructor.
   - eapply rel_monotone_acyclic.
@@ -3271,7 +3271,7 @@ Proof.
       destruct call; unfold is_mem_event, is_mem_readP, is_mem_writeP in *;
       cdestruct H |- *** #CDestrSplitGoal #CDestrMatch; cdestruct ret #CDestrMatch.
       1,2: cdestruct o.
-      1: eapply orb_true_iff in H1; cdestruct H1 |- *** #CDestrSplitGoal; [right|left; right];
+      1: eapply orb_true_iff in H0; cdestruct H0 |- *** #CDestrSplitGoal; [right|left; right];
         unfold is_mem_read_kindP, is_mem_readP; eexists;
         cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; naive_solver.
       all: left; left.
@@ -3364,8 +3364,8 @@ Lemma seq_model_pcdst_wf :
     (λ seq_st, Candidate.wf (seq_state_to_cd seq_st)).
 Proof.
   cdestruct |- *** as seqst H_inv call H_legalmem ret seqst_succ Hnms H_seqst_succ.
-  opose proof (sequential_model_outcome_same_itrs _ _ _ _ _ H_seqst_succ) as Hsame_itrs.
-  opose proof (sequential_model_outcome_same_initSt _ _ _ _ _ H_seqst_succ) as Hsame_init.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  opose proof (sequential_model_outcome_same_initSt _ _ _ _ H_seqst_succ) as Hsame_init.
   constructor.
   - unfold Candidate.has_only_supported_events in *.
     set_unfold.
@@ -3446,6 +3446,11 @@ Proof.
       unfold read_mem_seq_state, read_byte_seq_state, read_byte_seq_state_flag in *.
       cdestruct b |- ***.
       destruct x1; cbn in *.
+      destruct (decide (x0 = 0%N ∧ n = 0%N)) as [Hnx0|]; first cdestruct x0, n, Hnx0 |- ***.
+      { change (8 * 0)%N with 0%N in *.
+        cbv.
+        bv_simplify.
+        by rewrite bv_unsigned_N_0 in *. }
       ospecialize (Hnms (t,intra_trace_eid_succ 0 (trace_rev (itrs seqst))) _).
       {
         unfold Candidate.overlapping, Candidate.is_overlapping, Candidate.mem_events.
@@ -3454,14 +3459,12 @@ Proof.
         cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
         all: eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch; try done.
         2,3: unfold is_mem_event, is_mem_readP, is_mem_writeP; naive_solver.
-        all: do 3 (eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch).
+        do 3 (eexists; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch).
         unfold pa_overlap.
         setoid_rewrite pa_in_range_spec.
-        cdestruct pa0.
-        left; exists 0%N; rewrite pa_addN_zero; cdestruct |- *** #CDestrSplitGoal.
-        enough (x0 ≠ 0)%N by lia.
-        intros ->.
-        admit.
+        cdestruct pa0, n0 #CDestrSplitGoal.
+        all: left+right; exists 0%N; rewrite pa_addN_zero;
+          cdestruct |- *** #CDestrSplitGoal; lia.
       }
       unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
       set_unfold in Hnms.
@@ -3486,7 +3489,7 @@ Proof.
       1: unfold is_mem_writeP.
       all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
       1: cbn in *; lia.
-      eapply or_comm, H5; cdestruct |- *** #CDestrEqOpt.
+      eapply or_comm, H4; cdestruct |- *** #CDestrEqOpt.
       admit. (*NMS*)
     + cbn; rewrite Hsame_init, Hsame_itrs.
       unfold Candidate.init_mem_reads, Candidate.mem_reads, Candidate.is_valid_init_mem_read.
@@ -3542,10 +3545,10 @@ Proof.
 Admitted.
 
 Lemma seq_model_seq_inv_predicate_preserved :
-  seq_model_outcome_invariant_preserved seq_inv_predicate
+  seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate
     seq_inv_predicate.
 Proof using regs_whitelist.
-  cdestruct |- *** as seqst H_seq_inv call seqst_succ H_succ.
+  cdestruct |- *** as seqst H_seq_inv call H_legalmem ret seqst_succ Hnms H_succ.
   constructor.
   - by eapply seq_model_seq_st_mem_map_consistent_inv.
   - by eapply seq_model_mem_writes_succeed_inv.
@@ -3614,7 +3617,7 @@ Lemma op_model_exists_consistent_cd fuel isem initSt :
   isem_mem_acc_legal_length isem →
   ∀ st fs, seq_state_is_nms st →
     (st, fs) ∈
-      sequential_model_seqmon (Some regs_whitelist) (Z.to_N (bv_modulus 52)) fuel isem
+      sequential_model_seqmon (Some regs_whitelist) fuel isem
       {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |} →
     ∃ cd, cd.(Candidate.pre_exec) = (seq_state_to_pe st) ∧
       consistent regs_whitelist cd ∧ Candidate.wf cd.
@@ -3634,7 +3637,27 @@ Proof.
     unfold sequential_model_outcome_logged, fHandler_logger in *.
     set_unfold in H4; cdestruct st', H4.
     eapply seq_state_is_nms_trace_end in Hnms.
+    opose proof (sequential_model_outcome_same_itrs _ _ _ _ _) as Hsame_itrs; eauto.
+    unfold seq_state_is_nms in Hnms; cbn in *; rewrite Hsame_itrs in *.
     eapply seq_model_seq_inv_predicate_preserved.
+    4: eauto.
+    1: eapply H3.
+    {
+      unfold seq_state_is_nms, Candidate.is_nms, Candidate.same_footprint,
+        Candidate.overlapping, Candidate.same_pa, Candidate.same_size,
+        Candidate.mem_events in Hnms |- *.
+      cbn in *.
+      set_unfold.
+      setoid_rewrite lookup_unfold.
+      cdestruct |- *** #CDestrEqOpt.
+      (* split.
+      Set Typeclasses Debug Verbosity 2.
+      1: set_unfold. *) (* Typeclasses *)
+      admit.
+    }
+    {
+      unfold isem_mem_acc_legal_length in *.
+    }
     all: eauto.
   - eapply H.
     1: eauto.
