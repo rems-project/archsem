@@ -10,6 +10,69 @@ Import CDestrUnfoldElemOf.
 #[local] Typeclasses Transparent pa_eq pa_countable.
 
 Definition max_mem_acc_size : Z := bv_modulus 52.
+
+Lemma pa_addZ_max_mem_acc_size_neq pa z :
+  (0 < z < max_mem_acc_size)%Z →
+  pa_addZ pa z ≠ pa.
+Proof.
+  unfold SA.pa, mword, pa_addZ, max_mem_acc_size in *; cbn in *.
+  intros.
+  bv_simplify'.
+  unfold bv_wrap.
+  destruct pa.
+  unfold definitions.bv_unsigned, BvWf in *.
+  eapply andb_True in bv_is_wf.
+  destruct bv_is_wf as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
+  assert (0 < z < bv_modulus 56)%Z by (unfold bv_modulus in *; lia); clear H.
+  assert ((bv_unsigned + z < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + z)%Z) as [|] by lia.
+  { setoid_rewrite Z.mod_small at 1 2; try lia. }
+  assert ((bv_unsigned + z)%Z = ((bv_unsigned + z - bv_modulus 56) + 1 * bv_modulus 56)%Z) as -> by lia.
+  rewrite Z_mod_plus_full.
+  setoid_rewrite Z.mod_small at 1 2; lia.
+Qed.
+
+Lemma pa_addZ_lt_max_mem_acc_size_inj pa x y :
+  (0 ≤ x < max_mem_acc_size)%Z → (0 ≤ y < max_mem_acc_size)%Z →
+  pa_addZ pa x = pa_addZ pa y ↔ x = y.
+Proof.
+  cdestruct |- *** #CDestrSplitGoal.
+  - unfold SA.pa, mword, pa_addZ, max_mem_acc_size in *; cbn in *.
+    assert (x < bv_modulus 56)%Z by (unfold bv_modulus in *; lia); clear H0;
+    assert (y < bv_modulus 56)%Z by (unfold bv_modulus in *; lia); clear H2.
+    bv_simplify'.
+    destruct pa.
+    unfold bv_wrap in *.
+    unfold definitions.bv_unsigned, BvWf in *.
+    eapply andb_True in bv_is_wf.
+    destruct bv_is_wf as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
+    assert (∀ x, (bv_unsigned + x)%Z = ((bv_unsigned + x - bv_modulus 56) + 1 * bv_modulus 56)%Z) by lia.
+    assert ((bv_unsigned + x < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + x)%Z) as [|] by lia;
+    assert ((bv_unsigned + y < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + y)%Z) as [|] by lia.
+    { setoid_rewrite Z.mod_small in H3 at 1 2; try lia. }
+    {
+      setoid_rewrite Z.mod_small in H3 at 1; try lia.
+      setoid_rewrite H6 in H3 at 2.
+      rewrite Z_mod_plus_full, Z.mod_small in *.
+      all: lia.
+    }
+        {
+      setoid_rewrite Z.mod_small in H3 at 2; try lia.
+      setoid_rewrite H6 in H3 at 1.
+      rewrite Z_mod_plus_full, Z.mod_small in *.
+      all: lia.
+    }
+    {
+      setoid_rewrite H6 in H3 at 1 2; try lia.
+      rewrite ?Z_mod_plus_full, ?Z.mod_small in *.
+      all: lia.
+    }
+  - opose proof (f_equal_pa_addN pa (Z.to_N x) (Z.to_N y) _).
+    1: lia.
+    unfold pa_addN in *.
+    do 2 erewrite Z2N.id in *; try lia.
+    done.
+Qed.
+
 Opaque max_mem_acc_size.
 
 (** Get the size out of a memory call *)
@@ -26,15 +89,38 @@ Definition legal_memory_acc (call : outcome) : Prop :=
   then (size < Z.to_N max_mem_acc_size)%N
   else True.
 
-Inductive isem_mem_acc_legal_length : iMon () → Prop :=
-  | nmsRet : isem_mem_acc_legal_length (Ret ())
-  | nmsNextOutcome : ∀ (call : outcome) k,
-    legal_memory_acc call →
-    (∀ (ret : eff_ret call), isem_mem_acc_legal_length (k ret)) →
-    isem_mem_acc_legal_length (Next (inl call) k)
-  | nmsNextChoice : ∀ (c : MChoice) k,
-    (∀ (ret : eff_ret c), isem_mem_acc_legal_length (k ret)) →
-    isem_mem_acc_legal_length (Next (inr c) k).
+Inductive fMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) : fMon Eff A → Prop :=
+  | finvPRet : ∀ a, fMon_call_inv P (Ret a)
+  | finvPNext : ∀ (call : Eff) k,
+    P call →
+    (∀ (ret : eff_ret call), fMon_call_inv P (k ret)) →
+    fMon_call_inv P (Next call k).
+
+Inductive cMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) : cMon Eff A → Prop :=
+  | cinvPRet : ∀ a, cMon_call_inv P (Ret a)
+  | cinvPNextEff : ∀ (call : Eff) k,
+    P call →
+    (∀ (ret : eff_ret (inl call)), cMon_call_inv P (k ret)) →
+    cMon_call_inv P (Next (inl call) k)
+  | cinvnmsNextChoice : ∀ (c : MChoice) k,
+    (∀ (ret : eff_ret (inr c)), cMon_call_inv P (k ret)) →
+    cMon_call_inv P (Next (inr c) k).
+
+Lemma cMon_to_fMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) (c : cMon Eff A) :
+  cMon_call_inv P c ↔ fMon_call_inv (λ s, if s is inl eff then P eff else True) c.
+Proof.
+  induction c.
+  1: cdestruct |- *** as Ho #CDestrSplitGoal; depelim Ho; constructor.
+  cdestruct |- *** as Ho #CDestrSplitGoal.
+  2: destruct call.
+  all: depelim Ho.
+  all: constructor; try fast_done.
+  all: cdestruct |- ***.
+  all: by eapply H0.
+Qed.
+
+Definition isem_mem_acc_legal_length : iMon () → Prop :=
+  cMon_call_inv legal_memory_acc.
 
 #[global] Instance lookup_unfold_length_None {A} (l : list A) :
   LookupUnfold (length l) l None.
@@ -102,20 +188,20 @@ Proof.
 Qed.
 
 Lemma finterp_inv_induct `{Effect Eff} {St E A}
-  (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
-  (I : St → Prop) (Imon : Eff → Prop) (initSt : St)
-  : I initSt
-    → (∀ st call, I st → Imon mon → ∀ st' ret, (st',ret) ∈ handler call st → I st')
-    → ∀ st' ret, (st',ret) ∈ FMon.finterp handler mon initSt → I st'.
+    (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
+    (I : St → Prop) (Ieff : Eff → Prop) (initSt : St) :
+  fMon_call_inv Ieff mon →
+  I initSt →
+  (∀ st call, I st → Ieff call → ∀ st' ret, (st',ret) ∈ handler call st → I st') →
+  ∀ st' ret, (st',ret) ∈ FMon.finterp handler mon initSt → I st'.
 Proof.
-  intros Hinit Hstep.
-  induction mon as [|? ? IH] in initSt, Hinit |- *;
-  cdestruct |- *** #CDestrMatch;
-  unfold Exec.success_state_list in *;
-  set_unfold;
-  deintros; cdestruct |- ***.
+  intros Hmon Hinit Hstep.
+  induction mon as [|? ? IH] in Hmon, initSt, Hinit |- *;
+  cdestruct |- *** #CDestrMatch.
+  set_unfold.
+  depelim Hmon.
   eapply IH.
-  1: eapply Hstep.
+  2: eapply Hstep.
   all: eauto.
 Qed.
 
@@ -123,8 +209,7 @@ Arguments Exec.to_state_result_list : simpl never.
 
 Lemma cinterp_all_states_inv_induct `{Effect Eff} {St E A}
   (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
-  (I : result St St → Prop) (initSt : St)
-  : I (Ok initSt)
+  (I : result St St → Prop) (Ieff : Eff → Prop) (initSt : St) : I (Ok initSt)
     → (∀ st call, I (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, I st')
     → ∀ st' ∈ (Exec.to_state_result_list $ FMon.cinterp handler mon initSt), I st'.
 Proof.
@@ -137,14 +222,17 @@ Proof.
 Qed.
 
 Lemma cinterp_inv_induct `{Effect Eff} {St E A}
-  (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
-  (I : St → Prop) (initSt : St)
-  : I initSt
-    → (∀ st call, I st → ∀ st' ret, (st',ret) ∈ handler call st → I st')
-    → ∀ st' ret, (st', ret) ∈ FMon.cinterp handler mon initSt → I st'.
+    (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
+    (I : St → Prop) (Ieff : Eff → Prop) (initSt : St) :
+  cMon_call_inv Ieff mon →
+  I initSt →
+  (∀ st call, I st → Ieff call → ∀ st' ret, (st',ret) ∈ handler call st → I st') →
+  ∀ st' ret, (st',ret) ∈ FMon.cinterp handler mon initSt → I st'.
 Proof.
-  intros Hinit HIpreserve st' ret Hst'.
-  eapply finterp_inv_induct; [eassumption | | eassumption].
+  intros Hmon Hinit HIpreserve st' ret Hst'.
+  eapply finterp_inv_induct; [ | eassumption| | eassumption].
+  1: eapply cMon_to_fMon_call_inv in Hmon.
+  1: exact Hmon.
   clear initSt Hinit st' Hst'.
   cdestruct |- *** as st eff Hst st' v Hst' #CDestrMatch #CDestrSplitGoal;
   try destruct eff.
@@ -1207,6 +1295,7 @@ Proof.
 Admitted.
 
 Lemma write_mem_seq_state_app pa l st st' x :
+  (Z.of_nat (S (length l)) < max_mem_acc_size)%Z →
   (st', ()) ∈ write_mem_seq_state pa (l ++ [x]) st →
   (st', ()) ∈ write_mem_seq_state pa l (setv ((.!! pa_addN pa (N.of_nat (length l))) ∘ mem) (Some x) st).
 Proof.
@@ -1215,28 +1304,33 @@ Proof.
   1: rewrite pa_addN_zero; done.
   eexists _, (); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
   2: eapply H.
-  2: eapply H0.
+  2: lia.
+  2: eapply H1.
   eexists _, _; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
   destruct st; cbv [set setv].
   unfold Setter_compose.
   f_equal; cbn.
-  unfold Setter_finmap.
-  erewrite partial_alter_commute.
-  2: admit.
-  unfold pa_addN.
+  unfold Setter_finmap, pa_addN.
   rewrite pa_addZ_assoc.
+  erewrite partial_alter_commute.
+  2: eapply pa_addZ_max_mem_acc_size_neq; lia.
   do 3 f_equal.
   lia.
+  Unshelve.
+  (* Set Typeclasses Debug Verbosity 2.
+  1: tc_solve. *)
+  all: admit. (* Thibaut / Typeclasses *)
 Admitted.
 
 Lemma pa_in_range_write pa pa' size (v: bv (8*size)) st st' :
+  (size < Z.to_N max_mem_acc_size)%N →
   (st', ()) ∈ write_mem_seq_state pa (bv_to_bytes 8 v) st →
   pa_in_range pa size pa' →
   ∃ offset, (offset < size)%N ∧ pa' = pa_addN pa offset ∧
     mem st' !! pa' = Some (bv_get_byte 8 offset v).
 Proof.
-  intros ??%pa_in_range_spec;
-  deintros; cdestruct |- *** as pa i size v st st' Hw Hs.
+  intros ???%pa_in_range_spec;
+  deintros; cdestruct |- *** as pa i size v st st' Hsize Hw Hs.
   exists i.
   enough (mem st' !! pa_addN pa i = bv_to_bytes 8 v !! i) as ->
   by (setoid_rewrite bv_to_bytes_bv_get_byte; repeat apply conj; try done; lia).
@@ -1245,7 +1339,7 @@ Proof.
   revert dependent pa st i.
   generalize dependent (bv_to_bytes 8 v).
   clear v.
-  intro; revert size.
+  intro; revert dependent size.
   elim l using rev_ind; cdestruct st' |- ***; first lia.
   destruct (decide (i = N.of_nat (length l0))) as [->|]; cbn.
   - unfold lookup at 2, list_lookupN.
@@ -1260,6 +1354,7 @@ Proof.
     2: opose proof (lookup_lt_is_Some_2 l0 (N.to_nat i) _); first lia; sauto.
     erewrite (H (N.pred size)); try done; try lia.
     eapply write_mem_seq_state_app; eauto.
+    lia.
 Qed.
 
 Lemma write_mem_seq_state_same_itrs bytes :
@@ -2307,11 +2402,11 @@ Definition partial_cd_state_monotone (cdst : partial_cd_state) : Prop :=
   ∧ rel_strictly_monotone cdst.(rrf_acc)
   ∧ rel_strictly_monotone cdst.(co_acc).
 
-Lemma event_list_monotone {nmth} (pe : Candidate.pre Candidate.NMS nmth) l l' :
+(* Lemma event_list_monotone {nmth} (pe : Candidate.pre Candidate.NMS nmth) l l' :
   Candidate.event_list pe = l ++ l' →
   ∀ '(eid1, ev1) ∈ l, ∀ '(eid2, ev2) ∈ l', eid1.(EID.tid) = eid2.(EID.tid) →
   EID.full_po_lt eid1 eid2.
-Admitted.
+Admitted. *)
 
 Arguments Candidate.event_list : simpl never.
 
@@ -2391,6 +2486,15 @@ Definition seq_st_mem_map_consistentP seq_st :=
           is_mem_writeP (λ size wr, pa_in_range wr.(WriteReq.pa) size pa) ev' →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
+Definition seq_st_mem_map_is_SomeP seq_st :=
+  let cd := (seq_state_to_cd seq_st) in
+  ∀ pa,
+    (∃ ev eid offset,
+    cd !! eid = Some ev ∧
+        is_mem_writeP
+          (λ size wr, pa_addN wr.(WriteReq.pa) offset = pa ∧ (offset < size)%N) ev) →
+    is_Some (seq_st.(mem) !! pa).
+
 Definition mem_writes_succeedP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let evs := Candidate.event_list cd in
@@ -2468,6 +2572,7 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   cd := (seq_state_to_cd seq_st);
   evs := Candidate.event_list cd;
   seq_st_mem_map_consistent : seq_st_mem_map_consistentP seq_st;
+  seq_st_mem_map_is_Some : seq_st_mem_map_is_SomeP seq_st;
   mem_writes_succeed : mem_writes_succeedP seq_st;
   pcdst_mem_map_inv : pcdst_mem_map_invP seq_st;
   pcdst_mem_set_map_inv : pcdst_mem_set_map_invP seq_st;
@@ -2560,12 +2665,12 @@ Proof.
 Qed.
 
 Lemma seq_model_seq_st_mem_map_consistent_inv :
-  seq_model_outcome_invariant_preserved seq_inv_predicate seq_st_mem_map_consistentP.
+  seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate seq_st_mem_map_consistentP.
 Proof.
-  unfold seq_model_outcome_invariant_preserved, seq_st_mem_map_consistentP.
+  unfold seq_model_outcome_invariant_preserved_mem_assumptions, seq_st_mem_map_consistentP.
   setoid_rewrite lookup_unfold.
   cbn.
-  cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ pa v.
+  cdestruct |- *** as seqst H_inv call H_legalmem ret seqst_succ Hnms H_seqst_succ pa v.
   opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
   rewrite Hsame_itrs in *.
   eapply seq_st_mem_map_consistent in H_inv.
@@ -2573,9 +2678,9 @@ Proof.
   setoid_rewrite lookup_unfold in H_inv.
   destruct (decide (is_mem_write (call &→ ret))).
   - destruct call; unfold is_mem_writeP in *; try done.
-    cdestruct ret, H_seqst_succ.
+    cdestruct ret, H_seqst_succ, H_legalmem.
     destruct (decide (pa_in_range (WriteReq.pa wr) n pa)).
-    + opose proof (pa_in_range_write _ _ _ _ _ _ _ _) as [offest (? & ? & ->)]; eauto.
+    + opose proof (pa_in_range_write _ _ _ _ _ _ _ _ _) as [offset (? & ? & ->)]; eauto.
       cdestruct seqst_succ |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
         #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
       * eexists _, (intra_trace_eid_succ 0 (trace_rev (itrs seqst))), _.
@@ -2595,7 +2700,9 @@ Proof.
         cdestruct x0, H8 #CDestrSplitGoal #CDestrEqOpt.
       * clear H_inv H7 p.
         cdestruct pa, v.
-        admit.
+        f_equal.
+        eapply pa_addZ_lt_max_mem_acc_size_inj in H4.
+        all: lia.
     + erewrite pa_not_in_range_write; eauto.
       2: erewrite length_bv_to_bytes, div_round_up_divisible; done.
       all: setoid_rewrite H_inv.
@@ -2626,7 +2733,37 @@ Proof.
     all: eapply H_otherw.
     all: cdestruct |- *** ##eq_some_unfold_lookup_eid_trace_rev_cons
       #CDestrEqOpt #CDestrMatch.
-Admitted.
+Qed.
+
+Lemma seq_model_seq_st_mem_map_is_Some_inv :
+  seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate seq_st_mem_map_is_SomeP.
+Proof.
+  unfold seq_model_outcome_invariant_preserved_mem_assumptions, seq_st_mem_map_is_SomeP.
+  setoid_rewrite lookup_unfold.
+  cbn.
+  cdestruct |- *** as seqst H_inv call H_legalmem ret seqst_succ Hnms
+    H_seqst_succ size wr offset eid Hl Hsize
+    #CDestrEqOpt ##eq_some_unfold_lookup_eid_trace_rev_cons.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+    cdestruct eid, Hl #CDestrMatch #CDestrEqOpt.
+  - destruct call.
+    all: deintros; cdestruct |- *** #CDestrEqOpt #CDestrMatch.
+    6: edestruct (decide (pa_in_range (WriteReq.pa wr0) n (pa_addN (WriteReq.pa wr) offset)))
+        as [?%pa_in_range_write|?%pa_not_in_range_write]; eauto.
+    6: cdestruct p |- *** #CDestrEqOpt; eauto.
+    7: rewrite length_bv_to_bytes, div_round_up_divisible; try done.
+    6: rewrite n0, Hsame_itrs in *.
+    all: eapply (seq_st_mem_map_is_Some _ H_inv).
+    all: setoid_rewrite lookup_unfold.
+    all: unfold is_mem_writeP.
+    all: eexists _, _, _.
+    all: do 2 (cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto).
+  - cdestruct call, ret |- ***.
+    opose proof (pa_in_range_write (WriteReq.pa wr) (pa_addN (WriteReq.pa wr) offset) size _ _ _ _ _ _); eauto.
+    1: eapply pa_in_range_spec; eauto.
+    cdestruct H2.
+    done.
+Qed.
 
 Lemma seq_model_mem_writes_succeed_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate mem_writes_succeedP.
@@ -2941,11 +3078,123 @@ Proof using regs_whitelist.
     all: deintros; cdestruct |- ***.
 Qed.
 
+Lemma read_mem_seq_state_flag_false_get_byte size pa st v :
+  read_mem_seq_state_flag size pa st = (v, false) →
+  ∀ (offset : N), (offset < size)%N →
+  st.(initSt).(MState.memory) (pa_addN pa offset) = bv_get_byte 8 offset v ∧
+  st.(mem) !! pa_addN pa offset = None.
+Admitted.
+
+(* (val, false) =
+     (let
+      '(bytes, flags) :=
+       split
+         ((λ pa0 : pa,
+             if mem seqst !! pa0 is Some v then (v, true)
+             else (MState.memory (initSt seqst) pa0, false)) <$>
+          pa_range (ReadReq.pa rr) size) in
+       (bv_of_bytes (8 * size) bytes, existsb id flags)) *)
+
+Instance decide_exists_in_gset `{EqDecision A, Countable A} (P : A → Prop) `{∀ a, Decision (P a)} (s : gset A) :
+  Decision (∃ a, P a ∧ a ∈ s).
+  destruct (filter P (elements s)) eqn: ?.
+  - right.
+    unfold not; cdestruct |- ***.
+    eapply (filter_nil_not_elem_of P _ x Heql); eauto.
+    set_solver.
+  - left.
+    exists a.
+    enough (P a ∧ a ∈ (elements s)) by set_solver.
+    eapply (elem_of_list_filter P).
+    rewrite Heql.
+    set_solver.
+Qed.
+
+Lemma Some_inj {A} (x y : A) :
+  Some x = Some y ↔ x = y.
+Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
+
+Lemma bvns_equal_get_byte_equal n (x y : bvn) :
+  n ≠ 0%N → bvn_n x = bvn_n y →
+  (∀ i, (i * n < bvn_n x)%N →
+    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
+  x = y.
+Proof.
+  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
+  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
+  f_equal.
+  apply list_eq.
+  intros.
+  apply option_eq.
+  intro b.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
+  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
+  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: rewrite Hbytes in *; done.
+Qed.
+
+Lemma bvs_equal_get_byte_equal size n (x y : bv size) :
+  n ≠ 0%N → (∀ i, (i * n < size)%N →
+    bv_get_byte n i x = bv_get_byte n i y) →
+  x = y.
+Proof.
+  intros.
+  enough (bv_to_bvn x = bv_to_bvn y) by naive_solver.
+  eapply bvns_equal_get_byte_equal; eauto.
+Qed.
+
+Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
+	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
+Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
+
+Lemma bv_to_bytes_bv_get_byte3 {n i m} (b : bv m) byte :
+  (0 < n)%N → (i * n < m)%N → bv_get_byte n i b = byte →
+  bv_to_bytes n b !! i = Some byte.
+Proof. intros. by eapply bv_to_bytes_bv_get_byte. Qed.
+
+Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
+  n ≠ 0%N → m = N.of_nat (length l) →
+  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
+Proof.
+  intros ? ->.
+  unfold bv_to_bytes, bv_of_bytes.
+  rewrite div_round_up_divisible; last done.
+  bv_simplify.
+  unfold bv_wrap.
+  rewrite Z.mod_small.
+  2: {
+    pose proof (little_endian_to_bv_bound n l).
+    unfold bv_modulus.
+    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
+    done.
+  }
+  rewrite bv_to_little_endian_to_bv.
+  2: lia.
+  done.
+Qed.
+
+Lemma pa_range_lookup pa size i :
+  (i < size)%N →
+  pa_range pa size !! i = Some (pa_addN pa i).
+Proof.
+  intros.
+  unfold pa_range.
+  setoid_rewrite list_lookup_fmap.
+  unfold seqN.
+  setoid_rewrite list_lookup_fmap.
+  rewrite lookup_seq_lt; last lia.
+  cbn.
+  do 2 f_equal.
+  lia.
+Qed.
+
 Lemma seq_model_mem_reads_inv :
-  seq_model_outcome_invariant_preserved seq_inv_predicate cdst_mem_reads_invP.
+  seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate cdst_mem_reads_invP.
 Proof.
   unfold seq_model_outcome_invariant_preserved, cdst_co_acc_invP.
-  cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ eid ev rpa rval.
+  cdestruct |- *** as seqst H_inv call H_legalmem ret seqst_succ H_seqst_succ Hnms eid ev rpa rval.
   setoid_rewrite lookup_unfold.
   cdestruct ev, rpa, rval |- *** as size rr val b H_tr_lu.
   opose proof (seq_model_rf_acc_inv _ H_inv _ _ _ _) as H_rf; eauto; cbn in *.
@@ -2974,8 +3223,119 @@ Proof.
       apply H_rfb;
       eexists _, _; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
       eapply H5; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
-  - cdestruct val, b, eid, call, ret |- *** #CDestrMatch #CDestrEqOpt.
-    + unfold read_mem_seq_state_flag, read_mem_seq_state, memoryMap_read, read_byte_seq_state, read_byte_seq_state_flag in *.
+  - cdestruct val, b, eid, call, ret |- *** #CDestrEqOpt.
+    destruct (decide (size = 0%N)) as [->|].
+    {
+      destruct (decide ((∃ peids,
+        peids.2 = intra_trace_eid_succ 0 (trace_rev (itrs seqst)) ∧
+        peids ∈ rf_acc
+          (construct_cd_for_pe (build_pre_exec (initSt seqst)
+          (trace_cons (MemRead 0 rr &→ inl (val, b)) (itrs seqst))) cd∅)))).
+      all: autorewrite with pair in *; cbn in *.
+      1: left; sauto lq: on rew: off.
+      right.
+      split; first sauto lq: on rew: off.
+      cbv.
+      eapply bvn_eq; split; first done.
+      unfold definitions.bvn_unsigned.
+      by rewrite ?bv_unsigned_N_0.
+    }
+    (* unfold read_mem_seq_state, read_mem_seq_state_flag, read_byte_seq_state in H0. *)
+    cdestruct val, b |- *** #CDestrMatch #CDestrEqOpt.
+    + (* unfold read_mem_seq_state_flag, read_mem_seq_state, memoryMap_read, read_byte_seq_state, read_byte_seq_state_flag in *. *)
+      eapply eq_sym in H1.
+      opose proof (read_mem_seq_state_flag_false_get_byte _ _ _ _ H1).
+      right.
+      unfold not.
+      cdestruct |- *** #CDestrSplitGoal.
+      * rewrite <- H_same_itrs in *.
+        eapply H_rf in H4.
+        cdestruct H4 |- *** #CDestrEqOpt ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrMatch.
+        opose proof (seq_st_mem_map_consistent _ H_inv (ReadReq.pa rr)).
+        ospecialize (H3 0%N _); first lia.
+        destruct H3.
+        revert H8; eapply not_eq_None_Some.
+        rewrite pa_addN_zero.
+        eapply (seq_st_mem_map_is_Some _ H_inv).
+        setoid_rewrite lookup_unfold.
+        rewrite H_same_itrs in *.
+        eexists _, _, 0%N.
+        cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto.
+        unfold is_mem_writeP; cdestruct |- *** #CDestrSplitGoal.
+        1: by rewrite pa_addN_zero.
+        admit. (* NMS *)
+      * unfold memoryMap_read.
+        eapply (bvs_equal_get_byte_equal _ 8); try done.
+        cdestruct |- ***.
+        eapply Some_inj.
+        erewrite <- bv_to_bytes_bv_get_byte2; try done.
+        rewrite bv_to_bytes_bv_of_bytes; try done.
+        2: by rewrite length_fmap, pa_range_length, N2Nat.id.
+        unfold lookup, list_lookupN.
+        rewrite list_lookup_fmap.
+        setoid_rewrite pa_range_lookup.
+        2: lia.
+        cbn.
+        f_equal.
+        eapply H3.
+        lia.
+    + opose proof (cdst_mem_reads_inv _ H_inv _).
+    Search
+        rewrite lookup_unfold.
+
+        opose proof (bv_to_bytes_bv_get_byte 8%N i _ _ _); try done.
+        destruct H5.
+
+        erewrite H5.
+
+        Search bv_get_byte.
+
+
+        eexists ?[v].
+        eapply H7.
+        setoid_rewrite lookup_unfold.
+
+        opsoe proof
+        rewrite <- ?H_same_itrs.
+        enough (∃ eid ev,
+          trace_rev (itrs seqst_succ) !! eid = Some ev
+          ∧ (∃ offset, is_mem_writeP
+              (λ (size0 : N) (wr : WriteReq.t size0),
+                pa_addN (WriteReq.pa wr) offset = ReadReq.pa rr
+                ∧ (offset < size0)%N
+                  ∧ bv_get_byte 8 offset (WriteReq.value wr) = ?v) ev)).
+        1: destruct H8 as [? [? []]].
+        1: opose proof (trace_last_event_indexed (λ _ x3, ∃ offset : N,
+          is_mem_writeP
+            (λ (size0 : N) (wr : WriteReq.t size0),
+                pa_addN (WriteReq.pa wr) offset = ReadReq.pa rr
+                ∧ (offset < size0)%N
+                  ∧ bv_get_byte 8 offset (WriteReq.value wr) = ?v)
+            x3) _ _ _ H8).
+        1: admit.
+
+        1: instantiate (0 := (λ _ x3, ∃ offset : N,
+       is_mem_writeP
+         (λ (size0 : N) (wr : WriteReq.t size0),
+            pa_addN (WriteReq.pa wr) offset = ReadReq.pa rr
+            ∧ (offset < size0)%N
+              ∧ bv_get_byte 8 offset (WriteReq.value wr) = bv_get_byte 8 0 (WriteReq.value x2))
+         x3)).
+        pattern x3 in H9.
+        eapply trace_last_event_indexed.
+        eexists _, _, _.
+        cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+        1: eapply H4.
+        1: unfold is_mem_writeP; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+        1: by rewrite pa_addN_zero.
+        1: admit. (* NMS *)
+
+        Search (¬ _ = None).
+        setoid_rewrite H7 in H3.
+        unfold seq_st_mem_map_consistentP in *.
+        setoid_rewrite lookup_unfold in H3.
+
+      setoid_rewrite H_rf.
       admit.
     + unfold read_mem_seq_state, memoryMap_read, read_byte_seq_state, read_byte_seq_state_flag in *.
       admit.
@@ -3087,12 +3447,12 @@ Proof.
       unfold Candidate.mem_reads, Candidate.mem_writes in *.
       set_unfold.
       cdestruct H2, H6.
-      ospecialize (Hnms (x,y) _); first (set_unfold; rewrite ?Hsame_init, ?Hsame_itrs;
+      opose proof (Hnms (x,y) _) as Hnmsxy; first (set_unfold; rewrite ?Hsame_init, ?Hsame_itrs;
         cdestruct |- *** #CDestrSplitGoal).
-      unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in Hnms.
-      set_unfold in Hnms; cbn in *; rewrite ?Hsame_init, ?Hsame_itrs in *.
+      unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in Hnmsxy.
+      set_unfold in Hnmsxy; cbn in *; rewrite ?Hsame_init, ?Hsame_itrs in *.
       rewrite H2, H6 in *.
-      cdestruct x, y, Hnms.
+      cdestruct x, y, Hnmsxy.
       rewrite lookup_unfold in *.
       rewrite lookup_unfold in H2.
       opose proof (EID.full_po_lt_connex x y) as Hconnex.
@@ -3116,7 +3476,7 @@ Proof.
         setoid_rewrite lookup_unfold in H_rf; cbn in *.
         rewrite ?Hsame_itrs, ?Hsame_init in *.
         clear H_co.
-        opose proof (seq_model_mem_reads_inv _ H_inv _ _ _ _ x _ _ _ _ _ _ _ _ _) as H_mem_reads; eauto.
+        opose proof (seq_model_mem_reads_inv _ H_inv _ _ _ _ _ _ x _ _ _ _ _ _ _ _ _) as H_mem_reads; eauto.
         all: cdestruct H2 |- *** #CDestrEqOpt; rewrite ?Hsame_itrs in *;
           cdestruct |- *** #CDestrEqOpt.
         cbn in *.
@@ -3294,71 +3654,6 @@ Proof.
     destruct call; deintros; cdestruct |- ***.
 Admitted.
 
-Lemma bvs_equal_get_byte_equal n (x y : bvn) :
-  n ≠ 0%N → bvn_n x = bvn_n y →
-  (∀ i, (i * n < bvn_n x)%N →
-    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
-  x = y.
-Proof.
-  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
-  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
-  f_equal.
-  apply list_eq.
-  intros.
-  apply option_eq.
-  intro b.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
-  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
-  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: rewrite Hbytes in *; done.
-Qed.
-
-Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
-	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
-Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
-
-Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
-  n ≠ 0%N → m = N.of_nat (length l) →
-  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
-Proof.
-  intros ? ->.
-  unfold bv_to_bytes, bv_of_bytes.
-  rewrite div_round_up_divisible; last done.
-  bv_simplify.
-  unfold bv_wrap.
-  rewrite Z.mod_small.
-  2: {
-    pose proof (little_endian_to_bv_bound n l).
-    unfold bv_modulus.
-    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
-    done.
-  }
-  rewrite bv_to_little_endian_to_bv.
-  2: lia.
-  done.
-Qed.
-
-Lemma Some_inj {A} (x y : A) :
-  Some x = Some y ↔ x = y.
-Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
-
-Lemma pa_range_lookup pa size i :
-  (i < size)%N →
-  pa_range pa size !! i = Some (pa_addN pa i).
-Proof.
-  intros.
-  unfold pa_range.
-  setoid_rewrite list_lookup_fmap.
-  unfold seqN.
-  setoid_rewrite list_lookup_fmap.
-  rewrite lookup_seq_lt; last lia.
-  cbn.
-  do 2 f_equal.
-  lia.
-Qed.
-
 Lemma seq_model_pcdst_wf :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate
     (λ seq_st, Candidate.wf (seq_state_to_cd seq_st)).
@@ -3469,7 +3764,7 @@ Proof.
       unfold Candidate.same_footprint, Candidate.same_pa, Candidate.same_size in *.
       set_unfold in Hnms.
       cdestruct pa0, n, Hnms #CDestrEqOpt.
-      eapply (bvs_equal_get_byte_equal 8); try done.
+      eapply (bvns_equal_get_byte_equal 8); try done.
       intros.
       eapply Some_inj.
       cbn in *.
@@ -3632,6 +3927,7 @@ Proof.
   - enough (seq_inv_predicate x) by admit.
     revert Hnms; pattern x.
     eapply cinterp_inv_induct; cdestruct |- ***.
+    1: eapply Hmemlength.
     3: eauto.
     1: admit.
     unfold sequential_model_outcome_logged, fHandler_logger in *.
@@ -3640,31 +3936,27 @@ Proof.
     opose proof (sequential_model_outcome_same_itrs _ _ _ _ _) as Hsame_itrs; eauto.
     unfold seq_state_is_nms in Hnms; cbn in *; rewrite Hsame_itrs in *.
     eapply seq_model_seq_inv_predicate_preserved.
-    4: eauto.
-    1: eapply H3.
-    {
-      unfold seq_state_is_nms, Candidate.is_nms, Candidate.same_footprint,
-        Candidate.overlapping, Candidate.same_pa, Candidate.same_size,
-        Candidate.mem_events in Hnms |- *.
-      cbn in *.
-      set_unfold.
-      setoid_rewrite lookup_unfold.
-      cdestruct |- *** #CDestrEqOpt.
-      (* split.
-      Set Typeclasses Debug Verbosity 2.
-      1: set_unfold. *) (* Typeclasses *)
-      admit.
-    }
-    {
-      unfold isem_mem_acc_legal_length in *.
-    }
-    all: eauto.
+    2,4: eassumption.
+    2: unfold seq_state_is_nms; cbn; by rewrite Hsame_itrs.
+    eapply H3.
+    unfold seq_state_is_nms, Candidate.is_nms, Candidate.same_footprint,
+      Candidate.overlapping, Candidate.same_pa, Candidate.same_size,
+      Candidate.mem_events in Hnms |- *.
+    cbn in *.
+    set_unfold.
+    setoid_rewrite lookup_unfold.
+    cdestruct |- *** #CDestrEqOpt.
+    (* split.
+    Set Typeclasses Debug Verbosity 2.
+    1: set_unfold. *) (* Typeclasses *)
+    admit.
   - eapply H.
-    1: eauto.
+    1-3: eauto.
     eapply (cinterp_inv_induct _ _ seq_inv_predicate) in H0.
-    2: enough (seq_inv_predicate s) by admit; done.
-    2: admit.
+    2: eapply Hmemlength.
+    3: enough (seq_inv_predicate s) by admit; done.
     1: admit.
+    admit.
   Admitted.
 
 
@@ -3764,7 +4056,7 @@ Abort.
     cdestruct x3 |- ***.
     rewrite H2.
     all: rewrite ?Hsame_itrs in *.
-    eapply (bvs_equal_get_byte_equal 8); first done; cbn.
+    eapply (bvns_equal_get_byte_equal 8); first done; cbn.
     replace ((8 * x1) `div` 8)%N with x1 by lia.
     intros offset ?.
     Search bv_to_bytes.
