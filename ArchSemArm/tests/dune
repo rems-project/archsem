@@ -1,6 +1,6 @@
 (coq.theory
  (name ArchSemArm.tests)
- (modules ArmSeqModelTest)
+ (modules ArmSeqModelTest IslaInit ArmSeqModelIslaTest)
  (theories ArchSemArm)
 )
 ; Do not build this folder by default but do it when running @runtest
