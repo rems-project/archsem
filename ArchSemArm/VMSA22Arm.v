@@ -491,7 +491,7 @@ Section VMSAArm.
   Definition Stage2 : gset EID.t:= ∅. (* Temporary HACK: Stage 2 disabled *)
 
   (* translation-common.cat#L31 *)
-  Definition speculative := ctrl ∪ (addr⨾po) ∪ (⦗T⦘⨾instruction_order).
+  Definition speculative := ctrl ∪ (addr⨾po).
   (* translation-common.cat#L42 *)
   Definition ContextChange := MSR ∪ TE ∪ ERET.
   (* translation-common.cat#L46 *)

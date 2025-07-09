@@ -63,14 +63,6 @@ Import Candidate.
 Import AxArmNames.
 
 
-Definition ISA_trans_can_fail (isem : iMon ()) :=
-  ∀ lt : list iEvent,
-  cmatch isem (lt, FTERet ()) →
-  ∀ i ev,
-  lt !! i = Some ev →
-  is_mem_read_kindP is_ttw ev →
-  ∃ j acc v, (i < j)%nat ∧ lt !! j = Some (RegWrite pc_reg acc v &→ ()).
-
 Section Phase1.
   (** Unfold relational equality [r = s] into [∀ x y, (x, y) ∈ r ↔ (x, y) ∈ s]
       instead of a single value *)
@@ -191,11 +183,6 @@ Section Phase1.
   Variable isem : iMon ().
   Hypothesis cd_isem_match : ISA_match cd isem.
 
-  (** This instruction semantic must have the property that any translation is
-      followed by a PC write, in other-words, an instruction cannot commit on
-      not taking an exception before finishing all translations. *)
-  Hypothesis isem_trans_can_fail : ISA_trans_can_fail isem.
-
   (** In addition we require that translation read from initial memory *)
   Hypothesis initial_TTW_reads : T ⊆ init_mem_reads cd.
   Hypothesis TTW_reads_not_delayed : T ## grel_rng (coherence cd).
@@ -264,42 +251,6 @@ Section Phase1.
   Lemma UM_VMSA_aob : VMSA.aob cd = UM.aob cd.
   Proof. reflexivity. Qed.
 
-
-  #[global] Hint Constants Opaque : rewrite.
-  (** ** T;instruction_order in ctrl *)
-  Lemma T_iio_pc_write : ∀ x ∈ T, ∃ y ∈ (pc_writes cd), (x, y) ∈ iio.
-  Proof using cd_isem_match cd_complete isem_trans_can_fail.
-    intros teid Ht.
-    unfold T, reads_by_kind in Ht.
-    cdestruct Ht.
-    destruct teid as [tid iid ieid byte].
-    unfold lookup, lookup_eid_pre, lookup_iEvent in H.
-    cdestruct byte, H as tr tre ?? # CDestrEqOpt.
-    opose proof* ISA_complete_use; [eassumption .. | deintro; cdestruct tre |- ?].
-    opose proof* ISA_match_use as Hc; [eassumption .. |].
-    opose proof* (isem_trans_can_fail _ Hc ieid) as H'; [eassumption .. |].
-    cdestruct H'.
-    exists (EID.make tid iid x None).
-    unfold pc_writes. apply set_unfold_2 # UnfoldEidRels.
-    unfold is_Some,lookup,lookup_eid_pre, lookup_iEvent.
-    repeat setoid_rewrite eq_some_unfold.
-    sauto lq:on rew:off.
-  Qed.
-
-  Lemma T_instruction_order_ctrl : ⦗T⦘⨾instruction_order ⊆ ctrl.
-  Proof using cd_isem_match cd_complete isem_trans_can_fail.
-    clear - cd_isem_match cd_complete isem_trans_can_fail.
-    apply set_unfold_2. cbn.
-    cdestruct |- ** as x y HT ?.
-    specialize (T_iio_pc_write _ HT) as H'.
-    cdestruct H' as z??.
-    assert (x ∈ mem_reads pe). {
-      revert HT. clear. unfold T, reads_by_kind, mem_reads.
-      set_unfold. cdestruct |- **. naive_solver. }
-    assert ((z, y) ∈ instruction_order). {
-      set_unfold # UnfoldEidRels. intuition lia. }
-    unfold ctrl. set_solver.
-  Qed.
 
   Section NoCacheOp_implies_ob1_equal.
 
@@ -377,16 +328,16 @@ Section Phase1.
     Qed.
 
     Lemma UM_to_VM_speculative : UM.speculative cd = VMSA.speculative cd.
-    Proof using cd_isem_match cd_complete isem_trans_can_fail.
-      clear - cd_isem_match cd_complete isem_trans_can_fail.
+    Proof using cd_isem_match cd_complete.
+      clear - cd_isem_match cd_complete.
       unfold UM.speculative, VMSA.speculative.
-      set_solver ## T_instruction_order_ctrl.
+      set_solver.
     Qed.
 
     Lemma VMSA_ctxob_simpl :
       VMSA.ctxob cd ⊆ UM.dob cd ∪ UM.bob cd.
-    Proof using no_msr no_exceptions cd_isem_match cd_complete isem_trans_can_fail.
-      clear - no_msr no_exceptions cd_isem_match cd_complete isem_trans_can_fail.
+    Proof using no_msr no_exceptions cd_isem_match cd_complete.
+      clear - no_msr no_exceptions cd_isem_match cd_complete.
       unfold VMSA.ctxob, VMSA.CSE, VMSA.ContextChange,
         UM.dob, UM.bob.
       rewrite <- UM_to_VM_speculative.
@@ -431,7 +382,7 @@ Section Phase1.
 
     Lemma VMSA_UM_ob1 : VMSA.ob1 cd = UM.ob1 cd.
     Proof using NoCacheOp no_tlbi no_tf no_msr no_exceptions initial_TTW_reads
-      isem_trans_can_fail cd_complete cd_isem_match.
+      cd_complete cd_isem_match.
       apply set_unfold_2.
       intros x y.
       unfold VMSA.ob1, VMSA.dob, VMSA.bob, VMSA.ctxob, VMSA.CSE,
@@ -448,7 +399,7 @@ Section Phase1.
 
     Lemma VMSA_UM_ob : VMSA.ob cd = UM.ob cd.
     Proof using NoCacheOp no_tlbi no_tf no_msr no_exceptions initial_TTW_reads
-      isem_trans_can_fail cd_complete cd_isem_match.
+      cd_complete cd_isem_match.
       unfold VMSA.ob, UM.ob. f_equal. exact VMSA_UM_ob1.
     Qed.
 
