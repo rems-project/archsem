@@ -1139,7 +1139,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
         instruction order for regular register *)
     Definition reg_from_reads cd :=
       ⦗reg_reads cd⦘⨾ same_reg cd ⨾⦗reg_writes cd⦘
-        ∖ ((instruction_order cd ∪ ⦗reg_writes cd⦘)⨾ reg_reads_from cd)⁻¹.
+        ∖ ((full_instruction_order cd ∪ ⦗reg_writes cd⦘)⨾ reg_reads_from cd)⁻¹.
     #[global] Typeclasses Opaque reg_from_reads.
 
     Definition pc_reads_from cd := ⦗pc_writes cd⦘⨾ reg_reads_from cd ⨾⦗pc_reads cd⦘.
