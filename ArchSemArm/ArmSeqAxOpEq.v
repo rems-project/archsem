@@ -879,49 +879,6 @@ Lemma intra_trace_eid_succ_byte tid tr :
   (intra_trace_eid_succ tid tr).(EID.byte) = None.
 Proof. unfold intra_trace_eid_succ. cdestruct |- *** #CDestrMatch. Qed.
 
-(* Lemma intra_trace_eid_succ_lookup_None {nmth} (pe : Candidate.pre Candidate.NMS nmth) tid :
-  pe !! (intra_trace_eid_succ tid (pe !!! tid)) = None.
-Proof.
-  unfold intra_trace_eid_succ.
-  destruct tr; cbn. *)
-
-
-(* #[export] Instance set_elem_of_traces_snoc {nmth} init (trs : vec (list (iTrace ())) nmth) ev' thread eid ev P :
-  SetUnfoldElemOf (eid, ev) (Candidate.event_list (Candidate.make_pre Candidate.NMS init trs)) P →
-  SetUnfoldElemOf (eid, ev)
-    (Candidate.event_list (Candidate.make_pre Candidate.NMS init (traces_snoc ev' thread trs)))
-    (P ∨ eid = intra_trace_eid_succ thread (trs !!! thread) ∧ ev = ev').
-Proof.
-  tcclean.
-  unfold traces_snoc, trace_snoc, unsnoc_total.
-  set_unfold.
-  destruct eid.
-  unfold lookup, Candidate.lookup_eid_pre.
-  cbn.
-  cbv [set Setter_valter alter valter].
-  unfold Candidate.lookup_iEvent, Candidate.lookup_instruction.
-  cbn.
-  assert ((trs !!! thread) = [] ∨ (trs !!! thread) ≠ []) as [|] by (destruct (trs !!! thread); naive_solver); cbn.
-  - rewrite H0 in *.
-    cbn in *.
-    destruct (decide (fin_to_nat thread = tid)) as [<-|]; cbn.
-    + rewrite <- vec_to_list_lookup, vec_to_list_insert, list_lookup_insert;
-      last (rewrite length_vec_to_list; eapply fin_to_nat_lt).
-      opose proof (vlookup_lookup trs thread []) as [? _].
-      specialize (H1 H0); rewrite <- vec_to_list_lookup in *.
-      cdestruct |- *** #CDestrSplitGoal.
-      1: destruct iid as [|[|]], ieid as [|[|]]; cbn in *; try discriminate.
-      all: assert (byte = None) as -> by admit.
-      1: unfold guard in H0; cdestruct H0 #CDestrMatch; naive_solver.
-      all: destruct iid as [|[|]]; cbn; try discriminate; try naive_solver.
-      all: rewrite ?H1 in *; cbn in *; try discriminate.
-    + rewrite <- vec_to_list_lookup, vec_to_list_insert, list_lookup_insert_ne; last done.
-      cdestruct |- *** #CDestrSplitGoal; last scongruence.
-      all: rewrite <- vec_to_list_lookup in *; hauto lq: on rew: off .
-  - cbn in *.
-Admitted. *)
-
-
 Lemma trace_snoc_event_list init tr ev :
   Candidate.event_list (Candidate.make_pre Candidate.NMS init [#trace_snoc ev tr]) =
   Candidate.event_list (Candidate.make_pre Candidate.NMS init [#tr]) ++
@@ -965,42 +922,6 @@ Proof.
   rewrite lookup_vec_nat_cons_S.
   sfirstorder.
 Qed.
-
-(* #[export] Instance lookup_unfold_traces_snoc {nmth} (init : MState.t nmth) evs (ev : iEvent) thread (eid : EID.t) R :
-  LookupUnfold eid (Candidate.make_pre Candidate.NMS init evs) R →
-  LookupUnfold eid (Candidate.make_pre Candidate.NMS init (traces_snoc ev thread evs))
-    (if eid =? intra_trace_eid_succ (fin_to_nat thread) (evs !!! thread) then Some ev else R).
-Proof.
-  tcclean.
-  clear H R.
-  cdestruct |- *** #CDestrMatch #CDestrEqOpt.
-  - unfold lookup, Candidate.lookup_eid_pre, Candidate.lookup_iEvent, Candidate.lookup_instruction in H |- *.
-    cdestruct eid, H |- *** #CDestrEqOpt.
-    eexists.
-    cdestruct |- *** #CDestrSplitGoal.
-    2: eapply intra_trace_eid_succ_byte.
-    rewrite intra_trace_eid_succ_tid.
-    unfold traces_snoc, set, Setter_valter, alter, valter.
-    rewrite lookup_total_fin_to_nat.
-    rewrite vlookup_insert.
-    cdestruct |- *** #CDestrEqOpt.
-    unfold intra_trace_eid_succ, unsnoc_total.
-    destruct (unsnoc (evs !!! thread)) as [[? []]|] eqn: Hunsnoc.
-    1: cbn.
-Admitted.
-
-#[export] Instance lookup_unfold_trace_snoc {et} (init : MState.t 1) evs (ev : iEvent) (eid : EID.t) R :
-  LookupUnfold eid (Candidate.make_pre et init [# evs]) R →
-  LookupUnfold eid (Candidate.make_pre et init [# trace_snoc ev evs])
-    (if eid =? intra_trace_eid_succ 0 evs then Some ev else R).
-Proof.
-  tcclean.
-  cdestruct eid, H |- *** #CDestrMatch.
-Admitted. *)
-
-(* #[export] Instance lookup_unfold_intra_traces_eid_succ_None {nmth et} (init : MState.t nmth) trs (tid : Fin.t nmth) :
-  LookupUnfold (intra_trace_eid_succ tid (trs !!! tid)) (Candidate.make_pre et init trs) None.
-Admitted. *)
 
 Lemma cd_to_pe_lookup `(cd : Candidate.t et nmth) eid :
   cd !! eid = Candidate.pre_exec cd !! eid.
@@ -1317,24 +1238,6 @@ Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
 Lemma is_Some_fold `(o : option A) i :
   o = Some i → is_Some o.
 Proof. destruct o; done. Qed.
-
-(* Goal ∀ nmth `(∀ eid event, Decision (P eid event)) ev tid (pe : Candidate.pre Candidate.NMS nmth) L, Candidate.collect_all P (set Candidate.events (traces_snoc ev tid) pe) = L.
-
-intros.
-set_unfold.
-destruct pe.
-cbv [set]; cbn.
-setoid_rewrite lookup_unfold.
-cdestruct |- *** #CDestrMatch.
-
-#[local] Instance set_unfold_elem_of_collect_all_trace_snoc {nmth} eid `{∀ eid ev, Decision (P eid ev)} (pe : Candidate.pre Candidate.NMS nmth) ev tid Q :
-  SetUnfoldElemOf eid (Candidate.collect_all P pe) Q →
-  SetUnfoldElemOf eid (Candidate.collect_all P (set Candidate.events (traces_snoc ev tid) pe))
-  (Q ∨ P eid ev ∧ eid = intra_trace_eid_succ tid (pe.(Candidate.events) !!! tid)).
-Proof.
-  tcclean.
-Admitted. *)
-
 
 Definition op_mem_wf (str : result seq_state seq_state) : Prop :=
   match str with
