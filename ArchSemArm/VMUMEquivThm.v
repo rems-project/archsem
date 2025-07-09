@@ -178,13 +178,14 @@ Section Phase1.
   Hypothesis cd_wf: wf cd.
   Hypothesis cd_complete : ISA_complete cd.
 
-  (** We also take an instruction semantic [isem] as a parameter that must
-      accept the candidate execution *)
-  Variable isem : iMon ().
-  Hypothesis cd_isem_match : ISA_match cd isem.
-
   (** In addition we require that translation read from initial memory *)
   Hypothesis initial_TTW_reads : T ⊆ init_mem_reads cd.
+
+  (** Technically the model could require co to only contain write and TLBIs and
+  still state the same things (that's what other models outside ArchSem do),
+  however being more generic is useful, up to a point. In particular we can't
+  allow translation to be delayed by coherence, but we also don't expect any
+  models in the future that would require TTW reads to be in coherence. *)
   Hypothesis TTW_reads_not_delayed : T ## grel_rng (coherence cd).
 
   (** And we require that there is no fault, TLBIs or MSRs, those can be deduce
@@ -328,16 +329,16 @@ Section Phase1.
     Qed.
 
     Lemma UM_to_VM_speculative : UM.speculative cd = VMSA.speculative cd.
-    Proof using cd_isem_match cd_complete.
-      clear - cd_isem_match cd_complete.
+    Proof using  cd_complete.
+      clear - cd_complete.
       unfold UM.speculative, VMSA.speculative.
       set_solver.
     Qed.
 
     Lemma VMSA_ctxob_simpl :
       VMSA.ctxob cd ⊆ UM.dob cd ∪ UM.bob cd.
-    Proof using no_msr no_exceptions cd_isem_match cd_complete.
-      clear - no_msr no_exceptions cd_isem_match cd_complete.
+    Proof using no_msr no_exceptions cd_complete.
+      clear - no_msr no_exceptions cd_complete.
       unfold VMSA.ctxob, VMSA.CSE, VMSA.ContextChange,
         UM.dob, UM.bob.
       rewrite <- UM_to_VM_speculative.
@@ -382,7 +383,7 @@ Section Phase1.
 
     Lemma VMSA_UM_ob1 : VMSA.ob1 cd = UM.ob1 cd.
     Proof using NoCacheOp no_tlbi no_tf no_msr no_exceptions initial_TTW_reads
-      cd_complete cd_isem_match.
+      cd_complete.
       apply set_unfold_2.
       intros x y.
       unfold VMSA.ob1, VMSA.dob, VMSA.bob, VMSA.ctxob, VMSA.CSE,
@@ -399,7 +400,7 @@ Section Phase1.
 
     Lemma VMSA_UM_ob : VMSA.ob cd = UM.ob cd.
     Proof using NoCacheOp no_tlbi no_tf no_msr no_exceptions initial_TTW_reads
-      cd_complete cd_isem_match.
+      cd_complete.
       unfold VMSA.ob, UM.ob. f_equal. exact VMSA_UM_ob1.
     Qed.
 
