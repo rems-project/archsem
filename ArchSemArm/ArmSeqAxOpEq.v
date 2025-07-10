@@ -1528,7 +1528,6 @@ Qed.
 
 Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
 
-Print Instances Countable.
 Record partial_cd_state := {
   pa_write_map : gmap pa EID.t;
   reg_write_map : gmap reg EID.t;
@@ -1537,8 +1536,6 @@ Record partial_cd_state := {
   rrf_acc : grel EID.t;
   co_acc : grel EID.t
 }.
-Set Printing Implicit.
-Check pa_write_map.
 
 #[local] Notation "cd∅" := (Build_partial_cd_state ∅ ∅ ∅ ∅ ∅ ∅).
 
@@ -1673,7 +1670,6 @@ Proof using regs_whitelist.
   rewrite lookup_unfold.
   deintros; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
   all: try (left+right; split; first done).
-  1: best.
   all: fcrush.
 Qed.
 
@@ -2419,26 +2415,6 @@ Lemma seq_state_to_pe_fold seq_st :
     Candidate.events := [#Candidate.events (seq_state_to_pe seq_st) !!! 0%fin] |}
   = (seq_state_to_pe seq_st).
 Proof. unfold build_pre_exec. cdestruct |- ***. Qed.
-
-(* #[local] Instance set_unfold_elem_of_co_acc_trace_cons init itrs ev x y P :
-  SetUnfoldElemOf (x, y)
-    (co_acc (construct_cd_for_pe (build_pre_exec init itrs) cd∅)) P →
-  SetUnfoldElemOf (x, y)
-    (co_acc (construct_cd_for_pe (build_pre_exec init (trace_cons ev itrs)) cd∅))
-    (if decide (y = intra_trace_eid_succ 0 itrs)
-    then
-      ∃ xev, build_pre_exec init itrs !! x = Some xev ∧
-        is_mem_write xev ∧ is_mem_write ev ∧ get_pa xev = get_pa ev
-    else P).
-Proof.
-  tcclean.
-  destruct ev as [[] ?].
-  all: eapply seq_state_to_partial_cd_state_destruct; try done.
-  all: unfold reg_read_upd_partial_cd_state, reg_write_upd_partial_cd_state,
-    mem_write_upd_partial_cd_state, mem_read_upd_partial_cd_state.
-  all: cdestruct y, H |- *** #CDestrMatch.
-  all: destruct fcall; try done.
-  unfold set in *. *)
 
 Definition seq_st_mem_map_consistentP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
@@ -4147,6 +4123,14 @@ Proof.
       eapply H1; cdestruct |- *** #CDestrEqOpt.
 Qed.
 
+Lemma regt_of_bv64_regt_to_bv64 {r} (x : reg_type r) : 
+  regt_of_bv64 (regt_to_bv64 x) = x.
+Proof.
+  unfold regt_of_bv64, regt_to_bv64.
+  depelim r.
+  by depelim r.
+Qed.
+
 Lemma seq_model_pcdst_wf :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate
     (λ seq_st, Candidate.wf (seq_state_to_cd seq_st)).
@@ -4394,7 +4378,7 @@ Proof.
         cdestruct |- *** #CDestrMatch.
         { eapply H_reg_map in H3.
           cdestruct b, H3 |- *** #CDestrEqOpt.
-          enough (x9 = x3) by admit.
+          rewrite regt_of_bv64_regt_to_bv64.
           ospecialize (H2 x0 _ _ _ _);
           last ospecialize (H4 t _ _ _ _).
           all: cdestruct |- *** #CDestrEqOpt.
@@ -4421,7 +4405,7 @@ Proof.
       cdestruct H_reg_reads |- *** #CDestrSplitGoal.
       1: exfalso; apply H0.
       1: eauto.
-Admitted.
+Qed.
 
 Lemma seq_model_seq_inv_predicate_preserved :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate
@@ -4482,11 +4466,6 @@ Qed.
   SetUnfoldElemOf x (Candidate.collect_all P
     (build_pre_exec init (((hd FTNothing trs).1, trend) :: tail trs))) Q.
 Proof. tcclean. set_unfold. by setoid_rewrite lookup_unfold. Qed.
-
-(* #[local] Instance lookup_unfold
-LookupUnfold eid (trace_rev itrs st) P →
-LookupUnfold eid
-(trace_rev (itrs (set itrs (λ l : list (iTrace ()), ((hd FTNothing l).1, FTERet ()) :: tail l) st))) P *)
 
 Lemma iEvent_list_unchanged_by_trace_end initSt itrs:
   Candidate.iEvent_list (build_pre_exec initSt (((hd FTNothing itrs).1, FTERet ()) :: tail itrs)) =
@@ -5056,19 +5035,107 @@ Proof.
   all: eapply trace_tail_preserves_nms.
   all: eassumption.
 Qed.
+Search cmatch.
+
+ Lemma seq_model_cinterp_ISA_match isem st st_succ ret :
+  Candidate.ISA_match (seq_state_to_pe st) isem →
+  (st_succ, ret) ∈ 
+    cinterp (sequential_model_outcome_logged (Some regs_whitelist)) isem st →
+  Candidate.ISA_match (seq_state_to_pe st_succ) isem.
+Proof.
+  revert isem.
+  unfold Candidate.ISA_match, build_pre_exec.
+  depelim tid; last depelim tid.
+  intros.
+  specialize (H 0%fin).
+  cbn in *.
+  revert dependent st st_succ trc.
+  induction isem as [|[|[]]];
+  cdestruct |- ***.
+  - by eapply H.
+  - unfold sequential_model_outcome_logged, fHandler_logger in H1.
+    cdestruct x, H1 |- ***.
+    unfold trace_cons in *.
+    destruct (decide ())
+    Locate cmatch.
+  
+  Print cmatch . eapply H.
+    admit.
+  - eapply H.
+
+
+  eapply (cinterp_inv_induct _ _ (λ st, cmatch isem st)  (λ _, True)) in H0.
+  
+  cbn in *.
+  induction isem as [|[|[]]]; deintros; cdestruct |- ***.
+  - by eapply H.
+  - unfold sequential_model_outcome_logged, fHandler_logger in H0.
+    cdestruct x, H0 |- *** #CDestrEqOpt.
+    opose proof (sequential_model_outcome_same_itrs _ _ _ _ _) as Hstr; eauto.
+    destruct l as [|[]].
+    1: admit.
+    rewrite Hstr in *.
+    eapply H1 in H2.
+    eapply H.
+    rewrite Hstr in *.
+   constructor.
+  all: try constructor.
+ *)
+
+Lemma seq_model_ISA_match isem initSt st fs fuel :
+  (st, fs) ∈ 
+    sequential_model_seqmon (Some regs_whitelist) fuel isem
+      {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |} →
+  Candidate.ISA_match (seq_state_to_pe st) isem.
+Proof.
+  unfold build_pre_exec, Candidate.ISA_match.
+
+  elim fuel; cdestruct |- *** #CDestrMatch.
+  all: repeat depelim tid.
+  all: rewrite lookup_total_unfold in *.
+  1: admit.
+  induction
+
+Lemma seq_model_ISA_match_preserved isem :
+  seq_model_outcome_invariant_preserved
+    (λ seqst, Candidate.ISA_match (seq_state_to_pe seqst) isem)
+    (λ seqst, Candidate.ISA_match (seq_state_to_pe seqst) isem).
+Proof.
+  unfold seq_model_outcome_invariant_preserved, Candidate.ISA_match, build_pre_exec.
+  cdestruct |- *** as seqst H_base call ret seqst_succ H_seqst_succ tid thtr trend H_thtr.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  repeat depelim tid.
+  specialize (H_base 0%fin).
+  rewrite lookup_total_unfold in H_base; rewrite lookup_total_unfold in H_thtr.
+  unfold trace_rev, trace_cons in *.
+  set_unfold.
+  cbv [set] in *.
+  rewrite Hsame_itrs in *.
+  cdestruct thtr, trend, H_thtr |- *** #CDestrSplitGoal.
+  2: {
+    eapply H_base. 
+    eexists (l, trend); cdestruct |- *** #CDestrSplitGoal.
+    destruct (itrs seqst); cbn in *; first set_solver.
+    by right.
+  }
+  Print cmatch.
+  
+  Search cmatch app.
+
 
 Lemma op_model_exists_consistent_cd fuel isem initSt :
   isem_mem_acc_legal_length isem →
   ∀ st fs, seq_state_is_nms st →
     (st, fs) ∈
       sequential_model_seqmon (Some regs_whitelist) fuel isem
-      {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |} → (* less critical but would be nice:  *)
-    ∃ cd, cd.(Candidate.pre_exec) = (seq_state_to_pe st) ∧ (* let cd := instead of the exists *)
+      {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |} →
+    let cd := (seq_state_to_cd st) in
+      Candidate.ISA_match cd isem ∧ cd.(Candidate.pre_exec) = (seq_state_to_pe st) ∧
       consistent regs_whitelist cd ∧ Candidate.wf cd. (* ISA_match *)
 Proof.
   intros Hmemlength ?? Hnms Hexec.
   enough (seq_inv_predicate st) as Hinv.
-  1: exists (seq_state_to_cd st); by destruct Hinv.
+  1: exists ; by destruct Hinv.
   pose proof (empty_seq_state_fulfills_seq_inv_predicate initSt).
   generalize dependent {| initSt := initSt; mem := ∅; regs := ∅; itrs := [] |}.
   revert dependent isem st.
