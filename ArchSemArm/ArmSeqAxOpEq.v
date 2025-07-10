@@ -2463,7 +2463,7 @@ Definition seq_st_reg_map_consistentP seq_st :=
         is_reg_write ev ∧ get_reg ev = Some reg ∧
         get_reg_val ev = Some (existT T rv) ∧ regt_to_bv64 rv = v ∧
         (∀ eid' ev', cd !! eid' = Some ev' →
-          is_reg_write ev' → get_reg ev = Some reg →
+          is_reg_write ev' → get_reg ev' = Some reg →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
 Definition seq_st_mem_map_is_SomeP seq_st :=
@@ -2778,7 +2778,58 @@ Qed.
 Lemma seq_model_seq_st_reg_map_consistent_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate seq_st_reg_map_consistentP.
 Proof.
-Admitted.
+  unfold seq_model_outcome_invariant_preserved, seq_st_reg_map_consistentP.
+  setoid_rewrite lookup_unfold.
+  cdestruct |- *** as seqst H_inv call ret seqst_succ H_seqst_succ reg v #CDestrEqOpt.
+  opose proof (sequential_model_outcome_same_itrs _ _ _ _ H_seqst_succ) as Hsame_itrs.
+  rewrite Hsame_itrs in *.
+  eapply seq_st_reg_map_consistent in H_inv.
+  specialize (H_inv reg v).
+  destruct (decide (is_reg_write (call &→ ret))).
+  - destruct call; try (unfold is_reg_writeP; done).
+    cdestruct ret, seqst_succ |- *** #CDestrEqOpt.
+    unfold Setter_finmap.
+    setoid_rewrite lookup_unfold.
+    cdestruct reg |- *** #CDestrMatch.
+    + cdestruct |- *** #CDestrSplitGoal.
+      * eexists _, (intra_trace_eid_succ 0 (trace_rev seqst.(itrs))), _, _.
+        cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+        opose proof (EID.full_po_lt_connex (intra_trace_eid_succ 0 (trace_rev seqst.(itrs))) eid' _ _ _) as Hconnex.
+        all: rewrite ?intra_trace_eid_succ_byte, ?intra_trace_eid_succ_tid.
+        1-3: unfold lookup, lookup_ev_from_iTraces in *; cdestruct eid' |- *** #CDestrEqOpt.
+        cdestruct eid', Hconnex |- *** #CDestrSplitGoal ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrMatch.
+        all: try solve [left+right; cdestruct |- *** #CDestrEqOpt].
+      * ospecialize (H3 (intra_trace_eid_succ 0 (trace_rev seqst.(itrs))) _ _ _ _);
+          cdestruct |- *** #CDestrEqOpt.
+        cdestruct x0, H3, v, H1 |- *** #CDestrSplitGoal #CDestrEqOpt.
+        2: { naive_solver. }
+        opose proof (EID.full_po_lt_connex (intra_trace_eid_succ 0 (trace_rev seqst.(itrs))) x0 _ _ _) as Hconnex.
+        all: rewrite ?intra_trace_eid_succ_byte, ?intra_trace_eid_succ_tid.
+        1-3: unfold lookup, lookup_ev_from_iTraces in *; cdestruct x0 |- *** #CDestrEqOpt.
+        cdestruct x0, Hconnex |- *** #CDestrSplitGoal ##eq_some_unfold_lookup_eid_trace_rev_cons #CDestrEqOpt #CDestrMatch.
+    + setoid_rewrite H_inv.
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch
+        ##eq_some_unfold_lookup_eid_trace_rev_cons.
+      1,2: eexists _, x0, _, _;
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
+      1,2: eapply H4; cdestruct eid' |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch
+        ##eq_some_unfold_lookup_eid_trace_rev_cons.
+      1: scongruence.
+      1: done.
+  - assert (seqst_succ.(regs) = seqst.(regs)) as Hregs.
+    { destruct call; deintros; cdestruct |- *** #CDestrEqOpt #CDestrMatch.
+      1: by unfold is_reg_writeP in *.
+      eapply write_mem_seq_state_regs_unchanged; eauto. }
+    rewrite Hregs.
+    setoid_rewrite H_inv.
+    cdestruct call |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch
+        ##eq_some_unfold_lookup_eid_trace_rev_cons.
+      1,2: eexists _, x0, _, _;
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch.
+      1,2: eapply H1; cdestruct eid' |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch
+        ##eq_some_unfold_lookup_eid_trace_rev_cons.
+      1,2: unfold is_reg_writeP in *; deintros; cdestruct |- ***; done.
+Qed.
 
 Lemma seq_model_seq_st_reg_map_is_Some_inv :
   seq_model_outcome_invariant_preserved seq_inv_predicate seq_st_reg_map_is_SomeP.
