@@ -4661,6 +4661,18 @@ Proof using regs_whitelist.
     setoid_rewrite lookup_unfold.
     setoid_rewrite lookup_unfold in H_inv.
     apply H_inv.
+  - apply seq_st_reg_map_consistent in H_inv.
+    unfold seq_st_reg_map_consistentP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    apply H_inv.
+  - apply seq_st_reg_map_is_Some in H_inv.
+    unfold seq_st_reg_map_is_SomeP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    apply H_inv.
   - apply mem_writes_succeed in H_inv.
     unfold mem_writes_succeedP in *.
     cbn.
@@ -4718,6 +4730,13 @@ Proof using regs_whitelist.
     apply H_inv.
   - apply cdst_mem_reads_inv in H_inv.
     unfold cdst_mem_reads_invP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    rewrite construct_cd_for_pe_unchanged_by_trace_end.
+    apply H_inv.
+  - apply cdst_reg_reads_inv in H_inv.
+    unfold cdst_reg_reads_invP in *.
     cbn.
     setoid_rewrite lookup_unfold.
     setoid_rewrite lookup_unfold in H_inv.
@@ -4808,6 +4827,18 @@ Proof using regs_whitelist.
     setoid_rewrite lookup_unfold.
     setoid_rewrite lookup_unfold in H_inv.
     apply H_inv.
+  - apply seq_st_reg_map_consistent in H_inv.
+    unfold seq_st_reg_map_consistentP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    apply H_inv.
+  - apply seq_st_reg_map_is_Some in H_inv.
+    unfold seq_st_reg_map_is_SomeP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    apply H_inv.
   - apply mem_writes_succeed in H_inv.
     unfold mem_writes_succeedP in *.
     cbn.
@@ -4865,6 +4896,13 @@ Proof using regs_whitelist.
     apply H_inv.
   - apply cdst_mem_reads_inv in H_inv.
     unfold cdst_mem_reads_invP in *.
+    cbn.
+    setoid_rewrite lookup_unfold.
+    setoid_rewrite lookup_unfold in H_inv.
+    rewrite construct_cd_for_pe_unchanged_by_cons_empty_trace.
+    apply H_inv.
+  - apply cdst_reg_reads_inv in H_inv.
+    unfold cdst_reg_reads_invP in *.
     cbn.
     setoid_rewrite lookup_unfold.
     setoid_rewrite lookup_unfold in H_inv.
