@@ -2,20 +2,11 @@
 opam-version: "2.0"
 synopsis:
   "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library"
-maintainer: ["Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>"]
-authors: [
-  "Thibaut Pérami"
-  "Zonguyan Liu"
-  "Nils Lauermann"
-  "Jean Pichon-Pharabod"
-  "Brian Campbell"
-  "Alasdair Armstrong"
-  "Ben Simner"
-  "Peter Sewell"
-]
+maintainer: ["Anonymous"]
+authors: ["Anonymous"]
 license: "BSD-2-Clause"
-homepage: "https://github.com/rems-project/archsem"
-bug-reports: "https://github.com/rems-project/archsem/issues"
+homepage: "https://github.com/Anonymous/Anonymous"
+bug-reports: "https://github.com/Anonymous/Anonymous/issues"
 depends: [
   "dune" {>= "3.8"}
   "coq" {= "8.19.2"}
@@ -41,4 +32,4 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://github.com/rems-project/archsem.git"
+dev-repo: "git+https://github.com/Anonymous/Anonymous.git"

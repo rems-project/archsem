@@ -1,15 +1,8 @@
 (******************************************************************************)
 (*                                ArchSem                                     *)
 (*                                                                            *)
-(*  Copyright (c) 2021                                                        *)
-(*      Thibaut Pérami, University of Cambridge                               *)
-(*      Zonguyan Liu, Aarhus University                                       *)
-(*      Nils Lauermann, University of Cambridge                               *)
-(*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
-(*      Brian Campbell, University of Edinburgh                               *)
-(*      Alasdair Armstrong, University of Cambridge                           *)
-(*      Ben Simner, University of Cambridge                                   *)
-(*      Peter Sewell, University of Cambridge                                 *)
+(*  Copyright (c) 2025                                                        *)
+(*      ANONYMOUS                                                             *)
 (*                                                                            *)
 (*  All files except SailArmInstTypes.v are distributed under the             *)
 (*  license below (BSD-2-Clause). The former is distributed                   *)
@@ -98,7 +91,7 @@ Require Import Program.Equality.
       - A plain variable equality [x = expr] or [expr = y]
       - [existsT T x = existsT T' x'] if either T or T' is a variable
       - The same with constructor nesting:
-        [existsT (existT T x) y = existT (existT T' x') y'),
+        [existsT (existT T x) y = existT (existT T' x') y')],
         if either T or T' is a variable.
       - Also by default with other constructors than [existT]
       - [ctrans e f] anywhere if [e] has a variable on either side

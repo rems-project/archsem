@@ -1,15 +1,8 @@
 (******************************************************************************)
 (*                                ArchSem                                     *)
 (*                                                                            *)
-(*  Copyright (c) 2021                                                        *)
-(*      Thibaut Pérami, University of Cambridge                               *)
-(*      Zonguyan Liu, Aarhus University                                       *)
-(*      Nils Lauermann, University of Cambridge                               *)
-(*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
-(*      Brian Campbell, University of Edinburgh                               *)
-(*      Alasdair Armstrong, University of Cambridge                           *)
-(*      Ben Simner, University of Cambridge                                   *)
-(*      Peter Sewell, University of Cambridge                                 *)
+(*  Copyright (c) 2025                                                        *)
+(*      ANONYMOUS                                                             *)
 (*                                                                            *)
 (*  All files except SailArmInstTypes.v are distributed under the             *)
 (*  license below (BSD-2-Clause). The former is distributed                   *)
@@ -277,7 +270,7 @@ Definition bvn_modu := bvn_binop (@bv_modu).
 Definition bvn_divs := bvn_binop (@bv_divs).
 Definition bvn_quots := bvn_binop (@bv_quots).
 Definition bvn_mods := bvn_binop (@bv_mods).
-Definition bvn_rems := bvn_binop (@bv_rems). (* Yay REMS! *)
+Definition bvn_rems := bvn_binop (@bv_rems).
 Definition bvn_shiftl := bvn_binop (@bv_shiftl).
 Definition bvn_shiftr := bvn_binop (@bv_shiftr).
 Definition bvn_ashiftr := bvn_binop (@bv_ashiftr).
