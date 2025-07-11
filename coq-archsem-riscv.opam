@@ -19,6 +19,7 @@ bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
   "dune" {>= "3.8"}
   "coq-archsem"
+  "coq-sail-riscv" {dev}
   "odoc" {with-doc}
 ]
 build: [
@@ -36,3 +37,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/rems-project/archsem.git"
+pin-depends: [
+  [ "coq-sail-riscv.dev" "git+https://github.com/bacam/sail-riscv.git#16169fb7"]
+]

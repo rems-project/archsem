@@ -2,12 +2,12 @@
  (name ArchSemRiscV)
  (package coq-archsem-riscv)
  (modules
-   SailRiscVInstTypes
    RiscVInst
    GenAxiomaticRiscV
    UMAxRiscV
+   RiscVSeqModel
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem)
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem Riscv)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
                --external ../../Common/ASCommon.html ASCommon
