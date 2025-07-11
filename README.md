@@ -12,8 +12,7 @@ In order to build an architecture model one needs two components:
   to be derived from [Sail](https://github.com/rems-project/sail) or
   [ASL](https://developer.arm.com/Architectures/Architecture%20Specification%20Language)
   specifications such as [sail-arm](https://github.com/rems-project/sail-arm) (via Sail).
-  We are currently working on a path to extract those from Sail, which is not
-  fully operational yet.
+  Currently we only have a pipeline to import those from Sail definitions
 - A _concurrency model_ that defines how the instructions interact with each
   other, both in the same thread and between threads.  In other words, a
   concurrency model is the missing part that take one from an ISA model to a
@@ -55,12 +54,17 @@ the interface between ISA and concurrency models:
 - Things must as executable as possible. Our interface requires ISA model to be
   executable, therefore if a concurrency model is made to be executable, the
   resulting combination is executable. However, we haven't yet finished the
-  extraction pipeline and utilities to parse litmus tests to run.
+  extraction pipeline and utilities to parse litmus tests to run. so we have
+  only run hand written sequential tests so far.
 - The interface must support all kinds of concurrency models: axiomatic,
-  micro-architectural operations, promising, etc.
+  micro-architectural operational, promising, etc. We have not implemented any
+  mirco-architectural operational model so far but we have axiomatic and
+  promising model
 - All models can be partial, so the framework must handle partiality properly.
-  ISA models can fail at any point and those failures must be correctly propagated
-  upwards. 
+  ISA models can fail at any point and those failures must be correctly
+  propagated upwards. This is not fully operational for axiomatic model due to
+  theory limitations about the consistency of partial model, so the current UB
+  handling of axiomatic model might be unsound.
 
 ## Building
 
@@ -85,17 +89,17 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
     concurency models
   - `CandidateExecution.v` The definition of candidate executions for weak
     memory model
-- `ArchSemArm` The Armv9-A instantiation of the library. This includes
+- `ArchSemArm` The Armv9-A instantiation of the library. This includes;
   - A sequential operational model (`ArmSeqModel.v`)
-  - A User-mode promising model (`UMPromising.v`), similar to 
+  - A User-mode promising model (`UMPromising.v`), similar to
     [the PLDI19 paper](https://sf.snu.ac.kr/publications/promising-arm-riscv.pdf)
   - A very WIP VMSA promising model (`VMPromising.v`)
   - A User-mode axiomatic model (`UMArm.v`)
   - An SC model for Arm (`UMSeqArm.v`) that is unsound for >1 thread
   - The VMSA model from [the ESOP22
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
-- `ArchSemRiscV` The RISC-V instantiation of the library. This is barebones for
-  now, but will be improved upon later
+- `ArchSemRiscV` The RISC-V instantiation of the library. This includes:
+  - A User-mode axiomatic model (`UMAxRiscV.v`)
 - `Extraction` contains machinery to extract the code to OCaml, for now it is
   mainly use to check that the code _can_ be extracted rather than as an
   actually usable OCaml library
@@ -117,32 +121,27 @@ Developing complete architectural models is an ambitious long-term goal. The
 curent state takes many important steps towards that, but there is still much to
 do. In the short term, this includes:
 
-### Connection to Sail
-
-We have almost all of the pipeline to import a Sail model into ArchSem done, but
-some details remain.
-
 ### Test runner
 
-While most of the code can run in Rocq we currently do not have a good working
-extraction pipeline, or a CLI frontend to call models on litmus
-tests. 
+While most of the code can run in Rocq with `vm_compute` we currently do not
+have a good working extraction pipeline, or a CLI frontend to call models on
+litmus tests.
 
 ### Partiality handling
 
-In order to allow partial models and execution traces that contain partially
-executed instructions, we need more support from the interface to bound what a
-partially executed instruction can do next. Concurrency models must therefore correctly
-understand this information to handle undefined behaviour properly.
+In order to allow axiomatic models to define the consistency of partial
+executions that contain partially executed instructions, we need to add more
+support from the interface to bound what a partially executed instruction can do
+next. Concurrency models must therefore correctly understand this information to
+handle undefined behaviour properly.
 
 ### Intra-instruction parallelism
 
 Currently, the interface and instruction semantics is based on the instruction
 semantics being a free monad, which totally orders all the effects that an
 instruction can emit. We need to relax that constraint to allow instructions to
-emit multiple effects in parallel. This cannot be achieved with
-non-deterministic interleaving because of intricate details on relaxed
-architectures like Arm.
+emit multiple effects in parallel. We have a plan for an "async monad" to
+replace the free monad that would enable this
 
 ## Git history
 
