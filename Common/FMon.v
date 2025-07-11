@@ -251,7 +251,9 @@ Section FMon.
   The type of finite traces over fMon. These traces are partial and can stop
   anywhere, including having or not an incomplete next event. *)
 
-  (*** Rationale: we define traces as a pair of a list of events and a trace end, rather than defining a new list type with the trace ends in place of Nil, as otherwise we need to redefine all the standard list things. ***)
+  (*** Rationale: we define traces as a pair of a list of events and a trace end,
+    rather than defining a new list type with the trace ends in place of Nil,
+    as otherwise we need to redefine all the standard list things. ***)
 
   (** *** Trace ends *)
 
@@ -516,6 +518,101 @@ Section CMon.
       (f : fHandler Eff M) [A] (c : cMon A) : M A :=
     finterp (f +ₕ mcall_fHandler) c.
 
+  Inductive csteps {A : Type} : cMon A → list (fEvent Eff) → cMon A → Prop :=
+  | CMNilRet a : csteps (Ret a) [] (Ret a)
+  | CMNilCall call k : csteps (Nextl call k) [] (Nextl call k)
+  | CMNilEmptyChoice k : csteps (Nextr (ChooseFin 0) k) [] (Nextr (ChooseFin 0) k)
+  | CMConsCall call k ret tl f' :
+    csteps (k ret) tl f' → csteps (Next (inl call) k) ((call &→ ret) :: tl) f'
+  | CMConsChoice c k ret l f' :
+    csteps (k ret) l f' → csteps (Next (inr c) k) l f'.
+  Notation cstep f ev f' := (csteps f [ev] f').
+  Hint Constructors csteps : cmon.
+
+  Lemma csteps_Ret_nil {A} a (f' : cMon A) :
+    csteps (Ret a) [] f' ↔ f' = Ret a.
+  Proof. split; intro H. all: depelim H. all: sauto. Qed.
+  Hint Rewrite @csteps_Ret_nil : cmon.
+
+  Lemma csteps_Nextl_nil {A} call r (f' : cMon A) :
+    csteps (Nextl call r) [] f' ↔ f' = (Nextl call r).
+  Proof. split; intro H. all: depelim H. all: sauto. Qed.
+  Hint Rewrite @csteps_Nextl_nil : cmon.
+
+  Lemma csteps_Nextr_termination {A} call r l (f : cMon A) :
+    csteps f l (Nextr call r) → call = ChooseFin 0.
+  Proof.
+    induction f in l |- *.
+    all: intro Hc.
+    all: depelim Hc. 
+    1,3: sauto.
+    by eapply H.
+  Qed.
+  Hint Rewrite @csteps_Nextr_termination : cmon.
+
+  Lemma csteps_nil {A} (f : cMon A) :
+    { f' & csteps f [] f' ∧ if f' is Nextr (ChooseFin n) r then n = 0 else True }.
+  Proof.
+    induction f as [|[|] k IH].
+    1: sauto.
+    1: clear IH; sauto.
+    destruct m as [[]].
+    1: clear IH.
+    1: sauto.
+    cbn in *.
+    ospecialize (IH 0%fin).
+    cdestruct IH.
+    eexists x.
+    sauto.
+  Qed.
+
+  Lemma csteps_app {A} l l' (f f' : cMon A) :
+    csteps f (l ++ l') f' ↔ ∃ f'', csteps f l f'' ∧ csteps f'' l' f'.
+  Proof.
+    split.
+    - generalize dependent f.
+      induction l; cbn.
+      + induction f as [|[]].
+        1,2: sauto lq: on.
+        intro Hc; depelim Hc.
+        all: sauto lq: on.
+      + induction f as [|[|] k IHc].
+        1-2: intros H; dependent destruction H.
+        1: sauto lq:on.
+        intro H.
+        depelim H.
+        eapply IHc in H.
+        cdestruct H as f'' ??.
+        eexists f''.
+        split.
+        1: econstructor.
+        all: done.
+    - intros (f'' & H & H').
+      induction H.
+      all: sauto lq: on.
+  Qed.
+
+  Definition csteps_cons {A} ev tl (f f' : cMon A)
+      : csteps f (ev :: tl) f' ↔ ∃ f'', cstep f ev f'' ∧ csteps f'' tl f' := 
+    csteps_app [ev] tl f f'.
+
+  Lemma csteps_Nextl_cons {A} call k ret tl (f : cMon A) :
+      csteps (Nextl call k) ((call &→ ret) :: tl) f ↔ csteps (k ret) tl f.
+    Proof.
+      split; intro H.
+      - by dependent destruction H.
+      - by constructor.
+  Qed.
+  Hint Rewrite @csteps_Nextl_cons : cmon.
+
+  Lemma csteps_Ret_cons {A} ret l (f : cMon A) :
+    csteps (Ret ret) l f ↔ l = [] ∧ f = Ret ret.
+  Proof.
+    split; intro H.
+    - by dependent destruction H.
+    - hauto ctrs:csteps.
+  Qed.
+
   (** ** Matching a choice monad with a trace that does not contain choice
          points *)
   Inductive cmatch {A : Type} : cMon A → fTrace Eff A → Prop :=
@@ -535,6 +632,32 @@ Section CMon.
     split.
     - intro H. by dependent destruction H.
     - by constructor.
+  Qed.
+
+  (** Definition of trance end matching a value of the monad *)
+  Definition cmatch_end {A} (f : cMon A) (tre : fTraceEnd Eff A) :=
+    match tre with
+    | FTENothing => True
+    | FTERet r => if f is Ret r' then r = r' else False
+    | FTEStop call => if f is Nextl call' _ then call = call' else False
+    end.
+
+    (** Matching a whole trace is the same as running all the transitions and then
+      matching the end of the trace *)
+  Lemma cmatch_csteps {A} (f : cMon A) tr :
+    cmatch f tr ↔ ∃ f', csteps f tr.1 f' ∧ cmatch_end f' tr.2.
+  Proof.
+    split.
+    - induction 1; try hauto l:on db:cmon.
+      pose proof (csteps_nil f) as [].
+      sauto.
+    
+    - destruct tr. cbn. intros [f' [FS FME]].
+      induction FS.
+      1-4: sauto.
+      destruct c.
+      econstructor.
+      by eapply IHFS.
   Qed.
 
   (** Decide a cmatch: This is a bit dumb, it will try every possible
