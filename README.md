@@ -79,11 +79,6 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
 
 ## The current state and directory structure
 
-- `Common` (Rocq module name `ASCommon`) is the "utils" library. It contains all
-  non-ArchSem-specific Rocq lemmas and automation, as well as required theories
-  such that executable relational algebra or effects and free monads.
-  This includes:
-  - `CDestruct.v` The implementation of the `cdestruct` tactic
 - `ArchSem` The architecture generic part of the projects, this includes
   - `Interface.v` The definition of the interface between ISA models and
     concurency models
@@ -100,6 +95,14 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
 - `ArchSemRiscV` The RISC-V instantiation of the library. This includes:
   - A User-mode axiomatic model (`UMAxRiscV.v`)
+  - A sequential operational (`RiscVSeqModel.v`)
+- `Common` (Rocq module name `ASCommon`) is the "utils" library. It contains all
+  non-ArchSem-specific Rocq lemmas and automation, as well as required theories
+  such that executable relational algebra or effects and free monads.
+  This includes:
+  - `CDestruct.v` The implementation of the `cdestruct` tactic
+  - Our free monad library
+  - Out relational algebra library
 - `Extraction` contains machinery to extract the code to OCaml, for now it is
   mainly use to check that the code _can_ be extracted rather than as an
   actually usable OCaml library

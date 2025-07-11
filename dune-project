@@ -2,19 +2,9 @@
 (name coq-archsem)
 (using coq 0.8)
 
-(source (github rems-project/archsem))
 (license "BSD-2-Clause")
-(authors
-  "Thibaut Pérami"
-  "Zonguyan Liu"
-  "Nils Lauermann"
-  "Jean Pichon-Pharabod"
-  "Brian Campbell"
-  "Alasdair Armstrong"
-  "Ben Simner"
-  "Peter Sewell"
-)
-(maintainers "Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>")
+(authors "Anonymous")
+(maintainers "Anonymous")
 
 (package
  (name coq-archsem-common)
@@ -44,7 +34,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
  (depends
    coq-archsem
-   (coq-sail-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-arm :dev) ; Use provided artifact
  )
 )
 
@@ -53,7 +43,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
  (depends
    coq-archsem
-   (coq-sail-riscv :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-riscv :dev) ; Use provided artiface
  )
 )
 

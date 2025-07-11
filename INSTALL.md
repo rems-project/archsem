@@ -20,8 +20,11 @@ Install the dependencies with:
 opam pin coq 8.19.2
 opam pin coq-stdpp 1.11.0
 opam pin coq-stdpp-bitvector 1.11.0
-opam install . --deps-only
 ```
+
+Then do `opam install . --deps-only` but refuse the install. Then go and pin
+`sail-arm` and `sail-riscv` from the other folders provided in the artifact,
+then redo `opam install . --deps-only` and accept the install.
 
 You can play with different version of Rocq but right now we think neither 8.18
 nor 8.20 work due to respectively Ltac2 problems and Equations problems.

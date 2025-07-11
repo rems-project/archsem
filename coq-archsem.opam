@@ -2,20 +2,9 @@
 opam-version: "2.0"
 synopsis:
   "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part"
-maintainer: ["Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>"]
-authors: [
-  "Thibaut Pérami"
-  "Zonguyan Liu"
-  "Nils Lauermann"
-  "Jean Pichon-Pharabod"
-  "Brian Campbell"
-  "Alasdair Armstrong"
-  "Ben Simner"
-  "Peter Sewell"
-]
+maintainer: ["Anonymous"]
+authors: ["Anonymous"]
 license: "BSD-2-Clause"
-homepage: "https://github.com/rems-project/archsem"
-bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
   "dune" {>= "3.8"}
   "coq-archsem-common"
@@ -36,7 +25,6 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://github.com/rems-project/archsem.git"
 pin-depends: [
   [ "coq-sail-stdpp.0.19.1" "git+https://github.com/rems-project/coq-sail.git#abe978f"]
 ]
