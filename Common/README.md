@@ -42,7 +42,7 @@ The general mindset of this project is to work _as if_ OTT (Observational Type
 Theory) existed in Rocq, while maintaining `Type` as an executable sort. In
 practice this means that axioms are only in `Prop` and `Prop` is used as if it
 was `SProp` which means `Prop` cannot be destroyed into `Type` except if it's
-`False`. This means that term in `Type` should compute inside Rocq and extract
+`False`. This means that terms in `Type` should compute inside Rocq and extract
 to executable function in Ocaml. That also means that basically any
 definition/lemma in `Prop` should be `Qed` and not `Defined`.
 
@@ -51,21 +51,19 @@ Typeclass resolution assumes all constants are `Opaque` by default, use
 
 ## Computable transport
 
-The previous setting disallow us to write a general transport function
+The previous system prevents us from writing a general transport function
 `transport (T U : Type) (e : T = U) (t : T) : U`. However, in practice we (in
 this project) only need transports on indexed type families such as `fin` or
 `vec`. Therefore, we have a `CTrans` typeclass to provide computable transport
-for all those type families base on equalities on the indices. It only supports
-one index for now as we've not needed more so far.
-
-```coq 
+for all those type families based on equalities on some index.
+```coq
 Class CTrans {T : Type} (F : T → Type) :=
   ctrans : ∀ (x y : T) (eq : x = y) (a : F x), F y.
 ```
 
-## CDestruct 
+## CDestruct
 
-The main automation tactic specific to this project so far is
+The main automation tactic specific to this project is
 [`cdestruct`](CDestruct.v) which is an extensible variant of Rocq's `intuition`
 or Isabelle's `clarify`. See the file for details. Roughly, it performs the job of
 `intuition`, `discriminate`, `contradiction`, `simplify_eq`, `case_split`
@@ -106,8 +104,8 @@ We keep using `nat` indexing (and length) when working with those.
 We use all the set and maps infrastructure from `stdpp` and we define
 [GRel](GRel.v) a library for executable relational algebra on gsets of pairs.
 
-We use the notation `∀ x ∈ s, P x` and `∃ x ∈ s, P x` when working with sets or
-lists. 
+We use the notations `∀ x ∈ s, P x` and `∃ x ∈ s, P x` when working with sets or
+lists.
 
 In addition to the general `SetUnfold` we define `FMapUnfold`, `LookupUnfold`
 and `LookupTotalUnfold` for unfolding `fmap` `(!!)` and `(!!!)` over composed
@@ -120,7 +118,7 @@ monomorphic). We define our own concept of [Effects](Effects.v) with a new monad
 typeclass `MCall` for calling an effect in a monad. We then define the following
 monads and transformers that are not in `stdpp`.
 - [result](CResult.v) monad with error aka OCaml/Rust result type (Ok or Error)
-- [Exec](Exec.v): monad with error and non-determinism.
+- [Exec](Exec.v): monad with error, non-determinism and state.
 - [fMon](FMon.v): free monad of a set of effects.
 - [cMon](FMon.v): Choice monad of a set of effects: free monad with non-free
   non-determinism

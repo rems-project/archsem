@@ -56,6 +56,6 @@ This allows proof readers to step through more easily without changing the code.
 ### `Lemma` vs `Definition`
 
 In general constants introduced by `Lemma` should be in `Prop` and `Qed`-opaque.
-No proof term should be made transparent unless very special cases example for
+No proof term should be made transparent unless very special cases for
 fixpoint reductions. In particular one should not try to make equality proofs
 transparent to reduce transports, they should use `CTrans` instead.
