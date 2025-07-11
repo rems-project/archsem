@@ -30,7 +30,7 @@ jobs:
     - name: System dependencies (ubuntu)
       run: |
         sudo apt update
-        sudo apt install -y build-essential opam z3
+        sudo apt install -y build-essential opam z3 cmake
 
     # Cache with local pinned dependencies
     - name: Restore pinned OPAM cache
