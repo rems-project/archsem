@@ -331,6 +331,21 @@ Proof.
   all: lia.
 Qed.
 
+Instance decide_exists_in_gset `{EqDecision A, Countable A} (P : A → Prop) `{∀ a, Decision (P a)} (s : gset A) :
+  Decision (∃ a, P a ∧ a ∈ s).
+  destruct (filter P (elements s)) eqn: ?.
+  - right.
+    unfold not; cdestruct |- ***.
+    eapply (filter_nil_not_elem_of P _ x Heql); eauto.
+    set_solver.
+  - left.
+    exists a.
+    enough (P a ∧ a ∈ (elements s)) by set_solver.
+    eapply (elem_of_list_filter P).
+    rewrite Heql.
+    set_solver.
+Qed.
+
 Lemma if_distribution_option `(f : A → B) `(o : option C) (g : C → A) a :
   f (if o is Some c then g c else a) = (if o is Some c then f (g c) else f a).
 Proof. by destruct o. Qed.
@@ -845,6 +860,17 @@ Proof.
   depelim n1.
 Qed.
 
+Lemma set_filter_iff `{FinSet A C} (P1 P2 : A → Prop)
+      `{∀ a, Decision (P1 a)} `{∀ a, Decision (P2 a)} (s : C) :
+    (∀ a, P1 a ↔ P2 a) →
+    filter P1 s = filter P2 s.
+Proof.
+  intros.
+  unfold filter, set_filter.
+  erewrite list_filter_iff.
+  1: reflexivity.
+  assumption.
+Qed.
 
 Lemma enumerate_imap {A} (l : list A) :
   enumerate l = imap pair l.
@@ -1083,6 +1109,33 @@ Proof.
   all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
 Qed.
 
+Lemma and_or_dist P Q R :
+  P ∧ (Q ∨ R) ↔ (P ∧ Q) ∨ (P ∧ R).
+Proof. naive_solver. Qed.
+
+Lemma exists_or_dist {T} (P Q : T → Prop) :
+  (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
+Proof. naive_solver. Qed.
+
+Lemma intra_trace_eid_succ_components_equal eid tid tr :
+  eid.(EID.tid) = tid →
+  eid.(EID.iid) = (intra_trace_eid_succ tid tr).(EID.iid) →
+  eid.(EID.ieid) = (intra_trace_eid_succ tid tr).(EID.ieid) →
+  eid.(EID.byte) = None →
+  eid = intra_trace_eid_succ tid tr.
+Proof.
+  destruct eid, (intra_trace_eid_succ tid tr) eqn: ?.
+  unfold intra_trace_eid_succ, unsnoc_total in *.
+  destruct (decide (tr = [])) as [->|].
+  2: opose proof (exists_last _) as [? [ltr]]; eauto.
+  all: cdestruct Heqt |- *** #CDestrSplitGoal.
+  all: try scongruence.
+  all: subst.
+  all: rewrite unsnoc_snoc in *.
+  all: destruct ltr.
+  all: cdestruct Heqt |- ***.
+Qed.
+
 Lemma eid_full_po_lt_intra_trace_eid_succ eid (tr : list (iTrace ())) :
   is_Some (tr !! eid) →
   EID.full_po_lt eid (intra_trace_eid_succ 0 tr).
@@ -1104,6 +1157,27 @@ Proof.
   }
   eapply lookup_lt_Some in H1.
   now left.
+Qed.
+
+
+#[local] Instance cdestruct_full_po_lt_eid_succ_False b eid eid' itrs ev :
+  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
+  TCFastDone (itrs !! eid' = Some ev) →
+  CDestrSimpl b (EID.full_po_lt eid eid') False.
+Proof.
+  tcclean.
+  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
+  cdestruct eid, eid' |- *** #CDestrSplitGoal.
+Qed.
+
+#[local] Instance cdestruct_full_po_lt_eid_succ_True b eid eid' itrs ev :
+  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
+  TCFastDone (itrs !! eid' = Some ev) →
+  CDestrSimpl b (EID.full_po_lt eid' eid) True.
+Proof.
+  tcclean.
+  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
+  cdestruct eid, eid' |- *** #CDestrSplitGoal.
 Qed.
 
 Lemma trace_find_last_indexed_spec (P : EID.t → iEvent → Prop)
@@ -1394,6 +1468,172 @@ Proof.
     try set_solver.
   eapply write_mem_seq_state_same_initSt.
   eauto.
+Qed.
+
+Lemma pa_range_lookupN pa size i :
+  (i < size)%N →
+  pa_range pa size !! i = Some (pa_addN pa i).
+Proof.
+  intros.
+  unfold pa_range.
+  setoid_rewrite list_lookup_fmap.
+  unfold seqN.
+  setoid_rewrite list_lookup_fmap.
+  rewrite lookup_seq_lt; last lia.
+  cbn.
+  do 2 f_equal.
+  lia.
+Qed.
+
+Lemma pa_range_lookupNat pa size i :
+  i < N.to_nat size →
+  pa_range pa size !! i = Some (pa_addN pa (N.of_nat i)).
+Proof.
+  intros.
+  opose proof (pa_range_lookupN pa size (N.of_nat i) _); first lia.
+  unfold lookup, list_lookupN in H0.
+  by rewrite Nat2N.id in H0.
+Qed.
+
+Lemma Some_inj {A} (x y : A) :
+  Some x = Some y ↔ x = y.
+Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
+
+Lemma bvns_equal_get_byte_equal n (x y : bvn) :
+  n ≠ 0%N → bvn_n x = bvn_n y →
+  (∀ i, (i * n < bvn_n x)%N →
+    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
+  x = y.
+Proof.
+  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
+  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
+  f_equal.
+  apply list_eq.
+  intros.
+  apply option_eq.
+  intro b.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
+  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
+  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: rewrite Hbytes in *; done.
+Qed.
+
+Lemma bvs_equal_get_byte_equal size n (x y : bv size) :
+  n ≠ 0%N → (∀ i, (i * n < size)%N →
+    bv_get_byte n i x = bv_get_byte n i y) →
+  x = y.
+Proof.
+  intros.
+  enough (bv_to_bvn x = bv_to_bvn y) by naive_solver.
+  eapply bvns_equal_get_byte_equal; eauto.
+Qed.
+
+Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
+	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
+Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
+
+Lemma bv_to_bytes_bv_get_byte3 {n i m} (b : bv m) byte :
+  (0 < n)%N → (i * n < m)%N → bv_get_byte n i b = byte →
+  bv_to_bytes n b !! i = Some byte.
+Proof. intros. by eapply bv_to_bytes_bv_get_byte. Qed.
+
+Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
+  n ≠ 0%N → m = N.of_nat (length l) →
+  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
+Proof.
+  intros ? ->.
+  unfold bv_to_bytes, bv_of_bytes.
+  rewrite div_round_up_divisible; last done.
+  bv_simplify.
+  unfold bv_wrap.
+  rewrite Z.mod_small.
+  2: {
+    pose proof (little_endian_to_bv_bound n l).
+    unfold bv_modulus.
+    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
+    done.
+  }
+  rewrite bv_to_little_endian_to_bv.
+  2: lia.
+  done.
+Qed.
+
+Lemma read_mem_seq_state_flag_false_get_byte size pa st v :
+  read_mem_seq_state_flag size pa st = (v, false) →
+  ∀ (offset : N), (offset < size)%N →
+  st.(initSt).(MState.memory) (pa_addN pa offset) = bv_get_byte 8 offset v ∧
+  st.(mem) !! pa_addN pa offset = None.
+Proof.
+  intros.
+  unfold read_mem_seq_state_flag in *.
+  assert
+    (∀ p ∈ (read_byte_seq_state_flag st <$> pa_range pa size), p.2 = false).
+  {
+    cdestruct |- ***.
+    destruct b0; try fast_done.
+    exfalso.
+    assert (In (b,true) (read_byte_seq_state_flag st <$> pa_range pa size)) as ?%in_split_r%elem_of_list_In
+      by (eapply elem_of_list_In; set_solver).
+    cbn in *.
+    setoid_rewrite surjective_pairing in H at 2; cdestruct H as ?.
+    eapply not_false_iff_true, existsb_exists.
+    eexists true; cdestruct |- *** #CDestrSplitGoal.
+    by eapply elem_of_list_In.
+  }
+  split.
+  2:{
+    eapply eq_None_not_Some.
+    intros [].
+    ospecialize (H1 (x, true) _).
+    2: { scongruence. }
+    unfold read_byte_seq_state_flag.
+    set_unfold; eexists (pa_addN pa offset); cdestruct |- *** #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
+    eapply (elem_of_list_lookup_2 _ (N.to_nat offset)).
+    rewrite pa_range_lookupNat; first do 2 f_equal; lia.
+  }
+  assert ((read_byte_seq_state_flag st <$> pa_range pa size) =
+    (λ pa, (MState.memory (initSt st) pa, false)) <$> pa_range pa size).
+  {
+    eapply list_eq.
+    setoid_rewrite list_lookup_fmap.
+    intros.
+    destruct (decide (i < N.to_nat size)).
+    2: erewrite <- (pa_range_length pa _) in n; orewrite lookup_ge_None_2; by try lia.
+    erewrite <- (pa_range_length pa _) in l.
+    apply lookup_lt_is_Some_2 in l.
+    cdestruct l |- *** as ?? #CDestrEqOpt.
+    rewrite H2.
+    cbn.
+    f_equal.
+    unfold read_byte_seq_state_flag.
+    cdestruct |- *** #CDestrMatch.
+    ospecialize (H1 (b, true) _).
+    2: { scongruence. }
+    set_unfold.
+    eapply elem_of_list_lookup_2 in H2.
+    unfold read_byte_seq_state_flag.
+    eexists; cdestruct |- ***; hauto lq: on.
+  }
+  setoid_rewrite surjective_pairing in H at 2; cdestruct v, H as ?.
+  eapply eq_sym, bv_to_bytes_bv_get_byte.
+  1: lia.
+  rewrite bv_to_bytes_bv_of_bytes.
+  3: rewrite split_length_l, length_fmap, pa_range_length.
+  2,3: lia.
+  rewrite H2.
+  unfold lookup, list_lookupN.
+  odestruct (nth_lookup_or_length _ _ (bv_0 8)) as [->|].
+  2: rewrite split_length_l, length_fmap, pa_range_length in *; lia.
+  f_equal.
+  change (bv_0 8) with (bv_0 8,false).1.
+  assert (∀ B (y : B) {A} (x z : A), (x,y).1 = z → x = z) by done.
+  eapply (H3 bool (nth (N.to_nat offset) ?[y].2 (bv_0 8,false).2)).
+  erewrite <- split_nth.
+  rewrite nth_lookup, list_lookup_fmap, pa_range_lookupNat, N2Nat.id.
+  2: lia.
+  done.
 Qed.
 
 (** * Constructing a candidate execution *)
@@ -2334,6 +2574,8 @@ Proof. unfold build_pre_exec. cdestruct |- ***. Qed.
 
 (** * Invariant statements *)
 
+(** The memory map in the sequential model always contains the value of the
+    most recent write to this address. *)
 Definition seq_st_mem_map_consistentP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ pa v,
@@ -2348,6 +2590,8 @@ Definition seq_st_mem_map_consistentP seq_st :=
           is_mem_writeP (λ size wr, pa_in_range wr.(WriteReq.pa) size pa) ev' →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
+(** The register map in the sequential model always contains the value of the
+    most recent write to this register. *)
 Definition seq_st_reg_map_consistentP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ (reg : Arch.reg) v,
@@ -2360,6 +2604,8 @@ Definition seq_st_reg_map_consistentP seq_st :=
           is_reg_write ev' → get_reg ev' = Some reg →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
+(** If an address has been written to, then the sequential model memory map
+    contains a value for this address. *)
 Definition seq_st_mem_map_is_SomeP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ pa,
@@ -2369,16 +2615,20 @@ Definition seq_st_mem_map_is_SomeP seq_st :=
           (λ size wr, pa_addN wr.(WriteReq.pa) offset = pa ∧ (offset < size)%N) ev) →
     is_Some (seq_st.(mem) !! pa).
 
+(** Memory writes in the event list do not fail. *)
 Definition mem_writes_succeedP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let evs := Candidate.event_list cd in
   ∀ ev ∈ evs.*2, is_mem_write_req ev →
   is_mem_write_reqP (λ _ _ ret, if ret is inl b then b = true else False) ev.
 
+(** All writes in the trace have legal size. *)
 Definition pcdst_mem_acc_legalP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ eid ev, cd !! eid = Some ev → legal_memory_acc_ev ev.
 
+(** The partial candidate keeps correctly track of the event ID of the most
+    recent write for each address *)
 Definition pcdst_mem_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2388,6 +2638,8 @@ Definition pcdst_mem_map_invP seq_st :=
         get_pa ev' = Some pa →
         eid' = eid ∨ EID.full_po_lt eid' eid).
 
+(** The partial candidate keeps correctly track of the event IDs that have written
+    to a certain address for each address *)
 Definition pcdst_mem_set_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2407,6 +2659,7 @@ Lemma seq_state_trace_cons_equal s1 s2 ev :
   (set itrs (trace_cons ev) s1).(itrs) = (set itrs (trace_cons ev) s2).(itrs).
 Proof. destruct s1, s2. cbn. by intros ->. Qed.
 
+(** The partial candidate state has a correct/well-formed coherence relation *)
 Definition cdst_co_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let co := co_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2415,6 +2668,7 @@ Definition cdst_co_acc_invP seq_st :=
     is_mem_write ev1 ∧ is_mem_write ev2 ∧ get_pa ev1 = get_pa ev2 ∧
     EID.full_po_lt eid1 eid2.
 
+(** The partial candidate state has a correct/well-formed reads-from relation *)
 Definition cdst_rf_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rf := rf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2426,6 +2680,8 @@ Definition cdst_rf_acc_invP seq_st :=
       get_pa ev' = get_pa ev2 →
       EID.full_po_lt other_eid eid1 ∨ other_eid = eid1 ∨ EID.full_po_lt eid2 other_eid.
 
+(** The partial candidate state has a correct/well-formed
+    register-reads-from relation *)
 Definition cdst_rrf_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rrf := rrf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2437,6 +2693,8 @@ Definition cdst_rrf_acc_invP seq_st :=
       get_reg ev' = get_reg ev2 →
       EID.full_po_lt other_eid eid1 ∨ other_eid = eid1 ∨ EID.full_po_lt eid2 other_eid.
 
+(** Memory reads are either from the sequential mode memory map if there is a
+    value or alternatively read the value from the initial state *)
 Definition cdst_mem_reads_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rf := rf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2447,6 +2705,8 @@ Definition cdst_mem_reads_invP seq_st :=
       (¬ ∃ weid, (weid, reid) ∈ rf)
       ∧ bv_to_bvn (memoryMap_read seq_st.(initSt).(MState.memory) rpa rsize) = rvalue.
 
+(** Register reads are either from the sequential mode register map if there is a
+    value or alternatively read the value from the initial state *)
 Definition cdst_reg_reads_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rrf := rrf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2456,6 +2716,8 @@ Definition cdst_reg_reads_invP seq_st :=
       (¬ ∃ weid, (weid, reid) ∈ rrf)
       ∧ ((MState.regs seq_st.(initSt)) !!! 0%fin) rreg = rval.
 
+(** The partial candidate keeps correctly track of the event IDs that have written
+    to a certain register for each register *)
 Definition pcdst_reg_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2465,6 +2727,8 @@ Definition pcdst_reg_map_invP seq_st :=
       is_reg_writeP (λ reg' _ _, reg' = reg) ev' →
       eid' = eid ∨ EID.full_po_lt eid' eid).
 
+(** The partial candidate keeps correctly track of the event ID of the most
+    recent write for each register *)
 Definition seq_st_reg_map_is_SomeP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ reg,
@@ -2472,6 +2736,8 @@ Definition seq_st_reg_map_is_SomeP seq_st :=
     cd !! eid = Some ev ∧ is_reg_write ev ∧ get_reg ev = Some reg) →
     is_Some (seq_st.(regs) !! reg).
 
+(** This record combines all the invariants in one big invariant which we will
+    ultimately show to be preserved by the sequential model. *)
 Record seq_inv_predicate (seq_st : seq_state) := {
   pcdst := (seq_state_to_partial_cd_state seq_st);
   cd := (seq_state_to_cd seq_st);
@@ -2495,52 +2761,9 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   cd_from_seq_state_consistent : consistent regs_whitelist cd
 }.
 
-Lemma and_or_dist P Q R :
-  P ∧ (Q ∨ R) ↔ (P ∧ Q) ∨ (P ∧ R).
-Proof. naive_solver. Qed.
+(** * Sequential model invariant proofs *)
 
-Lemma exists_or_dist {T} (P Q : T → Prop) :
-  (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
-Proof. naive_solver. Qed.
-
-Lemma intra_trace_eid_succ_components_equal eid tid tr :
-  eid.(EID.tid) = tid →
-  eid.(EID.iid) = (intra_trace_eid_succ tid tr).(EID.iid) →
-  eid.(EID.ieid) = (intra_trace_eid_succ tid tr).(EID.ieid) →
-  eid.(EID.byte) = None →
-  eid = intra_trace_eid_succ tid tr.
-Proof.
-  destruct eid, (intra_trace_eid_succ tid tr) eqn: ?.
-  unfold intra_trace_eid_succ, unsnoc_total in *.
-  destruct (decide (tr = [])) as [->|].
-  2: opose proof (exists_last _) as [? [ltr]]; eauto.
-  all: cdestruct Heqt |- *** #CDestrSplitGoal.
-  all: try scongruence.
-  all: subst.
-  all: rewrite unsnoc_snoc in *.
-  all: destruct ltr.
-  all: cdestruct Heqt |- ***.
-Qed.
-
-#[local] Instance cdestruct_full_po_lt_eid_succ_False b eid eid' itrs ev :
-  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
-  TCFastDone (itrs !! eid' = Some ev) →
-  CDestrSimpl b (EID.full_po_lt eid eid') False.
-Proof.
-  tcclean.
-  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
-  cdestruct eid, eid' |- *** #CDestrSplitGoal.
-Qed.
-
-#[local] Instance cdestruct_full_po_lt_eid_succ_True b eid eid' itrs ev :
-  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
-  TCFastDone (itrs !! eid' = Some ev) →
-  CDestrSimpl b (EID.full_po_lt eid' eid) True.
-Proof.
-  tcclean.
-  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
-  cdestruct eid, eid' |- *** #CDestrSplitGoal.
-Qed.
+(** Now we show that the sequential model preserves the invariants defined above. *)
 
 Lemma seq_model_seq_st_mem_map_consistent_inv :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate seq_st_mem_map_consistentP.
@@ -3042,187 +3265,6 @@ Proof using regs_whitelist.
     all: try cdestruct call; unfold is_mem_writeP, is_mem_readP in *; try done.
     all: opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
     all: deintros; cdestruct |- ***.
-Qed.
-
-Lemma pa_range_lookupN pa size i :
-  (i < size)%N →
-  pa_range pa size !! i = Some (pa_addN pa i).
-Proof.
-  intros.
-  unfold pa_range.
-  setoid_rewrite list_lookup_fmap.
-  unfold seqN.
-  setoid_rewrite list_lookup_fmap.
-  rewrite lookup_seq_lt; last lia.
-  cbn.
-  do 2 f_equal.
-  lia.
-Qed.
-
-Lemma pa_range_lookupNat pa size i :
-  i < N.to_nat size →
-  pa_range pa size !! i = Some (pa_addN pa (N.of_nat i)).
-Proof.
-  intros.
-  opose proof (pa_range_lookupN pa size (N.of_nat i) _); first lia.
-  unfold lookup, list_lookupN in H0.
-  by rewrite Nat2N.id in H0.
-Qed.
-
-Lemma Some_inj {A} (x y : A) :
-  Some x = Some y ↔ x = y.
-Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
-
-Lemma bvns_equal_get_byte_equal n (x y : bvn) :
-  n ≠ 0%N → bvn_n x = bvn_n y →
-  (∀ i, (i * n < bvn_n x)%N →
-    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
-  x = y.
-Proof.
-  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
-  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
-  f_equal.
-  apply list_eq.
-  intros.
-  apply option_eq.
-  intro b.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
-  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
-  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: rewrite Hbytes in *; done.
-Qed.
-
-Lemma bvs_equal_get_byte_equal size n (x y : bv size) :
-  n ≠ 0%N → (∀ i, (i * n < size)%N →
-    bv_get_byte n i x = bv_get_byte n i y) →
-  x = y.
-Proof.
-  intros.
-  enough (bv_to_bvn x = bv_to_bvn y) by naive_solver.
-  eapply bvns_equal_get_byte_equal; eauto.
-Qed.
-
-Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
-	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
-Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
-
-Lemma bv_to_bytes_bv_get_byte3 {n i m} (b : bv m) byte :
-  (0 < n)%N → (i * n < m)%N → bv_get_byte n i b = byte →
-  bv_to_bytes n b !! i = Some byte.
-Proof. intros. by eapply bv_to_bytes_bv_get_byte. Qed.
-
-Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
-  n ≠ 0%N → m = N.of_nat (length l) →
-  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
-Proof.
-  intros ? ->.
-  unfold bv_to_bytes, bv_of_bytes.
-  rewrite div_round_up_divisible; last done.
-  bv_simplify.
-  unfold bv_wrap.
-  rewrite Z.mod_small.
-  2: {
-    pose proof (little_endian_to_bv_bound n l).
-    unfold bv_modulus.
-    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
-    done.
-  }
-  rewrite bv_to_little_endian_to_bv.
-  2: lia.
-  done.
-Qed.
-
-Lemma read_mem_seq_state_flag_false_get_byte size pa st v :
-  read_mem_seq_state_flag size pa st = (v, false) →
-  ∀ (offset : N), (offset < size)%N →
-  st.(initSt).(MState.memory) (pa_addN pa offset) = bv_get_byte 8 offset v ∧
-  st.(mem) !! pa_addN pa offset = None.
-Proof.
-  intros.
-  unfold read_mem_seq_state_flag in *.
-  assert
-    (∀ p ∈ (read_byte_seq_state_flag st <$> pa_range pa size), p.2 = false).
-  {
-    cdestruct |- ***.
-    destruct b0; try fast_done.
-    exfalso.
-    assert (In (b,true) (read_byte_seq_state_flag st <$> pa_range pa size)) as ?%in_split_r%elem_of_list_In
-      by (eapply elem_of_list_In; set_solver).
-    cbn in *.
-    setoid_rewrite surjective_pairing in H at 2; cdestruct H as ?.
-    eapply not_false_iff_true, existsb_exists.
-    eexists true; cdestruct |- *** #CDestrSplitGoal.
-    by eapply elem_of_list_In.
-  }
-  split.
-  2:{
-    eapply eq_None_not_Some.
-    intros [].
-    ospecialize (H1 (x, true) _).
-    2: { scongruence. }
-    unfold read_byte_seq_state_flag.
-    set_unfold; eexists (pa_addN pa offset); cdestruct |- *** #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
-    eapply (elem_of_list_lookup_2 _ (N.to_nat offset)).
-    rewrite pa_range_lookupNat; first do 2 f_equal; lia.
-  }
-  assert ((read_byte_seq_state_flag st <$> pa_range pa size) =
-    (λ pa, (MState.memory (initSt st) pa, false)) <$> pa_range pa size).
-  {
-    eapply list_eq.
-    setoid_rewrite list_lookup_fmap.
-    intros.
-    destruct (decide (i < N.to_nat size)).
-    2: erewrite <- (pa_range_length pa _) in n; orewrite lookup_ge_None_2; by try lia.
-    erewrite <- (pa_range_length pa _) in l.
-    apply lookup_lt_is_Some_2 in l.
-    cdestruct l |- *** as ?? #CDestrEqOpt.
-    rewrite H2.
-    cbn.
-    f_equal.
-    unfold read_byte_seq_state_flag.
-    cdestruct |- *** #CDestrMatch.
-    ospecialize (H1 (b, true) _).
-    2: { scongruence. }
-    set_unfold.
-    eapply elem_of_list_lookup_2 in H2.
-    unfold read_byte_seq_state_flag.
-    eexists; cdestruct |- ***; hauto lq: on.
-  }
-  setoid_rewrite surjective_pairing in H at 2; cdestruct v, H as ?.
-  eapply eq_sym, bv_to_bytes_bv_get_byte.
-  1: lia.
-  rewrite bv_to_bytes_bv_of_bytes.
-  3: rewrite split_length_l, length_fmap, pa_range_length.
-  2,3: lia.
-  rewrite H2.
-  unfold lookup, list_lookupN.
-  odestruct (nth_lookup_or_length _ _ (bv_0 8)) as [->|].
-  2: rewrite split_length_l, length_fmap, pa_range_length in *; lia.
-  f_equal.
-  change (bv_0 8) with (bv_0 8,false).1.
-  assert (∀ B (y : B) {A} (x z : A), (x,y).1 = z → x = z) by done.
-  eapply (H3 bool (nth (N.to_nat offset) ?[y].2 (bv_0 8,false).2)).
-  erewrite <- split_nth.
-  rewrite nth_lookup, list_lookup_fmap, pa_range_lookupNat, N2Nat.id.
-  2: lia.
-  done.
-Qed.
-
-Instance decide_exists_in_gset `{EqDecision A, Countable A} (P : A → Prop) `{∀ a, Decision (P a)} (s : gset A) :
-  Decision (∃ a, P a ∧ a ∈ s).
-  destruct (filter P (elements s)) eqn: ?.
-  - right.
-    unfold not; cdestruct |- ***.
-    eapply (filter_nil_not_elem_of P _ x Heql); eauto.
-    set_solver.
-  - left.
-    exists a.
-    enough (P a ∧ a ∈ (elements s)) by set_solver.
-    eapply (elem_of_list_filter P).
-    rewrite Heql.
-    set_solver.
 Qed.
 
 Lemma seq_model_mem_reads_inv :
@@ -4461,18 +4503,6 @@ Proof.
   all: naive_solver.
 Qed.
 
-Lemma set_filter_iff `{FinSet A C} (P1 P2 : A → Prop)
-      `{∀ a, Decision (P1 a)} `{∀ a, Decision (P2 a)} (s : C) :
-    (∀ a, P1 a ↔ P2 a) →
-    filter P1 s = filter P2 s.
-Proof.
-  intros.
-  unfold filter, set_filter.
-  erewrite list_filter_iff.
-  1: reflexivity.
-  assumption.
-Qed.
-
 Lemma is_overlapping_equal_events_filter_predicate {et nmth}
     (pe pe' : Candidate.pre et nmth) :
   Candidate.event_list pe = Candidate.event_list pe' →
@@ -4510,6 +4540,8 @@ Proof using regs_whitelist.
   done.
 Qed.
 
+(** Changeing the trace end of an instruction trace has no implications for the
+    invariant predicate. *)
 Lemma seq_inv_predicate_preserved_change_trace_end st :
   seq_inv_predicate st →
   seq_inv_predicate (set itrs (λ l : list (iTrace ()), ((hd FTNothing l).1, FTERet ()) :: tail l) st).
@@ -4676,6 +4708,7 @@ Proof using regs_whitelist.
     all: try assumption.
 Qed.
 
+(** Adding an empty instruction trace does not destroy the invariant. *)
 Lemma seq_inv_predicate_preserved_cons_empty_trace st :
   seq_inv_predicate st →
   seq_inv_predicate (set itrs (cons FTNothing) st).
@@ -4846,6 +4879,8 @@ Qed.
   EqSomeUnfold (trace_rev [] !! eid) x False.
 Proof. tcclean. destruct eid as [[] ? ? []]; cbv. all: naive_solver. Qed.
 
+(** The empty sequential state fulfills the invariant predicate.
+    Hence, this is the base case to the overall preservation induction. *)
 Lemma empty_seq_state_fulfills_seq_inv_predicate initSt :
   seq_inv_predicate {| initSt := initSt; mem := ∅; regs := ∅; itrs := [] |}.
 Proof.
@@ -4891,6 +4926,8 @@ Proof.
   all: left+right; assumption.
 Qed.
 
+(** If the final trace of the sequential model is non-mixed-size, then
+    all partial traces are also non-mixed-size. *)
 Lemma seqmodel_successor_nms_implies_start_nms fuel isem final_st start_st fs :
   seq_state_is_nms final_st →
   (final_st, fs) ∈ sequential_model_seqmon (Some regs_whitelist) fuel isem start_st →
