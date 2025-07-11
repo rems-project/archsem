@@ -77,7 +77,7 @@ jobs:
         eval $(opam env)
         opam install --deps-only --confirm-level=unsafe-yes .
         # This is needed with opam 2.1, not with opam 2.3. I haven't tested 2.2
-        opam install --yes sail coq-sail-arm
+        opam install --yes sail coq-sail-arm coq-sail-riscv
 
     - name: Save pinned OPAM cache
       uses: actions/cache/save@v4
