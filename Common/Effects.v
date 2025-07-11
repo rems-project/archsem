@@ -1,15 +1,7 @@
 (******************************************************************************)
 (*                                ArchSem                                     *)
 (*                                                                            *)
-(*  Copyright (c) 2021                                                        *)
-(*      Thibaut Pérami, University of Cambridge                               *)
-(*      Zonguyan Liu, Aarhus University                                       *)
-(*      Nils Lauermann, University of Cambridge                               *)
-(*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
-(*      Brian Campbell, University of Edinburgh                               *)
-(*      Alasdair Armstrong, University of Cambridge                           *)
-(*      Ben Simner, University of Cambridge                                   *)
-(*      Peter Sewell, University of Cambridge                                 *)
+(*  Copyright (c) 2021 Anonymous                                              *)
 (*                                                                            *)
 (*  All files except SailArmInstTypes.v are distributed under the             *)
 (*  license below (BSD-2-Clause). The former is distributed                   *)
@@ -61,7 +53,7 @@ From stdpp Require Import finite.
 Universe e.
 Definition eff := Type@{e}.
 Bind Scope type_scope with eff.
-#[global] Typeclasses Transparent eff.
+#[export] Typeclasses Transparent eff.
 
 Set Typeclasses Unique Instances.
 (** The effect typeclass, declares a type as an effect and provide [eff_ret],

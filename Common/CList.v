@@ -1,15 +1,7 @@
 (******************************************************************************)
 (*                                ArchSem                                     *)
 (*                                                                            *)
-(*  Copyright (c) 2021                                                        *)
-(*      Thibaut Pérami, University of Cambridge                               *)
-(*      Zonguyan Liu, Aarhus University                                       *)
-(*      Nils Lauermann, University of Cambridge                               *)
-(*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
-(*      Brian Campbell, University of Edinburgh                               *)
-(*      Alasdair Armstrong, University of Cambridge                           *)
-(*      Ben Simner, University of Cambridge                                   *)
-(*      Peter Sewell, University of Cambridge                                 *)
+(*  Copyright (c) 2021 Anonymous                                              *)
 (*                                                                            *)
 (*  All files except SailArmInstTypes.v are distributed under the             *)
 (*  license below (BSD-2-Clause). The former is distributed                   *)
@@ -43,7 +35,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CBool CMaps CArith.
+Require Import CBase CBool CMaps CArith CDestruct.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.
@@ -330,6 +322,26 @@ Qed.
 
 Definition enumerateN {A} (l : list A) : list (N * A) :=
   zip_with pair (seqN 0 (N.of_nat (length l))) l.
+
+(** ** seqZ *)
+
+Definition seqZ (s l : Z) := seqN 0 (Z.to_N l) |$> Z.of_N |$> (λ x, s + x)%Z.
+
+Global Instance set_elem_of_seqZ x n l:
+  SetUnfoldElemOf x (seqZ n l) (n ≤ x < n + l)%Z.
+Proof.
+  tcclean. unfold seqZ. set_unfold. split.
+  - cdestruct |- ***. lia.
+  - intros.
+    exists (x - n)%Z.
+    split; first lia.
+    exists (Z.to_N (x - n)).
+    lia.
+Qed.
+
+Definition enumerateZ {A} (l : list A) : list (Z * A) :=
+  zip_with pair (seqZ 0 (Z.of_nat (length l))) l.
+
 
 (** ** List and option inversion *)
 

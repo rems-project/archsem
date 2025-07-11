@@ -34,8 +34,9 @@
 (*                                                                            *)
 (******************************************************************************)
 
+(* Apart from changing the import, this is exactly ArchSemArm/ArmSeqModel. *)
 Require Import ASCommon.Options.
-Require Import ArmInst.
+Require Import RiscVInst.
 Require Import ASCommon.Common.
 Require Import ASCommon.Exec.
 Require Import ASCommon.StateT.

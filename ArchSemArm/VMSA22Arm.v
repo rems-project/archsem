@@ -1,15 +1,7 @@
 (******************************************************************************)
 (*                                ArchSem                                     *)
 (*                                                                            *)
-(*  Copyright (c) 2021                                                        *)
-(*      Thibaut Pérami, University of Cambridge                               *)
-(*      Zonguyan Liu, Aarhus University                                       *)
-(*      Nils Lauermann, University of Cambridge                               *)
-(*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
-(*      Brian Campbell, University of Edinburgh                               *)
-(*      Alasdair Armstrong, University of Cambridge                           *)
-(*      Ben Simner, University of Cambridge                                   *)
-(*      Peter Sewell, University of Cambridge                                 *)
+(*  Copyright (c) 2021 Anonymous                                              *)
 (*                                                                            *)
 (*  All files except SailArmInstTypes.v are distributed under the             *)
 (*  license below (BSD-2-Clause). The former is distributed                   *)
@@ -48,7 +40,7 @@ Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
-Require Import SailTinyArm.System_types.
+Require Import SailArm.armv9_types.
 
 Import Candidate.
 
