@@ -195,24 +195,73 @@ Section UMArm.
   Definition ob1 := (if ms is NMS then obs else obs⨾sca) ∪ dob ∪ aob ∪ bob ∪ iio.
   Definition ob := ob1⁺.
 
-  (* TODO This does not distinguishes UB conditions from invalid conditions.
-     Cache operation are allowed but are effectively no-ops which is find
-     because any TTW or IFetch access must read from initial memory.
-
-     Currently only explicit, TTW or IFetch accesses are accepted but this can
+  (* Currently only explicit, TTW or IFetch accesses are accepted but this can
      be updated later *)
   Record consistent := {
       internal :> exp_internal cd;
       reg_internal' :> reg_internal cd;
       external : grel_irreflexive ob;
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+    }.
+  #[export] Instance consistent_dec : Decision consistent.
+  Proof.
+    destruct decide (exp_internal cd).
+    2: right; abstract (by intros []).
+    destruct decide (reg_internal cd).
+    2: right; abstract (by intros []).
+    destruct decide (grel_irreflexive ob).
+    2: right; abstract (by intros []).
+    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
+
+  Record not_UB := {
       initial_reads : (T ∪ IF) ⊆ IR;
       initial_reads_not_delayed : (T ∪ IF) ## grel_rng (coherence cd);
       register_write_permitted : Illegal_RW = ∅;
       memory_events_permitted : (mem_events cd) ⊆ M ∪ T ∪ IF;
-      is_nms' : is_nms cd;
+      is_nms' : if ms is NMS then is_nms cd else True;
       no_exceptions: TE ∪ ERET = ∅;
       no_cacheop : C = ∅;
     }.
+  #[export] Instance not_UB_dec : Decision not_UB.
+  Proof.
+    destruct decide ((T ∪ IF) ⊆ IR).
+    2: right; abstract (by intros []).
+    destruct decide ((T ∪ IF) ## grel_rng (coherence cd)).
+    2: right; abstract (by intros []).
+    destruct decide (Illegal_RW = ∅).
+    2: right; abstract (by intros []).
+    destruct decide ((mem_events cd) ⊆ M ∪ T ∪ IF).
+    2: right; abstract (by intros []).
+    assert (Decision (if ms is NMS then is_nms cd else True))
+      by refine (if ms is NMS then _ else _).
+    destruct H.
+    2: right; abstract (by intros []).
+    destruct decide (TE ∪ ERET = ∅).
+    2: right; abstract (by intros []).
+    destruct decide (C = ∅).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
+
+  Definition consistent_ok := consistent ∧ not_UB.
+
+  Instance consistent_ok_dec : Decision consistent_ok.
+  Proof. unfold_decide. Defined.
 
 End UMArm.
+
+Require Import ASCommon.CResult.
+
+(** The user mode Arm axiomatic model, mixed-size or not *)
+Definition axmodel ms regs_whitelist : Ax.t ms ∅ :=
+    λ _ cd, if decide (consistent cd) then
+              if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
+              else Error ""
+            else Ok Ax.Rejected.
+
+(** The user mode Arm architecture model, mixed or not based on [ms] *)
+Definition archmodel ms regs_whitelist isem : Model.nc ∅ :=
+  Ax.to_Modelnc isem (axmodel ms regs_whitelist).

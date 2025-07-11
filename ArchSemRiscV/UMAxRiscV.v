@@ -49,17 +49,9 @@ Require Import ASCommon.FMon.
 Require Import RiscVInst.
 Require Import GenAxiomaticRiscV.
 
-(** This is an implementation of a user-mode Axiomatic model for ARM. It does
-    not support mixed-size accesses, but does support dsb barriers, unlike usual
-    Arm user mode models. This model has been written to look like the VMSA ESOP
-    22 Arm model to simplify the proof. It is not up to date with change added
-    the model by Arm after the ESOP 22 Paper by Ben Simner et al.
-
-    This model used the "pa" part of the interface as the main address and does
-    not check that that translation makes sense if there is one. However it will
-    (TODO) check that translations read from initial memory if they exist, and
-    that no writes are made to the address used for translation *)
-Section UMArm.
+(** This is an implementation of the RISC-V user-mode Axiomatic model. It does
+    not support mixed-size accesses. *)
+Section UMRiscV.
   Import Candidate.
   Context (regs_whitelist : gset reg).
   Context {nmth : nat}.
@@ -189,11 +181,56 @@ Section UMArm.
       register_coherence : reg_coherence cd;
       main_model : grel_acyclic (co ∪ rfe ∪ fr ∪ ppo);
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+    }.
+  #[export] Instance consistent_dec : Decision consistent.
+  Proof.
+    destruct decide (grel_acyclic (co ∪ rf ∪ fr ∪ po_loc)).
+    2: right; abstract (by intros []).
+    destruct decide (reg_coherence cd).
+    2: right; abstract (by intros []).
+    destruct decide (grel_acyclic (co ∪ rfe ∪ fr ∪ ppo)).
+    2: right; abstract (by intros []).
+    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
+
+
+  Record not_UB := {
       initial_reads : IF ⊆ IR;
       initial_reads_not_delayed : IF ## grel_rng (coherence cd);
       register_write_permitted : Illegal_RW = ∅;
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
       is_nms' : is_nms cd;
     }.
+  #[export] Instance not_UB_dec : Decision not_UB.
+  Proof.
+    destruct decide (IF ⊆ IR).
+    2: right; abstract (by intros []).
+    destruct decide (IF ## grel_rng (coherence cd)).
+    2: right; abstract (by intros []).
+    destruct decide (Illegal_RW = ∅).
+    2: right; abstract (by intros []).
+    destruct decide ((mem_events cd) ⊆ M ∪ IF).
+    2: right; abstract (by intros []).
+    destruct decide (is_nms cd).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
 
-End UMArm.
+  Definition consistent_ok := consistent ∧ not_UB.
+
+End UMRiscV.
+
+Require Import ASCommon.CResult.
+
+(** The User RISC-V axiomatic model *)
+Definition axmodel regs_whitelist : Ax.t Candidate.NMS ∅ :=
+  λ _ cd, if decide (consistent cd) then
+            if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
+            else Error ""
+          else Ok Ax.Rejected.
+
+(** The User RISC-V architecture model *)
+Definition archmodel regs_whitelist isem : Model.nc ∅ :=
+  Ax.to_Modelnc isem (axmodel regs_whitelist).

@@ -175,6 +175,14 @@ Module AxRiscVNames.
       rrf_internal : rrf ⊆ full_instruction_order;
       rfr_internal : rfr ⊆ not_after cd
     }.
+  #[export] Instance reg_coherence_dec : Decision reg_coherence.
+  Proof.
+    destruct decide (rrf ⊆ full_instruction_order).
+    2: right; abstract (by intros []).
+    destruct decide (rfr ⊆ not_after cd).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
 
   End RiscVNames.
 End AxRiscVNames.

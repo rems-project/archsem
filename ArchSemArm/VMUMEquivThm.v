@@ -407,8 +407,8 @@ Section Phase1.
   End NoCacheOp_implies_ob1_equal.
 
   Theorem VMUM_phase1:
-    UM.consistent regs_whitelist cd ↔ VMSA.consistent regs_whitelist cd.
-    split; intros []; split.
+    UM.consistent_ok regs_whitelist cd ↔ VMSA.consistent_ok regs_whitelist cd.
+    split; intros [[] []]; split; split.
     all: try (rewrite VMSA_UM_ob in *).
     all: try (apply set_unfold_2; solve [cdestruct |- **]).
     all: try (try unfold C in *; set_solver).

@@ -174,6 +174,18 @@ Section UMSeqArm.
   Record consistent := {
       total : grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
+    }.
+  #[export] Instance consistent_dec : Decision consistent.
+  Proof.
+    destruct decide (grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf)).
+    2: right; abstract (by intros []).
+    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
+
+
+  Record not_UB := {
       initial_reads : (T ∪ IF) ⊆ IR;
       register_write_permitted : Illegal_RW = ∅;
       register_read_permitted : Illegal_RR = ∅;
@@ -181,5 +193,38 @@ Section UMSeqArm.
       is_nms' : is_nms cd;
       no_exceptions: TE ∪ ERET = ∅
     }.
+  #[export] Instance not_UB_dec : Decision not_UB.
+  Proof.
+    destruct decide ((T ∪ IF) ⊆ IR).
+    2: right; abstract (by intros []).
+    destruct decide (Illegal_RW = ∅).
+    2: right; abstract (by intros []).
+    destruct decide (Illegal_RR = ∅).
+    2: right; abstract (by intros []).
+    destruct decide ((mem_events cd) ⊆ M ∪ T ∪ IF).
+    2: right; abstract (by intros []).
+    destruct decide (is_nms cd).
+    2: right; abstract (by intros []).
+    destruct decide (TE ∪ ERET = ∅).
+    2: right; abstract (by intros []).
+    left. abstract done.
+  Defined.
+
+  Definition consistent_ok := consistent ∧ not_UB.
+  Instance consistent_ok_dec : Decision consistent_ok.
+  Proof. unfold_decide. Defined.
 
 End UMSeqArm.
+
+Require Import ASCommon.CResult.
+
+(** The SC Arm axiomatic model *)
+Definition axmodel regs_whitelist : Ax.t NMS ∅ :=
+  λ _ cd, if decide (consistent cd) then
+            if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
+            else Error ""
+          else Ok Ax.Rejected.
+
+(** The SC Arm architecture model *)
+Definition archmodel regs_whitelist isem : Model.nc ∅ :=
+  Ax.to_Modelnc isem (axmodel regs_whitelist).
