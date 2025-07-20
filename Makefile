@@ -24,6 +24,7 @@ TARFILES=$(DIRS)
 TARFILES+=dune-project Makefile LICENSE
 TARFILES+=$(wildcard *.md)
 TARFILES+=$(wildcard *.opam)
+TARFILES+=$(wildcard *.opam.template)
 
 $(TARBALL): $(TARFILES)
 	$(GIT_ARCHIVE) -o $@ --prefix=$(PREFIX)/ HEAD $^
