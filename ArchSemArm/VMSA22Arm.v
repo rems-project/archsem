@@ -42,6 +42,7 @@ From ASCommon Require Import Common GRel FMon.
 
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
+Require Import SailArm.armv9_types.
 
 (* Import Candidate. *)
 

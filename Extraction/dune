@@ -2,7 +2,7 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
+  (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm SailArm
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
                      BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
@@ -22,7 +22,7 @@
                      BinaryString Operators_mwords GenPromising
                      TermModels vector0 VectorDef Vector UMPromising
                      VMPromising list_misc HVec
-                     fin_sets list_basics)
+                     fin_sets list_basics armv9_types)
 )
 
 (library

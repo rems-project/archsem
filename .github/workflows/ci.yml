@@ -83,7 +83,7 @@ jobs:
         eval $(opam env)
         opam install --deps-only --confirm-level=unsafe-yes .
         # This is needed with opam 2.1, not with opam 2.3. I haven't tested 2.2
-        opam install --yes sail coq-sail-tiny-arm coq-sail-riscv coq-sail-tiny-x86
+        opam install --yes sail coq-sail-tiny-arm coq-sail-arm coq-sail-riscv coq-sail-tiny-x86
         opam clean
         opam clean -r
 

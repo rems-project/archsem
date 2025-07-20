@@ -145,3 +145,73 @@ Export ArmSeqModel.
     conversion code from [ArchSem.FromSail] *)
 Definition sail_tiny_arm_sem (nondet : bool) : iMon () :=
   iMon_from_Sail nondet (System.fetch_and_execute ()).
+
+(******************************************************************************)
+(** * Full sail-arm support                                                   *)
+(******************************************************************************)
+
+Require Export SailArm.armv9_types.
+
+(** Export [GReg] definitions and typeclasses for sail-arm, since it's what we
+    will manipulate for registers in the full model *)
+Module ArmFullGReg.
+  Export armv9_types.GRegister.
+  Coercion GReg : armv9_types.register >-> armv9_types.greg.
+  #[global] Instance pretty_greg : Pretty armv9_types.greg :=
+    λ '(armv9_types.GReg reg), armv9_types.string_of_register reg.
+End ArmFullGReg.
+
+(** Full Arm module using sail-arm *)
+Module ArmFull.
+  Module SA := armv9_types.Arch.
+  Module SI := armv9_types.Interface.
+
+  (** Then we need to create a few new things for ArchSem *)
+  Module ArchExtra <: FromSail.ArchExtra SA.
+    Import SA.
+    Import ArmFullGReg.
+
+    Definition pc_reg : greg := GReg armv9_types.PC.
+    Definition pretty_greg : Pretty greg := _.
+  End ArchExtra.
+
+  (** Then we can use this to generate an ArchSem architecture module *)
+  Module Arch := ArchFromSail SA ArchExtra.
+  (** And an ArchSem interface module *)
+  Module Interface := Interface Arch.
+  (** Finally we can generate a conversion function from the sail monad to an
+      ArchSem's [iMon] *)
+  Module IMonFromSail := IMonFromSail SA SI ArchExtra Arch Interface.
+End ArmFull.
+
+Module ArmFullNoCHERI.
+  Definition no_cheri : ¬ ArmFull.Arch.CHERI := ltac:(naive_solver).
+End ArmFullNoCHERI.
+
+(** Instantiate the generic parts of ArchSem on the full Arm model *)
+Module ArmFullTM := TermModels ArmFull.
+Module ArmFullCand := CandidateExecutions ArmFull ArmFullTM ArmFullNoCHERI.
+Module ArmFullGenPro := GenPromising ArmFull ArmFullTM.
+Module ArmFullSeqModel := SequentialModel ArmFull ArmFullTM ArmFullNoCHERI.
+
+(** Make sail-arm type abbreviations transparent *)
+#[export] Typeclasses Transparent ArmFull.SA.addr_size.
+#[export] Typeclasses Transparent ArmFull.SA.addr_space.
+#[export] Typeclasses Transparent ArmFull.SA.sys_reg_id.
+#[export] Typeclasses Transparent ArmFull.SA.mem_acc.
+#[export] Typeclasses Transparent ArmFull.SA.abort.
+#[export] Typeclasses Transparent ArmFull.SA.barrier.
+#[export] Typeclasses Transparent ArmFull.SA.cache_op.
+#[export] Typeclasses Transparent ArmFull.SA.tlbi.
+#[export] Typeclasses Transparent ArmFull.SA.exn.
+#[export] Typeclasses Transparent ArmFull.SA.trans_start.
+#[export] Typeclasses Transparent ArmFull.SA.trans_end.
+
+Require SailArm.armv9.
+
+(** The semantics of instructions from [sail-arm] by using the conversion code
+    from [ArchSem.FromSail]. [SEE] need to be reset manually between
+    instructions for legacy boring reasons *)
+Definition sail_arm_sem (nondet : bool) : ArmFull.Interface.iMon () :=
+  ArmFull.IMonFromSail.iMon_from_Sail nondet (armv9.__InstructionExecute ());;
+  ArmFull.Interface.mcall (ArmFull.Arch.RegWrite armv9_types.SEE None 0).
