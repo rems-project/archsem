@@ -175,15 +175,7 @@ Section UMSeqArm.
       total : grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf);
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
     }.
-  #[export] Instance consistent_dec : Decision consistent.
-  Proof.
-    destruct decide (grel_acyclic (full_instruction_order ∪ fr ∪ co ∪ rf ∪ rfr ∪ rrf)).
-    2: right; abstract (by intros []).
-    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
-
+  #[export] Instance consistent_dec : Decision consistent := ltac:(decide_record).
 
   Record not_UB := {
       initial_reads : (T ∪ IF) ⊆ IR;
@@ -193,26 +185,10 @@ Section UMSeqArm.
       is_nms' : is_nms cd;
       no_exceptions: TE ∪ ERET = ∅
     }.
-  #[export] Instance not_UB_dec : Decision not_UB.
-  Proof.
-    destruct decide ((T ∪ IF) ⊆ IR).
-    2: right; abstract (by intros []).
-    destruct decide (Illegal_RW = ∅).
-    2: right; abstract (by intros []).
-    destruct decide (Illegal_RR = ∅).
-    2: right; abstract (by intros []).
-    destruct decide ((mem_events cd) ⊆ M ∪ T ∪ IF).
-    2: right; abstract (by intros []).
-    destruct decide (is_nms cd).
-    2: right; abstract (by intros []).
-    destruct decide (TE ∪ ERET = ∅).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
+  #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
 
   Definition consistent_ok := consistent ∧ not_UB.
-  Instance consistent_ok_dec : Decision consistent_ok.
-  Proof. unfold_decide. Defined.
+  Instance consistent_ok_dec : Decision consistent_ok := ltac:(unfold_decide).
 
 End UMSeqArm.
 

@@ -195,27 +195,17 @@ Section UMArm.
   Definition ob1 := (if ms is NMS then obs else obs⨾sca) ∪ dob ∪ aob ∪ bob ∪ iio.
   Definition ob := ob1⁺.
 
-  (* Currently only explicit, TTW or IFetch accesses are accepted but this can
-     be updated later *)
   Record consistent := {
       internal :> exp_internal cd;
       reg_internal' :> reg_internal cd;
       external : grel_irreflexive ob;
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
     }.
-  #[export] Instance consistent_dec : Decision consistent.
-  Proof.
-    destruct decide (exp_internal cd).
-    2: right; abstract (by intros []).
-    destruct decide (reg_internal cd).
-    2: right; abstract (by intros []).
-    destruct decide (grel_irreflexive ob).
-    2: right; abstract (by intros []).
-    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
 
+  #[export] Instance consistent_dec : Decision consistent := ltac:(decide_record).
+
+  (* Currently only explicit, TTW or IFetch accesses are accepted but this can
+     be updated later *)
   Record not_UB := {
       initial_reads : (T ∪ IF) ⊆ IR;
       initial_reads_not_delayed : (T ∪ IF) ## grel_rng (coherence cd);
@@ -225,31 +215,10 @@ Section UMArm.
       no_exceptions: TE ∪ ERET = ∅;
       no_cacheop : C = ∅;
     }.
-  #[export] Instance not_UB_dec : Decision not_UB.
-  Proof.
-    destruct decide ((T ∪ IF) ⊆ IR).
-    2: right; abstract (by intros []).
-    destruct decide ((T ∪ IF) ## grel_rng (coherence cd)).
-    2: right; abstract (by intros []).
-    destruct decide (Illegal_RW = ∅).
-    2: right; abstract (by intros []).
-    destruct decide ((mem_events cd) ⊆ M ∪ T ∪ IF).
-    2: right; abstract (by intros []).
-    assert (Decision (if ms is NMS then is_nms cd else True))
-      by refine (if ms is NMS then _ else _).
-    destruct H.
-    2: right; abstract (by intros []).
-    destruct decide (TE ∪ ERET = ∅).
-    2: right; abstract (by intros []).
-    destruct decide (C = ∅).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
+  #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
 
   Definition consistent_ok := consistent ∧ not_UB.
-
-  Instance consistent_ok_dec : Decision consistent_ok.
-  Proof. unfold_decide. Defined.
+  Instance consistent_ok_dec : Decision consistent_ok := ltac:(unfold_decide).
 
 End UMArm.
 

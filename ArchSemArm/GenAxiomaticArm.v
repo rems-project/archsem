@@ -285,32 +285,15 @@ Module AxArmNames.
       frfi_internal : frfi ⊆ not_after cd; (* CoRR: important R;po-loc;R not in ob *)
       (* CoRW2: not here as implied by ob (with co⨾rfe⨾lws) *)
     }.
-  #[export] Instance exp_internal_dec : Decision exp_internal.
-  Proof.
-    destruct decide (rfi ⊆ not_after cd).
-    2: right; abstract (by intros []).
-    destruct decide (coi ⊆ not_after cd).
-    2: right; abstract (by intros []).
-    destruct decide (fri ⊆ not_after cd).
-    2: right; abstract (by intros []).
-    destruct decide (frfi ⊆ not_after cd).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
-
+  #[export] Instance exp_internal_dec : Decision exp_internal :=
+    ltac:(decide_record).
 
   Record reg_internal := {
       rrf_internal : rrf ⊆ full_instruction_order;
       rfr_internal : rfr ⊆ not_after cd
     }.
-  #[export] Instance reg_internal_dec : Decision reg_internal.
-  Proof.
-    destruct decide (rrf ⊆ full_instruction_order).
-    2: right; abstract (by intros []).
-    destruct decide (rfr ⊆ not_after cd).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
+  #[export] Instance reg_internal_dec : Decision reg_internal :=
+    ltac:(decide_record).
 
   End ArmNames.
 End AxArmNames.

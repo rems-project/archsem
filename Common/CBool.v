@@ -253,7 +253,7 @@ Class EqDep2Decision {A B} (P : A → B → Type) :=
   (a a' : A) {H : TCFindEq a a'} (b b' : B) {H' : TCFindEq b b'} (x : P a b) (y : P a' b') : Decision (x =ⱼ y) :=
   eqdep2_decide H H' x y.
 
-(** ** Decision procedure generation *)
+(** ** Record equality decision *)
 
 Ltac decide_field a b tac :=
   tryif unify a b then idtac else
@@ -295,6 +295,33 @@ Ltac decide_jmeq :=
          left; abstract (subst; reflexivity))
   end.
 
+(** ** Decision of record of propositions *)
+
+Ltac2 rec decide_record_fields (flds : constr list) : unit :=
+  match flds with
+  | hd :: tl =>
+      destruct (decide $hd) >
+        [ | right; abstract (intros []; Std.contradiction None)];
+      decide_record_fields tl
+  | _ => ()
+  end.
+
+Ltac2 decide_record0 () :=
+  lazy_match! goal with
+  | [ |- Decision ?r] =>
+      (* let head := get_head r in *)
+      assert_bt (Option.equal Int.equal (get_nconstructors r) (Some 1));
+      let ctr := get_constructor r 0 |> Option.get_bt in
+      (* printf "%t" ctr; *)
+      let (args, t) := decompose_non_dep_fun_type (Constr.type ctr) in
+      (* printf "%a and %t" (prt_list prt_cstr) args t; *)
+      decide_record_fields args;
+      abstract (left; split > [assumption..])
+  | [ |- _] => zero_tacticf "Not an Decision instance search"
+  end.
+Ltac2 Notation decide_record := decide_record0 ().
+Tactic Notation "decide_record" := ltac2:(decide_record).
+
 (** ** Hint database to decide equality *)
 Create HintDb eqdec discriminated.
 
@@ -313,7 +340,11 @@ Proof. intros [] []. decide_eq. Defined.
 
 (* Add a hint for resolving Decision of matches*)
 #[export] Hint Extern 1 (Decision match ?x with _ => _ end) =>
-  destruct x : typeclass_instances.
+  case x ||
+    (let nx := fresh "x" in
+     pose (nx := x);
+     change x with nx at 1;
+     case nx) : typeclass_instances.
 
 #[export] Hint Extern 3 (Decision _) => progress cbn : typeclass_instances.
 

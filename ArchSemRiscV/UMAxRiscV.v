@@ -182,19 +182,7 @@ Section UMRiscV.
       main_model : grel_acyclic (co ∪ rfe ∪ fr ∪ ppo);
       atomic : (rmw ∩ (fre⨾ coe)) = ∅;
     }.
-  #[export] Instance consistent_dec : Decision consistent.
-  Proof.
-    destruct decide (grel_acyclic (co ∪ rf ∪ fr ∪ po_loc)).
-    2: right; abstract (by intros []).
-    destruct decide (reg_coherence cd).
-    2: right; abstract (by intros []).
-    destruct decide (grel_acyclic (co ∪ rfe ∪ fr ∪ ppo)).
-    2: right; abstract (by intros []).
-    destruct decide ((rmw ∩ (fre⨾ coe)) = ∅).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
-
+  #[export] Instance consistent_dec : Decision consistent := ltac:(decide_record).
 
   Record not_UB := {
       initial_reads : IF ⊆ IR;
@@ -203,22 +191,10 @@ Section UMRiscV.
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
       is_nms' : is_nms cd;
     }.
-  #[export] Instance not_UB_dec : Decision not_UB.
-  Proof.
-    destruct decide (IF ⊆ IR).
-    2: right; abstract (by intros []).
-    destruct decide (IF ## grel_rng (coherence cd)).
-    2: right; abstract (by intros []).
-    destruct decide (Illegal_RW = ∅).
-    2: right; abstract (by intros []).
-    destruct decide ((mem_events cd) ⊆ M ∪ IF).
-    2: right; abstract (by intros []).
-    destruct decide (is_nms cd).
-    2: right; abstract (by intros []).
-    left. abstract done.
-  Defined.
+  #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
 
   Definition consistent_ok := consistent ∧ not_UB.
+  #[export] Instance consistent_ok_dec : Decision consistent_ok := ltac:(unfold_decide).
 
 End UMRiscV.
 

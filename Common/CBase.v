@@ -267,13 +267,41 @@ Ltac2 Notation a(thunk(self)) "||ₜ" b(thunk(self)) : 6 :=
   orelse a (fun _ => b ()).
 
 (** Throw a [Tactic_failure] with the provided formated message *)
-Ltac2 throw_tacticf fmt := Message.Format.kfprintf (fun m => Control.throw (Tactic_failure (Some m))) fmt.
+Ltac2 throw_tacticf fmt :=
+  Message.Format.kfprintf (fun m => Control.throw (Tactic_failure (Some m))) fmt.
 Ltac2 Notation "throw_tacticf" fmt(format) := throw_tacticf fmt.
+
+(** Backtracks with a [Tactic_failure] with the provided formated message *)
+Ltac2 zero_tacticf fmt :=
+  Message.Format.kfprintf (fun m => Control.zero (Tactic_failure (Some m))) fmt.
+Ltac2 Notation "zero_tacticf" fmt(format) := zero_tacticf fmt.
+
+(** Converts a result into an option, discarding the error payload *)
+Ltac2 res_to_opt a :=
+  match a with
+  | Val v => Some v
+  | Err _ => None
+  end.
 
 (** Get the name of the last hypothesis *)
 Ltac2 last_hyp_name () := let (h, _, _) := List.last (Control.hyps ()) in h.
 (** Introduce an hypothesis and get the automatically generated name *)
 Ltac2 intro_get_name () := intro; last_hyp_name ().
+
+(** If a term is an application, get the head function of that application *)
+Ltac2 rec get_head (t : constr) : constr :=
+  match Constr.Unsafe.kind t with
+  | Constr.Unsafe.App h _ => get_head h
+  | _ => t
+  end.
+
+(** Separate a non-dependent function type like [A → B → C] into ([A; B], C)*)
+Ltac2 rec decompose_non_dep_fun_type (t : constr) : constr list * constr :=
+  lazy_match! t with
+  | ?hd -> ?tl => let (args, res) := decompose_non_dep_fun_type tl in
+                  (hd :: args, res)
+  | _ => ([], t)
+  end.
 
 (** If a constr is a variable, get the variable name, otherwise None *)
 Ltac2 get_var (c: constr) :=
@@ -413,6 +441,39 @@ Ltac2 prt_opt (printer : unit -> 'a -> message) () (o : 'a option) :=
 
 (** Hypothesis Ltac2 printer. The name must exist in the current goal *)
 Ltac2 prt_hyp () (x : ident) := fprintf "%I:%t" x (Constr.type (Control.hyp x)).
+
+
+(** *** Ltac2 inductive type manipulation *)
+
+(** Get the number of constructor of an inductive type. Does [get_head] automatically if needed. *)
+Ltac2 rec get_nconstructors(ind_type : constr) : int option :=
+  match Constr.Unsafe.kind ind_type with
+  | Constr.Unsafe.Ind i inst => Some (Ind.nconstructors (Ind.data i))
+  | Constr.Unsafe.App c a => get_nconstructors c
+  | _ => None
+  end.
+
+(** Takes an inductive type constructor, possibly partially applied to
+    parameters, and return its [n]th constructor, partially applied to the same
+    parameter. This will fail if the type constructor is applied to indices
+    (non-uniform) parameters *)
+Ltac2 rec get_constructor (ind_type : constr) (n : int) : constr option :=
+  match Constr.Unsafe.kind ind_type with
+  | Constr.Unsafe.Ind i inst =>
+      let ctr : constructor := Ind.get_constructor (Ind.data i) n in
+      let ctr := Constr.Unsafe.Constructor ctr inst |> Constr.Unsafe.make in
+      ctr |> Constr.Unsafe.check |> res_to_opt
+  | Constr.Unsafe.App i a =>
+      match get_constructor i n with
+      | Some c =>
+          Constr.Unsafe.App c a
+          |> Constr.Unsafe.make
+          |> Constr.Unsafe.check
+          |> res_to_opt
+      | None => None
+      end
+  | _ => None
+  end.
 
 
 (** *** Ltac2 goal printer

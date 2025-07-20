@@ -1165,20 +1165,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       }.
     #[global] Arguments reads_from_wf : clear implicits.
 
-    Instance reads_from_wf_dec {cd : t} : Decision (reads_from_wf cd).
-    Proof.
-      destruct decide (grel_dom (reads_from cd) ⊆ (mem_writes cd)).
-      2: right; abstract (by intros []).
-      destruct decide (grel_rng (reads_from cd) ⊆ (mem_reads cd)).
-      2: right; abstract (by intros []).
-      destruct decide (grel_functional (reads_from cd)⁻¹).
-      2: right; abstract (by intros []).
-      destruct decide (∀'(weid, reid) ∈ reads_from cd, is_valid_rf cd weid reid).
-      2: right; abstract (by intros []).
-      destruct decide (∀ reid ∈ init_mem_reads cd, is_valid_init_mem_read cd reid).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
+    Instance reads_from_wf_dec {cd : t} : Decision (reads_from_wf cd) :=
+      ltac:(decide_record).
 
     (** *** Coherence wellformedness *)
 
@@ -1193,19 +1181,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
     #[global] Arguments coherence_wf : clear implicits.
-    Instance coherence_wf_dec {cd : t} : Decision (coherence_wf cd).
-    Proof.
-      destruct decide (grel_transitive (coherence cd)).
-      2: right; abstract (by intros []).
-      destruct decide (grel_irreflexive (coherence cd)).
-      2: right; abstract (by intros []).
-      destruct decide
-        (∀ weid1 weid2 ∈ mem_writes cd,
-           is_overlapping cd weid1 weid2 →
-           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
+    Instance coherence_wf_dec {cd : t} : Decision (coherence_wf cd) :=
+      ltac:(decide_record).
 
 
     (** *** lxsx wellformedness *)
@@ -1218,18 +1195,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         lxsx_same_pa : lxsx cd ⊆ same_addr cd
       }.
     #[global] Arguments lxsx_wf : clear implicits.
-    Instance lxsx_wf_dec {cd : t} : Decision (lxsx_wf cd).
-    Proof.
-      destruct decide (grel_dom (lxsx cd) ⊆ exclusive_reads cd).
-      2: right; abstract (by intros []).
-      destruct decide (grel_rng (lxsx cd) ⊆ exclusive_writes cd).
-      2: right; abstract (by intros []).
-      destruct decide (lxsx cd ⊆ instruction_order cd).
-      2: right; abstract (by intros []).
-      destruct decide (lxsx cd ⊆ same_addr cd).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
+    Instance lxsx_wf_dec {cd : t} : Decision (lxsx_wf cd) := ltac:(decide_record).
 
 
     (** *** Reg reads from wellformedness
@@ -1248,20 +1214,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           initial_reg_reads cd ⊆ possible_initial_reg_reads cd;
       }.
     #[global] Arguments reg_reads_from_wf : clear implicits.
-    Instance reg_reads_from_wf_dec {cd : t} : Decision (reg_reads_from_wf cd).
-    Proof.
-      destruct decide (grel_dom (reg_reads_from cd) ⊆ (reg_writes cd)).
-      2: right; abstract (by intros []).
-      destruct decide (grel_rng (reg_reads_from cd) ⊆ (reg_reads cd)).
-      2: right; abstract (by intros []).
-      destruct decide (grel_functional (reg_reads_from cd)⁻¹).
-      2: right; abstract (by intros []).
-      destruct decide (reg_reads_from cd ⊆ same_reg_val cd).
-      2: right; abstract (by intros []).
-      destruct decide (initial_reg_reads cd ⊆ possible_initial_reg_reads cd).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
+    Instance reg_reads_from_wf_dec {cd : t} : Decision (reg_reads_from_wf cd) :=
+      ltac:(decide_record).
 
     Lemma rrf_irreflexive (cd : t) :
       reg_reads_from_wf cd → grel_irreflexive (reg_reads_from cd).
@@ -1322,27 +1276,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           else True
       }.
     #[global] Arguments footprint_wf : clear implicits.
-    Instance footprint_wf_dec {cd : t} : Decision (footprint_wf cd).
-    Proof.
-      destruct decide (
-          ∀ tid : fin nmth,
-            ∀ instr ∈ cd.(events) !!! tid,
-            ∀ ev ∈ fst instr,
-            if get_reg ev is Some reg
-            then reg ∈ dom (cd.(init).(MState.regs) !!! tid)
-            else True).
-      2: right; abstract (by intros []).
-      destruct decide (
-          ∀ '(eid, ev) ∈ event_list cd,
-            if get_addr ev is Some addr then
-              if get_size ev is Some n then
-                ∀ addr' ∈ addr_range addr n, addr' ∈ dom cd.(init).(MState.memory)
-          else False
-          else True).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
-
+    Instance footprint_wf_dec {cd : t} : Decision (footprint_wf cd) :=
+      ltac:(decide_record).
 
     Record wf (cd : t) :=
       {
@@ -1354,24 +1289,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         lxsx_wf' :> lxsx_wf cd;
         reg_reads_from_wf' :> reg_reads_from_wf cd;
       }.
-    Instance wf_dec cd : Decision (wf cd).
-    Proof.
-      destruct decide (has_only_supported_events cd).
-      2: right; abstract (by intros []).
-      destruct decide (addr_space_wf cd).
-      2: right; abstract (by intros []).
-      destruct decide (footprint_wf cd).
-      2: right; abstract (by intros []).
-      destruct decide (reads_from_wf cd).
-      2: right; abstract (by intros []).
-      destruct decide (coherence_wf cd).
-      2: right; abstract (by intros []).
-      destruct decide (lxsx_wf cd).
-      2: right; abstract (by intros []).
-      destruct decide (reg_reads_from_wf cd).
-      2: right; abstract (by intros []).
-      left. abstract done.
-    Defined.
+    Instance wf_dec cd : Decision (wf cd) := ltac:(decide_record).
+
     End Cand.
 
 
