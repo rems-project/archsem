@@ -72,10 +72,6 @@ Require Import TermModels.
 Open Scope Z_scope.
 Open Scope stdpp_scope.
 
-Module Type NoCHERI (IWA : InterfaceWithArch).
-  Parameter no_cheri : ¬ IWA.Arch.CHERI.
-End NoCHERI.
-
 (* Module to be imported *)
 Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (NC : NoCHERI IWA).
   Import IWA.Arch.

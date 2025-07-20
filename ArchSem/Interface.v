@@ -56,14 +56,14 @@ development requires slightly more things, so this looks a bit different *)
 (** The architecture parameters that must be provided to the interface *)
 Module Type Arch.
 
-  (** The type of registers, most likely string, but may be more fancy *)
+  (** The type of registers, most likely an big enumeration *)
   Parameter reg : Type.
-
-  (** We need to implement a gmap indexed by registers *)
   Parameter reg_eq : EqDecision reg.
   #[export] Existing Instance reg_eq.
   Parameter reg_countable : @Countable reg reg_eq.
   #[export] Existing Instance reg_countable.
+  Parameter pretty_reg : Pretty reg.
+  #[export] Existing Instance pretty_reg.
 
   (** Register value type are dependent on the register, therefore we need all
       the dependent type manipulation typeclasses *)
@@ -877,3 +877,7 @@ Module Type InterfaceWithArch.
   Declare Module Arch : Arch.
   Declare Module Interface : InterfaceT Arch.
 End InterfaceWithArch.
+
+Module Type NoCHERI (IWA : InterfaceWithArch).
+  Parameter no_cheri : ¬ IWA.Arch.CHERI.
+End NoCHERI.

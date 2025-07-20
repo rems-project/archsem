@@ -48,30 +48,38 @@ From ASCommon Require Import Options Common Effects.
 
 Require Export SailTinyArm.System_types.
 From ArchSem Require Import
-  Interface FromSail TermModels CandidateExecutions GenPromising.
+  Interface FromSail TermModels CandidateExecutions GenPromising SeqModel.
 
 Open Scope stdpp.
+
+
+(** Export [GReg] definitions and typeclasses, since it's what we will
+    manipulate for registers *)
+Export GRegister.
+Coercion GReg : register >-> greg.
+Instance pretty_greg : Pretty greg :=
+  λ '(GReg reg), string_of_register reg.
 
 (** First we import the sail generated interface modules *)
 Module Arm.
   Module SA := System_types.Arch.
   Module SI := System_types.Interface.
 
-  (** Then we need to create a few new things for ArchSem, mostly around pas *)
-  Module PAManip <: FromSail.PAManip SA.
+  (** Then we need to create a few new things for ArchSem *)
+  Module ArchExtra <: FromSail.ArchExtra SA.
     Import SA.
-    Coercion GReg : register >-> greg.
 
-    Definition pc_reg : greg := _PC.
-  End PAManip.
+    Definition pc_reg : greg := GReg _PC.
+    Definition pretty_greg : Pretty greg := _.
+  End ArchExtra.
 
   (** Then we can use this to generate an ArchSem architecture module *)
-  Module Arch := ArchFromSail SA PAManip.
+  Module Arch := ArchFromSail SA ArchExtra.
   (** And an ArchSem interface module *)
   Module Interface := Interface Arch.
   (** Finally we can generate a conversion function from the sail monad to an
       ArchSem's [iMon] *)
-  Module IMonFromSail := IMonFromSail SA SI PAManip Arch Interface.
+  Module IMonFromSail := IMonFromSail SA SI ArchExtra Arch Interface.
 End Arm.
 
 Module NoCHERI.
@@ -82,22 +90,18 @@ End NoCHERI.
 Module ArmTM := TermModels Arm.
 Module ArmCand := CandidateExecutions Arm ArmTM NoCHERI.
 Module ArmGenPro := GenPromising Arm ArmTM.
+Module ArmSeqModel := SequentialModel Arm ArmTM NoCHERI.
 
 (** We export everything we generated, so the rest of ArchSemArm should
     just import this file *)
 Export Arm.
-Export (hints) PAManip.
 Export Arm.Arch.
 Export Arm.Interface.
 Export Arm.IMonFromSail.
 Export ArmTM.
 Export ArmCand.
 Export ArmGenPro.
-
-(** Export [GReg] definitions and typeclasses, since it's what we will manipulate *)
-Export GRegister.
-Coercion GReg : register >-> greg.
-
+Export ArmSeqModel.
 
 
 (** Make type abbreviations transparent *)
@@ -129,7 +133,3 @@ Require SailTinyArm.System.
 (** The semantics of instructions from system [sail-tiny-arm] by using the
     conversion code from [ArchSem.FromSail] *)
 Definition sail_tiny_arm_sem : iMon () := iMon_from_Sail (System.fetch_and_execute ()).
-
-(** Make registers printable *)
-Instance pretty_reg : Pretty reg :=
-  λ '(GReg reg), string_of_register reg.

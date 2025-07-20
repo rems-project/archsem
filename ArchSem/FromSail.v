@@ -83,16 +83,16 @@ Remove Hints Decidable_eq_mword Countable_mword : typeclass_instances.
 
 This section defines a module type that describes everything ArchSem need from
 an architecture instantiation that is missing from the Sail generated code *)
-Module Type PAManip (SA : SailArch).
+Module Type ArchExtra (SA : SailArch).
   Import SA.
 
   Parameter pc_reg : greg.
-End PAManip.
+  Parameter pretty_greg : Pretty greg.
+End ArchExtra.
 
 (** * Convert from Sail generated instantiations to ArchSem ones *)
 
-Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
-  Include PAM.
+Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
   Import (hints) SA.
   Definition reg := SA.greg.
   #[export] Typeclasses Transparent reg.
@@ -100,6 +100,12 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   #[export] Typeclasses Transparent reg_eq.
   Definition reg_countable : Countable reg := SA.greg_cnt.
   #[export] Typeclasses Transparent reg_countable.
+  Definition pretty_reg : Pretty reg := AE.pretty_greg.
+  #[export] Typeclasses Transparent reg_countable.
+
+
+  Definition pc_reg := AE.pc_reg.
+  #[export] Typeclasses Transparent pc_reg.
 
   Definition reg_type (r : reg) := match r with @SA.GReg A _ => A end.
   #[export] Instance reg_type_eq (r : reg) : EqDecision (reg_type r).
@@ -195,13 +201,13 @@ Module ArchFromSail (SA : SailArch) (PAM : PAManip SA) <: Arch.
   #[export] Typeclasses Transparent trans_end_eq.
 End ArchFromSail.
 
-Module Type ArchFromSailT (SA : SailArch) (PAM : PAManip SA).
-  Include ArchFromSail SA PAM.
+Module Type ArchFromSailT (SA : SailArch) (AE : ArchExtra SA).
+  Include ArchFromSail SA AE.
 End ArchFromSailT.
 
 
 Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
-  (PAM : PAManip SA) (Arch : ArchFromSailT SA PAM) (I : InterfaceT Arch).
+  (AE : ArchExtra SA) (Arch : ArchFromSailT SA AE) (I : InterfaceT Arch).
   Import Arch.
   Import I.
   Import (coercions) SA.

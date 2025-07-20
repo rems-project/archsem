@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 From ASCommon Require Import Options Common.
-From ArchSemArm Require Import ArmInst ArmSeqModel.
+From ArchSemArm Require Import ArmInst.
 From ASCommon Require Import CResult.
 
 

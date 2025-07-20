@@ -1,5 +1,5 @@
 Require Import ASCommon.CExtraction.
-Require Import ArchSemArm.ArmSeqModel.
+Require Import ArchSemArm.ArmInst.
 
 Unset Extraction SafeImplicits.
 

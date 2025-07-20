@@ -55,7 +55,8 @@ Require Export SailRiscVInstTypes.
 Require Import Coq.Reals.Rbase.
 From RecordUpdate Require Import RecordSet.
 From ASCommon Require Import Common Effects CDestruct.
-From ArchSem Require Import Interface TermModels CandidateExecutions GenPromising.
+From ArchSem Require Import
+  Interface TermModels CandidateExecutions GenPromising SeqModel.
 
 
 From Equations Require Import Equations.
@@ -285,6 +286,7 @@ Module RiscV.
     #[export] Typeclasses Transparent reg.
     Definition reg_eq : EqDecision reg := _.
     Definition reg_countable : Countable reg := _.
+    Definition pretty_reg : Pretty reg := λ s, s.
 
     Definition reg_type (_ : reg) := regval.
     #[export] Typeclasses Transparent reg_type.
@@ -401,6 +403,7 @@ Bind Scope string_scope with RiscV.Arch.reg.
 Module RiscVTM := TermModels RiscV.
 Module RiscVCand := CandidateExecutions RiscV RiscVTM NoCHERI.
 Module RiscVGenPro := GenPromising RiscV RiscVTM.
+Module RiscVSeqModel := SequentialModel RiscV RiscVTM NoCHERI.
 
 Export RiscV.Arch.
 Export RiscV.Interface.

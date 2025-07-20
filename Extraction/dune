@@ -4,13 +4,13 @@
   (prelude ArmInstExtr)
   (theories Ltac2 stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
             ASCommon ArchSem ArchSemArm)
-  (extracted_modules ArmInst ArmSeqModel Ascii base Basics BinInt
+  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
                      CList CMaps COption Common countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap Interface list0 List list_numbers listset mapset
                      Nat numbers option propset RecordSet pretty
-                     sets Specif String0 strings
+                     sets Specif String0 strings Classes
                      Instances Values MachineWord FromSail ConcurrencyInterfaceV2
                      System_types
                      TermModels vector0 VectorDef Vector)
