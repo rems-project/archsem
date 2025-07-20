@@ -44,9 +44,9 @@
 
 Require Export SailStdpp.Base.
 Require Export SailStdpp.ConcurrencyInterfaceTypes.
-From ASCommon Require Import Options Common Effects.
+From ASCommon Require Import Options Common Effects FMon.
 
-Require Export SailTinyArm.System_types.
+Require Export SailArm.armv9_types.
 From ArchSem Require Import
   Interface FromSail TermModels CandidateExecutions GenPromising SeqModel.
 
@@ -62,14 +62,14 @@ Instance pretty_greg : Pretty greg :=
 
 (** First we import the sail generated interface modules *)
 Module Arm.
-  Module SA := System_types.Arch.
-  Module SI := System_types.Interface.
+  Module SA := armv9_types.Arch.
+  Module SI := armv9_types.Interface.
 
   (** Then we need to create a few new things for ArchSem *)
   Module ArchExtra <: FromSail.ArchExtra SA.
     Import SA.
 
-    Definition pc_reg : greg := GReg _PC.
+    Definition pc_reg : greg := GReg PC.
     Definition pretty_greg : Pretty greg := _.
   End ArchExtra.
 
@@ -107,7 +107,6 @@ Export ArmSeqModel.
 (** Make type abbreviations transparent *)
 #[export] Typeclasses Transparent bits.
 #[export] Typeclasses Transparent SA.addr_size.
-#[export] Typeclasses Transparent System_types.addr_space.
 #[export] Typeclasses Transparent SA.addr_space.
 #[export] Typeclasses Transparent SA.sys_reg_id.
 #[export] Typeclasses Transparent SA.mem_acc.
@@ -128,9 +127,10 @@ Export ArmSeqModel.
   Countable_register_values
   : typeclass_instances.
 
-Require SailTinyArm.System.
+Require SailArm.armv9.
 
-(** The semantics of instructions from system [sail-tiny-arm] by using the
-    conversion code from [ArchSem.FromSail] *)
-Definition sail_tiny_arm_sem (nondet : bool) : iMon () :=
-  iMon_from_Sail nondet (System.fetch_and_execute ()).
+(** The semantics of instructions from [sail-arm] by using the conversion code
+    from [ArchSem.FromSail]. [SEE] need to be reset manually between
+    instructions for legacy boring reasons *)
+Definition sail_arm_sem (nondet : bool) : iMon () :=
+  iMon_from_Sail nondet (armv9.__InstructionExecute ());; mcall (RegWrite SEE None 0).
