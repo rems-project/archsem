@@ -405,7 +405,7 @@ Definition relaxed_regs : gset reg :=
   Definition reg_unknown (r : reg) : Prop :=
     ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
   Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
-  Proof. unfold reg_unknown; solve_decision. Qed.
+  Proof. unfold_decide. Qed.
 
   (** * The thread state *)
 
@@ -587,7 +587,7 @@ Module TState.
     else None.
 
   (** Add a system register write event to the local event *)
-  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) :=
+  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) : t → t :=
     let lev := LEvent.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
@@ -978,7 +978,7 @@ Definition read_pte (vaddr : view) :
   mret (vpost, val).
 
 (** Run a RegRead outcome. 
-    Returns the register value and the view. *)
+    Returns the register value based on the type of register and the access type. *)
 Definition run_reg_read (reg : reg) (racc : reg_acc) :
     Exec.t (TState.t * IIS.t) string (reg_type reg) :=
   ts ← mget fst;
@@ -1019,9 +1019,8 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     '(val, view) ← Exec.error_none "Register unmapped on direct read" $ TState.read_sreg_direct ts reg;
     let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
     let vpost := vreg' ⊔ vpre in
-    let vmsr := ts.(TState.vmsr) ⊔ vpost in
     mset PPState.state $ TState.add_wsreg reg val vpost;;
-    mset PPState.state $ TState.update TState.vmsr vmsr;;
+    mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
   else
     nts ← Exec.error_none "Register unmapped; cannot write" $
@@ -1223,6 +1222,7 @@ Section RunOutcome.
   | RegRead reg racc =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ (run_reg_read reg racc)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       val ← run_mem_read addr macc initmem;
       mret (Ok (val, 0%bv))
