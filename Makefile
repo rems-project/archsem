@@ -18,7 +18,6 @@ doc:
 DIRS=Common
 DIRS+=ArchSem
 DIRS+=ArchSemArm
-DIRS+=ArchSemRiscV
 
 TARFILES=$(DIRS)
 TARFILES+=dune-project Makefile LICENSE
