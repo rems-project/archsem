@@ -106,6 +106,14 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
 
+(* Takes an option but convert None into an error *)
+Definition res_error_none {E A} (e : E) : option A -> res E A :=
+  λ opt_val,
+    match opt_val with
+    | Some v => make [v] []
+    | None => make [] [e]
+    end.
+
 (** Convert an execution result into a list of results *)
 Definition to_result_list `(e : res E A) : list (result E A) :=
   map Ok e.(results) ++ map Error e.(errors).
