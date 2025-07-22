@@ -175,7 +175,6 @@ End Ev.
 Coercion Ev.Msg : Msg.t >-> Ev.t.
 Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
 
-
 (** A view is just a natural *)
 Definition view := nat.
 #[export] Typeclasses Transparent view.
@@ -224,7 +223,6 @@ Module Memory.
         else read_last loc init mem'
     | Ev.Tlbi _ :: mem' => read_last loc init mem'
     end.
-
 
   (** Read memory at a given timestamp without any weak memory behaviour *)
   Definition read_at (loc : Loc.t) (init : initial) (mem : t) (time : nat) :=
@@ -430,7 +428,7 @@ Module WSReg.
     if decide (wsreg.(sreg) = sr) is left eq
     then Some $ (ctrans eq wsreg.(val), wsreg.(view))
     else None.
-  
+
   #[global] Instance eta : Settable _ := settable! make <sreg;val;view>.
 End WSReg.
 
@@ -650,6 +648,74 @@ End TState.
 Definition bv_1 (n : N) : bv n := Z_to_bv n 1.
 
 Definition Level := fin 4.
+
+Definition root_lvl : Level := 0%fin.
+
+Definition child_lvl (lvl : Level) : option Level :=
+  if Nat.ltb lvl 3 then
+    let new_val := S lvl in
+    match new_val with
+    | 1 => Some 1%fin
+    | 2 => Some 2%fin
+    | 3 => Some 3%fin
+    | _ => None
+    end
+  else
+    None.
+
+Lemma child_lvl_add_one (lvl clvl : Level)
+    (CHILD : child_lvl lvl = Some clvl) :
+  lvl + 1 = clvl.
+Proof.
+  unfold child_lvl in *.
+  destruct (Nat.ltb lvl 3) eqn:LT; try inv CHILD.
+  destruct lvl; try (inv H0; simpl; lia).
+  destruct lvl; try (inv H0; simpl; lia).
+  destruct lvl; try (inv H0; simpl; lia).
+Qed.
+
+Definition child_lvl_dependent (lvl : Level) :
+  option {clvl : Level & lvl + 1 = clvl}.
+Proof.
+  destruct (child_lvl lvl) eqn:CHILD.
+  - apply child_lvl_add_one in CHILD.
+    refine (Some (existT l CHILD)).
+  - refine None.
+Defined.
+
+Definition parent_lvl (lvl : Level) : option Level :=
+  if Nat.ltb 0 lvl then
+    let new_val := lvl - 1 in
+    match new_val with
+    | 0 => Some 0%fin
+    | 1 => Some 1%fin
+    | 2 => Some 2%fin
+    | _ => None
+    end
+  else
+    None.
+
+Lemma parent_lvl_sub_one (lvl plvl : Level)
+    (PARENT : parent_lvl lvl = Some plvl) :
+  plvl + 1 = lvl.
+Proof.
+  unfold parent_lvl in *.
+  destruct (Nat.ltb 0 lvl) eqn:LT; try inv PARENT.
+  destruct lvl; try (inv H0; simpl; lia).
+  destruct lvl; try (inv H0; simpl; lia).
+  destruct lvl; try (inv H0; simpl; lia).
+  destruct lvl; try (inv H0; simpl; lia).
+Qed.
+
+Definition parent_lvl_dependent (lvl : Level) :
+  option {plvl : Level & plvl + 1 = lvl}.
+Proof.
+  destruct (parent_lvl lvl) eqn:PARENT.
+  - apply parent_lvl_sub_one in PARENT.
+    refine (Some (existT l PARENT)).
+  - refine None.
+Defined.
+
 #[export] Typeclasses Transparent Level.
 
 (* It is important to be consistent on "level_length" and not write it as 9 *
@@ -991,7 +1057,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
       if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
     else time in
   let vpost := vpre ⊔ read_view in
-  guard_discard (vpost <= invalidation_time)%nat;;
+  guard_discard (vpost ≤ invalidation_time)%nat;;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
