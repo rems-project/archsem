@@ -402,12 +402,12 @@ Definition relaxed_regs : gset reg :=
       GReg VTTBR_EL2].
 
 (** Determine if input register is an unknown register from the architecture *)
-  Definition reg_unknown (r : reg) : Prop :=
-    ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
-  Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
-  Proof. unfold_decide. Qed.
+Definition reg_unknown (r : reg) : Prop :=
+  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
+Proof. unfold_decide. Defined.
 
-  (** * The thread state *)
+(** * The thread state *)
 
 Module WSReg.
   Record t :=
@@ -586,7 +586,7 @@ Module TState.
       Some $ set regs (dmap_insert reg rv) ts
     else None.
 
-  (** Add a system register write event to the local event *)
+  (** Add a system register write event to the local event list *)
   Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) : t → t :=
     let lev := LEvent.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
