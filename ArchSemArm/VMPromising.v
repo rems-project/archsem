@@ -409,12 +409,26 @@ Definition relaxed_regs : gset reg :=
       GReg VTTBR_EL2].
 
 (** Determine if input register is an unknown register from the architecture *)
-Definition reg_unknown (r : reg) : Prop :=
+Definition is_reg_unknown (r : reg) : Prop :=
   ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
-Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
+Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
-Definition regval_to_bv (r : reg) (v : reg_type r) (n : N) : option (bv n). Admitted.
+Definition ttbr_to_val (r : reg) (v : reg_type r) : option val :=
+  if decide (r = GReg TTBR0_EL1) is left eq then Some (ctrans eq v)
+  else if decide (r = GReg TTBR0_EL2) is left eq then Some (ctrans eq v)
+  else if decide (r = GReg TTBR0_EL3) is left eq then Some (ctrans eq v)
+  else if decide (r = GReg TTBR1_EL1) is left eq then Some (ctrans eq v)
+  else if decide (r = GReg TTBR1_EL2) is left eq then Some (ctrans eq v)
+  else None.
+(* TODO: Generalize the above to regval_to_val
+Definition regval_to_val (r : reg) (v : reg_type r) : option val.
+*)
+(* Proof.
+  destruct (decide (is_reg_unknown r)).
+  - refine None.
+  - apply NNPP in n.
+    cdestruct n # CDestrSplitGoal. *)
 
 (** * The thread state *)
 
@@ -896,8 +910,8 @@ Module TLB.
         then 
           foldl 
             (λ acc '(regval, _), 
-                match (regval_to_bv ttbr regval 16) with
-                | Some asid' => bool_decide (asid = asid') || acc
+                match (ttbr_to_val ttbr regval) with
+                | Some v => bool_decide (asid = (bv_extract 48 16 v)) || acc
                 | None => acc
                 end) false sregs
         else false
@@ -929,7 +943,7 @@ Module TLB.
               $ TState.read_sreg_at ts ttbr time;
     '(regval, _) ← mchoosel sregs;
     val_ttbr ← Exec.res_error_none "TTBR should be a 64 bit value" 
-                $ regval_to_bv ttbr regval 64;
+                $ ttbr_to_val ttbr regval;
     let loc := next_entry_loc (bv_extract 0 53 val_ttbr) va in
     '(memval, _) ← 
       Exec.res_error_none "Reading from unmapped memory" $ 
@@ -1212,7 +1226,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   guard_or
     "Cannot write to unknown register"
-    (reg_unknown reg);;
+    (is_reg_unknown reg);;
   guard_or
     "Non trivial write reg access types unsupported"
     (racc = None);;
