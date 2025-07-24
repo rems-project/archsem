@@ -1,0 +1,2 @@
+; By default build everything installable (Rocq files) and the Extraction folder *)
+(alias (name default) (deps (alias_rec install) (alias Extraction/default)))
