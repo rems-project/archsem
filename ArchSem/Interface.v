@@ -382,6 +382,7 @@ Module Interface (A : Arch).
             | GenericFail _ => ∅%type
             | _ => unit
             end.
+  #[export] Typeclasses Transparent outcome_ret.
 
   #[export] Instance outcome_wf : EffWf outcome.
   Proof using. intros []; cbn; try tc_solve. Defined.

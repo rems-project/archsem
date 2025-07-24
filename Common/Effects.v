@@ -63,24 +63,13 @@ Definition eff := Type@{e}.
 Bind Scope type_scope with eff.
 #[export] Typeclasses Transparent eff.
 
-Set Typeclasses Unique Instances.
+#[local] Set Typeclasses Unique Instances.
 (** The effect typeclass, declares a type as an effect and provide [eff_ret],
     the return type function. *)
 Class Effect (Eff : eff) := eff_ret : Eff → Type@{e}.
 #[export] Hint Mode Effect ! : typeclass_instances.
-Unset Typeclasses Unique Instances.
-
-(** Since eff_ret is typeclass opaque, we sometime need to reduce it to resolve
-    a typeclass instance *)
-Ltac eff_ret_red inst := (let h := get_head inst in progress (cbn [eff_ret h])).
-#[export] Hint Extern 5 (EqDecision (@eff_ret _ ?inst _)) =>
-  eff_ret_red inst : typeclass_instances.
-#[export] Hint Extern 5 (Finite (@eff_ret _ ?inst _)) =>
-  eff_ret_red inst : typeclass_instances.
-#[export] Hint Extern 5 (Countable (@eff_ret _ ?inst _)) =>
-  eff_ret_red inst : typeclass_instances.
-#[export] Hint Extern 5 (EmptyT (@eff_ret _ ?inst _)) =>
-  eff_ret_red inst : typeclass_instances.
+#[local] Unset Typeclasses Unique Instances.
+#[export] Typeclasses Transparent eff_ret.
 
 (** Generic interface for calling an algebraic effect in a monad *)
 Class MCall (Eff : eff) `{Effect Eff} (M : Type → Type) :=
@@ -192,11 +181,12 @@ objects like free monads *)
 
 Section Plus.
   Context Eff `{Effect Eff} Eff' `{Effect Eff'}.
-  #[export] Instance Effect_sum : Effect (Eff + Eff') :=
+  #[export] Instance sum_ret : Effect (Eff + Eff') :=
     λ call, match call with
             | inl calll => eff_ret calll
             | inr callr => eff_ret callr
             end.
+  #[export] Typeclasses Transparent sum_ret.
 
   #[export] Instance EffWf_sum `{!EffWf Eff} `{!EffWf Eff'}: EffWf (Eff + Eff').
   Proof. intros []; cbn; tc_solve. Defined.
@@ -224,6 +214,7 @@ End Plus.
     [n] can be 0 in which case this correspond to a no-behavior execution *)
 Inductive MChoice : eff := ChooseFin (n : nat).
 #[export] Instance MChoice_ret : Effect MChoice := λ '(ChooseFin n), fin n.
+#[export] Typeclasses Transparent MChoice_ret.
 
 #[export] Instance MChoice_EffWf : EffWf MChoice.
 Proof. intros []. cbn. tc_solve. Defined.
@@ -295,10 +286,8 @@ Inductive MState {St : Type@{e}} : eff :=
 Arguments MState : clear implicits.
 
 #[export] Instance MState_ret St : Effect (MState St) :=
-  λ call, match call with
-          | MSet _ => unit
-          | MGet => St
-          end.
+  λ call, if call is MSet _ then ()%type else St.
+#[export] Typeclasses Transparent MState_ret.
 
 #[export] Instance MState_EffWf `{Inhabited St} : EffWf (MState St).
 Proof. intros []; cbn; tc_solve. Defined.
