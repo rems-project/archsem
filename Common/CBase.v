@@ -490,6 +490,27 @@ Ltac2 print_goal0 () :=
 Ltac2 Notation print_goal := print_goal0 ().
 Ltac print_goal := ltac2:(print_goal).
 
+(** * Conversion check
+
+This allows to test whether two terms convert without unifying evars. This will
+be in Ltac2 standard library in 9.1, but this works in the mean time. *)
+
+#[local] Set Typeclasses Strict Resolution.
+Inductive TCConv {A} (x : A) : A → Prop := TCConv_refl : TCConv x x.
+Existing Class TCConv.
+#[local] Unset Typeclasses Strict Resolution.
+Existing Instance TCConv_refl.
+
+Ltac2 conv_check t t' :=
+  if (succeeds (assert (TCConv $t $t') by typeclasses_eauto))
+  then ()
+  else zero_tacticf "%t and %t are not convertible" t t'.
+
+Ltac conv_check t t' :=
+  let f := ltac2:(t t' |- conv_check (ltac1_to_constr t) (ltac1_to_constr t')) in
+  f t t'.
+
+
 (** * Tactic options
 
 This development relies a lot on automation. This automation sometime needs to

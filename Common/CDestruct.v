@@ -279,11 +279,16 @@ goal quickly if possible, try to limit the search time though.
 Class ObvTrue (P : Prop) := {obv_true : P}.
 #[local] Unset Typeclasses Strict Resolution.
 
-(* Global Instance obv_false_False : ObvFalse False. *)
-(* Proof. by tcclean. Qed. *)
 
-Global Hint Extern 2 (ObvTrue _) =>
-         constructor; reflexivity : typeclass_instances.
+Instance obv_true_True : ObvTrue True.
+Proof. now tcclean. Qed.
+
+Instance obv_true_not_False : ObvTrue (¬ False).
+Proof. now tcclean. Qed.
+
+(** This will only do reflexivity up to typeclass transparency *)
+Instance obv_true_eq_refl {A} (x : A) : ObvTrue (x = x).
+Proof. now tcclean. Qed.
 
 Global Hint Extern 3 (ObvTrue _) =>
          constructor; assumption : typeclass_instances.
@@ -291,8 +296,6 @@ Global Hint Extern 3 (ObvTrue _) =>
 Global Hint Extern 4 (ObvTrue _) =>
          constructor; symmetry; assumption : typeclass_instances.
 
-#[global] Instance obv_true_not_False : ObvTrue (¬ False).
-Proof. now tcclean. Qed.
 
 (** * CDestruct
 
