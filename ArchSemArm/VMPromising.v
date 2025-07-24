@@ -208,6 +208,9 @@ Module Memory.
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
+  Definition filter_tlbi (mem : t) : list TLBI.t :=
+    mem |> list_filter_map Ev.get_tlbi.
+
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
 
@@ -1055,12 +1058,12 @@ Module TLB.
     | TLBI.Vaa tid va last => affects_vaa va last te
     end.
 
-  Definition apply_va (tlbi : TLBI.t) (tlb : t) : Exec.res string t. Admitted.
-
-  Definition apply (tlb : t) (ts : TState.t) 
-                   (init : Memory.initial) (mem : Memory.t) 
-                   (time : nat)
-                   (tlbi : TLBI.t) : Exec.res string t. Admitted.
+  Definition tlbi_apply (tlb : t) (ts : TState.t)
+                  (init : Memory.initial) (mem : Memory.t)
+                  (time : nat)
+                  (tlbi : TLBI.t)
+                  (va : bv 64)
+                  (asid : option (bv 16)) : Exec.res string t. Admitted.
 
   Definition update (tlb : t) 
       (ts : TState.t) 
@@ -1076,29 +1079,61 @@ Module TLB.
     va_fill tlb2 ts init mem time 3%fin va asid ttbr.
 
   (** Get the TLB state at a certain timestamp *)
-  Program Fixpoint get (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+  Fixpoint at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
                        (time : nat)
                        (va : bv 64)
                        (asid : option (bv 16))
                        (ttbr : reg)
-                      {measure time} : Exec.res string t :=
-    if bool_decide (time = 0)
-      then update init ts mem_init mem 0 va asid ttbr
-    else
-      tlb ← get ts mem_init mem (time - 1) va asid ttbr;
+                      {struct time} : Exec.res string t :=
+    match time with
+    | O => update init ts mem_init mem 0 va asid ttbr
+    | S ptime => 
+      tlb ← at_timestamp ts mem_init mem ptime va asid ttbr;
       match List.nth_error mem time with
       | Some ev =>
         match Ev.get_tlbi ev with
-        | Some tlbi => apply tlb ts mem_init mem time tlbi
+        | Some tlbi => tlbi_apply tlb ts mem_init mem time tlbi va asid
         | None => update tlb ts mem_init mem time va asid ttbr
         end
       | None => mret init
-      end.
+      end
+    end.
 
+  Definition is_te_invalidated_by_tlbi (tlb : t) 
+                (tlbi : TLBI.t)
+                (tid : nat)
+                (ctxt : Ctxt.t)
+                (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+      TLBI.tid tlbi <> tid ∧ te ∉ VATLB.get ctxt tlb.(vatlb).
+  Instance Decision_is_te_invalidated_by_tlbi (tlb : t) (tlbi : TLBI.t) (tid : nat)
+                (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :            
+    Decision (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te).
+  Proof. unfold_decide. Defined.
+  
   (** Calculate the earliest future time at which a translation entry is effectively invalidated
       in the TLB due to an TLBI event *)
   Definition invalidation_time (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-                               (tid : nat) (time : nat) : nat. Admitted.
+                               (tid : nat) (time : nat)
+                               (ctxt : Ctxt.t)
+                               (te : Entry.t (Ctxt.lvl ctxt))
+                               (ttbr : reg) : Exec.res string nat :=
+    PromMemory.cut_after_with_timestamps time mem
+    |> list_filter_map
+        (λ '(ev, t),
+          match ev with
+          | Ev.Tlbi tlbi => 
+            let va := Ctxt.va ctxt in
+            let asid := Ctxt.asid ctxt in  
+            (* TODO: how to filter within monad *)
+            Some t
+            (* tlb ← at_timestamp ts init mem t (prefix_to_va va) asid ttbr;
+            if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
+              Some t
+            else None *)
+          | _ => None
+          end)
+    |> λ filtered, mret $ List.last filtered 0.
+
 Admit Obligations.
 End TLB.
 
