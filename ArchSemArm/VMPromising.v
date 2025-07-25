@@ -753,6 +753,9 @@ Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
 
 Definition match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : Prop :=
   level_prefix va lvl = level_prefix va' lvl.
+Instance Decision_match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : 
+  Decision (match_prefix_at lvl va va').
+Proof. unfold_decide. Defined.
 
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
   bv_extract 0 9 (level_prefix va lvl).
@@ -1027,43 +1030,85 @@ Module TLB.
   #[local] Unset Keyed Unification.
 
   Definition affects_va (asid : bv 16) (va : bv 36) (last : bool) 
-                        (te : FE.t) : Prop :=
+                        (ctxt : Ctxt.t)
+                        (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     let '(te_lvl, te_va, te_asid, te_val) := 
-          (FE.lvl te, FE.va te, FE.asid te, FE.pte te) in
+          (Ctxt.lvl ctxt, Ctxt.va ctxt, Ctxt.asid ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
     ∧ (match te_asid with 
         | Some te_asid => asid = te_asid
         | None => True
         end)
     ∧ (if last then is_final te_lvl te_val else False).
+  Instance Decision_affects_va (asid : bv 16) (va : bv 36) (last : bool) 
+                               (ctxt : Ctxt.t)
+                               (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_va asid va last ctxt te).
+  Proof. unfold_decide. Defined.
 
-  Definition affects_asid (asid : bv 16) (te : FE.t) : Prop :=
-    match FE.asid te with
+  Definition affects_asid (asid : bv 16)
+                          (ctxt : Ctxt.t)
+                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    match (Ctxt.asid ctxt) with
     | Some te_asid => te_asid = asid
     | None => False
     end.
+  Instance Decision_affects_asid (asid : bv 16)
+                                 (ctxt : Ctxt.t)
+                                 (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_asid asid ctxt te).
+  Proof. unfold_decide. Defined.
 
   Definition affects_vaa (va : bv 36) (last : bool) 
-                         (te : FE.t) : Prop :=
+                         (ctxt : Ctxt.t)
+                         (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     let '(te_lvl, te_va, te_val) := 
-          (FE.lvl te, FE.va te, FE.pte te) in
+          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
     ∧ (if last then is_final te_lvl te_val else False).
+  Instance Decision_affects_vaa (va : bv 36) (last : bool) 
+                                (ctxt : Ctxt.t)
+                                (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_vaa va last ctxt te).
+  Proof. unfold_decide. Defined.
 
-  Definition affects (tlbi : TLBI.t) (te : FE.t) : Prop :=
+  Definition affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     match tlbi with
     | TLBI.All tid => True
-    | TLBI.Va tid asid va last => affects_va asid va last te
-    | TLBI.Asid tid asid => affects_asid asid te
-    | TLBI.Vaa tid va last => affects_vaa va last te
+    | TLBI.Va tid asid va last => affects_va asid va last ctxt te
+    | TLBI.Asid tid asid => affects_asid asid ctxt te
+    | TLBI.Vaa tid va last => affects_vaa va last ctxt te
     end.
+  Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects tlbi ctxt te).
+  Proof. unfold_decide. Defined.
+
+  Definition tlbi_apply_lvl (tlb : t) (ts : TState.t)
+                  (init : Memory.initial) (mem : Memory.t)
+                  (time : nat)
+                  (tlbi : TLBI.t)
+                  (lvl : Level)
+                  (va : bv 64)
+                  (asid : option (bv 16)) : t :=
+      let ndctxt := NDCtxt.make (level_prefix va lvl) asid in
+      let ctxt := existT lvl ndctxt in
+      VATLB.get ctxt tlb.(vatlb)
+      |> filter (λ te, ¬(affects tlbi ctxt te))
+      |> λ tes,
+          TLB.make $ hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := tes]} tlb.(vatlb).
 
   Definition tlbi_apply (tlb : t) (ts : TState.t)
                   (init : Memory.initial) (mem : Memory.t)
                   (time : nat)
                   (tlbi : TLBI.t)
                   (va : bv 64)
-                  (asid : option (bv 16)) : Exec.res string t. Admitted.
+                  (asid : option (bv 16)) : t :=
+    let tlb0 := tlbi_apply_lvl tlb ts init mem time tlbi root_lvl va asid in
+    let tlb1 := tlbi_apply_lvl tlb0 ts init mem time tlbi 1%fin va asid in
+    let tlb2 := tlbi_apply_lvl tlb1 ts init mem time tlbi 2%fin va asid in
+    tlbi_apply_lvl tlb2 ts init mem time tlbi 3%fin va asid.
 
   Definition update (tlb : t) 
       (ts : TState.t) 
