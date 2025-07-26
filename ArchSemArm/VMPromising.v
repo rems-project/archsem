@@ -656,6 +656,7 @@ Definition Level := fin 4.
 #[export] Typeclasses Transparent Level.
 
 Definition root_lvl : Level := 0%fin.
+Definition leaf_lvl : Level := 3%fin.
 
 Definition child_lvl (lvl : Level) : option Level :=
   match lvl in fin n return option Level with
@@ -696,6 +697,9 @@ Definition level_length (lvl : Level) : N := 9 * (lvl + 1).
 
 Definition prefix (lvl : Level) := bv (level_length lvl).
 #[export] Typeclasses Transparent prefix.
+
+Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
+  bv_extract 12 n va.
 
 Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
   bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
@@ -788,7 +792,7 @@ Module TLB.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe. (* NOTE: cast to TransRes.remaining *)
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
@@ -1142,14 +1146,59 @@ Module TLB.
 
   (** Calculate the earliest future time at which a translation entry is effectively invalidated
       in the TLB due to an TLBI event *)
-  Definition invalidation_time (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-                               (tid : nat)
-                               (tlb_base : t) (time_base : nat)
-                               (ctxt : Ctxt.t)
-                               (te : Entry.t (Ctxt.lvl ctxt))
-                               (ttbr : reg) : result string nat :=
-    let evs := PromMemory.cut_after_with_timestamps time_base mem in
-    invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr evs.
+  Fixpoint find_invalidation_time (mem : Memory.t)
+                                  (tid : nat)
+                                  (ev_tlbs : list (TLBI.t * nat * t))
+                                  (ctxt : Ctxt.t)
+                                  (te : Entry.t (Ctxt.lvl ctxt))
+                                  : result string nat :=
+    match ev_tlbs with
+    | nil => mret (length mem)
+    | (tlbi, time, tlb) :: tl =>
+      if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
+        mret time
+      else
+        find_invalidation_time mem tid tl ctxt te
+    end.
+
+  Definition ptes_invalidation_time_with_ndctxt (mem : Memory.t)
+                                 (tid : nat)
+                                 (tlb_base : t)
+                                 (lvl : Level)
+                                 (ndctxt : NDCtxt.t lvl)
+                                 (ev_tlbs : list (TLBI.t * nat * t))
+                                : result string (list (list val * nat)) :=
+    let ctxt := existT lvl ndctxt in
+    let tes := VATLB.get ctxt tlb_base.(TLB.vatlb)
+                  |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te)) in
+    for te in (elements tes) do
+      ti ← find_invalidation_time mem tid ev_tlbs ctxt te;
+      mret ((vec_to_list te), ti)
+    end.
+
+  Definition ptes_invalidation_time (ts : TState.t) (init : Memory.initial)
+                                 (mem : Memory.t)
+                                 (tid : nat)
+                                 (tlb_base : t) (time_base : nat)
+                                 (lvl : Level)
+                                 (va : bv 64) (asid : bv 16)
+                                 (ttbr : reg) : result string (list (list val * nat)) :=
+    let evs := PromMemory.cut_after_with_timestamps time_base mem
+                |> list_filter_map (λ '(ev, t), match ev with
+                                    | Ev.Tlbi tlbi => Some (tlbi, t)
+                                    | Ev.Msg _ => None
+                                    end) in
+    ev_tlbs ←
+      for (tlbi, time) in evs do
+        ev_tlb ← at_timestamp_from ts init mem tlb_base time_base (time - time_base) va ttbr;
+        mret (tlbi, time, ev_tlb)
+      end;
+    let ndctxt_asid := NDCtxt.make (level_prefix va lvl) (Some asid) in
+    let ndctxt_global := NDCtxt.make (level_prefix va lvl) None in
+    candidates_asid ← ptes_invalidation_time_with_ndctxt mem tid tlb_base lvl ndctxt_asid ev_tlbs;
+    candidates_global ← ptes_invalidation_time_with_ndctxt mem tid tlb_base lvl ndctxt_global ev_tlbs;
+    mret (candidates_asid ++ candidates_global).
+
 End TLB.
 
 Module VATLB := TLB.VATLB.
@@ -1159,17 +1208,13 @@ Module VATLB := TLB.VATLB.
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
-  (* TODO Fixup this type to contain:
-     - Translation parameters
-     - whether we're in the middle or after the end
-     - If after the end: The results: pa + attributes *)
   (* Translation Results *)
   Module TransRes.
     Record t :=
       make {
           va : bv 36;
           time : nat;
-          remaining : list (bv 64);
+          remaining : list (bv 64); (* NOTE: translation memory read - ptes *)
           invalidation : nat
         }.
 
@@ -1485,6 +1530,55 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   mset PPState.state $ TState.update TState.vtlbi time;;
   mset PPState.iis $ IIS.add time.
 
+(* TODO: add match cases on TTBR1/TTBR0 using TCR_EL1, TCR_EL2 *)
+Definition ttbr_of_regime (regime : Regime) : reg :=
+  match regime with
+  | Regime_EL3 => GReg TTBR0_EL3
+  | Regime_EL30 => GReg TTBR0_EL3
+  | Regime_EL2 => GReg TTBR0_EL2
+  | Regime_EL20 => GReg TTBR0_EL2
+  | Regime_EL10 => GReg TTBR0_EL1
+  end.
+
+Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
+                      (mem : Memory.t)
+                      (tid : nat)
+                      (time : nat)
+                      (va : bv 64) (asid : bv 16)
+                      (ttbr : reg) :
+    result string (list (list val * nat)) :=
+  tlb ← TLB.at_timestamp ts init mem time va ttbr;
+  res1 ← TLB.ptes_invalidation_time ts init mem tid tlb time 1%fin va asid ttbr;
+  res2 ← TLB.ptes_invalidation_time ts init mem tid tlb time 2%fin va asid ttbr;
+  res3 ← TLB.ptes_invalidation_time ts init mem tid tlb time leaf_lvl va asid ttbr;
+  mret (res1 ++ res2 ++ res3).
+
+Definition run_trans_start (trans_start : TranslationStartInfo)
+                           (tid : nat) (init : Memory.initial) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
+  ts ← mget PPState.state;
+  mem ← mget PPState.mem;
+
+  let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
+  let max_t := length mem + 1 in
+  time_t ← mchoosel $ seq vpre_t max_t;
+  (* lookup *)
+  let asid := trans_start.(TranslationStartInfo_asid) in
+  let va := trans_start.(TranslationStartInfo_va) in
+  let ttbr := ttbr_of_regime trans_start.(TranslationStartInfo_regime) in
+  candidates ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
+  '(ptes, ti) ← mchoosel candidates;
+  (* update *)
+  let trans_res := IIS.TransRes.make (va_to_vpn va) time_t ptes ti in
+  mset PPState.iis $ IIS.set_trs trans_res.
+
+Definition run_trans_end (trans_end : trans_end) :
+    Exec.t IIS.t string () :=
+  iis ← mGet;
+  if iis.(IIS.trs) is Some trs then
+    mSet $ IIS.add trs.(IIS.TransRes.time)
+  else
+    mret ().
 
 (** Runs an outcome. *)
 Section RunOutcome.
@@ -1492,10 +1586,10 @@ Section RunOutcome.
 
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
-  | RegWrite reg racc val =>
-      run_reg_write reg racc val
   | RegRead reg racc =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ (run_reg_read reg racc)
+  | RegWrite reg racc val =>
+      run_reg_write reg racc val
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
@@ -1527,9 +1621,13 @@ Section RunOutcome.
       run_tlbi tid viio tlbi
   | ReturnException =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse
+  | TranslationStart trans_start =>
+      let initmem := Memory.initial_from_memMap initmem in
+      run_trans_start trans_start tid initmem
+  | TranslationEnd trans_end =>
+      Exec.liftSt PPState.iis $ run_trans_end trans_end
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
-    (* TODO: translation - split lookup and update *)
 End RunOutcome.
 
 (** * Implement GenPromising ***)
