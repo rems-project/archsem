@@ -802,7 +802,7 @@ Module TLB.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe. (* NOTE: cast to TransRes.remaining *)
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
@@ -1267,7 +1267,6 @@ Module TLB.
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
     end;
   mret $ List.concat fault_ptes.
-
 End TLB.
 Export (hints) TLB.
 
