@@ -898,21 +898,21 @@ Module TLB.
     (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
     bv_concat (level_length clvl) (Ctxt.va ctxt) index.
 
-  Definition va_fill_keep (tlb : t)
+  Definition va_fill_keep (vatlb :VATLB.t)
     (ctxt : Ctxt.t)
     (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    te ∈ (VATLB.get ctxt tlb.(vatlb)).
-  Instance Decision_va_fill_keep (tlb : t)
+    te ∈ (VATLB.get ctxt vatlb).
+  Instance Decision_va_fill_keep (vatlb : VATLB.t)
     (ctxt : Ctxt.t)
-    (te : Entry.t (Ctxt.lvl ctxt)) : Decision (va_fill_keep tlb ctxt te).
+    (te : Entry.t (Ctxt.lvl ctxt)) : Decision (va_fill_keep vatlb ctxt te).
   Proof. unfold_decide. Defined.
 
-  Definition va_fill_root (tlb : t) (ts : TState.t)
+  Definition va_fill_root (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : Exec.res string t :=
+      (ttbr : reg) : Exec.res string VATLB.t :=
     sregs ← Exec.res_error_none "TTBR should be read"
               $ TState.read_sreg_at ts ttbr time;
     '(regval, _) ← mchoosel sregs;
@@ -927,22 +927,22 @@ Module TLB.
     let asid := bv_extract 48 16 val_ttbr in
     let ndctxt := NDCtxt.make va (Some asid) in
     let vatlb := VATLB.singleton (existT root_lvl ndctxt) [#memval] in
-    mret $ TLB.make vatlb.
+    mret vatlb.
 
-  Definition va_fill_lvl (tlb : t) (ts : TState.t)
+  Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
-      (ttbr : reg) : Exec.res string t :=
+      (ttbr : reg) : Exec.res string VATLB.t :=
     guard_or "ASID is not active"
       $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
     guard_or "PTE is not a table"
       $ is_table (Entry.pte te);;
     guard_or "Translation entry is not in the TLB"
-      $ va_fill_keep tlb ctxt te;;
+      $ va_fill_keep vatlb ctxt te;;
 
     let loc := Loc.from_addr_in (val_to_address (Entry.pte te)) in
     '(memval, _) ←
@@ -960,7 +960,7 @@ Module TLB.
       let ndctxt := NDCtxt.make va asid in
       let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
       let vatlb := VATLB.singleton (existT clvl ndctxt) new_te in
-      mret $ TLB.make vatlb
+      mret vatlb
     | None eq:_ => mthrow "An intermediate level should have a child level"
     end.
 
@@ -972,23 +972,26 @@ Module TLB.
       (va : bv 64)
       (asid : option (bv 16))
       (ttbr : reg) : Exec.res string t :=
-    match parent_lvl lvl with
-    | None =>
-      va_fill_root tlb ts init mem time (level_index va root_lvl) ttbr
-    | Some plvl =>
-      let pva := level_prefix va plvl in
-      let ndctxt := NDCtxt.make pva asid in
-      let ctxt := existT plvl ndctxt in
-      let index := level_index va lvl in
-      let tes := VATLB.get ctxt tlb.(vatlb) in
-      mret tlb
-      (* TODO : fmap from tes to va_filled tlbs and make union *)
-      (* mret $
-        foldl
-          union
+    vatlb ←
+      match parent_lvl lvl with
+      | None =>
+        vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
+        mret $ tlb.(vatlb) ∪ vatlb_new
+      | Some plvl =>
+        let pva := level_prefix va plvl in
+        let ndctxt := NDCtxt.make pva asid in
+        let ctxt := existT plvl ndctxt in
+        let index := level_index va lvl in
+        VATLB.get ctxt tlb.(vatlb)
+        |> set_fold (
+            λ te mvatlb,
+              vatlb_prev ← mvatlb;
+              Exec.res_mbind_inst _ _ 
+                (λ vatlb_new, mret $ vatlb_new ∪ vatlb_prev)
+                (va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr))
           (mret tlb.(vatlb))
-          (fmap (λ te, va_fill_lvl tlb ts init mem time ctxt te index ttbr) tes) *)
-    end.
+      end;
+    mret $ TLB.make vatlb.
 
   (** WARNING HACK: Coq is shit so I'm forced to copy paste this function 3
       times, because after 4 hours I didn't find a way to make it type a generic
