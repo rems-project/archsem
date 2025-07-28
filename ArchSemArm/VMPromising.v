@@ -82,6 +82,9 @@ Module Loc := UMPromising.Loc.
 Definition val := bv 64.
 #[global] Typeclasses Transparent val.
 
+Definition val_to_address (v : val) : address :=
+  bv_extract 0 56 v.
+
 (** We also reuse the Msg object from the User-Mode Promising Model. *)
 Module Msg := UMPromising.Msg.
 
@@ -159,10 +162,21 @@ Module Ev.
     | Msg msg => Msg.loc msg =? loc
     | Tlbi _ => false
     end.
+
+  Definition get_msg (ev : t) : option Msg.t :=
+    match ev with
+    | Msg msg => Some msg
+    | _ => None
+    end.
+
+  Definition get_tlbi (ev : t) : option TLBI.t :=
+    match ev with
+    | Tlbi tlbi => Some tlbi
+    | _ => None
+    end.
 End Ev.
 Coercion Ev.Msg : Msg.t >-> Ev.t.
 Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
-
 
 (** A view is just a natural *)
 Definition view := nat.
@@ -197,10 +211,11 @@ Module Memory.
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
+  Definition filter_tlbi (mem : t) : list TLBI.t :=
+    mem |> list_filter_map Ev.get_tlbi.
+
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
-
-
 
  (** Reads the last write to a location in some memory. Gives the value and the
      timestamp of the write that it read from.
@@ -214,7 +229,6 @@ Module Memory.
         else read_last loc init mem'
     | Ev.Tlbi _ :: mem' => read_last loc init mem'
     end.
-
 
   (** Read memory at a given timestamp without any weak memory behaviour *)
   Definition read_at (loc : Loc.t) (init : initial) (mem : t) (time : nat) :=
@@ -298,7 +312,7 @@ Module Memory.
 
   (** Check that the write at the provided timestamp is indeed to that location
       and that no write to that location have been made by any other thread *)
-  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool:=
+  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool :=
     match mem !! v with
     | Some (Ev.Msg msg) =>
         if Msg.loc msg =? loc then
@@ -314,7 +328,6 @@ Module Memory.
         else false
     | _ => false
     end.
-
 End Memory.
 Import (hints) Memory.
 
@@ -402,11 +415,32 @@ Definition relaxed_regs : gset reg :=
       GReg VTTBR_EL2].
 
 (** Determine if input register is an unknown register from the architecture *)
-Definition reg_unknown (r : reg) : Prop :=
+Definition is_reg_unknown (r : reg) : Prop :=
   ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
-Instance Decision_reg_unknown (r : reg) : Decision (reg_unknown r).
+Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
+Lemma known_regs_are_val (r : reg)
+  (KNOWN : ¬(is_reg_unknown r)) :
+  reg_type r = val.
+Proof.
+  apply NNPP in KNOWN.
+  cdestruct KNOWN.
+  set_unfold in KNOWN.
+  cdestruct KNOWN #CDestrSplitGoal; rewrite H; reflexivity.
+Qed.
+
+Definition cast {a b} (p : a = b) (x : a) : b :=
+  match p with
+  | eq_refl => x
+  end.
+
+Definition regval_to_val (r : reg) (v : reg_type r) : option val :=
+  if decide (¬(is_reg_unknown r)) is left KNOWN then
+    Some $ cast (known_regs_are_val r KNOWN) v
+  else
+    None.
+  
 (** * The thread state *)
 
 Module WSReg.
@@ -421,12 +455,12 @@ Module WSReg.
     if decide (wsreg.(sreg) = sr) is left eq
     then Some $ (ctrans eq wsreg.(val), wsreg.(view))
     else None.
-  
+
   #[global] Instance eta : Settable _ := settable! make <sreg;val;view>.
 End WSReg.
 
-Module LEvent.
-  Inductive t := 
+Module LEv.
+  Inductive t :=
   | Cse (t : nat)
   | Wsreg (wsreg : WSReg.t).
 
@@ -441,7 +475,8 @@ Module LEvent.
     | Wsreg wsreg => Some wsreg
     | _ => None
     end.
-End LEvent.
+End LEv.
+Coercion LEv.Wsreg : WSReg.t >-> LEv.t.
 
 
 (** The thread state *)
@@ -455,7 +490,7 @@ Module TState.
         (* registers values and views. System(relaxed) registers are not
            modified in the [regs] field directly, but instead accumulate changes *)
         regs : dmap reg (λ reg, reg_type reg * view)%type;
-        levs : list LEvent.t;
+        levs : list LEv.t;
 
         (* The coherence views *)
         coh : gmap Loc.t view;
@@ -511,12 +546,12 @@ Module TState.
 
   Definition lev_cur (ts : t) := length ts.(levs).
 
-  Definition filter_wsreg (levs : list LEvent.t) : list WSReg.t :=
-    levs |> list_filter_map LEvent.get_wsreg.
+  Definition filter_wsreg (levs : list LEv.t) : list WSReg.t :=
+    levs |> list_filter_map LEv.get_wsreg.
 
-  Definition filter_cse (levs: list LEvent.t) : list view :=
-    levs |> list_filter_map LEvent.get_cse.
-    
+  Definition filter_cse (levs: list LEv.t) : list view :=
+    levs |> list_filter_map LEv.get_cse.
+
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
@@ -563,9 +598,9 @@ Module TState.
     in
     read_sreg_by_cse ts sreg last_cse
       |$> list_filter_map (
-            λ valv, 
-              if bool_decide (valv.2 ≤ t) 
-              then Some valv
+            λ '(val, view),
+              if bool_decide (view ≤ t)
+              then Some (val, view)
               else None).
 
   (** Read uniformly a register of any kind. *)
@@ -588,7 +623,7 @@ Module TState.
 
   (** Add a system register write event to the local event list *)
   Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) : t → t :=
-    let lev := LEvent.Wsreg (WSReg.make sreg val v) in
+    let lev := LEv.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
   (** Sets the coherence view of a location *)
@@ -631,13 +666,50 @@ Module TState.
 
   (** Perform a context synchronization event *)
   Definition cse (v : view) : t -> t :=
-    (update vcse v) ∘ (set levs (LEvent.Cse v ::.)).
+    (update vcse v) ∘ (set levs (LEv.Cse v ::.)).
 End TState.
 
 (*** VA helper ***)
 
+Definition bv_1 (n : N) : bv n := Z_to_bv n 1.
+
 Definition Level := fin 4.
+
 #[export] Typeclasses Transparent Level.
+
+Definition root_lvl : Level := 0%fin.
+
+Definition child_lvl (lvl : Level) : option Level :=
+  match lvl in fin n return option Level with
+  | 0 => Some 1
+  | 1 => Some 2
+  | 2 => Some 3
+  | _ => None
+  end%fin.
+
+Lemma child_lvl_add_one (lvl clvl : Level)
+    (CHILD : child_lvl lvl = Some clvl) :
+  lvl + 1 = clvl.
+Proof.
+  unfold child_lvl in CHILD.
+  repeat case_split; cdestruct clvl |- ***.
+Qed.
+
+Definition parent_lvl (lvl : Level) : option Level :=
+  match lvl in fin n return option Level with
+  | 1 => Some 0
+  | 2 => Some 1
+  | 3 => Some 2
+  | _ => None
+  end%fin.
+
+Lemma parent_lvl_sub_one (lvl plvl : Level)
+    (PARENT : parent_lvl lvl = Some plvl) :
+  plvl + 1 = lvl.
+Proof.
+  unfold parent_lvl in PARENT.
+  repeat case_split; cdestruct plvl |- ***.
+Qed.
 
 (* It is important to be consistent on "level_length" and not write it as 9 *
    lvl + 9, otherwise some term won't type because the equality is only
@@ -653,6 +725,12 @@ Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
+Definition match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : Prop :=
+  level_prefix va lvl = level_prefix va' lvl.
+Instance Decision_match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') :
+  Decision (match_prefix_at lvl va va').
+Proof. unfold_decide. Defined.
+
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
   bv_extract 0 9 (level_prefix va lvl).
 
@@ -661,6 +739,31 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 
 Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
+
+Definition is_valid (e : val) : Prop :=
+  (bv_extract 0 1 e) = 1%bv.
+Instance Decision_is_valid (e : val) : Decision (is_valid e).
+Proof. unfold_decide. Defined.
+
+Definition is_table (e : val) : Prop :=
+  (bv_extract 0 2 e) = 3%bv.
+Instance Decision_is_table (e : val) : Decision (is_table e).
+Proof. unfold_decide. Defined.
+
+Definition is_block (e : val) : Prop :=
+  (bv_extract 0 2 e) = 1%bv.
+Instance Decision_is_block (e : val) : Decision (is_block e).
+Proof. unfold_decide. Defined.
+
+Definition is_final (lvl : Level) (e : val) : Prop :=
+  if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv else is_block e.
+Instance Decision_is_final (lvl : Level) (e : val) : Decision (is_final lvl e).
+Proof. unfold_decide. Defined.
+
+Definition is_global (lvl : Level) (e : val) : Prop :=
+  is_final lvl e ∧ (bv_extract 11 1 e) = 0%bv.
+Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
+Proof. unfold_decide. Defined.
 
 (*** TLB ***)
 
@@ -681,12 +784,9 @@ Next Obligation.
 Defined.
 
 Module TLB.
-  (* TODO: pair programming to switch to dmaps. *)
-
   Module NDCtxt.
     Record t (lvl : Level) :=
-      make
-        {
+      make {
           va : prefix lvl;
           asid : option (bv 16);
         }.
@@ -720,12 +820,25 @@ Module TLB.
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+
+    Program Definition append {lvl clvl : Level}
+        (tlbe : t lvl)
+        (pte : val)
+        (CHILD : lvl + 1 = clvl) : t clvl :=
+      ctrans _ (tlbe +++ [#pte]).
+    Solve All Obligations with lia.
   End Entry.
   #[export] Typeclasses Transparent Entry.t.
 
   (* Full Entry *)
   Module FE.
     Definition t := { ctxt : Ctxt.t & Entry.t (Ctxt.lvl ctxt) }.
+    Definition ctxt : t -> Ctxt.t := projT1.
+    Definition lvl (fe : t) : Level := Ctxt.lvl (ctxt fe).
+    Definition va (fe : t) : prefix (lvl fe) := Ctxt.va (ctxt fe).
+    Definition asid (fe : t) : option (bv 16) := Ctxt.asid (ctxt fe).
+    Definition ptes (fe : t) := projT2 fe.
+    Definition pte (fe : t) := Entry.pte (projT2 fe).
   End FE.
   #[export] Typeclasses Transparent FE.t.
 
@@ -745,140 +858,309 @@ Module TLB.
       get ctxt vatlb
       |> set_map (fun (e : Entry.t (Ctxt.lvl ctxt)) => existT ctxt e).
 
+    Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
+      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
+
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
 
   Record t :=
     make {
-        vatlb : VATLB.t
+        vatlb : VATLB.t;
+        (* TODO: add a cache for ttbr *)
+        (* regs : dmap reg (λ reg, reg_type reg * view)%type;
+        regs_relaxed : ∀ reg, is_Some (dmap_lookup reg regs) → reg ∈ relaxed_regs *)
       }.
 
   Definition init := make VATLB.init.
 
-  Definition read_sreg (tlb : t) (ts : TState.t) (time : view) (sreg : reg) :=
-    TState.read_sreg_at ts sreg time.
+  Definition is_active_asid (ts : TState.t)
+      (asid : option (bv 16))
+      (ttbr : reg) (time : nat) : Prop :=
+    match asid with
+    | Some asid =>
+      if TState.read_sreg_at ts ttbr time is Some sregs
+        then ∃ '(regval, view) ∈ sregs,
+              if (regval_to_val ttbr regval) is Some v 
+                then asid = (bv_extract 48 16 v)
+                else False
+        else False
+    | None => True
+    end.
+  Instance Decision_is_active_asid (ts : TState.t)
+      (asid : option (bv 16))
+      (ttbr : reg) (time : nat) : Decision (is_active_asid ts asid ttbr time).
+  Proof. unfold_decide. Qed.
 
+  Definition next_va {clvl : Level}
+    (ctxt : Ctxt.t)
+    (index : bv 9)
+    (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
+    bv_concat (level_length clvl) (Ctxt.va ctxt) index.
 
+  Definition va_fill_keep (vatlb :VATLB.t)
+    (ctxt : Ctxt.t)
+    (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    te ∈ (VATLB.get ctxt vatlb).
+  Instance Decision_va_fill_keep (vatlb : VATLB.t)
+    (ctxt : Ctxt.t)
+    (te : Entry.t (Ctxt.lvl ctxt)) : Decision (va_fill_keep vatlb ctxt te).
+  Proof. unfold_decide. Defined.
 
-  (* Program Definition va_fill_lvl0 (tlb : t) (ts : TState.t) *)
-  (*   (init : Memory.initial) *)
-  (*   (mem : Memory.t) (time : nat) : VATLB.t := *)
-  (*   tlb.(vatlb) ∪ *)
-  (*     fun ctxt => *)
-  (*       match ctxt.(Ctxt.lvl) with *)
-  (*       | 0%fin => *)
-  (*           match ctxt.(Ctxt.asid) return gset (Entry.t ctxt.(Ctxt.lvl)) with *)
-  (*           | Some asid => *)
-  (*               ( *)
-  (*                 let valttbrs := *)
-  (*                   (* read_sreg tlb ts time (Reg.TTBR0 0%fin) *) *)
-  (*                   (* |> List.filter (fun '(val,v) => bv_extract 48 16 val =? asid) *) *)
-  (*                   [] *)
-  (*                 in *)
-  (*                 valttbr ← valttbrs; *)
-  (*                 let root_addr := *)
-  (*                   bv_concat 64 (bv_0 16) (bv_extract 0 48 valttbr) in *)
-  (*                 root_loc ← Loc.from_va root_addr |> option_list; *)
-  (*                 let loc := next_entry_loc root_loc ctxt.(Ctxt.va) in *)
-  (*                 let '(val, _) := Memory.read_at loc init mem time in *)
-  (*                 [Vector.const val 1] *)
-  (*               ) *)
-  (*                |> list_to_set *)
-  (*           | None => ∅ *)
-  (*           end *)
-  (*       | _ => ∅ *)
-  (*       end. *)
+  Definition va_fill_root (ts : TState.t)
+      (init : Memory.initial)
+      (mem : Memory.t)
+      (time : nat)
+      (va : prefix root_lvl)
+      (ttbr : reg) : Exec.res string VATLB.t :=
+    sregs ← Exec.res_error_none "TTBR should be read"
+              $ TState.read_sreg_at ts ttbr time;
+    '(regval, _) ← mchoosel sregs;
+    val_ttbr ← Exec.res_error_none "TTBR should be a 64 bit value"
+                $ regval_to_val ttbr regval;
+    let loc := Loc.from_addr_in (val_to_address val_ttbr) in
+    '(memval, _) ←
+      Exec.res_error_none "Reading from unmapped memory" $
+        Memory.read_at loc init mem time;
+    guard_or "A root of a page table should be a table" (is_block memval);;
 
+    let asid := bv_extract 48 16 val_ttbr in
+    let ndctxt := NDCtxt.make va (Some asid) in
+    let vatlb := VATLB.singleton (existT root_lvl ndctxt) [#memval] in
+    mret vatlb.
 
+  Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
+      (init : Memory.initial)
+      (mem : Memory.t)
+      (time : nat)
+      (ctxt : Ctxt.t)
+      (te : Entry.t (Ctxt.lvl ctxt))
+      (index : bv 9)
+      (ttbr : reg) : Exec.res string VATLB.t :=
+    guard_or "ASID is not active"
+      $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
+    guard_or "PTE is not a table"
+      $ is_table (Entry.pte te);;
+    guard_or "Translation entry is not in the TLB"
+      $ va_fill_keep vatlb ctxt te;;
 
+    let loc := Loc.from_addr_in (val_to_address (Entry.pte te)) in
+    '(memval, _) ←
+      Exec.res_error_none "Reading from unmapped memory"
+        $ Memory.read_at loc init mem time;
+    guard_or
+      "A PTE being filled in a TLB should be a valid value"
+      (is_valid memval);;
 
+    match inspect $ child_lvl (Ctxt.lvl ctxt) with
+    | Some clvl eq:e =>
+      let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+      let asid := if bool_decide (is_global clvl memval) then None
+                  else Ctxt.asid ctxt in
+      let ndctxt := NDCtxt.make va asid in
+      let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
+      let vatlb := VATLB.singleton (existT clvl ndctxt) new_te in
+      mret vatlb
+    | None eq:_ => mthrow "An intermediate level should have a child level"
+    end.
+
+  Definition va_fill (tlb : t) (ts : TState.t)
+      (init : Memory.initial)
+      (mem : Memory.t)
+      (time : nat)
+      (lvl : Level)
+      (va : bv 64)
+      (asid : option (bv 16))
+      (ttbr : reg) : Exec.res string t :=
+    vatlb ←
+      match parent_lvl lvl with
+      | None =>
+        vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
+        mret $ tlb.(vatlb) ∪ vatlb_new
+      | Some plvl =>
+        let pva := level_prefix va plvl in
+        let ndctxt := NDCtxt.make pva asid in
+        let ctxt := existT plvl ndctxt in
+        let index := level_index va lvl in
+        VATLB.get ctxt tlb.(vatlb)
+        |> set_fold (
+            λ te mvatlb,
+              vatlb_prev ← mvatlb;
+              Exec.res_mbind_inst _ _ 
+                (λ vatlb_new, mret $ vatlb_new ∪ vatlb_prev)
+                (va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr))
+          (mret tlb.(vatlb))
+      end;
+    mret $ TLB.make vatlb.
 
   (** WARNING HACK: Coq is shit so I'm forced to copy paste this function 3
       times, because after 4 hours I didn't find a way to make it type a generic
       version (among various internal crashes and similar errors). *)
 
-  (** Needed to do sensible match case on fin values *)
-  Definition fin_case {n : nat} (i : fin (S n)) : option (fin n) :=
-    match i with
-    | Fin.F1 => None
-    | FS n => Some n
-    end.
-
   (* TODO report bug: Function is incompatible with Keyed Unification *)
   #[local] Unset Keyed Unification.
 
-  Fixpoint fin_inj1 {n : nat} (p : fin n) : fin (S n) :=
-    match p with
-    | Fin.F1 => Fin.F1
-    | FS p' => FS (fin_inj1 p')
+  Definition affects_va (asid : bv 16) (va : bv 36) (last : bool)
+                        (ctxt : Ctxt.t)
+                        (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    let '(te_lvl, te_va, te_asid, te_val) :=
+          (Ctxt.lvl ctxt, Ctxt.va ctxt, Ctxt.asid ctxt, Entry.pte te) in
+    (match_prefix_at te_lvl te_va va)
+    ∧ (match te_asid with
+        | Some te_asid => asid = te_asid
+        | None => True
+        end)
+    ∧ (if last then is_final te_lvl te_val else False).
+  Instance Decision_affects_va (asid : bv 16) (va : bv 36) (last : bool)
+                               (ctxt : Ctxt.t)
+                               (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_va asid va last ctxt te).
+  Proof. unfold_decide. Defined.
+
+  Definition affects_asid (asid : bv 16)
+                          (ctxt : Ctxt.t)
+                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    match (Ctxt.asid ctxt) with
+    | Some te_asid => te_asid = asid
+    | None => False
     end.
+  Instance Decision_affects_asid (asid : bv 16)
+                                 (ctxt : Ctxt.t)
+                                 (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_asid asid ctxt te).
+  Proof. unfold_decide. Defined.
 
+  Definition affects_vaa (va : bv 36) (last : bool)
+                         (ctxt : Ctxt.t)
+                         (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    let '(te_lvl, te_va, te_val) :=
+          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
+    (match_prefix_at te_lvl te_va va)
+    ∧ (if last then is_final te_lvl te_val else False).
+  Instance Decision_affects_vaa (va : bv 36) (last : bool)
+                                (ctxt : Ctxt.t)
+                                (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_vaa va last ctxt te).
+  Proof. unfold_decide. Defined.
 
-  Lemma fin_to_nat_fin_inj1 {n : nat} (p : fin n) : fin_inj1 p =@{nat} p.
-    Admitted.
+  Definition affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    match tlbi with
+    | TLBI.All tid => True
+    | TLBI.Va tid asid va last => affects_va asid va last ctxt te
+    | TLBI.Asid tid asid => affects_asid asid ctxt te
+    | TLBI.Vaa tid va last => affects_vaa va last ctxt te
+    end.
+  Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects tlbi ctxt te).
+  Proof. unfold_decide. Defined.
 
-  (* Lemma va_fill_termination {n : nat} (i : fin (S n)) (j : fin n) : *)
-  (*   fin_case i = Some j -> (Fin.L 1 j < i)%nat. *)
-  (*   inv_fin i. *)
+  Definition tlbi_apply_lvl (tlb : t) (ts : TState.t)
+                  (init : Memory.initial) (mem : Memory.t)
+                  (time : nat)
+                  (tlbi : TLBI.t)
+                  (lvl : Level)
+                  (va : bv 64)
+                  (asid : option (bv 16)) : t :=
+      let ndctxt := NDCtxt.make (level_prefix va lvl) asid in
+      let ctxt := existT lvl ndctxt in
+      VATLB.get ctxt tlb.(vatlb)
+      |> filter (λ te, ¬(affects tlbi ctxt te))
+      |> λ tes,
+          TLB.make $ hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := tes]} tlb.(vatlb).
 
-  Set Printing Implicit.
-  Set Printing Coercions.
+  Definition tlbi_apply (tlb : t) (ts : TState.t)
+                  (init : Memory.initial) (mem : Memory.t)
+                  (time : nat)
+                  (tlbi : TLBI.t)
+                  (va : bv 64)
+                  (asid : option (bv 16)) : t :=
+    let tlb0 := tlbi_apply_lvl tlb ts init mem time tlbi root_lvl va asid in
+    let tlb1 := tlbi_apply_lvl tlb0 ts init mem time tlbi 1%fin va asid in
+    let tlb2 := tlbi_apply_lvl tlb1 ts init mem time tlbi 2%fin va asid in
+    tlbi_apply_lvl tlb2 ts init mem time tlbi 3%fin va asid.
 
-  (* Function va_fill_lvl (tlb : t) (ts : TState.t) *)
-  (*   (init : Memory.initial) *)
-  (*   (mem : Memory.t) (time : nat) (lvl : Level) {measure fin_to_nat lvl } := *)
-  (*   match fin_case lvl return VATLB.t with *)
-  (*   | None => VATLB.init *)
-  (*   | Some n => *)
-  (*       va_fill_lvl tlb ts init mem time (fin_inj1 n) *)
-  (*   end *)
-  (*   ∪ tlb.(vatlb). *)
-  (* Proof. *)
-  (*   intros. *)
-  (*   inv_fin lvl. *)
-  (*   scongruence. *)
-  (*   cbn in *. *)
-  (*   intros. *)
-  (*   inversion teq as []. *)
-  (*   destruct H. *)
-  (*   rewrite fin_to_nat_fin_inj1. *)
-  (*   lia. *)
-  (* Qed. *)
-
-
-
-  (* Program Fixpoint va_fill_lvl (lvl : Level) {measure (fin_to_nat lvl) } := *)
-  (*   fun (tlb : t) (ts : TState.t) *)
-  (*   (init : Memory.initial) *)
-  (*   (mem : Memory.t) (time : nat) => *)
-  (*   match lvl return VATLB.t with *)
-  (*   | Fin.F1 => VATLB.init *)
-  (*   | FS n => va_fill_lvl (n : Level) tlb ts init mem time *)
-  (*   end. *)
-  (* Next Obligation. *)
-  (*   intros. *)
-  (* Admitted. *)
-  (* Next Obligation. *)
-  (* Admitted. *)
-  (* Next Obligation. *)
-  (* Admitted. *)
-
-  (* Print va_fill_lvl. *)
-
-
-  (* Definition va_fill (tlb : t) (ts : TState.t) (init : Memory.initial) *)
-  (*   (mem : Memory.t) (time : nat) : VATLB.t. *)
-  (* Admitted. *)
-
+  Definition update (tlb : t)
+      (ts : TState.t)
+      (init : Memory.initial)
+      (mem : Memory.t)
+      (time : nat)
+      (va : bv 64)
+      (asid : option (bv 16))
+      (ttbr : reg) : Exec.res string t :=
+    tlb0 ← va_fill tlb ts init mem time root_lvl va asid ttbr;
+    tlb1 ← va_fill tlb0 ts init mem time 1%fin va asid ttbr;
+    tlb2 ← va_fill tlb1 ts init mem time 2%fin va asid ttbr;
+    va_fill tlb2 ts init mem time 3%fin va asid ttbr.
 
   (** Get the TLB state at a certain timestamp *)
-  (* Definition get (ts : TState.t) (init : Memory.initial) (mem : Memory.t) *)
-  (*               (time : nat) : t. *)
+  Fixpoint at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+                       (time : nat)
+                       (va : bv 64)
+                       (asid : option (bv 16))
+                       (ttbr : reg)
+                      {struct time} : Exec.res string t :=
+    match time with
+    | O => update init ts mem_init mem 0 va asid ttbr
+    | S ptime =>
+      tlb ← at_timestamp ts mem_init mem ptime va asid ttbr;
+      match List.nth_error mem time with
+      | Some ev =>
+        match Ev.get_tlbi ev with
+        | Some tlbi => mret $ tlbi_apply tlb ts mem_init mem time tlbi va asid
+        | None => update tlb ts mem_init mem time va asid ttbr
+        end
+      | None => mret init
+      end
+    end.
+
+  Definition is_te_invalidated_by_tlbi (tlb : t)
+                (tlbi : TLBI.t)
+                (tid : nat)
+                (ctxt : Ctxt.t)
+                (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+      TLBI.tid tlbi <> tid ∧ te ∉ VATLB.get ctxt tlb.(vatlb).
+  Instance Decision_is_te_invalidated_by_tlbi (tlb : t) (tlbi : TLBI.t) (tid : nat)
+                (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te).
+  Proof. unfold_decide. Defined.
+
+  Fixpoint invalidation_time_from_evs (ts : TState.t) (init : Memory.initial)
+                                      (mem : Memory.t)
+                                      (tid : nat)
+                                      (ctxt : Ctxt.t)
+                                      (te : Entry.t (Ctxt.lvl ctxt))
+                                      (ttbr : reg)
+                                      (evs : list (Ev.t * nat)) : Exec.res string nat :=
+    match evs with
+    | nil => mret 0
+    | (ev, t) :: tl =>
+      match ev with
+      | Ev.Tlbi tlbi =>
+        let va := Ctxt.va ctxt in
+        let asid := Ctxt.asid ctxt in
+        tlb ← at_timestamp ts init mem t (prefix_to_va va) asid ttbr;
+        if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
+          mret t
+        else
+          invalidation_time_from_evs ts init mem tid ctxt te ttbr tl
+      | _ => invalidation_time_from_evs ts init mem tid ctxt te ttbr tl
+      end
+    end.
+
+  (** Calculate the earliest future time at which a translation entry is effectively invalidated
+      in the TLB due to an TLBI event *)
+  Definition invalidation_time (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
+                               (tid : nat) (time : nat)
+                               (ctxt : Ctxt.t)
+                               (te : Entry.t (Ctxt.lvl ctxt))
+                               (ttbr : reg) : Exec.res string nat :=
+    let evs := PromMemory.cut_after_with_timestamps time mem in
+    invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 End TLB.
 
 Module VATLB := TLB.VATLB.
-
-
 
 (*** Instruction semantics ***)
 
@@ -959,7 +1241,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
       if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
     else time in
   let vpost := vpre ⊔ read_view in
-  guard_discard (vpost <= invalidation_time)%nat;;
+  guard_discard (vpost ≤ invalidation_time)%nat;;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
@@ -977,18 +1259,18 @@ Definition read_pte (vaddr : view) :
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
 
-(** Run a RegRead outcome. 
+(** Run a RegRead outcome.
     Returns the register value based on the type of register and the access type. *)
 Definition run_reg_read (reg : reg) (racc : reg_acc) :
     Exec.t (TState.t * IIS.t) string (reg_type reg) :=
   ts ← mget fst;
-  '(val, view) ← 
-    (if decide (reg ∈ relaxed_regs) then 
-      if decide (is_Some racc) 
-        then Exec.error_none "Register unmapped on direct read" 
+  '(val, view) ←
+    (if decide (reg ∈ relaxed_regs) then
+      if decide (is_Some racc)
+        then Exec.error_none "Register unmapped on direct read"
               $ TState.read_sreg_direct ts reg
-        else 
-          valvs ← Exec.error_none "Register unmapped on indirect read" 
+        else
+          valvs ← Exec.error_none "Register unmapped on indirect read"
                   $ TState.read_sreg_indirect ts reg;
           mchoosel valvs
     else
@@ -996,13 +1278,13 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
   mset snd $ IIS.add view;;
   mret val.
 
-(** Run a RegWrite outcome. 
+(** Run a RegWrite outcome.
     Updates the thread state using a register value *)
 Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   guard_or
     "Cannot write to unknown register"
-    (reg_unknown reg);;
+    (is_reg_unknown reg);;
   guard_or
     "Non trivial write reg access types unsupported"
     (racc = None);;
@@ -1254,8 +1536,8 @@ Section RunOutcome.
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
+    (* TODO: translation - split lookup and update *)
 End RunOutcome.
-
 
 (** * Implement GenPromising ***)
 
