@@ -106,6 +106,14 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
 
+(* Takes an option but convert None into an error *)
+Definition res_error_none {E A} (e : E) : option A -> res E A :=
+  λ opt_val,
+    match opt_val with
+    | Some v => make [v] []
+    | None => make [] [e]
+    end.
+
 (** Convert an execution result into a list of results *)
 Definition to_result_list `(e : res E A) : list (result E A) :=
   map Ok e.(results) ++ map Error e.(errors).
@@ -170,6 +178,10 @@ Definition map_state `(f : St → St') `(r : res (St * E) (St * A)) :
     res (St' * E) (St' * A) :=
   make (map (λ '(st, a), (f st, a)) r.(results))
        (map (λ '(st, a), (f st, a)) r.(errors)).
+
+Definition liftSt_stateless {St E A} (r : res E A) : Exec.t St E A :=
+  λ st, make (map (λ a, (st, a)) r.(results))
+             (map (λ b, (st, b)) r.(errors)).
 
 Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St → St)
     (inner : Exec.t St' E A) : Exec.t St E A :=
