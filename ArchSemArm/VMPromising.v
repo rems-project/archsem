@@ -82,6 +82,9 @@ Module Loc := UMPromising.Loc.
 Definition val := bv 64.
 #[global] Typeclasses Transparent val.
 
+Definition val_to_address (v : val) : address :=
+  bv_extract 0 56 v.
+
 (** We also reuse the Msg object from the User-Mode Promising Model. *)
 Module Msg := UMPromising.Msg.
 
@@ -417,24 +420,27 @@ Definition is_reg_unknown (r : reg) : Prop :=
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
-Definition ttbr_to_val (r : reg) (v : reg_type r) : option val :=
-  if decide (r = GReg TTBR0_EL1) is left eq then Some (ctrans eq v)
-  else if decide (r = GReg TTBR0_EL2) is left eq then Some (ctrans eq v)
-  else if decide (r = GReg TTBR0_EL3) is left eq then Some (ctrans eq v)
-  else if decide (r = GReg TTBR1_EL1) is left eq then Some (ctrans eq v)
-  else if decide (r = GReg TTBR1_EL2) is left eq then Some (ctrans eq v)
-  else None.
-(* TODO: Generalize the above to regval_to_val *)
-Definition regval_to_val (r : reg) (v : reg_type r) : option val.
+Lemma known_regs_are_val (r : reg)
+  (KNOWN : ¬(is_reg_unknown r)) :
+  reg_type r = val.
 Proof.
-  destruct (decide (is_reg_unknown r)) as [UNKNOWN | KNOWN].
-  - refine None.
-  - apply NNPP in KNOWN.
-    cdestruct KNOWN # CDestrSplitGoal.
-    set_unfold in KNOWN.
-    (* refine (ctrans KNOWN v). *)
-    Admitted.
+  apply NNPP in KNOWN.
+  cdestruct KNOWN.
+  set_unfold in KNOWN.
+  cdestruct KNOWN #CDestrSplitGoal; rewrite H; reflexivity.
+Qed.
 
+Definition cast {a b} (p : a = b) (x : a) : b :=
+  match p with
+  | eq_refl => x
+  end.
+
+Definition regval_to_val (r : reg) (v : reg_type r) : option val :=
+  if decide (¬(is_reg_unknown r)) is left KNOWN then
+    Some $ cast (known_regs_are_val r KNOWN) v
+  else
+    None.
+  
 (** * The thread state *)
 
 Module WSReg.
@@ -470,7 +476,6 @@ Module LEv.
     | _ => None
     end.
 End LEv.
-Coercion LEv.Cse : nat >-> LEv.t.
 Coercion LEv.Wsreg : WSReg.t >-> LEv.t.
 
 
@@ -616,8 +621,8 @@ Module TState.
       Some $ set regs (dmap_insert reg rv) ts
     else None.
 
-  (** Add a system register write event to the local event *)
-  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) :=
+  (** Add a system register write event to the local event list *)
+  Definition add_wsreg (sreg : reg) (val : reg_type sreg) (v : view) : t → t :=
     let lev := LEv.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
@@ -670,74 +675,41 @@ Definition bv_1 (n : N) : bv n := Z_to_bv n 1.
 
 Definition Level := fin 4.
 
+#[export] Typeclasses Transparent Level.
+
 Definition root_lvl : Level := 0%fin.
 
 Definition child_lvl (lvl : Level) : option Level :=
-  if Nat.ltb lvl 3 then
-    let new_val := S lvl in
-    match new_val with
-    | 1 => Some 1%fin
-    | 2 => Some 2%fin
-    | 3 => Some 3%fin
-    | _ => None
-    end
-  else
-    None.
+  match lvl in fin n return option Level with
+  | 0 => Some 1
+  | 1 => Some 2
+  | 2 => Some 3
+  | _ => None
+  end%fin.
 
 Lemma child_lvl_add_one (lvl clvl : Level)
     (CHILD : child_lvl lvl = Some clvl) :
   lvl + 1 = clvl.
 Proof.
-  unfold child_lvl in *.
-  destruct (Nat.ltb lvl 3) eqn:LT; try inv CHILD.
-  destruct lvl; try (inv H0; simpl; lia).
-  destruct lvl; try (inv H0; simpl; lia).
-  destruct lvl; try (inv H0; simpl; lia).
+  unfold child_lvl in CHILD.
+  repeat case_split; cdestruct clvl |- ***.
 Qed.
 
-Definition child_lvl_dependent (lvl : Level) :
-  option {clvl : Level & lvl + 1 = clvl}.
-Proof.
-  destruct (child_lvl lvl) eqn:CHILD.
-  - apply child_lvl_add_one in CHILD.
-    refine (Some (existT l CHILD)).
-  - refine None.
-Defined.
-
 Definition parent_lvl (lvl : Level) : option Level :=
-  if Nat.ltb 0 lvl then
-    let new_val := lvl - 1 in
-    match new_val with
-    | 0 => Some 0%fin
-    | 1 => Some 1%fin
-    | 2 => Some 2%fin
-    | _ => None
-    end
-  else
-    None.
+  match lvl in fin n return option Level with
+  | 1 => Some 0
+  | 2 => Some 1
+  | 3 => Some 2
+  | _ => None
+  end%fin.
 
 Lemma parent_lvl_sub_one (lvl plvl : Level)
     (PARENT : parent_lvl lvl = Some plvl) :
   plvl + 1 = lvl.
 Proof.
-  unfold parent_lvl in *.
-  destruct (Nat.ltb 0 lvl) eqn:LT; try inv PARENT.
-  destruct lvl; try (inv H0; simpl; lia).
-  destruct lvl; try (inv H0; simpl; lia).
-  destruct lvl; try (inv H0; simpl; lia).
-  destruct lvl; try (inv H0; simpl; lia).
+  unfold parent_lvl in PARENT.
+  repeat case_split; cdestruct plvl |- ***.
 Qed.
-
-Definition parent_lvl_dependent (lvl : Level) :
-  option {plvl : Level & plvl + 1 = lvl}.
-Proof.
-  destruct (parent_lvl lvl) eqn:PARENT.
-  - apply parent_lvl_sub_one in PARENT.
-    refine (Some (existT l PARENT)).
-  - refine None.
-Defined.
-
-#[export] Typeclasses Transparent Level.
 
 (* It is important to be consistent on "level_length" and not write it as 9 *
    lvl + 9, otherwise some term won't type because the equality is only
@@ -769,28 +741,27 @@ Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
 
 Definition is_valid (e : val) : Prop :=
-  (bv_extract 0 1 e) = bv_1 1.
+  (bv_extract 0 1 e) = 1%bv.
 Instance Decision_is_valid (e : val) : Decision (is_valid e).
 Proof. unfold_decide. Defined.
 
 Definition is_table (e : val) : Prop :=
-  (bv_extract 0 2 e) = (Z_to_bv 2 3).
+  (bv_extract 0 2 e) = 3%bv.
 Instance Decision_is_table (e : val) : Decision (is_table e).
 Proof. unfold_decide. Defined.
 
 Definition is_block (e : val) : Prop :=
-  (bv_extract 0 2 e) = bv_1 2.
+  (bv_extract 0 2 e) = 1%bv.
 Instance Decision_is_block (e : val) : Decision (is_block e).
 Proof. unfold_decide. Defined.
 
 Definition is_final (lvl : Level) (e : val) : Prop :=
-  (fin_to_nat lvl = 3 ∧ (bv_extract 0 2 e) = (Z_to_bv 2 3))
-  ∨ (fin_to_nat lvl < 3 ∧ is_block e).
+  if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv else is_block e.
 Instance Decision_is_final (lvl : Level) (e : val) : Decision (is_final lvl e).
 Proof. unfold_decide. Defined.
 
 Definition is_global (lvl : Level) (e : val) : Prop :=
-  is_final lvl e ∧ ((bv_extract 11 1 e) = bv_0 1).
+  is_final lvl e ∧ (bv_extract 11 1 e) = 0%bv.
 Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
 Proof. unfold_decide. Defined.
 
@@ -850,18 +821,12 @@ Module TLB.
     Definition t (lvl : Level) := vec val (S lvl).
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
 
-    Definition append {lvl clvl : Level}
+    Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
         (pte : val)
-        (CHILD : lvl + 1 = clvl) : t clvl.
-    Proof.
-      assert (VEQ : vec val (S (lvl + 1)) = vec val (S clvl))
-        by (rewrite CHILD; reflexivity).
-      assert (TEQ : t clvl = vec val (S lvl + 1))
-        by (rewrite VEQ; reflexivity).
-      rewrite TEQ.
-      refine (tlbe +++ [#pte]).
-    Defined.
+        (CHILD : lvl + 1 = clvl) : t clvl :=
+      ctrans _ (tlbe +++ [#pte]).
+    Solve All Obligations with lia.
   End Entry.
   #[export] Typeclasses Transparent Entry.t.
 
@@ -911,20 +876,21 @@ Module TLB.
 
   Definition is_active_asid (ts : TState.t)
       (asid : option (bv 16))
-      (ttbr : reg) (time : nat) : bool :=
+      (ttbr : reg) (time : nat) : Prop :=
     match asid with
     | Some asid =>
       if TState.read_sreg_at ts ttbr time is Some sregs
-        then
-          foldl
-            (λ acc '(regval, _),
-                match (ttbr_to_val ttbr regval) with
-                | Some v => bool_decide (asid = (bv_extract 48 16 v)) || acc
-                | None => acc
-                end) false sregs
-        else false
-    | None => true
+        then ∃ '(regval, view) ∈ sregs,
+              if (regval_to_val ttbr regval) is Some v 
+                then asid = (bv_extract 48 16 v)
+                else False
+        else False
+    | None => True
     end.
+  Instance Decision_is_active_asid (ts : TState.t)
+      (asid : option (bv 16))
+      (ttbr : reg) (time : nat) : Decision (is_active_asid ts asid ttbr time).
+  Proof. unfold_decide. Qed.
 
   Definition next_va {clvl : Level}
     (ctxt : Ctxt.t)
@@ -951,8 +917,8 @@ Module TLB.
               $ TState.read_sreg_at ts ttbr time;
     '(regval, _) ← mchoosel sregs;
     val_ttbr ← Exec.res_error_none "TTBR should be a 64 bit value"
-                $ ttbr_to_val ttbr regval;
-    let loc := next_entry_loc (bv_extract 0 53 val_ttbr) va in
+                $ regval_to_val ttbr regval;
+    let loc := Loc.from_addr_in (val_to_address val_ttbr) in
     '(memval, _) ←
       Exec.res_error_none "Reading from unmapped memory" $
         Memory.read_at loc init mem time;
@@ -978,7 +944,7 @@ Module TLB.
     guard_or "Translation entry is not in the TLB"
       $ va_fill_keep tlb ctxt te;;
 
-    let loc := next_entry_loc (bv_extract 0 53 (Entry.pte te)) index in
+    let loc := Loc.from_addr_in (val_to_address (Entry.pte te)) in
     '(memval, _) ←
       Exec.res_error_none "Reading from unmapped memory"
         $ Memory.read_at loc init mem time;
@@ -986,16 +952,16 @@ Module TLB.
       "A PTE being filled in a TLB should be a valid value"
       (is_valid memval);;
 
-    match child_lvl_dependent (Ctxt.lvl ctxt) with
-    | Some clvl_dep =>
-      let va := next_va ctxt index (projT2 clvl_dep) in
-      let asid := if bool_decide (is_global (projT1 clvl_dep) memval) then None
+    match inspect $ child_lvl (Ctxt.lvl ctxt) with
+    | Some clvl eq:e =>
+      let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+      let asid := if bool_decide (is_global clvl memval) then None
                   else Ctxt.asid ctxt in
       let ndctxt := NDCtxt.make va asid in
-      let new_te := Entry.append te memval (projT2 clvl_dep) in
-      let vatlb := VATLB.singleton (existT (projT1 clvl_dep) ndctxt) new_te in
+      let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
+      let vatlb := VATLB.singleton (existT clvl ndctxt) new_te in
       mret $ TLB.make vatlb
-    | None => mthrow "An intermediate level should have a child level"
+    | None eq:_ => mthrow "An intermediate level should have a child level"
     end.
 
   Definition va_fill (tlb : t) (ts : TState.t)
