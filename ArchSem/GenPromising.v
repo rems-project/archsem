@@ -189,18 +189,19 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           failing, promise_select effectively computes the allowed_promises
           set.*)
       promise_select :
-        (* fuel *) nat -> (* tid *) nat → memoryMap → pModel.(tState) →
-        PromMemory.t pModel.(mEvent) → Exec.res string pModel.(mEvent);
+        (* fuel *) nat → (* tid *) nat → (* termination condition *) (registerMap → bool) →
+        memoryMap → pModel.(tState) → PromMemory.t pModel.(mEvent) → 
+        Exec.res string pModel.(mEvent);
 
       promise_select_sound :
-      ∀ n tid initMem ts mem,
-        ∀ ev ∈ (promise_select n tid initMem ts mem),
+      ∀ n tid term initMem ts mem,
+        ∀ ev ∈ (promise_select n tid term initMem ts mem),
           ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
-      ∀ n tid initMem ts mem,
-        ¬ Exec.has_error (promise_select n tid initMem ts mem) →
+      ∀ n tid term initMem ts mem,
+        ¬ Exec.has_error (promise_select n tid term initMem ts mem) →
         ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem,
-          ev ∈ promise_select n tid initMem ts mem
+          ev ∈ promise_select n tid term initMem ts mem
     }.
   Arguments BasicExecutablePM : clear implicits.
 
@@ -345,7 +346,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      prom.(promise_select) n tid (initmem st) (tstate tid st) (events st).
+      prom.(promise_select) n tid (term tid) (initmem st) (tstate tid st) (events st).
 
     (** Take any promising step for that tid and promise it *)
     Definition cpromise_tid (fuel : nat) (tid : fin n)

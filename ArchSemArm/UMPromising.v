@@ -386,6 +386,29 @@ Module TState.
   Definition promise (v : view) : t -> t := set prom (fun p => v :: p).
 End TState.
 
+(** Intra instruction state for propagating views inside an instruction *)
+Module IIS.
+
+  Record t := 
+    make { 
+      strict : view;
+      vpres : list view;
+    }.
+
+  #[global] Instance eta : Settable _ :=
+    settable! make <strict; vpres>.
+
+  Definition init : t := make 0 [].
+
+  (** Add a new view to the IIS *)
+  Definition add (v : view) (iis : t) : t :=
+    iis |> set strict (max v).
+
+  (** Add a vpre of a write to the IIS *)
+  Definition add_vpre (vpre : view) (iis : t) : t :=
+    iis |> set vpres (vpre ::.).
+
+End IIS.
 
 (*** Instruction semantics ***)
 
@@ -431,10 +454,10 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) : Exec.t TState.t string (Memory.t * view):=
+           (data : val) : Exec.t (TState.t * IIS.t) string (Memory.t * view):=
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
-  ts ← mGet;
+  ts ← mget fst;
   let '(time, mem) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem)
@@ -445,10 +468,11 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
-  mset TState.prom (filter (λ t, t ≠ time));;
-  mSet $ TState.update_coh loc time;;
-  mSet $ TState.update TState.vwr time;;
-  mSet $ TState.update TState.vrel (view_if is_release time);;
+  mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
+  mset fst $ TState.update_coh loc time;;
+  mset fst $ TState.update TState.vwr time;;
+  mset fst $ TState.update TState.vrel (view_if is_release time);;
+  mset snd $ IIS.add_vpre vpre;;
   mret (mem, time).
 
 
@@ -462,40 +486,24 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
-  : Exec.t TState.t string Memory.t :=
+  : Exec.t (TState.t * IIS.t) string Memory.t :=
   guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     '(mem, time) ← write_mem tid loc vdata macc mem data;
-    ts ← mGet;
+    ts ← mget fst;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
         guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
     end;;
-    mSet $ TState.set_fwdb loc (FwdItem.make time vdata true);;
-    mSet TState.clear_xclb;;
+    mset fst $ TState.set_fwdb loc (FwdItem.make time vdata true);;
+    mset fst TState.clear_xclb;;
     mret mem
   else
     '(mem, time) ← write_mem tid loc vdata macc mem data;
-    mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
+    mset fst $ TState.set_fwdb loc (FwdItem.make time vdata false);;
     mret mem.
-
-(** Intra instruction state for propagating views inside an instruction *)
-Module IIS.
-
-  Record t := make { strict : view }.
-
-  #[global] Instance eta : Settable _ :=
-    settable! make <strict>.
-
-  Definition init : t := make 0.
-
-  (** Add a new view to the IIS *)
-  Definition add (v : view) (iis : t) : t :=
-    iis |> set strict (max v).
-
-End IIS.
 
 (* Set Typeclasses Debug Verbosity 2. *)
 
@@ -552,7 +560,8 @@ Section RunOutcome.
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
-        mem ← Exec.liftSt PPState.state (write_mem_xcl tid addr vdata macc mem val);
+        mem ← Exec.liftSt (PPState.state ×× PPState.iis) 
+                $ write_mem_xcl tid addr vdata macc mem val;
         msetv PPState.mem mem;;
         mret (Ok ())
       else mthrow "Unsupported non-explicit write"
