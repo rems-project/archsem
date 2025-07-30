@@ -168,18 +168,24 @@ Definition sequential_model_outcome_logged : ∀ call : outcome, seqmon (eff_ret
 
 (** Run instructions until a final state has been reached or fuel is depleted *)
 Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
-  : seqmon (MState.final 1) :=
+    : seqmon (MState.init 1) :=
   if fuel is S fuel
   then
     mset itrs (cons FMon.FTNothing);;
     FMon.cinterp (sequential_model_outcome_logged) isem;;
-    mset itrs (λ l, ((* List.rev *) (hd FMon.FTNothing l).1, FMon.FTERet ()) :: tl l);;
+    mset itrs (λ l, ((hd FMon.FTNothing l).1, FMon.FTERet ()) :: tl l);;
     st ← mget seq_state_to_init;
     if MState.finalize st is Some final
     then
-      (* mset itrs (@List.rev _);; *)
-      mret final
+      mret st
     else sequential_model_seqmon fuel isem
+  else mget seq_state_to_init.
+
+Definition sequential_model_seqmon_final (fuel : nat) (isem : iMon ())
+    : seqmon (MState.final 1) :=
+  st ← sequential_model_seqmon fuel isem;
+  if MState.finalize st is Some final
+  then mret final
   else mthrow "Out of fuel".
 
 (** Top-level one-threaded sequential model function that takes fuel (guaranteed
@@ -190,7 +196,7 @@ Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
   match n with
   | 1 => λ initSt : MState.init 1,
            Listset
-            (sequential_model_seqmon fuel isem {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |}
+            (sequential_model_seqmon_final fuel isem {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |}
              |> Exec.to_stateful_result_list
              |$> snd
              |$> Model.Res.from_result)

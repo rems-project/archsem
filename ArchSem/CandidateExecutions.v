@@ -549,8 +549,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
           registerMap :=
         λ reg,
         let oval :=
-          foldl (λ val itrc,
-              foldl (λ (val : option (reg_type reg)) ev,
+          fold_left (λ val itrc,
+              fold_left (λ (val : option (reg_type reg)) ev,
                   match ev with
                   | RegWrite reg' _ val' &→ _ =>
                       if decide (reg' = reg) is left e
@@ -558,8 +558,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
                       else val
                   | _ => val
                   end
-                ) val itrc.1
-            ) None (pe.(events) !!! tid)
+                ) itrc.1 val
+            ) (pe.(events) !!! tid) None
         in
         if oval is Some val then val else (pe.(init).(MState.regs) !!! tid) reg.
 
@@ -1071,11 +1071,11 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
     (** Get the last write for each pa in candidate. If it's not in the map, it
         was not written by the candidate *)
     Definition final_write_per_pa (cd : t) : gmap pa (EID.t * bv 8) :=
-      foldl
+      fold_left
         (λ mmap '(eid, ev),
           match ev with
           | MemWrite n wr &→ _ =>
-              foldl
+              fold_left
                 (λ mmap i,
                   let pa := pa_addZ (WriteReq.pa wr) (Z.of_nat i) in
                   let byte := bv_get_byte 8 (N.of_nat i) (WriteReq.value wr) in
@@ -1086,9 +1086,9 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA).
                       | right _ => <[pa := (eid, byte)]> mmap
                       end
                   | None => <[pa := (eid, byte)]> mmap
-                  end) mmap (seq 0 (N.to_nat n))
+                  end) (seq 0 (N.to_nat n)) mmap
           | _ => mmap
-          end) ∅ (event_list cd).
+          end) (event_list cd) ∅.
 
     Definition final_mem_map (cd : t) : memoryMap :=
       let mmap := final_write_per_pa cd in

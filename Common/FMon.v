@@ -523,9 +523,9 @@ Section CMon.
   | CMNilCall call k : csteps (Nextl call k) [] (Nextl call k)
   | CMNilEmptyChoice k : csteps (Nextr (ChooseFin 0) k) [] (Nextr (ChooseFin 0) k)
   | CMConsCall call k ret tl f' :
-    csteps (k ret) tl f' → csteps (Next (inl call) k) ((call &→ ret) :: tl) f'
-  | CMConsChoice c k ret l f' :
-    csteps (k ret) l f' → csteps (Next (inr c) k) l f'.
+    csteps (k ret) tl f' → csteps (Next (inl call) k) ((call &→ ret) :: tl) f' (* TODO: use Nextl/Nextr *)
+  | CMConsChoice n k (ret : eff_ret (inr (ChooseFin n))) l f' :
+    csteps (k ret) l f' → csteps (Nextr (ChooseFin n) k) l f'.
   Notation cstep f ev f' := (csteps f [ev] f').
   Hint Constructors csteps : cmon.
 
@@ -544,26 +544,90 @@ Section CMon.
   Proof.
     induction f in l |- *.
     all: intro Hc.
-    all: depelim Hc. 
-    1,3: sauto.
+    all: depelim Hc.
+    1,3: hauto.
     by eapply H.
   Qed.
   Hint Rewrite @csteps_Nextr_termination : cmon.
 
-  Lemma csteps_nil {A} (f : cMon A) :
-    { f' & csteps f [] f' ∧ if f' is Nextr (ChooseFin n) r then n = 0 else True }.
+  Fixpoint choice_step_cmon {A} (c : cMon A) : list (cMon A) :=
+    match c with
+    | Ret ret => [Ret ret]
+    | Nextl call k => [Nextl call k]
+    | Nextr (ChooseFin 0) k => [Nextr (ChooseFin 0) k]
+    | Nextr (ChooseFin (S n)) k => mjoin (choice_step_cmon ∘ k <$> enum (fin (S n)))
+    end.
+
+  Lemma csteps_nil {A} (c : cMon A) :
+    ∀ c', csteps c [] c' ↔ c' ∈ choice_step_cmon c.
+  Proof using CT CTS ED ER Eff Wf.
+    induction c as [|[|[]] k IH].
+    all: cdestruct |- *** as c' H #CDestrSplitGoal.
+    all: try depelim H.
+    all: set_unfold; try cdestruct c' |- ***; try fast_done.
+    all: try constructor.
+    all: destruct n.
+    all: set_unfold; deintros; cdestruct |- ***.
+    1: depelim ret.
+    2: constructor.
+    {
+      eapply IH in H.
+      set_unfold.
+      depelim ret.
+      1: naive_solver.
+      right.
+      eapply elem_of_list_join.
+      set_unfold.
+      do 3 (eexists; cdestruct |- *** #CDestrSplitGoal; eauto).
+      change (fin_enum n) with (enum (fin n)).
+      eapply elem_of_enum.
+    }
+    {
+      cdestruct H |- *** #CDestrSplitGoal.
+      1: eapply IH in H.
+      1: by econstructor.
+      eapply elem_of_list_join in H.
+      set_unfold.
+      cdestruct c' |- ***.
+      econstructor.
+      by eapply IH.
+    }
+  Qed.
+
+  Lemma csteps_nil_ex {A} (c : cMon A) :
+    ∃ c', csteps c [] c'.
+  Proof using CT CTS ED ER Eff Wf.
+    setoid_rewrite csteps_nil.
+    induction c as [|[|[[]]] k IH];
+    cbn.
+    1-3: set_solver.
+    destruct (IH 0%fin).
+    set_unfold.
+    eauto.
+  Qed.
+
+  Lemma csteps_nil_idempotent {A} (c c' c'' : cMon A) :
+    csteps c [] c' → csteps c' [] c'' → c' = c''.
   Proof.
-    induction f as [|[|] k IH].
+    remember nil.
+    induction 1;
+    cdestruct |- *** as H'.
+    all: depelim H'; try fast_done.
+    1: cbn in *; depelim ret.
+    1-3: sauto.
+    eapply IHcsteps; try fast_done.
+    by econstructor.
+  Qed.
+
+  Lemma csteps_nil_unchanged {A} (c c' c'' : cMon A) :
+    csteps c [] c' → csteps c' [] c'.
+  Proof.
+    remember nil.
+    induction 1;
+    cdestruct |- ***.
+    all: try econstructor.
     1: sauto.
-    1: clear IH; sauto.
-    destruct m as [[]].
-    1: clear IH.
-    1: sauto.
-    cbn in *.
-    ospecialize (IH 0%fin).
-    cdestruct IH.
-    eexists x.
-    sauto.
+    by eapply IHcsteps.
   Qed.
 
   Lemma csteps_app {A} l l' (f f' : cMon A) :
@@ -593,7 +657,7 @@ Section CMon.
   Qed.
 
   Definition csteps_cons {A} ev tl (f f' : cMon A)
-      : csteps f (ev :: tl) f' ↔ ∃ f'', cstep f ev f'' ∧ csteps f'' tl f' := 
+      : csteps f (ev :: tl) f' ↔ ∃ f'', cstep f ev f'' ∧ csteps f'' tl f' :=
     csteps_app [ev] tl f f'.
 
   Lemma csteps_Nextl_cons {A} call k ret tl (f : cMon A) :
@@ -646,16 +710,15 @@ Section CMon.
       matching the end of the trace *)
   Lemma cmatch_csteps {A} (f : cMon A) tr :
     cmatch f tr ↔ ∃ f', csteps f tr.1 f' ∧ cmatch_end f' tr.2.
-  Proof.
+  Proof using CT CTS ED ER Eff Wf.
     split.
     - induction 1; try hauto l:on db:cmon.
-      pose proof (csteps_nil f) as [].
+      pose proof (csteps_nil_ex f) .
       sauto.
-    
+
     - destruct tr. cbn. intros [f' [FS FME]].
       induction FS.
       1-4: sauto.
-      destruct c.
       econstructor.
       by eapply IHFS.
   Qed.
