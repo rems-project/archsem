@@ -389,8 +389,8 @@ End TState.
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
-  Record t := 
-    make { 
+  Record t :=
+    make {
       strict : view;
       vpres : list view;
     }.
@@ -514,6 +514,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
     the end of memory the corresponding event was not already promised. *)
 Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
+
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
   | RegWrite reg racc val =>
@@ -560,7 +561,7 @@ Section RunOutcome.
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
-        mem ← Exec.liftSt (PPState.state ×× PPState.iis) 
+        mem ← Exec.liftSt (PPState.state ×× PPState.iis)
                 $ write_mem_xcl tid addr vdata macc mem val;
         msetv PPState.mem mem;;
         mret (Ok ())
