@@ -597,7 +597,7 @@ Module CProm.
     }.
   #[global] Instance eta : Settable _ :=
     settable! make <proms>.
-  
+
   #[global] Instance union : Union t := fun x y => CProm.make (x.(proms) ∪ y.(proms)).
 
   Definition init : t := make ∅.
@@ -735,8 +735,9 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel :=
 Definition UMPromising_cert_nc isem :=
   Promising_to_Modelnc isem (UMPromising_cert' isem).
 
-Program Definition UMPromising_exe' (isem : iMon ()) (n : nat) 
-                                    (term : terminationCondition n) 
+(** Implement the Executable Promising Model *)
+
+Program Definition UMPromising_exe' (isem : iMon ())
     : BasicExecutablePM :=
   {|pModel := UMPromising_cert' isem;
     promise_select :=
@@ -747,7 +748,5 @@ Program Definition UMPromising_exe' (isem : iMon ()) (n : nat)
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 
-(** Implement the Executable Promising Model *)
-
-Definition UMPromising_cert_c isem n term :=
-  Promising_to_Modelc isem (UMPromising_exe' isem n term).
+Definition UMPromising_cert_c isem fuel :=
+  Promising_to_Modelc isem (UMPromising_exe' isem) fuel.
