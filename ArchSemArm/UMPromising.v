@@ -142,6 +142,12 @@ Module Msg.
   solve_decision.
   Defined.
 
+  #[global] Instance count : Countable t.
+  Proof.
+    eapply (inj_countable' (fun msg => (tid msg, loc msg, val msg))
+                      (fun x => make x.1.1 x.1.2 x.2)).
+    sauto.
+  Qed.
 End Msg.
 
 (* TODO make naming match current latex definition *)
@@ -392,7 +398,8 @@ Module IIS.
   Record t :=
     make {
       strict : view;
-      vpres : list view;
+      vpres : list view; (* for promise computation *)
+      (* CHECK: why is it a list of view, not a single view *)
     }.
 
   #[global] Instance eta : Settable _ :=
@@ -405,8 +412,8 @@ Module IIS.
     iis |> set strict (max v).
 
   (** Add a vpre of a write to the IIS *)
-  Definition add_vpre (vpre : view) (iis : t) : t :=
-    iis |> set vpres (vpre ::.).
+  Definition add_vpre_if (flag : bool) (vpre : view) (iis : t) : t :=
+    if flag then iis |> set vpres (vpre ::.) else iis.
 
 End IIS.
 
@@ -458,21 +465,21 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
   ts ← mget fst;
-  let '(time, mem) :=
+  let '(time, mem, is_added) :=
     match Memory.fulfill msg (TState.prom ts) mem with
-    | Some t => (t, mem)
-    | None => Memory.promise msg mem
+    | Some t => (t, mem, false)
+    | None => (Memory.promise msg mem, true)
     end in
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
+  mset snd $ IIS.add_vpre_if is_added vpre;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;
-  mset snd $ IIS.add_vpre vpre;;
   mret (mem, time).
 
 
@@ -583,6 +590,84 @@ Section RunOutcome.
   | _ => mthrow "Unsupported outcome".
 End RunOutcome.
 
+Module CProm.
+  Record t :=
+    make {
+      proms : gset Msg.t;
+    }.
+  #[global] Instance eta : Settable _ :=
+    settable! make <proms>.
+  
+  #[global] Instance union : Union t := fun x y => CProm.make (x.(proms) ∪ y.(proms)).
+
+  Definition init : t := make ∅.
+
+  (** Add the latest msg in the mem to the CProm
+      if the corresponding vpre is not bigger than the base *)
+  Definition add_if (mem : Memory.t) (iis : IIS.t) (base : view) (cp : t) : t :=
+    match List.hd_error mem, List.hd_error iis.(IIS.vpres) with
+    | Some msg, Some vpre =>
+      if decide (vpre ≤ base)%nat then
+        cp |> set proms ({[ msg ]} ∪.)
+      else
+        cp
+    | _, _ => cp
+    end.
+
+  Definition to_list (cp : t) : list Msg.t :=
+    elements cp.(proms).
+End CProm.
+
+Section ComputeProm.
+  Context (tid : nat).
+  Context (initmem : memoryMap).
+  Context (term : registerMap → bool).
+
+  Definition run_outcome_with_promise
+              (base : view)
+              (out : outcome) :
+    Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+      ts ← mget (PPState.state ∘ snd);
+      iis ← mget (PPState.iis ∘ snd);
+      res ← Exec.addSt snd $ run_outcome tid initmem out;
+      mem ← mget (PPState.mem ∘ snd);
+      mset fst (CProm.add_if mem iis base);;
+      mret res.
+
+  Program Fixpoint runSt_to_termination
+                      (isem : iMon ())
+                      (fuel : nat)
+                      (base : nat)
+      : Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string () :=
+    match fuel with
+    | 0%nat => mthrow "not enough fuel"
+    | S fuel =>
+      ts ← mget (PPState.state ∘ snd);
+      if term (TState.reg_map ts) then
+        mret ()
+      else
+        let handler := run_outcome_with_promise base in
+        cinterp handler isem;;
+        if term (TState.reg_map ts) then
+          mret ()
+        else
+          runSt_to_termination isem fuel base
+    end.
+
+  Definition run_to_termination (isem : iMon ())
+                                (fuel : nat)
+                                (ts : TState.t)
+                                (mem : Memory.t)
+      : Exec.res string Msg.t :=
+    let base := List.length mem in
+    Exec.success_state_list $
+      runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init)
+    |> map fst
+    |> foldl union CProm.init
+    |> CProm.to_list
+    |> mchoosel.
+End ComputeProm.
+
 (** * Implement GenPromising ***)
 
 (** A thread is allowed to promise any promises with the correct tid for a
@@ -631,8 +716,7 @@ Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
          TState.prom ts' = []
   ]}.
 
-
-Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
+Definition UMPromising_cert' (isem : iMon ()) : PromisingModel :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
@@ -650,3 +734,20 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel  :=
 
 Definition UMPromising_cert_nc isem :=
   Promising_to_Modelnc isem (UMPromising_cert' isem).
+
+Program Definition UMPromising_exe' (isem : iMon ()) (n : nat) 
+                                    (term : terminationCondition n) 
+    : BasicExecutablePM :=
+  {|pModel := UMPromising_cert' isem;
+    promise_select :=
+      (* termination condition *)
+      λ fuel tid term initmem ts mem,
+          run_to_termination tid initmem term isem fuel ts mem
+  |}.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
+
+(** Implement the Executable Promising Model *)
+
+Definition UMPromising_cert_c isem n term :=
+  Promising_to_Modelc isem (UMPromising_exe' isem n term).

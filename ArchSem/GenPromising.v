@@ -189,8 +189,9 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           failing, promise_select effectively computes the allowed_promises
           set.*)
       promise_select :
-        (* fuel *) nat → (* tid *) nat → (* termination condition *) (registerMap → bool) →
-        memoryMap → pModel.(tState) → PromMemory.t pModel.(mEvent) → 
+        (* fuel *) nat → (* tid *) nat →
+        (* termination condition *) (registerMap → bool) →
+        memoryMap → pModel.(tState) → PromMemory.t pModel.(mEvent) →
         Exec.res string pModel.(mEvent);
 
       promise_select_sound :
@@ -205,9 +206,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     }.
   Arguments BasicExecutablePM : clear implicits.
 
-
   Module PState. (* namespace *)
-
     Section PS.
       Context {tState : Type}.
       Context {mEvent : Type}.
@@ -226,7 +225,6 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       #[global] Typeclasses Transparent tstate.
     End PS.
     Arguments t : clear implicits.
-
 
     Section PSProm.
       Context (isem : iMon ()).
