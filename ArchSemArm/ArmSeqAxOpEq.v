@@ -5185,57 +5185,6 @@ Proof.
     by econstructor.
 Qed.
 
-(*
-Lemma seq_model_cinterp_ISA_match isem st st_succ ret :
-  Candidate.ISA_match (seq_state_to_pe st) isem →
-  (st_succ, ret) ∈
-    cinterp (sequential_model_outcome_logged (Some regs_whitelist)) isem st →
-  Candidate.ISA_match (seq_state_to_pe st_succ) isem.
-Proof.
-  unfold Candidate.ISA_match, build_pre_exec.
-  depelim tid; last depelim tid.
-  intros.
-  specialize (H 0%fin).
-  cbn in *.
-  revert dependent st st_succ trc.
-  induction isem as [|[|[]]];
-  cdestruct |- ***.
-  - by eapply H.
-  - unfold trace_rev in H3.
-    cdestruct x, H1 |- ***.
-    set_unfold in H3.
-    cdestruct H3 |- ***.
-    cbv [set] in *; cbn in *.
-    cdestruct l,f, H3, H4 |- ***.
-    eapply sequential_model_outcome_logged_succ_tr in H1; eauto.
-    unfold trace_cons in *.
-    cbv [set] in *; cbn in *.
-    destruct (decide ())
-    Locate cmatch.
-
-  Print cmatch . eapply H.
-    admit.
-  - eapply H.
-
-
-  eapply (cinterp_inv_induct _ _ (λ st, cmatch isem st)  (λ _, True)) in H0.
-
-  cbn in *.
-  induction isem as [|[|[]]]; deintros; cdestruct |- ***.
-  - by eapply H.
-  - unfold sequential_model_outcome_logged, fHandler_logger in H0.
-    cdestruct x, H0 |- *** #CDestrEqOpt.
-    opose proof (sequential_model_outcome_same_itrs _ _ _ _ _) as Hstr; eauto.
-    destruct l as [|[]].
-    1: admit.
-    rewrite Hstr in *.
-    eapply H1 in H2.
-    eapply H.
-    rewrite Hstr in *.
-   constructor.
-  all: try constructor.
- *)
-
 Lemma trace_rev_elem_of_P_equiv I itrs :
   (∀ tr ∈ trace_rev itrs, I tr) ↔ (∀ tr ∈ itrs, I (set fst (@rev _) tr)).
 Proof. unfold trace_rev. set_solver. Qed.
@@ -5305,58 +5254,20 @@ Proof.
   eauto.
 Qed.
 
-Lemma final_write_per_pa_seqmodel_correct st pa eid b :
-  seq_inv_predicate st →
-  seq_state_is_nms st →
-  let cd := (seq_state_to_cd st) in
-  Candidate.final_write_per_pa cd !! pa = Some (eid, b) ↔
-  ∃ ev evpa size offset v,
-    pa = (pa_addN evpa offset) ∧
-    cd !! eid = Some ev ∧ is_mem_write ev ∧ get_pa ev = Some evpa ∧
-    get_mem_value ev = Some v ∧ get_size ev = Some size ∧
-    (offset < size)%N ∧ bv_get_byte 8 offset (bvn_val v) = b ∧
-    ∀ eid' ev', cd !! eid' = Some ev' →
-      is_mem_writeP
-        (λ size wr, pa_in_range (WriteReq.pa wr) size pa) ev' →
-        EID.full_po_lt eid' eid ∨ eid' = eid.
+Lemma list_eq_iff {A} (l1 l2 : list A) :
+  (∀ i : nat, l1 !! i = l2 !! i) ↔ l1 = l2.
 Proof.
-  intros H_inv Hnms cd.
-  enough (Candidate.final_write_per_pa cd !! pa = Some (eid, b) ↔
-    ∃ ev evpa size offset v,
-    pa = (pa_addN evpa offset) ∧
-    cd !! eid = Some ev ∧ is_mem_write ev ∧ get_pa ev = Some evpa ∧
-    get_mem_value ev = Some v ∧ get_size ev = Some size ∧
-    (offset < size)%N ∧ bv_get_byte 8 offset (bvn_val v) = b ∧
-    ∀ eid', (eid, eid') ∉ (Candidate.coherence cd)) as H.
-  {
-    setoid_rewrite H; clear H.
-(*     cdestruct pa, H as size wr offset H_lookup H_pa H_size H_byte H_co #CDestrEqOpt.
-    eexists (MemWrite _ _ &→ inl true), wr.(WriteReq.pa), size, offset, wr.(WriteReq.value).
-    deintros; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto.
-    enough (¬ EID.full_po_lt eid eid').
-    1: opose proof (EID.full_po_lt_connex eid eid' _ _ _);
-      unfold lookup, lookup_ev_from_iTraces in *;
-      cdestruct eid, eid' |- *** #CDestrEqOpt #CDestrSplitGoal; by (left+right).
-    intro.
-    apply (H_co eid').
-    apply (cdst_co_acc_inv _ H_inv).
-    eexists _, _; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-    ospecialize (Hnms (eid, eid') _).
-    1: {
-      unfold Candidate.overlapping, Candidate.is_overlapping,
-      Candidate.mem_events, is_mem_event, is_mem_writeP.
-      apply pa_in_range_spec in H0; cdestruct H0.
-      do 5 (cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch;
-        try eexists; try by right).
-      apply pa_overlap_spec; eauto. }
-    unfold Candidate.same_footprint, Candidate.same_pa in *.
-    set_unfold in Hnms; cdestruct Hnms |- *** #CDestrEqOpt. *)
-  }
-Admitted.
+  split; first apply list_eq.
+  naive_solver.
+Qed.
 
-Lemma fold_left_fmap  {A B C} (f : A → B → A) (x : A) (l : list C) (g : C → B) :
+Lemma fold_left_foldl {A B} (f : A → B → A) (x : A) (l : list B) :
+  fold_left f l x = foldl f x l.
+Proof. induction l in x |- *; naive_solver. Qed.
+
+Lemma fold_left_fmap {A B C} (f : A → B → A) (x : A) (l : list C) (g : C → B) :
 	fold_left f (g <$> l) x = fold_left (λ (a : A) (b : C), f a (g b)) l x.
-Admitted.
+Proof. rewrite ?fold_left_foldl. apply foldl_fmap. Qed.
 
 Lemma fold_left_mjoin {A B} f (l : list (list B)) (a : A) :
   fold_left (λ acc l, fold_left f l acc) l a = fold_left f (mjoin l) a.
@@ -5402,6 +5313,452 @@ Proof.
   by rewrite Combinators.compose_assoc, (H m).
 Qed.
 
+Lemma event_list_snoc_empty init itrs trend :
+  Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [#itrs ++ [([], trend)]] |} =
+  Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [#itrs] |}.
+Proof.
+  unfold Candidate.event_list, Candidate.iEvent_list, Candidate.instruction_list.
+  rewrite ?enumerate_imap.
+  cbn.
+  rewrite ?imap_app, ?bind_app, ?app_nil_r.
+  done.
+Qed.
+
+Lemma event_list_snoc_not_empty init itrs :
+  Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [# itrs] |} ≠ [] →
+  ∃ itrs' itr trend ev,
+  Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [# itrs] |} =
+  Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [# itrs' ++ [(itr ++ [ev], trend)]] |}.
+Proof.
+  induction itrs as [|[itr]] using rev_ind.
+  1: by cbv.
+  destruct (decide (itr = [])) as [->|Hend%exists_last].
+  2: { destruct Hend as [? [ev ->]]; eauto. }
+  intros ?.
+  rewrite event_list_snoc_empty in *.
+  ospecialize (IHitrs _); eauto.
+Qed.
+
+Lemma trace_snoc_unfolded itrs itr trend ev :
+  trace_snoc ev (itrs ++ [(itr,trend)]) = itrs ++ [(itr ++ [ev],trend)].
+Proof.
+  unfold trace_snoc, unsnoc_total.
+  by rewrite unsnoc_snoc.
+Qed.
+
+Lemma event_list_ordered (pe : Candidate.pre Candidate.NMS 1) front back :
+  Candidate.event_list pe = front ++ back →
+  ∀ eid ev eid' ev', (eid,ev) ∈ front → (eid',ev') ∈ back →
+  EID.full_po_lt eid eid'.
+Proof.
+  destruct pe.
+  do 2 depelim events.
+  revert front h.
+  induction back using rev_ind; cdestruct |- ***.
+  opose proof (event_list_snoc_not_empty init h0 _).
+  1: rewrite H; destruct front, back; set_solver.
+  cdestruct H2 |- ***.
+  rewrite H2 in *; clear H2.
+  rewrite <- trace_snoc_unfolded in *.
+  rewrite trace_snoc_event_list in *.
+  rewrite app_assoc in H.
+  eapply app_inj_tail in H.
+  cdestruct x, H.
+  cdestruct eid', ev', H |- *** #CDestrSplitGoal.
+  1: eapply IHback; eauto.
+  assert ((eid, ev) ∈ Candidate.event_list (et := Candidate.NMS) {| Candidate.init := init; Candidate.events := [# x0 ++ [(x1, x2)]] |}).
+  1: rewrite H; set_solver.
+  cdestruct eid, H1 |- *** #CDestrEqOpt.
+  apply eid_full_po_lt_intra_trace_eid_succ.
+  rewrite lookup_unfold in H1; done.
+Qed.
+
+Lemma seq_partition_ordered n1 n2 l1 l2 :
+  seq n1 n2 = l1 ++ l2 → ∀ x ∈ l1, ∀ y ∈ l2, x < y.
+Proof.
+  induction l2 in n1, n2, l2 |- * using rev_ind; cdestruct |- *** #CDestrSplitGoal.
+  - destruct n2; first (destruct l1, l2; discriminate).
+    rewrite seq_end, app_assoc in H.
+    apply app_inj_tail in H; cdestruct H.
+    eapply IHl2; eauto.
+  - destruct n2; first (destruct l1, l2; discriminate).
+    rewrite seq_end, app_assoc in H.
+    apply app_inj_tail in H; cdestruct H.
+    assert (x0 ∈ l1 ++ l2) by set_solver.
+    rewrite <- H in *.
+    set_unfold.
+    lia.
+Qed.
+
+Lemma seq_partition_complete_smaller n1 n2 l1 l2 x :
+  seq n1 n2 = l1 ++ x :: l2 → ∀ y, n1 ≤ y < x ↔ y ∈ l1.
+Proof using regs_whitelist.
+  induction l1 in n1, n2, l2 |- *; cdestruct |- ***.
+  1: destruct n2; deintros; cdestruct |- *** #CDestrSplitGoal; lia.
+  destruct n2; first done; deintros; cdestruct |- ***.
+  set_unfold.
+  setoid_rewrite <- IHl1; eauto.
+  cdestruct |- *** #CDestrSplitGoal; try lia.
+  assert (x ∈ l1 ++ x :: l2) by set_solver.
+  rewrite <- H in *.
+  set_solver.
+Qed.
+
+Lemma final_write_per_pa_seqmodel_correct st pa eid b :
+  seq_inv_predicate st →
+  seq_state_is_nms st →
+  let cd := (seq_state_to_cd st) in
+  Candidate.final_write_per_pa cd !! pa = Some (eid, b) ↔
+  ∃ ev evpa size offset v,
+    pa = (pa_addN evpa offset) ∧
+    cd !! eid = Some ev ∧ is_mem_write ev ∧ get_pa ev = Some evpa ∧
+    get_mem_value ev = Some v ∧ get_size ev = Some size ∧
+    (offset < size)%N ∧ bv_get_byte 8 offset (bvn_val v) = b ∧
+    ∀ eid' ev', cd !! eid' = Some ev' →
+      is_mem_writeP
+        (λ size wr, pa_in_range (WriteReq.pa wr) size pa) ev' →
+        EID.full_po_lt eid' eid ∨ eid' = eid.
+Proof.
+  intros H_inv Hnms cd.
+  enough (Candidate.final_write_per_pa cd !! pa = Some (eid, b) ↔
+    ∃ ev evpa size offset v,
+    pa = (pa_addN evpa offset) ∧
+    cd !! eid = Some ev ∧ is_mem_write ev ∧ get_pa ev = Some evpa ∧
+    get_mem_value ev = Some v ∧ get_size ev = Some size ∧
+    (offset < size)%N ∧ bv_get_byte 8 offset (bvn_val v) = b ∧
+    ∀ eid', (eid, eid') ∉ (Candidate.coherence cd)) as H.
+  {
+    setoid_rewrite H; clear H.
+    split.
+    - cdestruct |- *** #CDestrEqOpt.
+      eexists _, _, _, _, _.
+      unfold is_mem_writeP, is_mem_write_reqP.
+      cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto; try done.
+      enough (¬ EID.full_po_lt eid eid').
+      1: opose proof (EID.full_po_lt_connex eid eid' _ _ _ ).
+      1-4: unfold lookup, lookup_ev_from_iTraces in *; deintros;
+        cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; naive_solver.
+      intro.
+      eapply (H3 eid').
+      apply (cdst_co_acc_inv _ H_inv).
+      eexists _, _.
+      unfold is_mem_writeP, is_mem_write_reqP.
+      cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt; eauto; try done.
+      all: destruct ev' as [[]]; try fast_done; deintros; cdestruct |- *** #CDestrMatch.
+      ospecialize (Hnms (eid, eid') _).
+      1: {
+        unfold Candidate.overlapping, Candidate.is_overlapping,
+        Candidate.mem_events, is_mem_event, is_mem_writeP.
+        apply pa_in_range_spec in H5; cdestruct H5.
+        do 5 (cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch;
+          try eexists; try by right).
+        apply pa_overlap_spec; eauto. }
+      unfold Candidate.same_footprint, Candidate.same_pa in *.
+      set_unfold in Hnms; cdestruct Hnms |- *** #CDestrEqOpt.
+    - cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eexists _, _, _, _, _;
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      intros Hco%(cdst_co_acc_inv _ H_inv); cdestruct Hco #CDestrEqOpt.
+      unfold is_mem_write in *.
+      ospecialize (H3 eid' _ _ _); cdestruct |- *** #CDestrEqOpt.
+      1: eapply pa_in_range_spec; eexists x2; split; first sauto.
+      1: ospecialize (Hnms (eid, eid') _).
+      1: {
+        unfold Candidate.overlapping, Candidate.is_overlapping, Candidate.mem_events,
+          is_mem_event, is_mem_writeP.
+        do 5 (cdestruct eid, eid' |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch;
+          try eexists; try by right).
+        eapply pa_overlap_spec.
+        eexists 0%N, 0%N.
+        opose proof (pcdst_mem_acc_legal _ H_inv eid' _ _); cdestruct |- *** #CDestrEqOpt; cbn in *.
+        rewrite ?pa_addN_zero.
+        cdestruct |- *** #CDestrSplitGoal.
+        all: lia.
+      }
+      1: unfold Candidate.same_footprint, Candidate.same_size in *; deintros;
+        cdestruct |- *** #CDestrEqOpt.
+      cdestruct eid, H3 |- *** #CDestrSplitGoal.
+  }
+  unfold Candidate.final_write_per_pa.
+  fold_left_inv_complete_pose
+    (λ mmap unproc proc,
+      ∀ pa (eid : EID.t) b, mmap !! pa = Some (eid, b) ↔
+      ∃ ev evpa size offset val, (eid, ev) ∈ proc ∧ is_mem_write ev ∧
+        get_pa ev = Some evpa ∧
+        pa_addN evpa offset = pa ∧ get_size ev = Some size ∧ (offset < size)%N ∧
+        get_mem_value ev = Some val ∧ bv_get_byte 8 offset (bvn_val val) = b ∧
+        ∀ ev' (eid' : EID.t),
+        (eid', ev') ∈ proc → (eid, eid') ∉ Candidate.coherence cd).
+  1: split.
+  all: cdestruct |- *** #CDestrEqOpt.
+  - destruct (decide (is_mem_write f)).
+    + destruct f as [[]]; unfold is_mem_writeP in *; deintros; cdestruct |- *** #CDestrMatch.
+      fold_left_inv_complete_pose
+        (λ mmap unproc proc, (∀ offset ∈ proc, (N.of_nat offset < n)%N) ∧
+        ∀ pa,
+          ∀ (eid : EID.t) b,
+            mmap !! pa = Some (eid, b) ↔
+            (∃ offset ∈ proc, pa = pa_addN (WriteReq.pa wr) (N.of_nat offset) ∧
+              bv_get_byte 8 (N.of_nat offset) (WriteReq.value wr) = b ∧
+              eid = t ∧
+              ∀ '((eid', ev') : EID.t * iEvent) ∈ strt, ∀ n' wr', ev' = MemWrite n' wr' &→ inl true →
+                (eid, eid') ∉ Candidate.coherence (seq_state_to_cd st))
+            ∨ (a !! pa = Some (eid, b) ∧
+              ∀ offset ∈ proc, ¬ pa_in_range (WriteReq.pa wr) (N.of_nat (S offset)) pa)).
+      all: cdestruct |- *** #CDestrEqOpt.
+      * cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
+        setoid_rewrite pa_in_range_spec; unfold not.
+        1: right; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+      * split.
+        1: cdestruct |- *** #CDestrSplitGoal; last by eapply H5.
+        1: enough (x ∈ seq 0 (N.to_nat n)) by (set_unfold; lia).
+        1: set_solver.
+        assert (a0 !! pa_addZ (WriteReq.pa wr) (Z.of_nat x) =
+            a !! pa_addZ (WriteReq.pa wr) (Z.of_nat x)) as ->.
+        {
+          eapply option_eq; intros [].
+          setoid_rewrite H6.
+          opose proof (pcdst_mem_acc_legal _ H_inv t _ _); cdestruct |- *** #CDestrEqOpt; cbn in *.
+          cdestruct |- *** #CDestrSplitGoal.
+          - opose proof (seq_partition_ordered _ _ _ _ H4 x0 _ x _).
+            all: cdestruct |- ***.
+            1: by left.
+            unfold pa_addN in *; eapply pa_addZ_lt_max_mem_acc_size_inj in H9; try lia.
+          - right; cdestruct |- *** #CDestrSplitGoal.
+            intros ?%pa_in_range_spec; deintros; cdestruct |- ***.
+            unfold pa_addN in *; eapply pa_addZ_lt_max_mem_acc_size_inj in H11; try lia.
+            2: { ospecialize (H5 offset _); try done. lia. }
+            opose proof (seq_partition_ordered _ _ _ _ H4 offset _ x _); cdestruct |- ***.
+            1: by left.
+            lia.
+        }
+        split.
+        {
+          cdestruct |- *** #CDestrSplitGoal #CDestrMatch.
+          1:{
+            exfalso.
+            eapply H1 in H7; cdestruct H7.
+            opose proof (event_list_ordered _ _ _ H0 t0 (MemWrite x5 x6 &→ x7) t _ _ _);
+            cdestruct |- ***.
+            1: by left.
+            apply (cdst_co_acc_inv _ H_inv) in e; cdestruct e #CDestrEqOpt.
+          }
+          {
+            rewrite lookup_unfold in H8; deintros; cdestruct |- *** #CDestrMatch.
+            1: left; eexists x; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first by left.
+            1: unfold pa_addN; f_equal; lia.
+            1: intros Hco%(cdst_co_acc_inv _ H_inv).
+            1: opose proof (event_list_ordered _ _ _ H0 t1 _ t _ _ _); cdestruct |- ***; eauto;
+              deintros; cdestruct |- ***.
+            apply H6 in H9; cdestruct H9 #CDestrEqOpt #CDestrSplitGoal.
+            1: left; eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first by right.
+            all: try done.
+            1: intros Hco%(cdst_co_acc_inv _ H_inv).
+            1: opose proof (event_list_ordered _ _ _ H0 t1 _ t _ _ _); cdestruct |- ***; eauto;
+              deintros; cdestruct |- ***.
+            right; split; try done.
+            cdestruct |- *** #CDestrSplitGoal; last sauto.
+            intros ?%pa_in_range_spec; deintros; cdestruct |- ***.
+            opose proof (pcdst_mem_acc_legal _ H_inv t _ _); cdestruct |- *** #CDestrEqOpt; cbn in *.
+            destruct (decide (x =  N.to_nat x0)) as [->|];
+              first (eapply H8; unfold pa_addN; f_equal; by rewrite ?N_nat_Z).
+            eapply (H10 (N.to_nat x0)).
+            1: opose proof (seq_partition_complete_smaller _ _ _ _ _ H4 (N.to_nat x0)).
+            1: set_unfold; eapply H13.
+            1: lia.
+            apply pa_in_range_spec; eexists; split; eauto; lia.
+          }
+          {
+            rewrite lookup_unfold in H8; deintros; cdestruct |- *** #CDestrMatch.
+            1: left; eexists x; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first by left.
+            1: unfold pa_addN; f_equal; lia.
+            1: intros Hco%(cdst_co_acc_inv _ H_inv).
+            1: opose proof (event_list_ordered _ _ _ H0 t0 _ t _ _ _); cdestruct |- ***; eauto;
+              deintros; cdestruct |- ***.
+            apply H6 in H9; cdestruct H9 #CDestrEqOpt #CDestrSplitGoal.
+            1: left; eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; first by right.
+            all: try done.
+            1: intros Hco%(cdst_co_acc_inv _ H_inv).
+            1: opose proof (event_list_ordered _ _ _ H0 t0 _ t _ _ _); cdestruct |- ***; eauto;
+              deintros; cdestruct |- ***.
+            right; split; try done.
+            cdestruct |- *** #CDestrSplitGoal; last sauto.
+            intros ?%pa_in_range_spec; deintros; cdestruct |- ***.
+            opose proof (pcdst_mem_acc_legal _ H_inv t _ _); cdestruct |- *** #CDestrEqOpt; cbn in *.
+            destruct (decide (x =  N.to_nat x0)) as [->|];
+              first (eapply H8; unfold pa_addN; f_equal; by rewrite ?N_nat_Z).
+            eapply (H10 (N.to_nat x0)).
+            1: opose proof (seq_partition_complete_smaller _ _ _ _ _ H4 (N.to_nat x0)).
+            1: set_unfold; eapply H13.
+            1: lia.
+            apply pa_in_range_spec; eexists; split; eauto; lia.
+          }
+        }
+        {
+          unfold pa_addN in *; setoid_rewrite nat_N_Z; rewrite ?nat_N_Z in *.
+          opose proof (pcdst_mem_acc_legal _ H_inv t _ _).
+          1: cdestruct |- *** #CDestrEqOpt; cbn in *.
+          unfold legal_memory_acc_ev in *; cbn in *.
+          cdestruct H7 as Hlegal1 Hlegal2.
+          deintros; cdestruct |- *** #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
+          1,4,7: apply (cdst_co_acc_inv _ H_inv) in e; cdestruct e |- *** #CDestrEqOpt.
+          1: eapply H1 in H8.
+          2,3: eapply H1 in H9.
+          1-3: cdestruct t0 |- ***; exfalso.
+          1-3: opose proof (event_list_ordered _ _ _ H0 t0 _ t _ _ _); cdestruct |- ***; eauto.
+          1-3: deintros; cdestruct |- ***.
+          all: rewrite lookup_unfold; cdestruct |- *** #CDestrMatch #CDestrSplitGoal.
+          1,3: opose proof (seq_partition_ordered _ _ _ _ H4 x0 _ x _);
+            cdestruct |- ***; try by left.
+          1,2: eapply pa_addZ_lt_max_mem_acc_size_inj in H10; try lia.
+          1,2: eapply H6; left; eexists; cdestruct |- *** #CDestrSplitGoal; eauto.
+          1,3: f_equal; lia.
+          1,2: intros Hco%(cdst_co_acc_inv _ H_inv); cdestruct Hco |- *** #CDestrEqOpt.
+          1-2: deintros; cdestruct |- ***; exfalso.
+          1-2: opose proof (event_list_ordered _ _ _ H0 _ _ t _ _ _); cdestruct |- ***; eauto.
+          1-2: deintros; cdestruct |- ***.
+          1,2,4,5: exfalso; eapply (H8 x); first by left.
+          1-4: eapply pa_in_range_spec; eexists (N.of_nat x); split; last lia.
+          1-4: unfold pa_addN in *; by setoid_rewrite nat_N_Z.
+          all: eapply H6; right; cdestruct |- *** #CDestrSplitGoal; eapply H8; set_solver.
+        }
+      * cbn in *.
+        cdestruct H2.
+        setoid_rewrite H3; clear H3.
+        split; cdestruct |- *** #CDestrEqOpt.
+        {
+          cdestruct t, H3 |- *** #CDestrSplitGoal #CDestrEqOpt.
+          1: eexists (MemWrite n wr &→ inl true), _, _, _, _;
+          cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
+          1: by left.
+          1: eapply H2; cdestruct |- ***; lia.
+          1: intros Hco%(cdst_co_acc_inv _ H_inv); cdestruct Hco #CDestrEqOpt.
+          1: intros Hco; opose proof Hco; apply (cdst_co_acc_inv _ H_inv) in Hco;
+             cdestruct Hco #CDestrEqOpt.
+          1: eapply (H7 (eid', _)); eauto.
+          1: enough ((eid', ev') ∈ Candidate.event_list (build_pre_exec (initSt st) (itrs st))) as Hev.
+          1: by cdestruct Hev #CDestrEqOpt.
+          1: rewrite H0; set_solver.
+          setoid_rewrite H1 in H3.
+          cdestruct H3; eexists _, _, _, _, _; repeat apply conj.
+          1: by right.
+          all: eauto.
+          unfold not; cdestruct pa1 |- *** #CDestrSplitGoal.
+          2: eapply H9; eauto.
+          setoid_rewrite pa_in_range_spec in H4.
+          opose proof (pcdst_mem_acc_legal _ H_inv t _ _); cdestruct |- *** #CDestrEqOpt; cbn in *.
+          ospecialize (H4 (N.to_nat (N.pred n)) _).
+          1: set_unfold; lia.
+          apply (cdst_co_acc_inv _ H_inv) in H6; cdestruct H6 #CDestrEqOpt.
+          assert ((eid0, MemWrite x4 x5 &→ x6) ∈ Candidate.event_list (seq_state_to_pe st))
+            by (rewrite H0; set_solver).
+          deintros; cdestruct |- *** #CDestrEqOpt.
+          eapply H8.
+          eexists x2; cdestruct |- *** #CDestrSplitGoal; first sauto.
+          opose proof (Hnms (t, eid0) _).
+          1: unfold  Candidate.overlapping, Candidate.is_overlapping, Candidate.mem_events, Candidate.mem_writes;
+            cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal;
+            do 5 (deintros; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch;
+          try eexists; try by right).
+          1: eapply pa_overlap_spec; eexists 0%N, 0%N.
+          1: cdestruct |- *** #CDestrSplitGoal; first lia.
+          1: sauto.
+          unfold Candidate.same_footprint, Candidate.same_size in *.
+          cdestruct t |- *** #CDestrEqOpt.
+          lia.
+        }
+        {
+          deintros; cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt.
+          - left; eexists (N.to_nat x2).
+            cdestruct |- *** #CDestrSplitGoal.
+            3,4: f_equal.
+            1,2,3,4: lia.
+            eapply H8.
+            by right.
+          - right.
+            setoid_rewrite H1.
+            cdestruct |- *** #CDestrSplitGoal.
+            + eexists _, _, _, _, _;
+              cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto.
+              eapply H8.
+              by right.
+            + setoid_rewrite pa_in_range_spec.
+              unfold not; cdestruct |- ***.
+              eapply (H8 _ t).
+              1: by left.
+              apply (cdst_co_acc_inv _ H_inv).
+              assert ((eid0, MemWrite x4 x5 &→ inl b1) ∈ Candidate.event_list (seq_state_to_pe st))
+                by (rewrite H0; set_solver).
+              cdestruct eid0 |- *** #CDestrEqOpt.
+              eexists (MemWrite x4 x5 &→ inl b1), (MemWrite n wr &→ inl true);
+              cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+              * ospecialize (Hnms (eid0, t) _).
+                1: {
+                  opose proof (mem_writes_succeed _ H_inv (MemWrite x4 x5 &→ inl b1) _ _);
+                  first (cdestruct |- *** #CDestrEqOpt; eexists (eid0,_); cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt).
+                  1: sauto.
+                  cdestruct b1 |- ***.
+                  unfold Candidate.overlapping, Candidate.is_overlapping, Candidate.mem_events,
+                    is_mem_event, is_mem_writeP.
+                  do 5 (cdestruct eid0, t |- *** #CDestrEqOpt #CDestrSplitGoal #CDestrMatch;
+                    try eexists; try by right).
+                  eapply pa_overlap_spec.
+                  eexists _, _; cdestruct |- *** #CDestrSplitGoal.
+                  all: lia.
+                }
+                cbn in *.
+                unfold Candidate.same_footprint, Candidate.same_pa in *.
+                cdestruct Hnms |- *** #CDestrEqOpt.
+              * opose proof (event_list_ordered _ _ _ H0 eid0 _ t _ _ _);
+                cdestruct |- *** #CDestrEqOpt; eauto.
+        }
+    + enough (a !! pa0 = Some (eid0, b0)
+      ↔ ∃ (ev : iEvent) (evpa : Arch.pa) (size offset : N) (val : bvn),
+        (eid0, ev) ∈ (t, f) :: strt
+        ∧ is_mem_write ev
+          ∧ get_pa ev = Some evpa
+            ∧ pa_addN evpa offset = pa0
+              ∧ get_size ev = Some size
+                ∧ (offset < size)%N
+                  ∧ get_mem_value ev = Some val
+                    ∧ @bv_get_byte 8 offset (bvn_n val) (bvn_val val) = b0
+                    ∧ ∀ (ev' : iEvent) (eid' : EID.t),
+                        (eid', ev') ∈ (t, f) :: strt
+                      → (eid0, eid') ∉
+                      co_acc (construct_cd_for_pe
+                        (build_pre_exec (initSt st) (itrs st)) cd∅)).
+      1:{
+        opose proof (mem_writes_succeed _ H_inv f).
+        unfold is_mem_writeP in *; destruct f as [[]]; try assumption.
+        ospecialize (H3 _ _); cdestruct |- *** #CDestrEqOpt #CDestrMatch.
+        1: eexists (t, _); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+        deintros; by cdestruct |- *** #CDestrMatch.
+      }
+      setoid_rewrite H1; clear H1.
+      unfold is_mem_writeP.
+      split.
+      all: cdestruct |- *** #CDestrEqOpt.
+      all: eexists _, _, _, _, _.
+      all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto.
+      all: unfold is_mem_writeP in *.
+      2: instantiate (1 := MemWrite x4 x5 &→ x6).
+      all: cbn; eauto.
+      1: intros ?%(cdst_co_acc_inv _ H_inv); deintros; by cdestruct |- *** #CDestrEqOpt.
+      2: eapply H6; by right.
+      cdestruct f, H1 |- *** #CDestrEqOpt #CDestrSplitGoal.
+  - cbn in *.
+    setoid_rewrite H; clear H.
+    split.
+    all: cdestruct |- *** #CDestrEqOpt.
+    all: eexists _, _, _, _, _.
+    all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; eauto.
+    intro.
+    opose proof H4.
+    apply (cdst_co_acc_inv _ H_inv) in H4.
+    cdestruct H4 #CDestrEqOpt.
+    eapply (H3 _ eid').
+    all: cdestruct |- *** #CDestrEqOpt.
+Qed.
+
 Lemma final_reg_map_tid_seqmodel_correct st reg (v : reg_type reg) :
   seq_inv_predicate st →
   let cd := (seq_state_to_cd st) in
@@ -5411,8 +5768,7 @@ Lemma final_reg_map_tid_seqmodel_correct st reg (v : reg_type reg) :
     ∀ eid' ev', cd !! eid' = Some ev' → is_reg_write ev' → get_reg ev' = Some reg →
       EID.full_po_lt eid' eid ∨ eid' = eid) ∨
     ((¬ ∃ ev eid, cd !! eid = Some ev ∧ is_reg_write ev ∧ get_reg ev = Some reg) ∧
-      v = (st.(initSt).(MState.regs) !!! 0%fin) reg)
-  →
+      v = (st.(initSt).(MState.regs) !!! 0%fin) reg) →
   Candidate.final_reg_map_tid cd 0%fin reg = v.
 Proof.
   cdestruct |- *** #CDestrEqOpt.
@@ -5420,18 +5776,82 @@ Proof.
   erewrite <- (fold_left_fmap  (λ x y, fold_left _ y x) None (Candidate.events (build_pre_exec (initSt st) (itrs st)) !!! 0%fin) fst).
   rewrite fold_left_mjoin, Cand_events_event_list.
   rewrite fold_left_fmap.
-  fold_left_inv_complete_pose (λ val unproc proc, (if val is Some v then (∃ eid ev, (eid,ev) ∈ proc ∧ get_reg_val ev = Some (existT reg v)) else True) ∧
-  ∀ '(eid,ev) ∈ unproc, ∀ '(eid', ev') ∈ proc, EID.full_po_lt eid' eid).
+  fold_left_inv_complete_pose
+    (λ val unproc proc,
+      (if val is Some v
+      then
+        (∃ eid ev, (eid,ev) ∈ proc ∧ is_reg_write ev ∧ get_reg_val ev = Some (existT reg v) ∧
+        ∀ eid' ev', (eid',ev') ∈ proc → is_reg_write ev' → get_reg ev' = Some reg → EID.full_po_lt eid' eid ∨ eid' = eid)
+      else ∀ '(eid, ev) ∈ proc, ¬ is_reg_write ev ∨ get_reg ev ≠ Some reg) ∧
+      ∀ '(eid,ev) ∈ unproc, ∀ '(eid', ev') ∈ proc, EID.full_po_lt eid' eid).
   1,2: cdestruct |- *** #CDestrSplitGoal #CDestrEqOpt #CDestrMatch.
-  - destruct fcall.
-    all: try solve [eexists x,x0; cdestruct x, x0 |- *** #CDestrSplitGoal; try done; set_solver].
-    cdestruct reg, r0, H6 |- *** #CDestrMatch.
-    1: eexists t, (RegWrite reg0 racc regval &→ fret); cdestruct |- *** #CDestrSplitGoal; naive_solver.
-    eexists x, x0; cdestruct |- *** #CDestrSplitGoal; naive_solver.
-  -
-  Search foldl fmap.
-
-Admitted.
+  2,3,7: destruct fcall; unfold is_reg_writeP; cdestruct reg |- *** #CDestrMatch; naive_solver.
+  - destruct (decide (is_reg_write (fcall &→ fret))).
+    2: {
+      assert (r = r0) as -> by (unfold is_reg_write; destruct fcall; naive_solver).
+      eexists x, (RegWrite reg x2 r0 &→ ()); cdestruct |- *** #CDestrSplitGoal.
+      1: by right.
+      1: unfold is_reg_writeP in *; naive_solver.
+      by eapply H4.
+    }
+    unfold is_reg_writeP.
+    destruct fcall; try done.
+    cdestruct r, r0, H6 |- *** #CDestrMatch.
+    2: {
+      eexists x, (RegWrite reg x2 r &→ ()); cdestruct |- *** #CDestrSplitGoal.
+      1: by right.
+      1: unfold is_reg_writeP in *; naive_solver.
+    }
+    eexists t, (RegWrite reg0 racc regval &→ fret).
+    cdestruct reg0 |- *** #CDestrSplitGoal.
+    1,2: naive_solver.
+    rewrite cons_middle in H2.
+    eapply event_list_ordered in H2; eauto.
+    1: instantiate (1 := ev').
+    1: set_solver.
+    eapply elem_of_app; left; sfirstorder.
+  - rewrite cons_middle, app_assoc in H2.
+    eapply event_list_ordered; eauto.
+    eapply elem_of_app; right; sfirstorder.
+  - rewrite cons_middle, app_assoc in H2.
+    eapply event_list_ordered; eauto.
+    instantiate (1 := i1).
+    set_solver.
+  - destruct fcall; try done.
+    cdestruct reg0, H4 |- *** #CDestrMatch.
+    eexists t, (RegWrite reg racc r &→ ()).
+    cdestruct |- *** #CDestrSplitGoal.
+    1,2: naive_solver.
+    rewrite cons_middle in H2.
+    eapply event_list_ordered in H2; eauto.
+    1: instantiate (1 := RegWrite reg x0 x1 &→ ()).
+    1: set_solver.
+    eapply elem_of_app; left; sfirstorder.
+  - unfold not; cdestruct |- ***.
+    ospecialize (H3 (t0,i) _); eauto.
+    unfold is_reg_writeP in *.
+    cdestruct i, H3 |- *** #CDestrSplitGoal; naive_solver.
+  - rewrite cons_middle, app_assoc in H2.
+    eapply event_list_ordered; eauto.
+    instantiate (1 := i).
+    set_solver.
+  - eapply event_list_ordered; eauto.
+    1: instantiate (1 := i1); set_solver.
+    instantiate (1 := i0); set_solver.
+  - cdestruct H0, H1 |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
+    + enough (x = x0) by naive_solver.
+      ospecialize (H1 x (RegWrite reg x4 r &→ ()) _ _ _);
+      cdestruct |- *** #CDestrEqOpt.
+      ospecialize (H4 x0 _ _ _ _);
+      cdestruct |- *** #CDestrEqOpt.
+      cdestruct x, x0 |- *** #CDestrSplitGoal.
+    + ospecialize (H3 (x0, (RegWrite reg x2 v &→ ())) _); unfold is_reg_writeP in *;
+      deintros; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal; done.
+    + exfalso.
+      eapply H0.
+      eexists _, x.
+      cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
+Qed.
 
 Lemma seq_model_cd_MState_final_match st :
   seq_inv_predicate st →
@@ -5521,23 +5941,6 @@ Proof.
       eapply H0; sauto.
 Qed.
 
-
-
-
-      Search (¬ _ = None).
-      1: best.
-      f_equal.
-
-      Search (pa_addZ _ _ = _).
-      Set Printing Implicit.
-      unfold pa in *.
-      Set Printing Implicit.
-      Set Typeclasses Debug Verbosity 2.
-      #[local] Typeclasses Transparent .
-      set_unfold in H7.
-      unfold Candidate.final_write_per_pa in *.
-Admitted.
-
 Lemma sequential_model_seqmon_init_always_from_seqst isem fuel st st' init :
   (st', init) ∈ sequential_model_seqmon (Some regs_whitelist) fuel isem st →
   seq_state_to_init st' = init.
@@ -5555,7 +5958,7 @@ Lemma op_model_exists_consistent_cd fuel isem initSt :
       {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |} →
     let cd := (seq_state_to_cd st) in
       Candidate.ISA_match cd isem ∧ cd.(Candidate.pre_exec) = (seq_state_to_pe st) ∧
-      Candidate.cd_to_MState_final cd st.(ArmSeqModel.initSt).(MState.termCond)  = Some fs ∧
+      Candidate.cd_to_MState_final cd st.(ArmSeqModel.initSt).(MState.termCond) = Some fs ∧
       consistent regs_whitelist cd ∧ Candidate.wf cd.
 Proof.
   cdestruct |- *** as Hmemlength ?? Hnms Hexec.
