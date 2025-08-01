@@ -1,18 +1,23 @@
 From ASCommon Require Import Options.
 Require Import ArmSeqModel UMSeqArm.
 Require Import ArmInst.
-From ASCommon Require Import Exec FMon Common GRel StateT.
+From ASCommon Require Import Exec FMon Common GRel.
 From ArchSem Require Import FromSail.
 
-#[local] Typeclasses Transparent Decision RelDecision eq_vec_dec Decidable_eq_mword
-MachineWord.MachineWord.eq_dec decide decide_rel SA.pa_eq.
-(* Temporary *)
+#[local] Typeclasses Transparent Decision RelDecision eq_vec_dec
+  Decidable_eq_mword MachineWord.MachineWord.eq_dec decide decide_rel
+  pa_eq pa_countable.
 
 Import CDestrUnfoldElemOf.
 #[local] Existing Instance Exec.unfold.
 
-#[local] Typeclasses Transparent pa_eq pa_countable.
+Import CDestrUnfoldElemOf.
+#[local] Existing Instance Exec.unfold.
 
+(** * Lemmas about physical address arithmetic *)
+
+(** Addresses use modular arithmetic. Hence memory accesses need to be limited
+    to a maximum size to work correctly *)
 Definition max_mem_acc_size : Z := bv_modulus 52.
 
 Lemma pa_addZ_max_mem_acc_size_neq pa z :
@@ -26,11 +31,14 @@ Proof.
   destruct pa.
   unfold definitions.bv_unsigned, BvWf in *.
   eapply andb_True in bv_is_wf.
-  destruct bv_is_wf as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
+  destruct bv_is_wf
+    as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
   assert (0 < z < bv_modulus 56)%Z by (unfold bv_modulus in *; lia); clear H.
-  assert ((bv_unsigned + z < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + z)%Z) as [|] by lia.
+  assert ((bv_unsigned + z < bv_modulus 56)%Z ∨
+    (bv_modulus 56 ≤ bv_unsigned + z)%Z) as [|] by lia.
   { setoid_rewrite Z.mod_small at 1 2; try lia. }
-  assert ((bv_unsigned + z)%Z = ((bv_unsigned + z - bv_modulus 56) + 1 * bv_modulus 56)%Z) as -> by lia.
+  assert ((bv_unsigned + z)%Z =
+    ((bv_unsigned + z - bv_modulus 56) + 1 * bv_modulus 56)%Z) as -> by lia.
   rewrite Z_mod_plus_full.
   setoid_rewrite Z.mod_small at 1 2; lia.
 Qed.
@@ -48,10 +56,14 @@ Proof.
     unfold bv_wrap in *.
     unfold definitions.bv_unsigned, BvWf in *.
     eapply andb_True in bv_is_wf.
-    destruct bv_is_wf as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
-    assert (∀ x, (bv_unsigned + x)%Z = ((bv_unsigned + x - bv_modulus 56) + 1 * bv_modulus 56)%Z) by lia.
-    assert ((bv_unsigned + x < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + x)%Z) as [|] by lia;
-    assert ((bv_unsigned + y < bv_modulus 56)%Z ∨ (bv_modulus 56 ≤ bv_unsigned + y)%Z) as [|] by lia.
+    destruct bv_is_wf
+      as [?%Is_true_eq_true%Reflect.Z_leb_le ?%Is_true_eq_true%Reflect.Z_ltb_lt].
+    assert (∀ x, (bv_unsigned + x)%Z =
+      ((bv_unsigned + x - bv_modulus 56) + 1 * bv_modulus 56)%Z) by lia.
+    assert ((bv_unsigned + x < bv_modulus 56)%Z ∨
+      (bv_modulus 56 ≤ bv_unsigned + x)%Z) as [|] by lia;
+    assert ((bv_unsigned + y < bv_modulus 56)%Z ∨
+      (bv_modulus 56 ≤ bv_unsigned + y)%Z) as [|] by lia.
     { setoid_rewrite Z.mod_small in H3 at 1 2; try lia. }
     {
       setoid_rewrite Z.mod_small in H3 at 1; try lia.
@@ -59,7 +71,7 @@ Proof.
       rewrite Z_mod_plus_full, Z.mod_small in *.
       all: lia.
     }
-        {
+    {
       setoid_rewrite Z.mod_small in H3 at 2; try lia.
       setoid_rewrite H6 in H3 at 1.
       rewrite Z_mod_plus_full, Z.mod_small in *.
@@ -80,7 +92,8 @@ Qed.
 Lemma pa_addZ_exists_offset pa1 pa2 x y :
   (0 ≤ x)%Z → (0 ≤ y)%Z →
   pa_addZ pa1 x = pa_addZ pa2 y →
-  ∃ o, (0 ≤ o)%Z ∧ (pa_addZ pa1 o = pa2 ∧ (o ≤ x)%Z ∨ pa_addZ pa2 o = pa1 ∧ (o ≤ y)%Z).
+  ∃ o, (0 ≤ o)%Z ∧
+    (pa_addZ pa1 o = pa2 ∧ (o ≤ x)%Z ∨ pa_addZ pa2 o = pa1 ∧ (o ≤ y)%Z).
 Proof.
   cdestruct |- ***.
   destruct (Ztrichotomy (x `mod` bv_modulus 56)%Z (y `mod` bv_modulus 56)%Z) as [|[|]].
@@ -167,6 +180,8 @@ Definition outcome_get_size (call : outcome) : option N :=
   | _ => None
   end.
 
+(** The size of memory accesses cannot be zero or greater than
+    [max_mem_acc_size] to ensure properties in modular arithmetic  *)
 Definition legal_memory_acc (call : outcome) : Prop :=
   if outcome_get_size call is Some size
   then (0 < size < Z.to_N max_mem_acc_size)%N
@@ -181,6 +196,8 @@ Lemma legal_memory_acc_legal_memory_acc_ev ev :
   legal_memory_acc_ev ev ↔ legal_memory_acc ev.(fcall).
 Proof. destruct ev; cdestruct |- *** #CDestrSplitGoal. Qed.
 
+(** An inductive predicate to state properties about all effects issued
+    by a given free monad *)
 Inductive fMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) : fMon Eff A → Prop :=
   | finvPRet : ∀ a, fMon_call_inv P (Ret a)
   | finvPNext : ∀ (call : Eff) k,
@@ -188,6 +205,7 @@ Inductive fMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) : fMon Eff A → Pr
     (∀ (ret : eff_ret call), fMon_call_inv P (k ret)) →
     fMon_call_inv P (Next call k).
 
+(** The analogous predicate for choice monads *)
 Inductive cMon_call_inv {A} `{Effect Eff} (P : Eff → Prop) : cMon Eff A → Prop :=
   | cinvPRet : ∀ a, cMon_call_inv P (Ret a)
   | cinvPNextEff : ∀ (call : Eff) k,
@@ -211,8 +229,11 @@ Proof.
   all: by eapply H0.
 Qed.
 
+(** Memory access issued must have legal size as defined in [legal_memory_acc] *)
 Definition isem_mem_acc_legal_length : iMon () → Prop :=
   cMon_call_inv legal_memory_acc.
+
+(** * Basic automation instances used by [cdestruct] and [lookup_unfold] etc. *)
 
 #[global] Instance lookup_unfold_length_None {A} (l : list A) :
   LookupUnfold (length l) l None.
@@ -238,46 +259,203 @@ Proof. tcclean. intros H. by eapply H. Qed.
   CDestrSimpl b (¬ is_Some x) (x = None).
 Proof. tcclean. sauto. Qed.
 
-Instance Exec_to_state_result_list_Ok {St E A} st (e : Exec.res (St * E) (St * A)) P:
-  (∀ v, SetUnfoldElemOf (st, v) e (P v)) →
-  SetUnfoldElemOf (Ok st) (Exec.to_state_result_list e) (∃ v, P v).
+#[local] Instance cdestruct_Transitive `{Transitive A R} x y z :
+  TCFastDone (R x y) → TCFastDone (R y z) →
+  CDestrSimpl true (R x z) True.
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal. by eapply H. Qed.
+
+#[local] Instance obvFalse_Irreflexive_same `{Irreflexive A R} (x : A):
+  ObvFalse (R x x).
+Proof. tcclean. firstorder. Qed.
+
+#[local] Instance obvFalse_Asymmetric_symmetric `{Asymmetric A R} (x y : A):
+  Incompatible (R x y) (R y x).
+Proof. tcclean. firstorder. Qed.
+
+#[local] Instance eid_full_po_lt_Irreflexive :
+  Irreflexive EID.full_po_lt.
 Proof.
-  tcclean.
-  unfold Exec.to_state_result_list.
-  set_unfold. autorewrite with pair. naive_solver.
+  cdestruct |- *** as [] ?.
+  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+  lia.
 Qed.
 
-Instance Exec_to_state_result_list_Error {St E A} st (e : Exec.res (St * E) (St * A)) P:
-  (∀ v, SetUnfoldElemOf (st, v) e.(Exec.errors) (P v)) →
-  SetUnfoldElemOf (Error st) (Exec.to_state_result_list e) (∃ v, P v).
+#[local] Instance eid_full_po_lt_Asymmetric :
+  Asymmetric EID.full_po_lt.
 Proof.
-  tcclean.
-  unfold Exec.to_state_result_list.
-  set_unfold. autorewrite with pair. naive_solver.
+  cdestruct |- *** as eid1 eid2.
+  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: lia.
 Qed.
 
-Instance Exec_to_state_result_list {St E A} r (e : Exec.res (St * E) (St * A)) P Q:
-  (∀ st v, SetUnfoldElemOf (st, v) e (P st v)) →
-  (∀ st v, SetUnfoldElemOf (st, v) e.(Exec.errors) (Q st v)) →
-  SetUnfoldElemOf r (Exec.to_state_result_list e)
-    (match r with
-    | Ok st => ∃ v, P st v
-    | Error st => ∃ v, Q st v
-    end) | 999 .
-Proof. tcclean. destruct r; set_solver. Qed.
-
-Lemma finterp_all_states_inv_induct `{Effect Eff} {St E A}
-  (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
-  (I : result St St → Prop) (initSt : St)
-  : I (Ok initSt)
-    → (∀ st call, I (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, I st')
-    → ∀ st' ∈ (Exec.to_state_result_list $ FMon.finterp handler mon initSt), I st'.
+#[local] Instance eid_full_po_lt_Transitive :
+  Transitive EID.full_po_lt.
 Proof.
-  intros Hinit Hstep.
-  induction mon as [|? ? IH] in initSt, Hinit |- *;
-  cdestruct |- *** #CDestrMatch;
-  set_solver.
+  unfold EID.full_po_lt, EID.iio_lt, EID.po_lt in *.
+  cdestruct |- *** as [] [] [] ??; deintros; cdestruct |- *** #CDestrSplitGoal.
+  all: lia.
 Qed.
+
+Instance decide_exists_in_gset `{EqDecision A, Countable A} (P : A → Prop) `{∀ a, Decision (P a)} (s : gset A) :
+  Decision (∃ a, P a ∧ a ∈ s).
+  destruct (filter P (elements s)) eqn: ?.
+  - right.
+    unfold not; cdestruct |- ***.
+    eapply (filter_nil_not_elem_of P _ x Heql); eauto.
+    set_solver.
+  - left.
+    exists a.
+    enough (P a ∧ a ∈ (elements s)) by set_solver.
+    eapply (elem_of_list_filter P).
+    rewrite Heql.
+    set_solver.
+Qed.
+
+Lemma if_distribution_option `(f : A → B) `(o : option C) (g : C → A) a :
+  f (if o is Some c then g c else a) = (if o is Some c then f (g c) else f a).
+Proof. by destruct o. Qed.
+
+Lemma if_indiscriminate_cases_option {B} `(x : option A) (y z : B) :
+  y = z → (if x is Some c then y else z) = y.
+Proof. by destruct x. Qed.
+
+#[local] Instance cdestruct_is_some_unit b (o : option ()) P :
+  EqSomeUnfold o () P →
+  CDestrSimpl b (is_Some o) P.
+Proof. tcclean. by cdestruct o, H |- *** #CDestrSplitGoal. Qed.
+
+#[local] Instance cdestruct_is_Some_mret b `(x : A) :
+  CDestrSimpl b (is_Some (mret x : option A)) True.
+Proof. tcclean. unfold mret, option_ret. done. Qed.
+
+#[local] Instance cdestruct_exists_simpl_andr b `(P : A → Prop) Q Q' :
+  CDestrSimpl b Q Q' →
+  CDestrSimpl b (∃ x, P x ∧ Q) (∃ x, P x ∧ Q').
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+#[local] Instance cdestruct_exists_simpl_andl b `(P : A → Prop) Q Q' :
+  CDestrSimpl b Q Q' →
+  CDestrSimpl b (∃ x, Q ∧ P x) (∃ x, Q' ∧ P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+#[local] Instance cdestruct_exists_and_Truel b `(P : A → Prop) :
+  CDestrSimpl b (∃ x, True ∧ P x) (∃ x, P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+#[local] Instance cdestruct_exists_and_Truer b `(P : A → Prop) :
+  CDestrSimpl b (∃ x, P x ∧ True) (∃ x, P x).
+Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
+
+(** * Monotonic relations on events in traces *)
+
+(** The acylicity argument in the refinement proof makes crucial use of the fact
+    that the given relatons are monotone w.r.t. the full instruction order.
+    That is, for any two event IDs related in a (strictly) monotone relationship,
+    the first ID appears before the second ID. *)
+
+Definition rel_strictly_monotone (rel : grel EID.t) : Prop :=
+  ∀ '(x,y) ∈ rel, EID.full_po_lt x y.
+
+(** This definition allows equality in addition to monotonicity *)
+Definition rel_monotone (rel : grel EID.t) : Prop :=
+  ∀ '(x,y) ∈ rel, x = y ∨ EID.full_po_lt x y.
+
+Lemma rel_montone_union (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 ∧ rel_strictly_monotone rel2 ↔ rel_strictly_monotone (rel1 ∪ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma rel_montone_intersection1 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma rel_montone_intersection2 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  all: set_solver.
+Qed.
+
+Lemma grel_from_set_montone (eids : gset EID.t) :
+  rel_monotone ⦗ eids ⦘.
+Proof.
+  unfold rel_monotone.
+  autorewrite with pair.
+  cdestruct |- ***.
+  now left.
+Qed.
+
+Lemma rel_strictly_monotone_seq1 (rel1 rel2 : grel EID.t) :
+  rel_strictly_monotone rel1 ∧ rel_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
+Proof.
+  unfold rel_strictly_monotone, rel_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  eapply H in H1; eapply H0 in H2.
+  cdestruct x0, H2 |- *** #CDestrSplitGoal.
+Qed.
+
+Lemma rel_strictly_monotone_seq2 (rel1 rel2 : grel EID.t) :
+  rel_monotone rel1 ∧ rel_strictly_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
+Proof.
+  unfold rel_strictly_monotone, rel_monotone.
+  autorewrite with pair.
+  cdestruct |- *** #CDestrSplitGoal.
+  eapply H in H1; eapply H0 in H2.
+  cdestruct x0, H2 |- *** #CDestrSplitGoal.
+Qed.
+
+Lemma rel_monotone_acyclic (rel : grel EID.t) :
+  rel_strictly_monotone rel → grel_acyclic rel.
+Proof.
+  unfold rel_strictly_monotone, grel_acyclic, grel_irreflexive.
+  autorewrite with pair.
+  change (∀ x y, (x, y) ∈ rel → EID.full_po_lt x y)
+    with (∀ x y, grel_to_relation rel x y → EID.full_po_lt x y).
+  cdestruct |- *** as Hsubrel x Hcylcic.
+  rewrite grel_plus_spec in Hcylcic.
+  depelim Hcylcic.
+  - specialize (Hsubrel _ _ H).
+    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+    lia.
+  - opose proof (rtc_subrel _ _ _ _ Hsubrel _).
+    1: eapply rtc_tc.
+    1: right; eassumption.
+    ospecialize (Hsubrel _ _ _); first eauto.
+    clear -H0 Hsubrel.
+    dependent induction H0.
+    { unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *. lia. }
+    eapply IHrtc.
+    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
+    lia.
+Qed.
+
+Lemma rel_monotone_difference (rel1 rel2 : grel EID.t) :
+  (∀ x y, (x,y) ∈ rel1 → EID.full_po_lt x y ∨ (x,y) ∈ rel2) →
+  rel_strictly_monotone (rel1 ∖ rel2).
+Proof.
+  unfold rel_strictly_monotone.
+  cdestruct |- *** as H a b ??.
+  ospecialize (H _ _ _); eauto.
+  cdestruct H |- *** #CDestrSplitGoal.
+Qed.
+
+(** * Monad interpretation invariant induction *)
+
+(** The following lemmas are specialised induction schemes to prove invariants
+    maintained by a handler when interpreting a free/choice monad *)
 
 Lemma finterp_inv_induct `{Effect Eff} {St E A}
     (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
@@ -297,6 +475,8 @@ Proof.
   all: eauto.
 Qed.
 
+(** This scheme allows to make use of properties guaranteed by the monad,
+    e.g. [legal_memory_acc]  *)
 Lemma finterp_inv_induct_backwards `{Effect Eff} {St E A}
     (handler : fHandler Eff (Exec.t St E)) (mon : fMon Eff A)
     (I : St → Prop) (Ieff : Eff → Prop) (initSt : St) :
@@ -328,22 +508,6 @@ Proof.
   eapply IH.
   1: eapply Hstep.
   all: eauto.
-Qed.
-
-Arguments Exec.to_state_result_list : simpl never.
-
-Lemma cinterp_all_states_inv_induct `{Effect Eff} {St E A}
-  (handler : fHandler Eff (Exec.t St E)) (mon : cMon Eff A)
-  (I : result St St → Prop) (Ieff : Eff → Prop) (initSt : St) : I (Ok initSt)
-    → (∀ st call, I (Ok st) → ∀ st' ∈ Exec.to_state_result_list $ handler call st, I st')
-    → ∀ st' ∈ (Exec.to_state_result_list $ FMon.cinterp handler mon initSt), I st'.
-Proof.
-  intros Hinit HIpreserve st' Hst'.
-  eapply finterp_all_states_inv_induct; [eassumption | | eassumption].
-  clear initSt Hinit st' Hst'.
-  cdestruct |- *** as st eff Hst st' v Hst' #CDestrMatch #CDestrSplitGoal;
-  try destruct eff;
-  set_solver.
 Qed.
 
 Lemma cinterp_inv_induct `{Effect Eff} {St E A}
@@ -398,43 +562,9 @@ Proof.
   1: eapply (HIpreserveChoice _); eauto.
 Qed.
 
-(* TODO:
-   TP: set_unfold on evars
-   TP: MemRead and MemWrite supersubst
+(** * Definitions and lemmas about lists *)
 
-   NL: Unfold instances on mcallM of MChoice and Exec.Results.
-   NL: Keep up the good work
-
-*)
-
-Fixpoint trace_find_indexed (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
-  (itrs : list (iTrace ())) : option (nat * nat * FMon.fEvent outcome) :=
-  match itrs with
-  | ((itr, trend) :: itrr) =>
-    if list_find P itr is Some (ieid, ev)
-    then Some (0, ieid, ev)
-    else prod_map (prod_map S id) id <$> trace_find_indexed P itrr
-  | [] => None
-  end.
-
-Fixpoint trace_find (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
-  (itrs : list (iTrace ())) : option (FMon.fEvent outcome) :=
-  match itrs with
-  | ((itr, trend) :: itrr) =>
-    if find (λ x, bool_decide (P x)) itr is Some ev
-    then Some ev
-    else trace_find P itrr
-  | [] => None
-  end.
-
-Lemma trace_find_app (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
-  (l l' : list (iTrace ()))
-  : trace_find P (l ++ l') = if trace_find P l is Some ev then Some ev else trace_find P l'.
-Proof. induction l; cdestruct |- *** #CDestrMatch. Qed.
-
-Definition trace_rev (itrs : list (iTrace ())) : list (iTrace ()) :=
-  rev (map (set fst (@rev (FMon.fEvent outcome))) itrs).
-Arguments trace_rev : simpl never.
+Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
 
 Fixpoint find_last_aux {A} (P : A → Prop) `{∀ x, Decision (P x)} (acc : option A) (l : list A) : option A :=
   if l is a :: ar
@@ -461,7 +591,8 @@ Proof.
 Qed.
 
 Lemma find_last_spec {A} (P : A → Prop) `{∀ x, Decision (P x)} l a :
-  find_last P l = Some a ↔ P a ∧ ∃ i, l !! i = Some a ∧ ∀ a' i', P a' → l !! i' = Some a' → i' ≤ i.
+  find_last P l = Some a ↔
+  P a ∧ ∃ i, l !! i = Some a ∧ ∀ a' i', P a' → l !! i' = Some a' → i' ≤ i.
 Proof.
   rewrite <- find_rev_find_last.
   induction l using rev_ind.
@@ -679,41 +810,6 @@ Proof.
       lia.
 Qed.
 
-(* Lemma find_rev_find_last_indexed {A} (P : nat → A → Prop) `{∀ x n, Decision (P x n)} (l : list A)
-    a i j :
-  i < length l → j = length l - S i →
-  list_find_indexed P (rev l) = Some (i, a) ↔ find_last_indexed P l = Some (j, a).
-Proof.
-  intros ? ->.
-  setoid_rewrite find_last_indexed_Some.
-  setoid_rewrite list_find_indexed_Some.
-  destruct (decide (l = nil)) as [->|].
-  1: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-  all: cdestruct |- *** as Hl%(nth_lookup_Some _ _ a) ?? #CDestrEqOpt #CDestrSplitGoal.
-  1-3: rewrite rev_nth, nth_lookup in Hl; try done.
-  1-3: unfold default in *; cdestruct Hl |- *** #CDestrMatch.
-  1: eapply lookup_ge_None_1 in H1.
-  1: destruct l; try done; cbn in *; lia.
-  1: eapply n.
-  1: rewrite nth_lookup in Hl.
-  1: eapply (nth_lookup_Some _ _ a).
-
-  Search nth rev.
-  Search lookup nth.
-  Search length rev.
-  all: assert (i < length l).
-  all: try (eapply lookup_lt_Some in Hl; try rewrite rev_length in *; done).
-  4: { }
-  all: try erewrite rev_nth in Hl.
-  all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
-  Search nth lookup.
-  enough (∀ o, (if find (λ x : A, bool_decide (P x)) (rev l) is Some a then Some a else o) = find_last_aux P o l)
-  as <- by cdestruct |- *** #CDestrMatch.
-  induction l; first done; cdestruct |- ***.
-  rewrite <- IHl.
-  rewrite find_app; cdestruct |- *** #CDestrMatch; tc_solve.
-Qed. *)
-
 Lemma last_exists {A} (P : A → Prop) `{∀ x, Decision (P x)} l :
   ∀ x ∈ l, P x → is_Some (find_last P l).
 Proof.
@@ -738,6 +834,89 @@ Proof.
   done.
 Qed.
 
+#[local] Instance lookup_unfold_list_singleton {A} (x : A) n :
+  LookupUnfold n [x] (if n is 0 then Some x else None).
+Proof. tcclean. by destruct n. Qed.
+
+Lemma eq_None_lookup_length {A} (l : list A) n :
+  EqNoneUnfold (l !! n) (length l ≤ n).
+Proof. tcclean. apply lookup_ge_None. Qed.
+
+#[local] Instance lookup_unfold_vec_singleton (n : nat) `(v : A) :
+  LookupUnfold 0 [#v] (Some v).
+Proof.
+  tcclean.
+  unfold lookup, vec_lookup_nat.
+  cdestruct n |- *** #CDestrMatch; lia.
+Qed.
+
+#[local] Instance lookup_total_unfold_vec_singleton (n : fin 1) `(x : A) :
+  LookupTotalUnfold n [#x] x.
+Proof.
+  tcclean.
+  depelim n.
+  1: done.
+  depelim n1.
+Qed.
+
+Lemma set_filter_iff `{FinSet A C} (P1 P2 : A → Prop)
+      `{∀ a, Decision (P1 a)} `{∀ a, Decision (P2 a)} (s : C) :
+    (∀ a, P1 a ↔ P2 a) →
+    filter P1 s = filter P2 s.
+Proof.
+  intros.
+  unfold filter, set_filter.
+  erewrite list_filter_iff.
+  1: reflexivity.
+  assumption.
+Qed.
+
+Lemma enumerate_imap {A} :
+  enumerate (A := A) = imap pair.
+Proof.
+  eapply functional_extensionality_dep.
+  intros l.
+  unfold enumerate.
+  change pair with (pair (B := A) ∘ Nat.iter 0 S) at 2.
+  generalize 0.
+  elim l; cdestruct |- *** #CDestrSplitGoal.
+  1: induction n; cdestruct |- ***.
+  erewrite H, Combinators.compose_assoc.
+  eapply imap_ext.
+  cdestruct |- *** #CDestrSplitGoal.
+  erewrite <- Nat.iter_swap_gen; eauto.
+Qed.
+
+#[local] Instance eq_some_unfold_lookup_singleton_list {A} (x y : A) n :
+  EqSomeUnfold ([x] !! n) y (n = 0 ∧ x = y).
+Proof. tcclean. destruct n as [|[]]; naive_solver. Qed.
+
+(** * Definitions and lemmas about (unicore) traces *)
+
+(** Returns the first event in a given trace that satisfies the given predicate *)
+Fixpoint trace_find (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
+  (itrs : list (iTrace ())) : option (FMon.fEvent outcome) :=
+  match itrs with
+  | ((itr, trend) :: itrr) =>
+    if find (λ x, bool_decide (P x)) itr is Some ev
+    then Some ev
+    else trace_find P itrr
+  | [] => None
+  end.
+
+Lemma trace_find_app (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
+  (l l' : list (iTrace ()))
+  : trace_find P (l ++ l') = if trace_find P l is Some ev then Some ev else trace_find P l'.
+Proof. induction l; cdestruct |- *** #CDestrMatch. Qed.
+
+(** As the traces generated by the operational model start at the head with
+    the latest event, in contrast to candiadte pre-executions, it is
+    necessary to reverse traces generated by the operational model *)
+Definition trace_rev (itrs : list (iTrace ())) : list (iTrace ()) :=
+  rev (map (set fst (@rev (FMon.fEvent outcome))) itrs).
+Arguments trace_rev : simpl never.
+
+(** Returns the last event in a given trace that satisfies the given predicate *)
 Definition trace_find_last (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
     (itrs : list (iTrace ())) : option (FMon.fEvent outcome) :=
   if find_last (λ '(itr,_), is_Some (find_last P itr)) itrs is Some itr
@@ -776,49 +955,33 @@ Proof.
     all: sfirstorder.
 Qed.
 
-Definition trace_find_last_indexed (P : EID.t → iEvent → Prop) `{∀ eid x, Decision (P eid x)}
-    (itrs : list (iTrace ())) : option (EID.t * FMon.fEvent outcome) :=
-  if find_last_indexed (λ iid '(itr,_), is_Some (find_last_indexed (λ ieid, P (EID.make 0 iid ieid None)) itr)) itrs is Some (iid, itr)
+Arguments trace_find : simpl never.
+
+(** This definition is a stonger version of [trace_find_last] which allows the
+    predicate to also make a statement about the index (event ID) of events
+    in the given trace. This is needed as we, for example, commonly search for
+    an event that appears before some other event. *)
+Definition trace_find_last_indexed (P : EID.t → iEvent → Prop)
+    `{∀ eid x, Decision (P eid x)} (itrs : list (iTrace ()))
+    : option (EID.t * FMon.fEvent outcome) :=
+  if
+    find_last_indexed
+      (λ iid '(itr,_),
+        is_Some (find_last_indexed (λ ieid, P (EID.make 0 iid ieid None)) itr))
+      itrs
+  is Some (iid, itr)
   then
-    (if find_last_indexed (λ ieid, P (EID.make 0 iid ieid None)) itr.1 is (Some (ieid, ev))
+    (if find_last_indexed (λ ieid, P (EID.make 0 iid ieid None)) itr.1
+    is (Some (ieid, ev))
     then Some (EID.make 0 iid ieid None, ev)
     else None)
   else None.
 
-Lemma trace_find_cons (P : FMon.fEvent outcome → Prop) `{∀ x, Decision (P x)}
-    (itrs : list (iTrace ())) (x : FMon.fEvent outcome)
-  : trace_find P (trace_cons x itrs) =
-    if decide (P x)
-    then Some x
-    else trace_find P itrs.
-Proof.
-  destruct itrs as [|[]].
-  all: cdestruct |- *** #CDestrMatch #CDestrEqOpt.
-Qed.
-
-#[global] Instance elem_of_trace : ElemOf (fEvent outcome) (list (iTrace ())) :=
-  λ ev itrs, ev ∈ (mjoin (fst <$> itrs)).
-
-#[export] Instance unfold_elem_of_trace_cons ev ev' itrs P :
-  SetUnfoldElemOf ev itrs P →
-  SetUnfoldElemOf ev (trace_cons ev' itrs) (ev = ev' ∨ P).
-Proof.
-  tcclean.
-  unfold elem_of, elem_of_trace.
-  unfold trace_cons.
-  destruct itrs as [|[]].
-  all: set_solver.
-Qed.
-
-Arguments trace_find : simpl never.
-
-Definition trace_snoc (ev : FMon.fEvent outcome) (itrs : list (iTrace ())) : list (iTrace ()) :=
+(** Append a single event to the end of a trace *)
+Definition trace_snoc (ev : FMon.fEvent outcome) (itrs : list (iTrace ()))
+    : list (iTrace ()) :=
   let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing itrs in
   trs ++ [(last_tr ++ [ev],tr_end)].
-
-Definition traces_snoc {nmth} (ev : FMon.fEvent outcome) (thread : Fin.t nmth)
-    : vec (list (iTrace ())) nmth → vec (list (iTrace ())) nmth :=
-  set (.!!! thread) (trace_snoc ev).
 
 Lemma trace_ind P :
   P []
@@ -885,22 +1048,9 @@ Proof.
     reflexivity.
 Qed.
 
-Lemma enumerate_imap {A} :
-  enumerate (A := A) = imap pair.
-Proof.
-  eapply functional_extensionality_dep.
-  intros l.
-  unfold enumerate.
-  change pair with (pair (B := A) ∘ Nat.iter 0 S) at 2.
-  generalize 0.
-  elim l; cdestruct |- *** #CDestrSplitGoal.
-  1: induction n; cdestruct |- ***.
-  erewrite H, Combinators.compose_assoc.
-  eapply imap_ext.
-  cdestruct |- *** #CDestrSplitGoal.
-  erewrite <- Nat.iter_swap_gen; eauto.
-Qed.
-
+(** This functions returns the event ID of succeeds the event ID of the
+    last event in the given trace. In other words, this will be the event ID
+    of an event that was appended to the end of the trace *)
 Definition intra_trace_eid_succ tid (tr : list (iTrace ())) : EID.t :=
   let '(trs, (last_tr,tr_end)) := unsnoc_total FMon.FTNothing tr in
   EID.make tid (Nat.pred (length tr)) (length last_tr) None.
@@ -934,42 +1084,17 @@ Proof.
   lia.
 Qed.
 
-Lemma lookup_vec_nat_cons_S {A n} (h : A) (v : vec A n) x :
-  (h ::: v) !! S x = v !! x.
-Proof.
-  unfold lookup, vec_lookup_nat.
-  cdestruct |- *** #CDestrMatch; try lia.
-  f_equal.
-  eapply Fin.of_nat_ext.
-Qed.
-
-Lemma lookup_total_fin_to_nat {A size} (n : fin size) (v : vec A size)  :
-  v !! fin_to_nat n = Some (v !!! n).
-Proof.
-  generalize dependent n.
-  dependent induction v.
-  all: intros m.
-  2: destruct n.
-  all: depelim m.
-  all: cdestruct |- *** #CDestrMatch.
-  1: depelim m.
-  rewrite lookup_vec_nat_cons_S.
-  sfirstorder.
-Qed.
-
 Lemma cd_to_pe_lookup `(cd : Candidate.t et nmth) eid :
   cd !! eid = Candidate.pre_exec cd !! eid.
 Proof. reflexivity. Qed.
 
+(** As we only have one thread, we define a specialised [Lookup] instance
+    that cuts out the unneeded [lookup_total] of the thead trace boilerplate *)
 #[local] Instance lookup_ev_from_iTraces : Lookup EID.t iEvent (list (iTrace ())) :=
   λ eid evs,
   guard (eid.(EID.tid) = 0 ∧ eid.(EID.byte) = None);;
   '(trace, result) ← evs !! eid.(EID.iid);
   trace !! eid.(EID.ieid).
-
-#[local] Instance lookup_unfold_list_singleton {A} (x : A) n :
-  LookupUnfold n [x] (if n is 0 then Some x else None).
-Proof. tcclean. by destruct n. Qed.
 
 Lemma eq_some_unfold_eid_iTraces_lookup (tr : list (iTrace ())) eid ev P Q :
   (∀ itr, EqSomeUnfold (tr !! eid.(EID.iid)) itr (P itr)) →
@@ -985,13 +1110,32 @@ Proof.
   all: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
 Qed.
 
-Lemma eq_None_lookup_length {A} (l : list A) n :
-  EqNoneUnfold (l !! n) (length l ≤ n).
-Proof. tcclean. apply lookup_ge_None. Qed.
+Lemma and_or_dist P Q R :
+  P ∧ (Q ∨ R) ↔ (P ∧ Q) ∨ (P ∧ R).
+Proof. naive_solver. Qed.
 
-#[local] Instance eq_some_unfold_lookup_singleton_list {A} (x y : A) n :
-  EqSomeUnfold ([x] !! n) y (n = 0 ∧ x = y).
-Proof. tcclean. destruct n as [|[]]; naive_solver. Qed.
+Lemma exists_or_dist {T} (P Q : T → Prop) :
+  (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
+Proof. naive_solver. Qed.
+
+Lemma intra_trace_eid_succ_components_equal eid tid tr :
+  eid.(EID.tid) = tid →
+  eid.(EID.iid) = (intra_trace_eid_succ tid tr).(EID.iid) →
+  eid.(EID.ieid) = (intra_trace_eid_succ tid tr).(EID.ieid) →
+  eid.(EID.byte) = None →
+  eid = intra_trace_eid_succ tid tr.
+Proof.
+  destruct eid, (intra_trace_eid_succ tid tr) eqn: ?.
+  unfold intra_trace_eid_succ, unsnoc_total in *.
+  destruct (decide (tr = [])) as [->|].
+  2: opose proof (exists_last _) as [? [ltr]]; eauto.
+  all: cdestruct Heqt |- *** #CDestrSplitGoal.
+  all: try scongruence.
+  all: subst.
+  all: rewrite unsnoc_snoc in *.
+  all: destruct ltr.
+  all: cdestruct Heqt |- ***.
+Qed.
 
 Lemma eid_full_po_lt_intra_trace_eid_succ eid (tr : list (iTrace ())) :
   is_Some (tr !! eid) →
@@ -1016,93 +1160,29 @@ Proof.
   now left.
 Qed.
 
-#[local] Instance eid_full_po_lt_Irreflexive :
-  Irreflexive EID.full_po_lt.
+
+#[local] Instance cdestruct_full_po_lt_eid_succ_False b eid eid' itrs ev :
+  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
+  TCFastDone (itrs !! eid' = Some ev) →
+  CDestrSimpl b (EID.full_po_lt eid eid') False.
 Proof.
-  cdestruct |- *** as [] ?.
-  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
-  lia.
+  tcclean.
+  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
+  cdestruct eid, eid' |- *** #CDestrSplitGoal.
 Qed.
 
-#[local] Instance eid_full_po_lt_Asymmetric :
-  Asymmetric EID.full_po_lt.
+#[local] Instance cdestruct_full_po_lt_eid_succ_True b eid eid' itrs ev :
+  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
+  TCFastDone (itrs !! eid' = Some ev) →
+  CDestrSimpl b (EID.full_po_lt eid' eid) True.
 Proof.
-  cdestruct |- *** as eid1 eid2.
-  unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: lia.
+  tcclean.
+  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
+  cdestruct eid, eid' |- *** #CDestrSplitGoal.
 Qed.
 
-#[local] Instance eid_full_po_lt_Transitive :
-  Transitive EID.full_po_lt.
-Proof.
-  unfold EID.full_po_lt, EID.iio_lt, EID.po_lt in *.
-  cdestruct |- *** as [] [] [] ??; deintros; cdestruct |- *** #CDestrSplitGoal.
-  all: lia.
-Qed.
-
-#[local] Instance cdestruct_Transitive `{Transitive A R} x y z :
-  TCFastDone (R x y) → TCFastDone (R y z) →
-  CDestrSimpl true (R x z) True.
-Proof. tcclean. cdestruct |- *** #CDestrSplitGoal. by eapply H. Qed.
-
-#[local] Instance obvFalse_Irreflexive_same `{Irreflexive A R} (x : A):
-  ObvFalse (R x x).
-Proof. tcclean. firstorder. Qed.
-
-#[local] Instance obvFalse_Asymmetric_symmetric `{Asymmetric A R} (x y : A):
-  Incompatible (R x y) (R y x).
-Proof. tcclean. firstorder. Qed.
-
-Lemma trace_find_last_spec (P : iEvent → Prop) `{∀ x, Decision (P x)}
-    (tr : list (iTrace ())) ev :
-  trace_find_last P tr = Some ev ↔
-  ∃ eid, tr !! eid = Some ev ∧
-    P ev ∧
-    ∀ eid' ev', tr !! eid' = Some ev' → P ev' →
-      EID.full_po_lt eid' eid ∨ eid' = eid.
-Proof.
-  unfold trace_find_last.
-  unfold lookup, lookup_ev_from_iTraces.
-  cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
-  - eexists (EID.make 0 x1 x2 None).
-    cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
-    1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
-    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt; cbn.
-    ospecialize (H4 (l0,_) _ _ _); eauto.
-    1: eapply last_exists; eauto; by eapply elem_of_list_lookup_2.
-    eapply Compare.le_le_S_eq in H4.
-    cdestruct H4 #CDestrSplitGoal.
-    1: do 2 left; lia.
-    rewrite H8, H4 in *.
-    ospecialize (H7 ev' (EID.ieid eid') _ _ ); first done.
-    1: rewrite H3 in *; hauto l: on.
-    eapply Compare.le_le_S_eq in H7.
-    cdestruct H7 #CDestrSplitGoal.
-    1: lia.
-    1: right; destruct eid'; sauto.
-  - ospecialize (H5 (EID.make 0 x2 x1 None) x0 _ _ );
-    cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
-    1: eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal.
-    opose proof (H10 (l,f) (EID.iid x) _ _); try fast_done.
-    1: eapply (last_exists _ _ ev); try fast_done; by eapply elem_of_list_lookup_2.
-    destruct x; cbn in *.
-    unfold EID.full_po_lt, EID.iio_lt, EID.po_lt in *; cbn in *.
-    assert (iid = x2) as <- by (destruct H5; first lia; inversion H5; lia).
-    rewrite H9 in *; deintros; cdestruct |- ***.
-    opose proof (H8 ev ieid _ _); eauto.
-    assert (ieid = x1) as <- by (destruct H5 as [|H5]; first lia; inversion H5; lia).
-    rewrite H7 in *; deintros; cdestruct |- ***.
-    eexists; cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; eauto.
-  - revert H6.
-    eapply not_eq_None_Some.
-    eapply last_exists; first by eapply elem_of_list_lookup_2.
-    eapply last_exists; first by eapply elem_of_list_lookup_2.
-    done.
-Qed.
-
-Lemma trace_find_last_indexed_spec (P : EID.t → iEvent → Prop) `{∀ eid x, Decision (P eid x)}
-    (tr : list (iTrace ())) ev eid :
+Lemma trace_find_last_indexed_spec (P : EID.t → iEvent → Prop)
+    `{∀ eid x, Decision (P eid x)} (tr : list (iTrace ())) ev eid :
   trace_find_last_indexed P tr = Some (eid, ev) ↔
     tr !! eid = Some ev ∧
     P eid ev ∧
@@ -1117,7 +1197,8 @@ Proof.
   - enough (¬ EID.full_po_lt
       {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |} eid').
     1: opose proof (EID.full_po_lt_connex eid'
-      {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |} _ _ _) as Heid.
+      {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |} _ _ _)
+      as Heid.
     all: cbn in *; try fast_done.
     1: cdestruct Heid |- *** #CDestrSplitGoal; sauto.
     intro.
@@ -1130,8 +1211,9 @@ Proof.
     2: eapply H6.
     1: cdestruct l, tr |- *** #CDestrEqOpt.
     1: done.
-  - opose proof (H11 {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |}
-      _ _ _).
+  - opose proof
+      (H11 {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |}
+        _ _ _).
     1: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
     1: eexists (_, _); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
     1: done.
@@ -1145,8 +1227,9 @@ Proof.
     exfalso.
     eapply H5.
     all: sauto.
-  - opose proof (H11 {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |}
-      _ _ _).
+  - opose proof
+      (H11 {| EID.tid := 0; EID.iid := n; EID.ieid := n1; EID.byte := None |}
+        _ _ _).
     1: cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
     1: eexists (_, _); cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
     1: done.
@@ -1167,24 +1250,10 @@ Proof.
     destruct eid; sauto.
 Qed.
 
-Lemma trace_last_exists `{∀ ev : iEvent, Decision (P ev)} (tr : list (iTrace ())) eid :
-  ∀ ev, tr !! eid = Some ev → P ev → is_Some (trace_find_last P tr).
-Proof.
-  cdestruct |- *** #CDestrEqOpt.
-  unfold lookup, lookup_ev_from_iTraces, trace_find_last in *.
-  cdestruct H0 |- *** #CDestrMatch #CDestrEqOpt.
-  1: eapply last_exists; first by eapply elem_of_list_lookup_2.
-  1: done.
-  exfalso.
-  revert H5.
-  eapply not_eq_None_Some.
-  eapply last_exists; first by eapply elem_of_list_lookup_2.
-  eapply last_exists; first by eapply elem_of_list_lookup_2.
-  done.
-Qed.
-
-Lemma trace_last_exists_indexed `{∀ eid ev, Decision (P eid ev)} (tr : list (iTrace ())) :
-  ∀ eid ev, tr !! eid = Some ev → P eid ev → is_Some (trace_find_last_indexed P tr).
+Lemma trace_last_exists_indexed `{∀ eid ev, Decision (P eid ev)}
+    (tr : list (iTrace ())) :
+  ∀ eid ev, tr !! eid = Some ev → P eid ev →
+  is_Some (trace_find_last_indexed P tr).
 Proof.
   unfold trace_find_last_indexed, lookup, lookup_ev_from_iTraces.
   cdestruct |- *** #CDestrEqOpt #CDestrMatch.
@@ -1198,23 +1267,8 @@ Proof.
     destruct eid; sauto.
 Qed.
 
-Lemma trace_last_event P `{∀ ev : iEvent, Decision (P ev)} (tr : list (iTrace ())) eid ev :
-  tr !! eid = Some ev → P ev →
-  ∃ ev' eid', tr !! eid' = Some ev' ∧ P ev' ∧
-    ∀ ev'' eid'', tr !! eid'' = Some ev''→ P ev'' →
-      EID.full_po_lt eid'' eid' ∨ eid'' = eid'.
-Proof.
-  cdestruct |- *** as Htr HPev.
-  opose proof (trace_last_exists _ _ _ Htr HPev) as Htrlf.
-  destruct Htrlf as [lev Hlev].
-  eexists lev.
-  eapply trace_find_last_spec in Hlev.
-  cdestruct Hlev.
-  eexists.
-  cdestruct |- *** #CDestrEqOpt #CDestrMatch #CDestrSplitGoal; eauto.
-Qed.
-
-Lemma trace_last_event_indexed P `{∀ (ev : iEvent) (eid : EID.t), Decision (P eid ev)}
+Lemma trace_last_event_indexed P
+    `{∀ (ev : iEvent) (eid : EID.t), Decision (P eid ev)}
     (tr : list (iTrace ())) eid ev :
   tr !! eid = Some ev → P eid ev →
   ∃ eid' ev', tr !! eid' = Some ev' ∧ P eid' ev' ∧
@@ -1230,67 +1284,7 @@ Proof.
   by eapply H2.
 Qed.
 
-Notation seqmon := (Exec.t seq_state string).
-Notation initss := {| initSt := initSt; regs := ∅; mem := ∅; itrs := [] |}.
-
-Definition seqmon_pe (st : seq_state) : Candidate.pre Candidate.NMS 1 :=
-  Candidate.make_pre _ st.(initSt) [# st.(itrs)].
-
-Definition result_same_type_proj {T} (r : result T T) :=
-  match r with
-  | Ok t => t
-  | Error t => t
-  end.
-
-#[local] Instance cdestruct_is_some_unit b (o : option ()) P :
-  EqSomeUnfold o () P →
-  CDestrSimpl b (is_Some o) P.
-Proof. tcclean. by cdestruct o, H |- *** #CDestrSplitGoal. Qed.
-
-#[local] Instance cdestruct_is_Some_mret b `(x : A) :
-  CDestrSimpl b (is_Some (mret x : option A)) True.
-Proof. tcclean. unfold mret, option_ret. done. Qed.
-
-#[local] Instance cdestruct_exists_simpl_andr b `(P : A → Prop) Q Q' :
-  CDestrSimpl b Q Q' →
-  CDestrSimpl b (∃ x, P x ∧ Q) (∃ x, P x ∧ Q').
-Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
-
-#[local] Instance cdestruct_exists_simpl_andl b `(P : A → Prop) Q Q' :
-  CDestrSimpl b Q Q' →
-  CDestrSimpl b (∃ x, Q ∧ P x) (∃ x, Q' ∧ P x).
-Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
-
-#[local] Instance cdestruct_exists_and_Truel b `(P : A → Prop) :
-  CDestrSimpl b (∃ x, True ∧ P x) (∃ x, P x).
-Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
-
-#[local] Instance cdestruct_exists_and_Truer b `(P : A → Prop) :
-  CDestrSimpl b (∃ x, P x ∧ True) (∃ x, P x).
-Proof. tcclean. cdestruct |- *** #CDestrSplitGoal; eexists; eauto. Qed.
-
-Lemma is_Some_fold `(o : option A) i :
-  o = Some i → is_Some o.
-Proof. destruct o; done. Qed.
-
-Definition op_mem_wf (str : result seq_state seq_state) : Prop :=
-  match str with
-  | Ok st =>
-    ∀ pa v,
-      st.(mem) !! pa = Some v
-    ↔ ∃ ev,
-        trace_find
-          (is_mem_writeP (λ size wr, pa_in_range wr.(WriteReq.pa) size pa))
-          st.(itrs)
-        = Some ev
-    ∧ ∃ offset,
-        ev |> is_mem_writeP
-          (λ size wr,
-            pa_addN wr.(WriteReq.pa) offset = pa
-            ∧ (offset < size)%N
-            ∧ bv_get_byte 8 offset wr.(WriteReq.value) = v)
-  | Error _ => False
-  end.
+(** * Auxiliary bitvector and memory lemmas *)
 
 Lemma length_bv_to_bytes n m (v : bv n) :
   length (bv_to_bytes m v) = N.to_nat (div_round_up n m).
@@ -1319,7 +1313,8 @@ Proof.
   setoid_rewrite pa_in_range_spec.
   revert dependent size pa st.
   elim l; cdestruct pa' |- ***.
-  erewrite (H (N.pred size) (pa_addZ pa0 1) (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)); eauto.
+  erewrite (H (N.pred size) (pa_addZ pa0 1)
+    (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)); eauto.
   3: lia.
   - destruct st; cbn; unfold Setter_finmap.
     enough (pa' ≠ pa0)
@@ -1358,7 +1353,8 @@ Qed.
 Lemma write_mem_seq_state_app pa l st st' x :
   (Z.of_nat (S (length l)) < max_mem_acc_size)%Z →
   (st', ()) ∈ write_mem_seq_state pa (l ++ [x]) st →
-  (st', ()) ∈ write_mem_seq_state pa l (setv ((.!! pa_addN pa (N.of_nat (length l))) ∘ mem) (Some x) st).
+  (st', ()) ∈ write_mem_seq_state pa l
+    (setv ((.!! pa_addN pa (N.of_nat (length l))) ∘ mem) (Some x) st).
 Proof.
   revert dependent pa st x.
   elim l; cdestruct st' |- *** #CDestrSplitGoal.
@@ -1401,7 +1397,8 @@ Proof.
   destruct (decide (i = N.of_nat (length l0))) as [->|]; cbn.
   - unfold lookup at 2, list_lookupN.
     rewrite Nat2N.id, lookup_app.
-    cdestruct |- *** #CDestrMatch #CDestrEqOpt; first by rewrite lookup_unfold in *.
+    cdestruct |- *** #CDestrMatch #CDestrEqOpt;
+    first by rewrite lookup_unfold in *.
     rewrite Nat.sub_diag; cbn.
     by eapply write_mem_seq_state_snoc.
   - unfold lookup at 2, list_lookupN.
@@ -1418,7 +1415,8 @@ Lemma write_mem_seq_state_same_itrs bytes :
   ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → itrs st' = itrs st.
 Proof.
   induction bytes; cdestruct |- ***.
-  change (itrs st) with (itrs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
+  change (itrs st)
+    with (itrs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
   eapply IHbytes, H.
 Qed.
 
@@ -1426,141 +1424,234 @@ Lemma write_mem_seq_state_regs_unchanged bytes :
   ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → st'.(regs) = st.(regs).
 Proof.
   induction bytes; cdestruct |- ***.
-  change (regs st) with (regs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
+  change (regs st)
+    with (regs (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
   eapply IHbytes, H.
 Qed.
 
-Section Proof.
+Section RefinementProof.
+(** From here we prove direct lemmas about the actual operational model.
+    The model requires a whitelist of registers that can be written to,
+    which we add to the context. *)
 Context (regs_whitelist : gset reg).
 
 Lemma sequential_model_outcome_same_itrs st st' call r :
-  (st', r) ∈ sequential_model_outcome (Some regs_whitelist) call st → itrs st' = itrs st.
+  (st', r) ∈ sequential_model_outcome (Some regs_whitelist) call st →
+   itrs st' = itrs st.
 Proof.
   destruct call;
   cdestruct |- *** #CDestrMatch;
   try naive_solver.
-  all: do 2 unfold mthrow, Exec.throw_inst, Exec.res_throw_inst in *; try set_solver.
+  all: do 2 unfold mthrow, Exec.throw_inst, Exec.res_throw_inst in *;
+    try set_solver.
   eapply write_mem_seq_state_same_itrs.
   eauto.
 Qed.
 
 Lemma write_mem_seq_state_same_initSt bytes :
-  ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st → initSt st' = initSt st.
+  ∀ st st' pa, (st', ()) ∈ write_mem_seq_state pa bytes st →
+  initSt st' = initSt st.
 Proof.
   induction bytes; cdestruct |- ***.
-  change (initSt st) with (initSt (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
+  change (initSt st)
+    with (initSt (set (lookup pa0 ∘ mem) (λ _ : option (bv 8), Some a) st)).
   eapply IHbytes, H.
 Qed.
 
 Lemma sequential_model_outcome_same_initSt st st' call r :
-  (st', r) ∈ sequential_model_outcome (Some regs_whitelist) call st → initSt st' = initSt st.
+  (st', r) ∈ sequential_model_outcome (Some regs_whitelist) call st →
+  initSt st' = initSt st.
 Proof.
   destruct call;
   cdestruct |- *** #CDestrMatch;
   try naive_solver.
-  all: do 2 unfold mthrow, Exec.throw_inst, Exec.res_throw_inst in *; try set_solver.
+  all: do 2 unfold mthrow, Exec.throw_inst, Exec.res_throw_inst in *;
+    try set_solver.
   eapply write_mem_seq_state_same_initSt.
   eauto.
 Qed.
 
-Definition rel_strictly_monotone (rel : grel EID.t) : Prop :=
-  ∀ '(x,y) ∈ rel, EID.full_po_lt x y.
-
-Definition rel_monotone (rel : grel EID.t) : Prop :=
-  ∀ '(x,y) ∈ rel, x = y ∨ EID.full_po_lt x y.
-
-Lemma rel_montone_union (rel1 rel2 : grel EID.t) :
-  rel_strictly_monotone rel1 ∧ rel_strictly_monotone rel2 ↔ rel_strictly_monotone (rel1 ∪ rel2).
+Lemma pa_range_lookupN pa size i :
+  (i < size)%N →
+  pa_range pa size !! i = Some (pa_addN pa i).
 Proof.
-  unfold rel_strictly_monotone.
-  autorewrite with pair.
+  intros.
+  unfold pa_range.
+  setoid_rewrite list_lookup_fmap.
+  unfold seqN.
+  setoid_rewrite list_lookup_fmap.
+  rewrite lookup_seq_lt; last lia.
+  cbn.
+  do 2 f_equal.
+  lia.
+Qed.
+
+Lemma pa_range_lookupNat pa size i :
+  i < N.to_nat size →
+  pa_range pa size !! i = Some (pa_addN pa (N.of_nat i)).
+Proof.
+  intros.
+  opose proof (pa_range_lookupN pa size (N.of_nat i) _); first lia.
+  unfold lookup, list_lookupN in H0.
+  by rewrite Nat2N.id in H0.
+Qed.
+
+Lemma Some_inj {A} (x y : A) :
+  Some x = Some y ↔ x = y.
+Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
+
+Lemma bvns_equal_get_byte_equal n (x y : bvn) :
+  n ≠ 0%N → bvn_n x = bvn_n y →
+  (∀ i, (i * n < bvn_n x)%N →
+    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
+  x = y.
+Proof.
+  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
+  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
+  f_equal.
+  apply list_eq.
+  intros.
+  apply option_eq.
+  intro b.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
+  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
+  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
+  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
   cdestruct |- *** #CDestrSplitGoal.
-  all: set_solver.
+  all: rewrite Hbytes in *; done.
 Qed.
 
-Lemma rel_montone_intersection1 (rel1 rel2 : grel EID.t) :
-  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Lemma bvs_equal_get_byte_equal size n (x y : bv size) :
+  n ≠ 0%N → (∀ i, (i * n < size)%N →
+    bv_get_byte n i x = bv_get_byte n i y) →
+  x = y.
 Proof.
-  unfold rel_strictly_monotone.
-  autorewrite with pair.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: set_solver.
+  intros.
+  enough (bv_to_bvn x = bv_to_bvn y) by naive_solver.
+  eapply bvns_equal_get_byte_equal; eauto.
 Qed.
 
-Lemma rel_montone_intersection2 (rel1 rel2 : grel EID.t) :
-  rel_strictly_monotone rel1 → rel_strictly_monotone (rel1 ∩ rel2).
+Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
+	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
+Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
+
+Lemma bv_to_bytes_bv_get_byte3 {n i m} (b : bv m) byte :
+  (0 < n)%N → (i * n < m)%N → bv_get_byte n i b = byte →
+  bv_to_bytes n b !! i = Some byte.
+Proof. intros. by eapply bv_to_bytes_bv_get_byte. Qed.
+
+Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
+  n ≠ 0%N → m = N.of_nat (length l) →
+  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
 Proof.
-  unfold rel_strictly_monotone.
-  autorewrite with pair.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: set_solver.
+  intros ? ->.
+  unfold bv_to_bytes, bv_of_bytes.
+  rewrite div_round_up_divisible; last done.
+  bv_simplify.
+  unfold bv_wrap.
+  rewrite Z.mod_small.
+  2: {
+    pose proof (little_endian_to_bv_bound n l).
+    unfold bv_modulus.
+    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
+    done.
+  }
+  rewrite bv_to_little_endian_to_bv.
+  2: lia.
+  done.
 Qed.
 
-Lemma grel_from_set_montone (eids : gset EID.t) :
-  rel_monotone ⦗ eids ⦘.
+Lemma read_mem_seq_state_flag_false_get_byte size pa st v :
+  read_mem_seq_state_flag size pa st = (v, false) →
+  ∀ (offset : N), (offset < size)%N →
+  st.(initSt).(MState.memory) (pa_addN pa offset) = bv_get_byte 8 offset v ∧
+  st.(mem) !! pa_addN pa offset = None.
 Proof.
-  unfold rel_monotone.
-  autorewrite with pair.
-  cdestruct |- ***.
-  now left.
+  intros.
+  unfold read_mem_seq_state_flag in *.
+  assert
+    (∀ p ∈ (read_byte_seq_state_flag st <$> pa_range pa size), p.2 = false).
+  {
+    cdestruct |- ***.
+    destruct b0; try fast_done.
+    exfalso.
+    assert (In (b,true) (read_byte_seq_state_flag st <$> pa_range pa size)) as ?%in_split_r%elem_of_list_In
+      by (eapply elem_of_list_In; set_solver).
+    cbn in *.
+    setoid_rewrite surjective_pairing in H at 2; cdestruct H as ?.
+    eapply not_false_iff_true, existsb_exists.
+    eexists true; cdestruct |- *** #CDestrSplitGoal.
+    by eapply elem_of_list_In.
+  }
+  split.
+  2:{
+    eapply eq_None_not_Some.
+    intros [].
+    ospecialize (H1 (x, true) _).
+    2: { scongruence. }
+    unfold read_byte_seq_state_flag.
+    set_unfold; eexists (pa_addN pa offset); cdestruct |- *** #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
+    eapply (elem_of_list_lookup_2 _ (N.to_nat offset)).
+    rewrite pa_range_lookupNat; first do 2 f_equal; lia.
+  }
+  assert ((read_byte_seq_state_flag st <$> pa_range pa size) =
+    (λ pa, (MState.memory (initSt st) pa, false)) <$> pa_range pa size).
+  {
+    eapply list_eq.
+    setoid_rewrite list_lookup_fmap.
+    intros.
+    destruct (decide (i < N.to_nat size)).
+    2: erewrite <- (pa_range_length pa _) in n; orewrite lookup_ge_None_2; by try lia.
+    erewrite <- (pa_range_length pa _) in l.
+    apply lookup_lt_is_Some_2 in l.
+    cdestruct l |- *** as ?? #CDestrEqOpt.
+    rewrite H2.
+    cbn.
+    f_equal.
+    unfold read_byte_seq_state_flag.
+    cdestruct |- *** #CDestrMatch.
+    ospecialize (H1 (b, true) _).
+    2: { scongruence. }
+    set_unfold.
+    eapply elem_of_list_lookup_2 in H2.
+    unfold read_byte_seq_state_flag.
+    eexists; cdestruct |- ***; hauto lq: on.
+  }
+  setoid_rewrite surjective_pairing in H at 2; cdestruct v, H as ?.
+  eapply eq_sym, bv_to_bytes_bv_get_byte.
+  1: lia.
+  rewrite bv_to_bytes_bv_of_bytes.
+  3: rewrite split_length_l, length_fmap, pa_range_length.
+  2,3: lia.
+  rewrite H2.
+  unfold lookup, list_lookupN.
+  odestruct (nth_lookup_or_length _ _ (bv_0 8)) as [->|].
+  2: rewrite split_length_l, length_fmap, pa_range_length in *; lia.
+  f_equal.
+  change (bv_0 8) with (bv_0 8,false).1.
+  assert (∀ B (y : B) {A} (x z : A), (x,y).1 = z → x = z) by done.
+  eapply (H3 bool (nth (N.to_nat offset) ?[y].2 (bv_0 8,false).2)).
+  erewrite <- split_nth.
+  rewrite nth_lookup, list_lookup_fmap, pa_range_lookupNat, N2Nat.id.
+  2: lia.
+  done.
 Qed.
 
-Lemma rel_strictly_monotone_seq1 (rel1 rel2 : grel EID.t) :
-  rel_strictly_monotone rel1 ∧ rel_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
-Proof.
-  unfold rel_strictly_monotone, rel_monotone.
-  autorewrite with pair.
-  cdestruct |- *** #CDestrSplitGoal.
-  eapply H in H1; eapply H0 in H2.
-  cdestruct x0, H2 |- *** #CDestrSplitGoal.
-Qed.
+(** * Constructing a candidate execution *)
 
-Lemma rel_strictly_monotone_seq2 (rel1 rel2 : grel EID.t) :
-  rel_monotone rel1 ∧ rel_strictly_monotone rel2 → rel_strictly_monotone (rel1 ⨾ rel2).
-Proof.
-  unfold rel_strictly_monotone, rel_monotone.
-  autorewrite with pair.
-  cdestruct |- *** #CDestrSplitGoal.
-  eapply H in H1; eapply H0 in H2.
-  cdestruct x0, H2 |- *** #CDestrSplitGoal.
-Qed.
+(** For the refinement proof we compute a (partial) candidate state for a
+    given operational trace by updating the necessary relations for each
+    event by folding over the trace. *)
 
-Lemma rel_monotone_acyclic (rel : grel EID.t) :
-  rel_strictly_monotone rel → grel_acyclic rel.
-Proof.
-  unfold rel_strictly_monotone, grel_acyclic, grel_irreflexive.
-  autorewrite with pair.
-  change (∀ x y, (x, y) ∈ rel → EID.full_po_lt x y)
-    with (∀ x y, grel_to_relation rel x y → EID.full_po_lt x y).
-  cdestruct |- *** as Hsubrel x Hcylcic.
-  rewrite grel_plus_spec in Hcylcic.
-  depelim Hcylcic.
-  - specialize (Hsubrel _ _ H).
-    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
-    lia.
-  - opose proof (rtc_subrel _ _ _ _ Hsubrel _).
-    1: eapply rtc_tc.
-    1: right; eassumption.
-    ospecialize (Hsubrel _ _ _); first eauto.
-    clear -H0 Hsubrel.
-    dependent induction H0.
-    { unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *. lia. }
-    eapply IHrtc.
-    unfold EID.full_po_lt, EID.po_lt, EID.iio_lt in *.
-    lia.
-Qed.
+(** The following record represents a (partial) candidate state. Besides
+    the expected relatons found in a candidate execution, we also maintain two
+    maps that keep track of the event EID that has most recently written to a
+    physical address or register respectively. This is used to update the
+    [reads_from], [coherence], and [register_reads_from].
 
-Lemma rel_monotone_difference (rel1 rel2 : grel EID.t) :
-  (∀ x y, (x,y) ∈ rel1 → EID.full_po_lt x y ∨ (x,y) ∈ rel2) →
-  rel_strictly_monotone (rel1 ∖ rel2).
-Proof.
-  unfold rel_strictly_monotone.
-  cdestruct |- *** as H a b ??.
-  ospecialize (H _ _ _); eauto.
-  cdestruct H |- *** #CDestrSplitGoal.
-Qed.
-
-Notation "( f <$>.)" := (fmap f) (only parsing) : stdpp_scope.
+    Additionally, for each physical address we maintain a set of event IDs that
+    have written to this address in the past. This is needed as coherence
+    relates *all* events that write to a certain physical address. *)
 
 Record partial_cd_state := {
   pa_write_map : gmap pa EID.t;
@@ -1571,22 +1662,63 @@ Record partial_cd_state := {
   co_acc : grel EID.t
 }.
 
+(** An empty partial candidate state, which is initially used.  *)
 #[local] Notation "cd∅" := (Build_partial_cd_state ∅ ∅ ∅ ∅ ∅ ∅).
 
 #[global] Instance eta_partial_cd_state : Settable partial_cd_state :=
-  settable! Build_partial_cd_state <pa_write_map;reg_write_map;pa_writes_set_map;rf_acc;rrf_acc;co_acc>.
+  settable! Build_partial_cd_state
+    <pa_write_map;reg_write_map;pa_writes_set_map;rf_acc;rrf_acc;co_acc>.
 
-Definition mem_write_upd_partial_cd_state (pa : pa) (weid : EID.t) (st : partial_cd_state) : partial_cd_state :=
+(** The following functions define the update logic of the partial candidate
+    state for a given memory/register write/read event ID that is being
+    appended at the end of the current trace *)
+Definition mem_write_upd_partial_cd_state (pa : pa) (weid : EID.t)
+    (st : partial_cd_state) : partial_cd_state :=
   let oprev_weid_set := st.(pa_writes_set_map) !! pa in
   (if oprev_weid_set is Some prev_weids
   then
     st
-    |> set co_acc (fold_left (λ acc prev_weid, {[(prev_weid, weid)]} ∪ acc) (elements prev_weids))
+    |> set co_acc
+        (fold_left (λ acc prev_weid, {[(prev_weid, weid)]} ∪ acc)
+          (elements prev_weids))
     |> setv (lookup pa ∘ pa_writes_set_map) (Some ({[weid]} ∪ prev_weids))
   else
-    st |>
-    setv (lookup pa ∘ pa_writes_set_map) (Some ({[weid]})))
-  |> setv (lookup pa ∘ pa_write_map) (Some weid).
+    st
+    |> setv (lookup pa ∘ pa_writes_set_map) (Some ({[weid]})))
+    |> setv (lookup pa ∘ pa_write_map) (Some weid).
+
+Definition mem_read_upd_partial_cd_state (pa : pa) (reid : EID.t)
+    (st : partial_cd_state) : partial_cd_state :=
+  let oweid := st.(pa_write_map) !! pa in
+  if oweid is Some weid
+  then set rf_acc ({[((weid,reid))]} ∪.) st
+  else st.
+
+Definition reg_write_upd_partial_cd_state (reg : reg) (weid : EID.t)
+    : partial_cd_state → partial_cd_state :=
+  setv (lookup reg ∘ reg_write_map) (Some weid).
+
+Definition reg_read_upd_partial_cd_state (reg : reg) (reid : EID.t)
+    (st : partial_cd_state) : partial_cd_state :=
+  let oweid := st.(reg_write_map) !! reg in
+  if oweid is Some weid
+  then set rrf_acc ({[((weid,reid))]} ∪.) st
+  else st.
+
+(** The top-level function that combines the previous definitions *)
+Definition update_partial_cd_state_for_eid_ev st '(eid, ev) :=
+  match ev with
+  | MemWrite _ wr &→ _ => mem_write_upd_partial_cd_state wr.(WriteReq.pa) eid st
+  | MemRead _ rr &→ _ => mem_read_upd_partial_cd_state rr.(ReadReq.pa) eid st
+  | RegWrite reg _ _ &→ _ => reg_write_upd_partial_cd_state reg eid st
+  | RegRead reg _ &→ _ => reg_read_upd_partial_cd_state reg eid st
+  | _ => st
+  end.
+
+(** * Automation instances for the partial candidate state construction *)
+
+(** As many core properties of our proof rely on these definitions, we have the
+    following automation boilerplate *)
 
 #[local] Instance elem_of_unfold_cdst_mem_write_co pa weid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
@@ -1609,7 +1741,8 @@ Proof using regs_whitelist.
     ospecialize (H1 _); first done.
     cdestruct H1 |- *** #CDestrSplitGoal; last by right.
     left; cdestruct |- *** #CDestrSplitGoal; naive_solver.
-  - fold_left_inv_pose (λ co_acc prev_weids, (eid1,eid2) ∈ co_acc ∨ eid1 ∈ prev_weids).
+  - fold_left_inv_pose
+      (λ co_acc prev_weids, (eid1,eid2) ∈ co_acc ∨ eid1 ∈ prev_weids).
     1: right; by cdestruct |- ***.
     1: cdestruct |- *** #CDestrSplitGoal; set_unfold; hauto lq: on.
     cdestruct H3 |- *** #CDestrSplitGoal.
@@ -1675,7 +1808,8 @@ Qed.
 
 Lemma eq_some_unfold_memw_upd_pcdst_pa_w_map cdst pa pa' weid weid' P :
   EqSomeUnfold (cdst.(pa_write_map) !! pa) weid P →
-  EqSomeUnfold ((mem_write_upd_partial_cd_state pa' weid' cdst).(pa_write_map) !! pa)
+  EqSomeUnfold
+    ((mem_write_upd_partial_cd_state pa' weid' cdst).(pa_write_map) !! pa)
     weid (pa = pa' ∧ weid = weid' ∨ pa ≠ pa' ∧ P).
 Proof.
   tcclean.
@@ -1691,7 +1825,8 @@ Qed.
      weid' P.
 Proof. tcclean. by rewrite lookup_unfold. Qed.
 
-Lemma eq_some_unfold_cdst_memw_upd_pa_ws_set_map cdst pa pa' weid ws (P : gset EID.t → Prop)  Q :
+Lemma eq_some_unfold_cdst_memw_upd_pa_ws_set_map cdst pa pa' weid ws
+    (P : gset EID.t → Prop) Q :
   (∀ ws, EqSomeUnfold (cdst.(pa_writes_set_map) !! pa') ws (P ws)) →
   EqNoneUnfold (cdst.(pa_writes_set_map) !! pa') Q →
   EqSomeUnfold ((mem_write_upd_partial_cd_state pa weid cdst).(pa_writes_set_map) !! pa')
@@ -1716,12 +1851,6 @@ Proof using regs_whitelist.
   rewrite lookup_unfold.
   cdestruct |- *** #CDestrMatch #CDestrSplitGoal #CDestrEqOpt.
 Qed.
-
-Definition mem_read_upd_partial_cd_state (pa : pa) (reid : EID.t) (st : partial_cd_state) : partial_cd_state :=
-  let oweid := st.(pa_write_map) !! pa in
-  if oweid is Some weid
-  then set rf_acc ({[((weid,reid))]} ∪.) st
-  else st.
 
 #[local] Instance elem_of_unfold_cdst_mem_read_co pa reid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
@@ -1781,7 +1910,6 @@ Proof.
   cdestruct |- *** #CDestrMatch #CDestrEqOpt #CDestrSplitGoal.
 Qed.
 
-
 #[local] Instance eq_some_unfold_memr_upd_pcdst_pa_w_map cdst pa pa' weid weid' P :
   EqSomeUnfold (cdst.(pa_write_map) !! pa) weid P →
   EqSomeUnfold ((mem_read_upd_partial_cd_state pa' weid' cdst).(pa_write_map) !! pa)
@@ -1793,9 +1921,6 @@ Proof. tcclean. by rewrite lookup_unfold. Qed.
   EqSomeUnfold ((mem_read_upd_partial_cd_state pa weid cdst).(reg_write_map) !! reg)
      weid' P.
 Proof. tcclean. by rewrite lookup_unfold. Qed.
-
-Definition reg_write_upd_partial_cd_state (reg : reg) (weid : EID.t) : partial_cd_state → partial_cd_state :=
-  setv (lookup reg ∘ reg_write_map) (Some weid).
 
 #[local] Instance elem_of_unfold_cdst_reg_write_co reg weid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
@@ -1840,7 +1965,6 @@ Qed.
      weid' P.
 Proof. tcclean. by rewrite lookup_unfold. Qed.
 
-
 Lemma eq_some_unfold_regw_upd_pcdst_reg_w_map cdst reg reg' weid weid' P :
   EqSomeUnfold (cdst.(reg_write_map) !! reg) weid P →
   EqSomeUnfold ((reg_write_upd_partial_cd_state reg' weid' cdst).(reg_write_map) !! reg)
@@ -1852,12 +1976,6 @@ Proof.
   cdestruct reg, reg', weid, weid' |- *** #CDestrMatch #CDestrSplitGoal #CDestrEqOpt.
   all: naive_solver.
 Qed.
-
-Definition reg_read_upd_partial_cd_state (reg : reg) (reid : EID.t) (st : partial_cd_state) : partial_cd_state :=
-  let oweid := st.(reg_write_map) !! reg in
-  if oweid is Some weid
-  then set rrf_acc ({[((weid,reid))]} ∪.) st
-  else st.
 
 #[local] Instance elem_of_unfold_cdst_reg_read_co reg reid cdst peids P :
   SetUnfoldElemOf peids cdst.(co_acc) P →
@@ -1929,42 +2047,62 @@ Proof. tcclean. by rewrite lookup_unfold. Qed.
     weid P.
 Proof. tcclean. by rewrite lookup_unfold. Qed.
 
-Definition update_partial_cd_state_for_eid_ev st '(eid, ev) :=
-  match ev with
-  | MemWrite _ wr &→ _ => mem_write_upd_partial_cd_state wr.(WriteReq.pa) eid st
-  | MemRead _ rr &→ _ => mem_read_upd_partial_cd_state rr.(ReadReq.pa) eid st
-  | RegWrite reg _ _ &→ _ => reg_write_upd_partial_cd_state reg eid st
-  | RegRead reg _ &→ _ => reg_read_upd_partial_cd_state reg eid st
-  | _ => st
-  end.
+Lemma reg_read_upd_pcdst_pa_w_map_equal reg eid pcdst :
+  pa_write_map (reg_read_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold reg_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma reg_write_upd_pcdst_pa_w_map_equal reg eid pcdst :
+  pa_write_map (reg_write_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold reg_write_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma mem_read_upd_pcdst_pa_w_map_equal pa eid pcdst :
+  pa_write_map (mem_read_upd_partial_cd_state pa eid pcdst) = pcdst.(pa_write_map).
+Proof. unfold mem_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma mem_write_upd_pcdst_pa_w_map_rewrite pa eid pcdst :
+  pa_write_map (mem_write_upd_partial_cd_state pa eid pcdst) = setv (.!! pa) (Some eid) pcdst.(pa_write_map).
+Proof. unfold mem_write_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma reg_read_upd_pcdst_co_acc_equal reg eid pcdst :
+  co_acc (reg_read_upd_partial_cd_state reg eid pcdst) = pcdst.(co_acc).
+Proof. unfold reg_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
+Lemma mem_read_upd_pcdst_co_acc_equal reg eid pcdst :
+  co_acc (mem_read_upd_partial_cd_state reg eid pcdst) = pcdst.(co_acc).
+Proof. unfold mem_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
+
 Arguments update_partial_cd_state_for_eid_ev : simpl never.
 Arguments mem_write_upd_partial_cd_state : simpl never.
 Arguments mem_read_upd_partial_cd_state : simpl never.
 
-Definition construct_cd_for_pe (pe : Candidate.pre Candidate.NMS 1) : partial_cd_state → partial_cd_state :=
+(** * Constructing the candidate *)
+
+(** The actual construction function that folds over the events of the
+    Candidate in order, updating the partial candidate state in the meantime *)
+Definition construct_cd_for_pe (pe : Candidate.pre Candidate.NMS 1)
+    : partial_cd_state → partial_cd_state :=
   fold_left update_partial_cd_state_for_eid_ev (Candidate.event_list pe).
 
+(** Constructs a one-threaded pre-execution and does not automatically
+    unfold to avoid cluttering proof goals *)
 Definition build_pre_exec initSt itrs : Candidate.pre Candidate.NMS 1 :=
   Candidate.make_pre Candidate.NMS initSt [# trace_rev itrs].
 Arguments build_pre_exec : simpl never.
 
-Notation "(seq_state_to_pe seq_st )" := (build_pre_exec seq_st.(initSt) seq_st.(itrs)) (seq_st at next level).
+Notation "(seq_state_to_pe seq_st )" :=
+  (build_pre_exec seq_st.(initSt) seq_st.(itrs)) (seq_st at next level).
 
-Definition partial_cd_state_to_cd (cdst : partial_cd_state) (pe : Candidate.pre Candidate.NMS 1) : Candidate.t Candidate.NMS 1 :=
+(** Computing a candidate state from partial candidate and a pre-execution *)
+Definition partial_cd_state_to_cd (cdst : partial_cd_state)
+    (pe : Candidate.pre Candidate.NMS 1) : Candidate.t Candidate.NMS 1 :=
   Candidate.make _ pe cdst.(rf_acc) cdst.(rrf_acc) cdst.(co_acc) ∅.
-
-(* Definition seq_partial_cd_states_to_partial_cd_state (seqst : seq_state) (cdst : partial_cd_state) : partial_cd_state :=
-  (construct_cd_for_pe (seq_state_to_pe seqst) cdst).
-
-Definition seq_partial_cd_states_to_cd (seqst : seq_state) (cdst : partial_cd_state) : Candidate.t Candidate.NMS 1 :=
-  let pe := (seq_state_to_pe seqst) in
-  partial_cd_state_to_cd (construct_cd_for_pe pe cdst) pe. *)
 
 Notation "(seq_state_to_partial_cd_state seq_st )" :=
   (construct_cd_for_pe (seq_state_to_pe seq_st) cd∅) (seq_st at next level).
 
 Notation "(seq_state_to_cd seq_st )" :=
-  (partial_cd_state_to_cd (seq_state_to_partial_cd_state seq_st) (seq_state_to_pe seq_st)) (seq_st at next level).
+  (partial_cd_state_to_cd (seq_state_to_partial_cd_state seq_st)
+    (seq_state_to_pe seq_st)) (seq_st at next level).
 
 Lemma seqst_to_pe_equal st st' :
   st.(initSt) = st'.(initSt) → st.(itrs) = st'.(itrs) →
@@ -1990,30 +2128,7 @@ Proof.
   now rewrite unsnoc_snoc.
 Qed.
 
-Lemma seq_state_to_pe_traces_cons seqst ev :
-  (seq_state_to_pe (set itrs (trace_cons ev) seqst)) =
-  set Candidate.events (traces_snoc ev 0%fin) (seq_state_to_pe seqst).
-Proof.
-  unfold build_pre_exec; cbv [set]; cbn.
-  do 2 f_equal.
-  unfold trace_snoc, unsnoc_total.
-  destruct (itrs seqst); first done.
-  now rewrite unsnoc_snoc.
-Qed.
-
-  (* #[local] Instance lookup_ev_from_iTraces {nmth : nat} : Lookup EID.t iEvent (vec (list (iTrace ())) nmth) :=
-  λ eid evs,
-  traces ← evs !! eid.(EID.tid);
-  '(trace, result) ← traces !! eid.(EID.iid);
-  trace !! eid.(EID.ieid). *)
-
-#[local] Instance lookup_unfold_vec_singleton (n : nat) `(v : A) :
-  LookupUnfold 0 [#v] (Some v).
-Proof.
-  tcclean.
-  unfold lookup, vec_lookup_nat.
-  cdestruct n |- *** #CDestrMatch; lia.
-Qed.
+(** * Trace lookup automation *)
 
 Lemma lookup_partial_cd_state_to_cd eid pcdst pe :
   (partial_cd_state_to_cd pcdst pe) !! eid = pe !! eid.
@@ -2048,15 +2163,6 @@ Proof. tcclean. by rewrite lookup_unfold. Qed.
   EqNoneUnfold (cd !! eid) P →
   EqNoneUnfold (Candidate.pre_exec cd !! eid) P.
 Proof. tcclean. by rewrite lookup_unfold. Qed.
-
-#[local] Instance lookup_total_unfold_vec_singleton (n : fin 1) `(x : A) :
-  LookupTotalUnfold n [#x] x.
-Proof.
-  tcclean.
-  depelim n.
-  1: done.
-  depelim n1.
-Qed.
 
 Lemma lookup_pe_to_lookup_trace (pe : Candidate.pre Candidate.NMS 1) eid :
   pe !! eid = (pe.(Candidate.events) !!! 0%fin) !! eid.
@@ -2144,6 +2250,10 @@ Proof using regs_whitelist.
   by unfold build_pre_exec.
 Qed.
 
+(** This Lemma when provided to [cdestruct] splits an event id lookup in a trace
+    that was extended by one event, into two cases:
+    the event is in the original trace, or it is the appended event itself.
+    This is a core lemma used in most invariant proofs. *)
 Lemma eq_some_unfold_lookup_eid_trace_snoc itrs eid ev ev' :
   EqSomeUnfold (trace_snoc ev itrs !! eid) ev'
     (if decide (is_Some (itrs !! eid))
@@ -2408,23 +2518,36 @@ Definition partial_cd_state_monotone (cdst : partial_cd_state) : Prop :=
 
 Arguments Candidate.event_list : simpl never.
 
-Definition seq_model_outcome_invariant_preserved (I I' : seq_state → Prop) : Prop :=
+(** * Invariant preservation over traces *)
+
+(** This states that the sequential model preserves an invariant [I'] over a
+    single outcome interpretation. The initial state may have stronger
+    properties (i.e. [I]). *)
+Definition seq_model_outcome_invariant_preserved (I I' : seq_state → Prop)
+    : Prop :=
   ∀ (seq_st : seq_state),
   I seq_st →
   ∀ (call : outcome) ret seq_st_succ,
-  (seq_st_succ, ret) ∈ sequential_model_outcome (Some regs_whitelist) call seq_st →
+  (seq_st_succ, ret) ∈
+    sequential_model_outcome (Some regs_whitelist) call seq_st →
   I' (set itrs (trace_cons (call &→ ret)) seq_st_succ).
 
-  Definition seq_model_outcome_invariant_preserved_mem_assumptions (I I' : seq_state → Prop) : Prop :=
+(** Invariant preservation with further assumptions about the legality
+    of memory accesses and non-mixed-sizeness of the trace.  *)
+  Definition seq_model_outcome_invariant_preserved_mem_assumptions
+      (I I' : seq_state → Prop) : Prop :=
   ∀ (seq_st : seq_state),
   I seq_st →
   ∀ (call : outcome),
   legal_memory_acc call →
   ∀ ret seq_st_succ,
   seq_state_is_nms (set itrs (trace_cons (call &→ ret)) seq_st_succ) →
-  (seq_st_succ, ret) ∈ sequential_model_outcome (Some regs_whitelist) call seq_st →
+  (seq_st_succ, ret) ∈
+    sequential_model_outcome (Some regs_whitelist) call seq_st →
   I' (set itrs (trace_cons (call &→ ret)) seq_st_succ).
 
+(** Destructing lemma for the computation of a partial candidate for
+    an appended event  *)
 Lemma seq_state_to_partial_cd_state_destruct (I : partial_cd_state → Prop) initSt itrs call ret :
   let succ_eid := intra_trace_eid_succ 0 (Candidate.events (build_pre_exec initSt itrs) !!! 0%fin) in
   let pcdst := (construct_cd_for_pe (build_pre_exec initSt itrs) cd∅) in
@@ -2450,6 +2573,10 @@ Lemma seq_state_to_pe_fold seq_st :
   = (seq_state_to_pe seq_st).
 Proof. unfold build_pre_exec. cdestruct |- ***. Qed.
 
+(** * Invariant statements *)
+
+(** The memory map in the sequential model always contains the value of the
+    most recent write to this address. *)
 Definition seq_st_mem_map_consistentP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ pa v,
@@ -2464,6 +2591,8 @@ Definition seq_st_mem_map_consistentP seq_st :=
           is_mem_writeP (λ size wr, pa_in_range wr.(WriteReq.pa) size pa) ev' →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
+(** The register map in the sequential model always contains the value of the
+    most recent write to this register. *)
 Definition seq_st_reg_map_consistentP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ (reg : Arch.reg) v,
@@ -2476,6 +2605,8 @@ Definition seq_st_reg_map_consistentP seq_st :=
           is_reg_write ev' → get_reg ev' = Some reg →
           EID.full_po_lt eid' eid ∨ eid' = eid).
 
+(** If an address has been written to, then the sequential model memory map
+    contains a value for this address. *)
 Definition seq_st_mem_map_is_SomeP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ pa,
@@ -2485,16 +2616,20 @@ Definition seq_st_mem_map_is_SomeP seq_st :=
           (λ size wr, pa_addN wr.(WriteReq.pa) offset = pa ∧ (offset < size)%N) ev) →
     is_Some (seq_st.(mem) !! pa).
 
+(** Memory writes in the event list do not fail. *)
 Definition mem_writes_succeedP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let evs := Candidate.event_list cd in
   ∀ ev ∈ evs.*2, is_mem_write_req ev →
   is_mem_write_reqP (λ _ _ ret, if ret is inl b then b = true else False) ev.
 
+(** All writes in the trace have legal size. *)
 Definition pcdst_mem_acc_legalP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ eid ev, cd !! eid = Some ev → legal_memory_acc_ev ev.
 
+(** The partial candidate keeps correctly track of the event ID of the most
+    recent write for each address *)
 Definition pcdst_mem_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2504,6 +2639,8 @@ Definition pcdst_mem_map_invP seq_st :=
         get_pa ev' = Some pa →
         eid' = eid ∨ EID.full_po_lt eid' eid).
 
+(** The partial candidate keeps correctly track of the event IDs that have written
+    to a certain address for each address *)
 Definition pcdst_mem_set_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2523,6 +2660,7 @@ Lemma seq_state_trace_cons_equal s1 s2 ev :
   (set itrs (trace_cons ev) s1).(itrs) = (set itrs (trace_cons ev) s2).(itrs).
 Proof. destruct s1, s2. cbn. by intros ->. Qed.
 
+(** The partial candidate state has a correct/well-formed coherence relation *)
 Definition cdst_co_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let co := co_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2531,6 +2669,7 @@ Definition cdst_co_acc_invP seq_st :=
     is_mem_write ev1 ∧ is_mem_write ev2 ∧ get_pa ev1 = get_pa ev2 ∧
     EID.full_po_lt eid1 eid2.
 
+(** The partial candidate state has a correct/well-formed reads-from relation *)
 Definition cdst_rf_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rf := rf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2542,6 +2681,8 @@ Definition cdst_rf_acc_invP seq_st :=
       get_pa ev' = get_pa ev2 →
       EID.full_po_lt other_eid eid1 ∨ other_eid = eid1 ∨ EID.full_po_lt eid2 other_eid.
 
+(** The partial candidate state has a correct/well-formed
+    register-reads-from relation *)
 Definition cdst_rrf_acc_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rrf := rrf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2553,6 +2694,8 @@ Definition cdst_rrf_acc_invP seq_st :=
       get_reg ev' = get_reg ev2 →
       EID.full_po_lt other_eid eid1 ∨ other_eid = eid1 ∨ EID.full_po_lt eid2 other_eid.
 
+(** Memory reads are either from the sequential mode memory map if there is a
+    value or alternatively read the value from the initial state *)
 Definition cdst_mem_reads_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rf := rf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2563,6 +2706,8 @@ Definition cdst_mem_reads_invP seq_st :=
       (¬ ∃ weid, (weid, reid) ∈ rf)
       ∧ bv_to_bvn (memoryMap_read seq_st.(initSt).(MState.memory) rpa rsize) = rvalue.
 
+(** Register reads are either from the sequential mode register map if there is a
+    value or alternatively read the value from the initial state *)
 Definition cdst_reg_reads_invP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   let rrf := rrf_acc (seq_state_to_partial_cd_state seq_st) in
@@ -2572,6 +2717,8 @@ Definition cdst_reg_reads_invP seq_st :=
       (¬ ∃ weid, (weid, reid) ∈ rrf)
       ∧ ((MState.regs seq_st.(initSt)) !!! 0%fin) rreg = rval.
 
+(** The partial candidate keeps correctly track of the event IDs that have written
+    to a certain register for each register *)
 Definition pcdst_reg_map_invP seq_st :=
   let pcdst := (seq_state_to_partial_cd_state seq_st) in
   let cd := (seq_state_to_cd seq_st) in
@@ -2581,6 +2728,8 @@ Definition pcdst_reg_map_invP seq_st :=
       is_reg_writeP (λ reg' _ _, reg' = reg) ev' →
       eid' = eid ∨ EID.full_po_lt eid' eid).
 
+(** The partial candidate keeps correctly track of the event ID of the most
+    recent write for each register *)
 Definition seq_st_reg_map_is_SomeP seq_st :=
   let cd := (seq_state_to_cd seq_st) in
   ∀ reg,
@@ -2588,6 +2737,8 @@ Definition seq_st_reg_map_is_SomeP seq_st :=
     cd !! eid = Some ev ∧ is_reg_write ev ∧ get_reg ev = Some reg) →
     is_Some (seq_st.(regs) !! reg).
 
+(** This record combines all the invariants in one big invariant which we will
+    ultimately show to be preserved by the sequential model. *)
 Record seq_inv_predicate (seq_st : seq_state) := {
   pcdst := (seq_state_to_partial_cd_state seq_st);
   cd := (seq_state_to_cd seq_st);
@@ -2611,84 +2762,9 @@ Record seq_inv_predicate (seq_st : seq_state) := {
   cd_from_seq_state_consistent : consistent regs_whitelist cd
 }.
 
-Lemma and_or_dist P Q R :
-  P ∧ (Q ∨ R) ↔ (P ∧ Q) ∨ (P ∧ R).
-Proof. naive_solver. Qed.
+(** * Sequential model invariant proofs *)
 
-Lemma exists_or_dist {T} (P Q : T → Prop) :
-  (∃ x, P x ∨ Q x) ↔ (∃ x, P x) ∨ (∃ x, Q x).
-Proof. naive_solver. Qed.
-
-Lemma intra_trace_eid_succ_components_equal eid tid tr :
-  eid.(EID.tid) = tid →
-  eid.(EID.iid) = (intra_trace_eid_succ tid tr).(EID.iid) →
-  eid.(EID.ieid) = (intra_trace_eid_succ tid tr).(EID.ieid) →
-  eid.(EID.byte) = None →
-  eid = intra_trace_eid_succ tid tr.
-Proof.
-  destruct eid, (intra_trace_eid_succ tid tr) eqn: ?.
-  unfold intra_trace_eid_succ, unsnoc_total in *.
-  destruct (decide (tr = [])) as [->|].
-  2: opose proof (exists_last _) as [? [ltr]]; eauto.
-  all: cdestruct Heqt |- *** #CDestrSplitGoal.
-  all: try scongruence.
-  all: subst.
-  all: rewrite unsnoc_snoc in *.
-  all: destruct ltr.
-  all: cdestruct Heqt |- ***.
-Qed.
-
-Lemma reg_read_upd_pcdst_pa_w_map_equal reg eid pcdst :
-  pa_write_map (reg_read_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
-Proof. unfold reg_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma reg_write_upd_pcdst_pa_w_map_equal reg eid pcdst :
-  pa_write_map (reg_write_upd_partial_cd_state reg eid pcdst) = pcdst.(pa_write_map).
-Proof. unfold reg_write_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma mem_read_upd_pcdst_pa_w_map_equal pa eid pcdst :
-  pa_write_map (mem_read_upd_partial_cd_state pa eid pcdst) = pcdst.(pa_write_map).
-Proof. unfold mem_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma mem_write_upd_pcdst_pa_w_map_rewrite pa eid pcdst :
-  pa_write_map (mem_write_upd_partial_cd_state pa eid pcdst) = setv (.!! pa) (Some eid) pcdst.(pa_write_map).
-Proof. unfold mem_write_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma reg_read_upd_pcdst_co_acc_equal reg eid pcdst :
-  co_acc (reg_read_upd_partial_cd_state reg eid pcdst) = pcdst.(co_acc).
-Proof. unfold reg_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma mem_read_upd_pcdst_co_acc_equal reg eid pcdst :
-  co_acc (mem_read_upd_partial_cd_state reg eid pcdst) = pcdst.(co_acc).
-Proof. unfold mem_read_upd_partial_cd_state. cdestruct |- *** #CDestrMatch. Qed.
-
-Lemma if_distribution_option `(f : A → B) `(o : option C) (g : C → A) a :
-  f (if o is Some c then g c else a) = (if o is Some c then f (g c) else f a).
-Proof. by destruct o. Qed.
-
-Lemma if_indiscriminate_cases_option {B} `(x : option A) (y z : B) :
-  y = z → (if x is Some c then y else z) = y.
-Proof. by destruct x. Qed.
-
-#[local] Instance cdestruct_full_po_lt_eid_succ_False b eid eid' itrs ev :
-  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
-  TCFastDone (itrs !! eid' = Some ev) →
-  CDestrSimpl b (EID.full_po_lt eid eid') False.
-Proof.
-  tcclean.
-  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
-  cdestruct eid, eid' |- *** #CDestrSplitGoal.
-Qed.
-
-#[local] Instance cdestruct_full_po_lt_eid_succ_True b eid eid' itrs ev :
-  TCFastDone (eid = intra_trace_eid_succ 0 itrs) →
-  TCFastDone (itrs !! eid' = Some ev) →
-  CDestrSimpl b (EID.full_po_lt eid' eid) True.
-Proof.
-  tcclean.
-  opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
-  cdestruct eid, eid' |- *** #CDestrSplitGoal.
-Qed.
+(** Now we show that the sequential model preserves the invariants defined above. *)
 
 Lemma seq_model_seq_st_mem_map_consistent_inv :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate seq_st_mem_map_consistentP.
@@ -3190,187 +3266,6 @@ Proof using regs_whitelist.
     all: try cdestruct call; unfold is_mem_writeP, is_mem_readP in *; try done.
     all: opose proof (eid_full_po_lt_intra_trace_eid_succ _ _ _); eauto.
     all: deintros; cdestruct |- ***.
-Qed.
-
-Lemma pa_range_lookupN pa size i :
-  (i < size)%N →
-  pa_range pa size !! i = Some (pa_addN pa i).
-Proof.
-  intros.
-  unfold pa_range.
-  setoid_rewrite list_lookup_fmap.
-  unfold seqN.
-  setoid_rewrite list_lookup_fmap.
-  rewrite lookup_seq_lt; last lia.
-  cbn.
-  do 2 f_equal.
-  lia.
-Qed.
-
-Lemma pa_range_lookupNat pa size i :
-  i < N.to_nat size →
-  pa_range pa size !! i = Some (pa_addN pa (N.of_nat i)).
-Proof.
-  intros.
-  opose proof (pa_range_lookupN pa size (N.of_nat i) _); first lia.
-  unfold lookup, list_lookupN in H0.
-  by rewrite Nat2N.id in H0.
-Qed.
-
-Lemma Some_inj {A} (x y : A) :
-  Some x = Some y ↔ x = y.
-Proof. cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal. Qed.
-
-Lemma bvns_equal_get_byte_equal n (x y : bvn) :
-  n ≠ 0%N → bvn_n x = bvn_n y →
-  (∀ i, (i * n < bvn_n x)%N →
-    bv_get_byte n i x.(bvn_val) = bv_get_byte n i y.(bvn_val)) →
-  x = y.
-Proof.
-  destruct x as [size x], y as [ysize y]; cdestruct ysize, x, y |- *** as x Hn y Hbytes.
-  setoid_rewrite <- (@bv_of_bytes_bv_to_bytes n) at 1 2; try fast_done.
-  f_equal.
-  apply list_eq.
-  intros.
-  apply option_eq.
-  intro b.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg1; first lia.
-  opose proof (@bv_to_bytes_bv_get_byte n (N.of_nat i) size _ b _) as Hg2; first lia.
-  unfold lookup, list_lookupN in Hg1, Hg2; rewrite Nat2N.id in *.
-  setoid_rewrite Hg1; setoid_rewrite Hg2; clear Hg1 Hg2.
-  cdestruct |- *** #CDestrSplitGoal.
-  all: rewrite Hbytes in *; done.
-Qed.
-
-Lemma bvs_equal_get_byte_equal size n (x y : bv size) :
-  n ≠ 0%N → (∀ i, (i * n < size)%N →
-    bv_get_byte n i x = bv_get_byte n i y) →
-  x = y.
-Proof.
-  intros.
-  enough (bv_to_bvn x = bv_to_bvn y) by naive_solver.
-  eapply bvns_equal_get_byte_equal; eauto.
-Qed.
-
-Lemma bv_to_bytes_bv_get_byte2 {n i m} (b : bv m) :
-	(0 < n)%N → (i * n < m)%N → bv_to_bytes n b !! i = Some (bv_get_byte n i b).
-Proof. intros. eapply bv_to_bytes_bv_get_byte. all: done. Qed.
-
-Lemma bv_to_bytes_bv_get_byte3 {n i m} (b : bv m) byte :
-  (0 < n)%N → (i * n < m)%N → bv_get_byte n i b = byte →
-  bv_to_bytes n b !! i = Some byte.
-Proof. intros. by eapply bv_to_bytes_bv_get_byte. Qed.
-
-Lemma bv_to_bytes_bv_of_bytes {m n} (l : list (bv n)) :
-  n ≠ 0%N → m = N.of_nat (length l) →
-  bv_to_bytes n (bv_of_bytes (n * m) l) = l.
-Proof.
-  intros ? ->.
-  unfold bv_to_bytes, bv_of_bytes.
-  rewrite div_round_up_divisible; last done.
-  bv_simplify.
-  unfold bv_wrap.
-  rewrite Z.mod_small.
-  2: {
-    pose proof (little_endian_to_bv_bound n l).
-    unfold bv_modulus.
-    rewrite N2Z.inj_mul, nat_N_Z, Z.mul_comm.
-    done.
-  }
-  rewrite bv_to_little_endian_to_bv.
-  2: lia.
-  done.
-Qed.
-
-Lemma read_mem_seq_state_flag_false_get_byte size pa st v :
-  read_mem_seq_state_flag size pa st = (v, false) →
-  ∀ (offset : N), (offset < size)%N →
-  st.(initSt).(MState.memory) (pa_addN pa offset) = bv_get_byte 8 offset v ∧
-  st.(mem) !! pa_addN pa offset = None.
-Proof.
-  intros.
-  unfold read_mem_seq_state_flag in *.
-  assert
-    (∀ p ∈ (read_byte_seq_state_flag st <$> pa_range pa size), p.2 = false).
-  {
-    cdestruct |- ***.
-    destruct b0; try fast_done.
-    exfalso.
-    assert (In (b,true) (read_byte_seq_state_flag st <$> pa_range pa size)) as ?%in_split_r%elem_of_list_In
-      by (eapply elem_of_list_In; set_solver).
-    cbn in *.
-    setoid_rewrite surjective_pairing in H at 2; cdestruct H as ?.
-    eapply not_false_iff_true, existsb_exists.
-    eexists true; cdestruct |- *** #CDestrSplitGoal.
-    by eapply elem_of_list_In.
-  }
-  split.
-  2:{
-    eapply eq_None_not_Some.
-    intros [].
-    ospecialize (H1 (x, true) _).
-    2: { scongruence. }
-    unfold read_byte_seq_state_flag.
-    set_unfold; eexists (pa_addN pa offset); cdestruct |- *** #CDestrSplitGoal #CDestrMatch #CDestrEqOpt.
-    eapply (elem_of_list_lookup_2 _ (N.to_nat offset)).
-    rewrite pa_range_lookupNat; first do 2 f_equal; lia.
-  }
-  assert ((read_byte_seq_state_flag st <$> pa_range pa size) =
-    (λ pa, (MState.memory (initSt st) pa, false)) <$> pa_range pa size).
-  {
-    eapply list_eq.
-    setoid_rewrite list_lookup_fmap.
-    intros.
-    destruct (decide (i < N.to_nat size)).
-    2: erewrite <- (pa_range_length pa _) in n; orewrite lookup_ge_None_2; by try lia.
-    erewrite <- (pa_range_length pa _) in l.
-    apply lookup_lt_is_Some_2 in l.
-    cdestruct l |- *** as ?? #CDestrEqOpt.
-    rewrite H2.
-    cbn.
-    f_equal.
-    unfold read_byte_seq_state_flag.
-    cdestruct |- *** #CDestrMatch.
-    ospecialize (H1 (b, true) _).
-    2: { scongruence. }
-    set_unfold.
-    eapply elem_of_list_lookup_2 in H2.
-    unfold read_byte_seq_state_flag.
-    eexists; cdestruct |- ***; hauto lq: on.
-  }
-  setoid_rewrite surjective_pairing in H at 2; cdestruct v, H as ?.
-  eapply eq_sym, bv_to_bytes_bv_get_byte.
-  1: lia.
-  rewrite bv_to_bytes_bv_of_bytes.
-  3: rewrite split_length_l, length_fmap, pa_range_length.
-  2,3: lia.
-  rewrite H2.
-  unfold lookup, list_lookupN.
-  odestruct (nth_lookup_or_length _ _ (bv_0 8)) as [->|].
-  2: rewrite split_length_l, length_fmap, pa_range_length in *; lia.
-  f_equal.
-  change (bv_0 8) with (bv_0 8,false).1.
-  assert (∀ B (y : B) {A} (x z : A), (x,y).1 = z → x = z) by done.
-  eapply (H3 bool (nth (N.to_nat offset) ?[y].2 (bv_0 8,false).2)).
-  erewrite <- split_nth.
-  rewrite nth_lookup, list_lookup_fmap, pa_range_lookupNat, N2Nat.id.
-  2: lia.
-  done.
-Qed.
-
-Instance decide_exists_in_gset `{EqDecision A, Countable A} (P : A → Prop) `{∀ a, Decision (P a)} (s : gset A) :
-  Decision (∃ a, P a ∧ a ∈ s).
-  destruct (filter P (elements s)) eqn: ?.
-  - right.
-    unfold not; cdestruct |- ***.
-    eapply (filter_nil_not_elem_of P _ x Heql); eauto.
-    set_solver.
-  - left.
-    exists a.
-    enough (P a ∧ a ∈ (elements s)) by set_solver.
-    eapply (elem_of_list_filter P).
-    rewrite Heql.
-    set_solver.
 Qed.
 
 Lemma seq_model_mem_reads_inv :
@@ -4441,6 +4336,7 @@ Proof.
       1: eauto.
 Qed.
 
+(* The operational model preserves the full invariant record predicate. *)
 Lemma seq_model_seq_inv_predicate_preserved :
   seq_model_outcome_invariant_preserved_mem_assumptions seq_inv_predicate
     seq_inv_predicate.
@@ -4592,7 +4488,8 @@ Proof. unfold Candidate.same_key, Candidate.gather_by_key. by intros ->. Qed.
 
 Lemma is_overlapping_equal_events {et nmth} (pe pe' : Candidate.pre et nmth) :
   Candidate.event_list pe = Candidate.event_list pe' →
-  ∀ eid1 eid2, Candidate.is_overlapping pe eid1 eid2 ↔ Candidate.is_overlapping pe' eid1 eid2.
+  ∀ eid1 eid2,
+    Candidate.is_overlapping pe eid1 eid2 ↔ Candidate.is_overlapping pe' eid1 eid2.
 Proof.
   unfold Candidate.is_overlapping.
   cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal.
@@ -4603,18 +4500,6 @@ Proof.
   all: do 4 (eexists; cdestruct |- *** #CDestrEqOpt #CDestrSplitGoal).
   all: unfold pa_overlap.
   all: naive_solver.
-Qed.
-
-Lemma set_filter_iff `{FinSet A C} (P1 P2 : A → Prop)
-      `{∀ a, Decision (P1 a)} `{∀ a, Decision (P2 a)} (s : C) :
-    (∀ a, P1 a ↔ P2 a) →
-    filter P1 s = filter P2 s.
-Proof.
-  intros.
-  unfold filter, set_filter.
-  erewrite list_filter_iff.
-  1: reflexivity.
-  assumption.
 Qed.
 
 Lemma is_overlapping_equal_events_filter_predicate {et nmth}
@@ -4654,6 +4539,8 @@ Proof using regs_whitelist.
   done.
 Qed.
 
+(** Changeing the trace end of an instruction trace has no implications for the
+    invariant predicate. *)
 Lemma seq_inv_predicate_preserved_change_trace_end st :
   seq_inv_predicate st →
   seq_inv_predicate (set itrs (λ l : list (iTrace ()), ((hd FTNothing l).1, FTERet ()) :: tail l) st).
@@ -4820,6 +4707,7 @@ Proof using regs_whitelist.
     all: try assumption.
 Qed.
 
+(** Adding an empty instruction trace does not destroy the invariant. *)
 Lemma seq_inv_predicate_preserved_cons_empty_trace st :
   seq_inv_predicate st →
   seq_inv_predicate (set itrs (cons FTNothing) st).
@@ -4990,6 +4878,8 @@ Qed.
   EqSomeUnfold (trace_rev [] !! eid) x False.
 Proof. tcclean. destruct eid as [[] ? ? []]; cbv. all: naive_solver. Qed.
 
+(** The empty sequential state fulfills the invariant predicate.
+    Hence, this is the base case to the overall preservation induction. *)
 Lemma empty_seq_state_fulfills_seq_inv_predicate initSt :
   seq_inv_predicate {| initSt := initSt; mem := ∅; regs := ∅; itrs := [] |}.
 Proof.
@@ -5035,9 +4925,12 @@ Proof.
   all: left+right; assumption.
 Qed.
 
+(** If the final trace of the sequential model is non-mixed-size, then
+    all partial traces are also non-mixed-size. *)
 Lemma seqmodel_successor_nms_implies_start_nms fuel isem final_st start_st fs :
   seq_state_is_nms final_st →
-  (final_st, fs) ∈ sequential_model_seqmon_final (Some regs_whitelist) fuel isem start_st →
+  (final_st, fs) ∈
+    sequential_model_seqmon_final (Some regs_whitelist) fuel isem start_st →
   seq_state_is_nms start_st.
 Proof.
   unfold sequential_model_seqmon_final.
@@ -5071,6 +4964,7 @@ Proof.
   all: eapply trace_tail_preserves_nms.
   all: eassumption.
 Qed.
+
 
 Lemma sequential_model_outcome_logged_succ_tr st st' call ret :
   (st', ret) ∈ sequential_model_outcome_logged (Some regs_whitelist) call st →
@@ -5254,12 +5148,6 @@ Proof.
   eauto.
 Qed.
 
-Lemma list_eq_iff {A} (l1 l2 : list A) :
-  (∀ i : nat, l1 !! i = l2 !! i) ↔ l1 = l2.
-Proof.
-  split; first apply list_eq.
-  naive_solver.
-Qed.
 
 Lemma fold_left_foldl {A B} (f : A → B → A) (x : A) (l : list B) :
   fold_left f l x = foldl f x l.
@@ -5288,15 +5176,11 @@ Proof.
   rewrite ?enumerate_imap.
   cdestruct |- ***.
   clear init.
-  enough (∀ n m,
-    mjoin h.*1 =
-    ((((imap (pair ∘ (Nat.iter n S)) h ≫= λ '(iid, trace), [(0, iid, trace)]) ++ [])
-      ≫= λ '(y, y0),
-        let '(tid, iid) := y in let '(trace, _) := y0 in
-        imap (pair ∘ (Nat.iter m S)) trace ≫= λ '(ieid, event), mret (tid, iid, ieid, event))
-      ≫= λ '(y, event), let '(y0, ieid) := y in let '(tid, iid) := y0 in
-      [({| EID.tid := tid; EID.iid := iid; EID.ieid := ieid; EID.byte := None |}, event)]).*2)
-    as H by (specialize (H 0 0); done).
+  assert (∀ B, @pair nat B = @pair nat B ∘ (Nat.iter 0 S)) as Hpairiter
+    by (intro; apply functional_extensionality_dep; done).
+  setoid_rewrite Hpairiter.
+  rewrite (Hpairiter iEvent).
+  generalize 0 at 1 as m; generalize 0 at 2 as n.
   induction h; try done.
   cbn.
   destruct a.
@@ -5950,7 +5834,20 @@ Proof.
   by eapply IHfuel.
 Qed.
 
-Lemma op_model_exists_consistent_cd fuel isem initSt :
+(** * The refinement theorem *)
+
+(** This is the main result of this file. We assume
+    - any memory access issued by the instruction semantics
+      has size ≠ 0 and < 2 ^ 52
+    - a sequential state that was computed by the operational model without error
+    - no mixed-size memory accesses in the operational model trace
+
+    and prove that the computed candidate execution that has the same trace
+    is **consistent** and **well-formed**!
+
+    The result follows directly from the sequential model maintaining the big
+    invariant record defined above. *)
+Theorem op_model_refines_ax_model fuel isem initSt :
   isem_mem_acc_legal_length isem →
   ∀ st fs, seq_state_is_nms st →
     (st, fs) ∈
@@ -6017,4 +5914,4 @@ Proof.
   all: done.
 Qed.
 
-End Proof.
+End RefinementProof.
