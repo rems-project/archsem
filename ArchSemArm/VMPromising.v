@@ -440,7 +440,7 @@ Definition regval_to_val (r : reg) (v : reg_type r) : option val :=
     Some $ cast (known_regs_are_val r KNOWN) v
   else
     None.
-  
+
 (** * The thread state *)
 
 Module WSReg.
@@ -878,7 +878,6 @@ Module TLB.
 
   Definition init := make VATLB.init.
 
-  (* TODO: use Prop, remove foldl *)
   Definition is_active_asid (ts : TState.t)
       (asid : option (bv 16))
       (ttbr : reg) (time : nat) : Prop :=
@@ -886,7 +885,7 @@ Module TLB.
     | Some asid =>
       if TState.read_sreg_at ts ttbr time is Some sregs
         then ∃ '(regval, view) ∈ sregs,
-              if (regval_to_val ttbr regval) is Some v 
+              if (regval_to_val ttbr regval) is Some v
                 then asid = (bv_extract 48 16 v)
                 else False
         else False
@@ -927,7 +926,7 @@ Module TLB.
     '(memval, _) ←
       Exec.res_error_none "Reading from unmapped memory" $
         Memory.read_at loc init mem time;
-    guard_or "A root of a page table should be a table" (is_block memval);;
+    guard_or "A root of a page table should be a table" (is_table memval);;
 
     let asid := bv_extract 48 16 val_ttbr in
     let ndctxt := NDCtxt.make va (Some asid) in
@@ -991,7 +990,7 @@ Module TLB.
         |> set_fold (
             λ te mvatlb,
               vatlb_prev ← mvatlb;
-              Exec.res_mbind_inst _ _ 
+              Exec.res_mbind_inst _ _
                 (λ vatlb_new, mret $ vatlb_new ∪ vatlb_prev)
                 (va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr))
           (mret tlb.(vatlb))
@@ -1164,7 +1163,7 @@ Module TLB.
     let evs := PromMemory.cut_after_with_timestamps time mem in
     invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 
-Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
+  Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
                                  (time : nat)
@@ -1172,16 +1171,16 @@ Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.i
                                  (va : bv 64) (asid : option (bv 16))
                                  (ttbr : reg) : Exec.res string (list val * nat) :=
   let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
-  candidates ← 
+  candidates ←
     VATLB.get ctxt tlb.(TLB.vatlb)
     |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
-    |> set_fold 
+    |> set_fold
       (λ te acc,
+        ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
         if (List.hd_error acc.(Exec.results)) is Some prev then
-          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
           mret $ prev ++ [(te, ti)]
         else
-          acc
+          mret [(te, ti)]
       ) (mret $ []);
   '(te, ti) ← mchoosel candidates;
   mret (vec_to_list te, ti).
@@ -1538,12 +1537,12 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
   res3 ← TLB.ptes_invalidation_time tlb ts init mem tid time leaf_lvl va asid ttbr;
   mchoosel [res1; res2; res3].
 
-Definition run_trans_start (trans_start : TranslationStartInfo) 
+Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-  
+
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
   let max_t := length mem + 1 in
   time_t ← mchoosel $ seq vpre_t max_t;
@@ -1562,7 +1561,7 @@ Definition run_trans_end (trans_end : trans_end) :
   iis ← mGet;
   if iis.(IIS.trs) is Some trs then
     mSet $ IIS.add trs.(IIS.TransRes.time)
-  else 
+  else
     mret ().
 
 (** Runs an outcome. *)
