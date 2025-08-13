@@ -1134,7 +1134,7 @@ Module TLB.
     let evs := PromMemory.cut_after_with_timestamps time mem in
     invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 
-Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
+  Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
                                  (time : nat)
@@ -1147,11 +1147,11 @@ Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.i
     |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
     |> set_fold
       (λ te acc,
+        ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
         if (List.hd_error acc.(Exec.results)) is Some prev then
-          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
           mret $ prev ++ [(te, ti)]
         else
-          acc
+          mret [(te, ti)]
       ) (mret $ []);
   '(te, ti) ← mchoosel candidates;
   mret (vec_to_list te, ti).
