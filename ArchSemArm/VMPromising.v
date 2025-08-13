@@ -1207,7 +1207,6 @@ Module IIS.
 
 End IIS.
 
-
 Import UMPromising(view_if, read_fwd_view).
 
 (** Performs a memory read at a location with a view and return possible output
@@ -1216,7 +1215,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   (invalidation_time : nat) (macc : mem_acc)
   (init : Memory.initial)
   : Exec.t (TState.t * Memory.t) string (view * val) :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mget fst;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
@@ -1278,7 +1277,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   guard_or
     "Cannot write to unknown register"
-    (is_reg_unknown reg);;
+    (¬(is_reg_unknown reg));;
   guard_or
     "Non trivial write reg access types unsupported"
     (racc = None);;
@@ -1383,7 +1382,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (macc : mem_acc)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     (macc : mem_acc) (data : val)
     : Exec.t (TState.t * Memory.t) string () :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     time ← write_mem tid loc viio macc data;
@@ -1430,10 +1429,10 @@ Definition run_barrier (barrier : barrier) :
           mset fst $ TState.update TState.vdmbst vpost;;
           mset snd $ IIS.add vpost
       end
-  | Barrier_DSB dmb => (* dsb *)
+  | Barrier_DSB dsb => (* dsb *)
       guard_or "Non-shareable barrier are not supported"
-       (dmb.(DxB_domain) = MBReqDomain_Nonshareable);;
-       match dmb.(DxB_types) with
+       (dsb.(DxB_domain) ≠ MBReqDomain_Nonshareable);;
+       match dsb.(DxB_types) with
       | MBReqTypes_All (* dsb sy *) =>
           let vpost :=
             ts.(TState.vrd) ⊔ ts.(TState.vwr)
@@ -1459,10 +1458,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string () :=
   guard_or
     "Non-shareable TLBIs are not supported"
-    (tlbi.(TLBIInfo_shareability) = Shareability_NSH);;
+    (tlbi.(TLBIInfo_shareability) ≠ Shareability_NSH);;
   guard_or
     "TLBIs in other regimes than EL10 are unsupported"
-    (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) ≠ Regime_EL10);;
+    (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) = Regime_EL10);;
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let va := bv_extract 12 36 (tlbi.(TLBIInfo_rec).(TLBIRecord_address)) in
