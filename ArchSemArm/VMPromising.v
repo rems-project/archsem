@@ -1184,10 +1184,12 @@ Module TLB.
                                  (va : bv 64) (asid : bv 16)
                                  (ttbr : reg) : result string (list (list val * nat)) :=
     let evs := PromMemory.cut_after_with_timestamps time_base mem
-                |> list_filter_map (λ '(ev, t), match ev with
-                                    | Ev.Tlbi tlbi => Some (tlbi, t)
-                                    | Ev.Msg _ => None
-                                    end) in
+                |> list_filter_map
+                  (λ '(ev, t),
+                    match ev with
+                    | Ev.Tlbi tlbi => Some (tlbi, t)
+                    | Ev.Msg _ => None
+                    end) in
     ev_tlbs ←
       for (tlbi, time) in evs do
         ev_tlb ← at_timestamp_from ts init mem tlb_base time_base (time - time_base) va ttbr;
