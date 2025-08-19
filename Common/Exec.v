@@ -106,6 +106,8 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
 #[global] Instance res_choose_inst {E} : MChoose (res E) :=
   λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
 
+Instance result_lift_res {E} : MLift (result E) (res E) := λ A, unpack_result.
+
 (** Convert an execution result into a list of results *)
 Definition to_result_list `(e : res E A) : list (result E A) :=
   map Ok e.(results) ++ map Error e.(errors).
@@ -162,6 +164,9 @@ Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
     | MSet s => λ _, make [(s,())] []
     | MGet => λ s, make [(s,s)] []
     end.
+
+Instance res_lift_t {St E} : MLift (res E) (t St E) := λ A r st,
+    make (map (st,.) r.(results)) (map (st,.) r.(errors)).
 
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
 Proof. reflexivity. Qed.

@@ -1100,3 +1100,26 @@ Proof.
   intros x p a.
   induction a; simp ctrans; congruence.
 Qed.
+
+(** * Generic monad lift
+
+This allows to have a generic monad lifting procedure [mlift]. New instances
+should only be added to [MLift]. [MLiftT] is only for the transitive closure.
+
+Care should be taken to not add two different paths between two monads,
+otherwise there is a risk of the two different paths being selected in two
+different [mlift] terms that will look the same but be silently different.
+*)
+
+Class MLift (M M' : Type → Type) := mlift_in : ∀ A, M A → M' A.
+Arguments mlift_in {_ _ _ _}.
+Hint Mode MLift - ! : typeclass_instances.
+Class MLiftT (M M' : Type → Type) := mlift : ∀ A, M A → M' A.
+Arguments mlift {_ _ _ _}.
+Hint Mode MLiftT ! ! : typeclass_instances.
+Instance MLiftT_one `{MLift M M'} : MLiftT M M' := ltac:(assumption).
+Instance MLiftT_trans `{MLift M' M'', MLiftT M M'} : MLiftT M M'' :=
+  λ A x, mlift_in (mlift x).
+
+(** idM can be lifted to any monad *)
+Instance idM_lift_all `{MRet M} : MLift idM M := λ A x, mret x.
