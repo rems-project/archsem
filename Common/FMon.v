@@ -622,8 +622,41 @@ Section CMon.
     Proper (pointwise_relation (eff_ret call) cequiv ==> @cequiv A) (Next call).
   Proof using. intros k k'. apply cequiv_Next. Qed.
 
-  (* TODO: Make a good induction principle for cequiv *)
 
+
+  Definition fMon_to_cMon {A} (f : fMon Eff A) : cMon A :=
+    finterp mcall_fHandler f.
+
+
+
+  Lemma fMon_to_cMon_sound {A} (f : fMon Eff A) (t : fTrace Eff A) :
+    fmatch f t ↔ cmatch (fMon_to_cMon f) t.
+  Proof.
+    unfold fMon_to_cMon.
+    induction f in t |- * .
+    - split; inversion_clear 1; constructor.
+    - split; sinv 1; cdestruct t |- ***; hauto lq:on ctrs:cmatch,fmatch.
+  Qed.
+
+  Definition determinize_fHandler :
+      fHandler MChoice cMon :=
+    λ '(ChooseFin n),
+      if n is 0%nat then mdiscard else mret 0%fin.
+
+  Definition determinize_cMon {A} (f : cMon A) : cMon A :=
+    finterp (mcall_fHandler +ₕ determinize_fHandler) f.
+
+  Lemma determinize_trace_subset {A} (f : cMon A) (t : fTrace Eff A) :
+    cmatch (determinize_cMon f) t → cmatch f t.
+  Proof.
+    unfold determinize_cMon.
+    induction f in t |- *.
+    - inversion_clear 1; constructor.
+    - destruct call as [|[[]]].
+      all: sinv 1.
+      all: cdestruct t |- ***.
+      all: hauto lq:on ctrs:cmatch.
+  Qed.
 End CMon.
 Arguments cMon _ {_}.
 

@@ -606,6 +606,11 @@ Ltac revert_generated_hyps tac := hyp_start_block; tac; hyp_revert_until_block.
 Ltac2 revert_generated_hyps tac :=
   Control.enter (fun () => pose proof HypBlock; tac (); revert until* hyp_block).
 
+(** Actually simple inversion: Leave the generated equalities in the goal *)
+Tactic Notation "sinv" ident(x) :=
+  hyp_start_block; simple inversion x; hyp_revert_until_block; intros _.
+Tactic Notation "sinv" integer(x) :=
+  hyp_start_block; simple inversion x; hyp_revert_until_block; intros _.
 
 
 (** ** Rewriting *)

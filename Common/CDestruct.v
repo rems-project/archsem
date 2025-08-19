@@ -296,6 +296,9 @@ Global Hint Extern 3 (ObvTrue _) =>
 Global Hint Extern 4 (ObvTrue _) =>
          constructor; symmetry; assumption : typeclass_instances.
 
+Global Hint Extern 2 (ObvTrue ?p) =>
+         assert_fails (has_evar p);
+         constructor; solve [constructor] : typeclass_instances.
 
 (** * CDestruct
 
