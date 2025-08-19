@@ -420,27 +420,10 @@ Definition is_reg_unknown (r : reg) : Prop :=
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
-Lemma known_regs_are_val (r : reg)
-  (KNOWN : ¬(is_reg_unknown r)) :
-  reg_type r = val.
-Proof.
-  apply NNPP in KNOWN.
-  cdestruct KNOWN.
-  set_unfold in KNOWN.
-  cdestruct KNOWN #CDestrSplitGoal; rewrite H; reflexivity.
-Qed.
+Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
+  regval_to_val (GReg (R_bitvector_64 _)) v := Some v.
+  (* regval_to_val _ _ := None. *)
 
-Definition cast {a b} (p : a = b) (x : a) : b :=
-  match p with
-  | eq_refl => x
-  end.
-
-Definition regval_to_val (r : reg) (v : reg_type r) : option val :=
-  if decide (¬(is_reg_unknown r)) is left KNOWN then
-    Some $ cast (known_regs_are_val r KNOWN) v
-  else
-    None.
-  
 (** * The thread state *)
 
 Module WSReg.
@@ -765,25 +748,10 @@ Definition is_global (lvl : Level) (e : val) : Prop :=
 Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
 Proof. unfold_decide. Defined.
 
-(*** TLB ***)
-
-Global Program Instance countable_sigT `{Countable A} (P : A → Type)
-    {eqdepP : EqDepDecision P} {eqP: ∀ a, EqDecision (P a)}
-    {cntP: ∀ a : A, Countable (P a)} : Countable (sigT P) :=
-  (inj_countable
-     (λ sig, (projT1 sig, encode (projT2 sig)))
-     (λ '(a, b),
-       bd ← decode b;
-       Some $ existT a bd)
-     _).
-Next Obligation.
-  intros.
-  cbn.
-  setoid_rewrite decode_encode.
-  hauto lq:on.
-Defined.
+(** * TLB ***)
 
 Module TLB.
+  (** ** TLB types definitions *)
   Module NDCtxt.
     Record t (lvl : Level) :=
       make {
@@ -805,7 +773,7 @@ Module TLB.
       eapply (inj_countable' (fun ndc => (va ndc, asid ndc))
                         (fun x => make x.1 x.2)).
       sauto.
-    Qed.
+    Defined.
   End NDCtxt.
 
   Module Ctxt.
@@ -873,6 +841,9 @@ Module TLB.
       }.
 
   Definition init := make VATLB.init.
+
+
+  (** ** TLB filling *)
 
   Definition is_active_asid (ts : TState.t)
       (asid : option (bv 16))
@@ -986,16 +957,14 @@ Module TLB.
         |> set_fold (
             λ te mvatlb,
               vatlb_prev ← mvatlb;
-              Exec.res_mbind_inst _ _ 
+              Exec.res_mbind_inst _ _
                 (λ vatlb_new, mret $ vatlb_new ∪ vatlb_prev)
                 (va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr))
           (mret tlb.(vatlb))
       end;
     mret $ TLB.make vatlb.
 
-  (** WARNING HACK: Coq is shit so I'm forced to copy paste this function 3
-      times, because after 4 hours I didn't find a way to make it type a generic
-      version (among various internal crashes and similar errors). *)
+  (** ** TLB invalidation *)
 
   (* TODO report bug: Function is incompatible with Keyed Unification *)
   #[local] Unset Keyed Unification.
