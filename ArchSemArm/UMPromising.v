@@ -413,7 +413,7 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
   let vread := vpre ⊔ (ts.(TState.coh) !!! loc) in
-  reads ← Exec.error_none "Reading from unmapped memory" $
+  reads ← othrow "Reading from unmapped memory" $
             Memory.read loc vread init mem;
   '(res, time) ← mchoosel reads;
   let read_view :=
@@ -523,19 +523,19 @@ Section RunOutcome.
            mret 0%nat
          else mret vreg);
       ts ← mget PPState.state;
-      nts ← Exec.error_none "Register isn't mapped, can't write" $
+      nts ← othrow "Register isn't mapped, can't write" $
         TState.set_reg reg (val, vreg') ts;
       msetv PPState.state nts
   | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
       ts ← mget PPState.state;
-      '(val, view) ← Exec.error_none "Register isn't mapped can't read" $
+      '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret val
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← Exec.error_none "PA not supported" $ Loc.from_addr addr;
+      addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_ifetch macc then
         mthrow "TODO ifetch"
       else if is_explicit macc then
@@ -553,7 +553,7 @@ Section RunOutcome.
       mset PPState.state $ TState.update TState.vcap vaddr
   | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← Exec.error_none "PA not supported" $ Loc.from_addr addr;
+      addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);

@@ -217,10 +217,6 @@ Definition lift_res_set {St' St} (getter : St → St') `{Setter St St' getter}
          end.
 #[global] Typeclasses Opaque elem_of_result.
 
-(** Takes an option but convert None into an error *)
-Definition error_none {St E A} (e : E) : option A -> t St E A :=
-  from_option mret (mthrow e).
-
 (** Takes an option but convert None into a discard *)
 Definition discard_none {St E A} : option A -> t St E A :=
   from_option mret mdiscard.

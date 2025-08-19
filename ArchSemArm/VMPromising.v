@@ -951,7 +951,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts !!! loc) in
   mem ← mget snd;
-  reads ← Exec.error_none "Reading from unmapped memory" $
+  reads ← othrow "Reading from unmapped memory" $
             Memory.read loc vread init mem;
   '(res, time) ← mchoosel reads;
   let read_view :=
@@ -977,26 +977,26 @@ Definition read_pte (vaddr : view) :
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
 
-(** Run a RegRead outcome. 
+(** Run a RegRead outcome.
     Returns the register value based on the type of register and the access type. *)
 Definition run_reg_read (reg : reg) (racc : reg_acc) :
     Exec.t (TState.t * IIS.t) string (reg_type reg) :=
   ts ← mget fst;
-  '(val, view) ← 
-    (if decide (reg ∈ relaxed_regs) then 
-      if decide (is_Some racc) 
-        then Exec.error_none "Register unmapped on direct read" 
+  '(val, view) ←
+    (if decide (reg ∈ relaxed_regs) then
+      if decide (is_Some racc)
+        then othrow "Register unmapped on direct read"
               $ TState.read_sreg_direct ts reg
-        else 
-          valvs ← Exec.error_none "Register unmapped on indirect read" 
+        else
+          valvs ← othrow "Register unmapped on indirect read"
                   $ TState.read_sreg_indirect ts reg;
           mchoosel valvs
     else
-      Exec.error_none "Register unmapped; cannot read" $ TState.read_reg ts reg);
+      othrow "Register unmapped; cannot read" $ TState.read_reg ts reg);
   mset snd $ IIS.add view;;
   mret val.
 
-(** Run a RegWrite outcome. 
+(** Run a RegWrite outcome.
     Updates the thread state using a register value *)
 Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -1016,14 +1016,15 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
         mret 0%nat
       else mret vreg);
   if decide (reg ∈ relaxed_regs) then
-    '(val, view) ← Exec.error_none "Register unmapped on direct read" $ TState.read_sreg_direct ts reg;
+    '(val, view) ← othrow "Register unmapped on direct read" $
+                     TState.read_sreg_direct ts reg;
     let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
     let vpost := vreg' ⊔ vpre in
     mset PPState.state $ TState.add_wsreg reg val vpost;;
     mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
   else
-    nts ← Exec.error_none "Register unmapped; cannot write" $
+    nts ← othrow "Register unmapped; cannot write" $
             TState.set_reg ts reg (val, vreg');
     msetv PPState.state nts.
 
@@ -1031,12 +1032,12 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  addr ← Exec.error_none "Address not supported" $ Loc.from_addr addr;
+  addr ← othrow "Address not supported" $ Loc.from_addr addr;
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
   if is_explicit macc then
     tres_opt ← mget (IIS.trs ∘ PPState.iis);
-    trans_res ← Exec.error_none "Explicit access before translation" tres_opt;
+    trans_res ← othrow "Explicit access before translation" tres_opt;
     let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
@@ -1046,7 +1047,7 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
   else if is_ttw macc then
     ts ← mget PPState.state;
     tres_option ← mget (IIS.trs ∘ PPState.iis);
-    tres ← Exec.error_none "TTW read before translation start" tres_option;
+    tres ← othrow "TTW read before translation start" tres_option;
     '(view, val) ←
       read_pte vaddr (ts, tres)
       |> Exec.lift_res_set_full
@@ -1063,9 +1064,9 @@ Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initi
   if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
     let bit2 := bv_get_bit 2 addr in
-    loc ← Exec.error_none "Address not supported" $ Loc.from_addr aligned_addr;
+    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
     mem ← mGet;
-    block ← Exec.error_none "Modified instruction memory"
+    block ← othrow "Modified instruction memory"
                             (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   else mthrow "Non-ifetch 4 bytes access".
@@ -1237,7 +1238,7 @@ Section RunOutcome.
       mset PPState.state $ TState.update TState.vspec vaddr
   | MemWrite (MemReq.make macc addr addr_space 8 0) val _ =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← Exec.error_none "Address not supported" $ Loc.from_addr addr;
+      addr ← othrow "Address not supported" $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
       if is_explicit macc then
         Exec.liftSt (PPState.state ×× PPState.mem) $

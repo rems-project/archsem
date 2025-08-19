@@ -122,7 +122,7 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
     Equations sequential_model_outcome (call : outcome) : seqmon (eff_ret call) :=
       | RegRead reg racc =>
           opt ←  mget (read_reg_seq_state reg);
-          Exec.error_none ("Register " ++ pretty reg ++ " not found")%string opt
+          othrow ("Register " ++ pretty reg ++ " not found")%string opt
       | RegWrite reg racc val =>
           opt ←  mget (read_reg_seq_state reg);
           guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string $
@@ -142,9 +142,7 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
               mret ()
             else mret ());;
           opt ← mget (read_mem_seq_state size addr);
-          read ← Exec.error_none
-            ("Memory not found at " ++ (pretty addr))%string
-            opt;
+          read ← othrow ("Memory not found at " ++ (pretty addr))%string opt;
           mret (Ok (read, bv_0 _))
       | MemRead _ => mthrow "CHERI tags are unsupported for now"
       | MemWriteAddrAnnounce mr => check_address_space mr.(MemReq.address_space)
