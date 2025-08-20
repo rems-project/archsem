@@ -421,6 +421,10 @@ Module Interface (A : Arch).
   Definition iMon := cMon outcome.
   #[global] Typeclasses Transparent iMon.
 
+  #[export] Instance iMon_throw : MThrow string iMon :=
+    λ A msg, mcall_noret (GenericFail msg).
+
+
   (** A single event in an instruction execution. Events cannot contain
       termination outcome (outcomes of type `outcome False`) *)
   Definition iEvent := fEvent outcome.

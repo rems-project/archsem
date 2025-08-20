@@ -246,13 +246,13 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     match ct with
     | ChooseBool => mchoosef
     | ChooseBit => mchoosef
-    | ChooseInt => mcall_noret (GenericFail "Can't choose infinite Int")
-    | ChooseNat => mcall_noret (GenericFail "Can't choose infinite Nat")
-    | ChooseReal => mcall_noret (GenericFail "Can't choose infinite Real")
-    | ChooseString => mcall_noret (GenericFail "Can't choose infinite String")
+    | ChooseInt => mthrow "Can't choose infinite Int"
+    | ChooseNat => mthrow "Can't choose infinite Nat"
+    | ChooseReal => mthrow "Can't choose infinite Real"
+    | ChooseString => mthrow "Can't choose infinite String"
     | ChooseBitvector n =>
         if decide (n < 8)%Z then mchoosef else
-          mcall_noret (GenericFail "Can't choose bitvector size over 8")
+          mthrow "Can't choose bitvector size over 8"
     | ChooseRange lo hi => mchoosel $ seqZ lo (hi - lo + 1)%Z
     end.
 
@@ -262,7 +262,7 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | ChooseBit => mret B0
     | ChooseInt => mret 0%Z
     | ChooseNat => mret 0%Z
-    | ChooseReal => mcall_noret (GenericFail "Can't choose Real")
+    | ChooseReal => mthrow "Can't choose Real"
     | ChooseString => mret ""
     | ChooseBitvector n => mret (bv_0 _)
     | ChooseRange lo hi => mret lo
@@ -296,13 +296,13 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | SI.ReturnException => mcall ReturnException
     | SI.TranslationStart ts => mcall (TranslationStart ts)
     | SI.TranslationEnd te => mcall (TranslationEnd te)
-    | SI.GenericFail msg => mcall_noret (GenericFail msg)
+    | SI.GenericFail msg => mthrow msg
     | SI.CycleCount => mret ()
-    | SI.GetCycleCount => mcall_noret (GenericFail "GetCycleCount not supported")
+    | SI.GetCycleCount => mthrow "GetCycleCount not supported"
     | SI.Choose ct => if nondet then Sail_choose ct else Sail_nochoose ct
     | SI.Discard => mdiscard
     | SI.Message _ => mret () (* TODO support this *)
-    | SI.ExtraOutcome e => mcall_noret (GenericFail "ExtraOutcome not supported")
+    | SI.ExtraOutcome e => mthrow "ExtraOutcome not supported"
     end.
 
   Fixpoint iMon_from_Sail (nondet : bool) {A eo} (smon: SI.iMon eo A): I.iMon A :=
