@@ -570,6 +570,7 @@ Ltac2 cdestruct_step0 () :=
   | [|- ?t ] => assert_option (CDestrSplit $t); split
   | [|- _] => apply obv_true
   | [|- _] => progress cbn
+  | [|- @eq (∀ _, _) _ _] => apply functional_extensionality_dep
   | [|- ?p] => (* Goal simplification *)
       let r := '(@cdestruct_simpl true $p _
                    ltac:(block_all_evars get_cdestr_simpl_evars; tc_solve)) in
