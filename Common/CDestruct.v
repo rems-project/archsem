@@ -559,9 +559,16 @@ Ltac2 cdestruct_step0 () :=
       revert $h
   | [|- ∀ _ : ?p, _ ] => (* Match splitting *) break_match_in p
 
-  (* If there is nothing to do, introduce the hypothesis, this commits it as
-     being "processed" and we won't go back to it (unless modified) *)
-  | [|- ∀ _, _] => intro
+  (* If the next hypothesis already exists, remove it *)
+  | [_ : ?h |- ?h → _] => intros _
+  (* Simplify the context based on hypothesis (TODO generalize this) *)
+  | [h2 : ?h → _ |- ?h → _] =>
+      let hn := intro_get_name () in
+      assert_bt (can_subst h2);
+      revert $h2; revert $hn
+ (* If there is nothing to do, introduce the hypothesis, this commits it as
+    being "processed" and we won't go back to it (unless modified). *)
+  | [|- ∀ _ : ?h, _] => intro
 
   (* If the goal is blocked, we don't do goal clean-up *)
   | [|- cblock _] => () (* stop on block: (cdestruct_step) is wrapped in progress*)
@@ -867,6 +874,10 @@ Instance cdestruct_bool_decide_false b `{Decision P} :
 Proof. tcclean. apply bool_decide_eq_false. Qed.
 
 (** ** Logical connectives simplification *)
+
+Instance cdestruct_impl_simpl b P Q :
+  TCFastDone P → CDestrSimpl b (P → Q) Q.
+Proof. tcclean. naive_solver. Qed.
 
 Instance cdestruct_not_not b P :
   CDestrSimpl b (¬ ¬ P) P.

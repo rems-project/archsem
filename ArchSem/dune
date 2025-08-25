@@ -3,6 +3,7 @@
  (package coq-archsem)
  (modules
    Interface
+   ISAManip
    TermModels
    CandidateExecutions
    GenPromising

@@ -320,6 +320,8 @@ Section FMon.
   Notation FTRet a := ([], FTERet a).
   Notation FTStop call := ([], FTEStop call).
   Notation FTNothing := ([], FTENothing).
+  Definition FTCons ev `(itrc : fTrace A) : fTrace A :=
+    (ev :: itrc.1, itrc.2).
 
   (** We keep the defintion of a trace matching a monad value as an inductive
   for convenience *)

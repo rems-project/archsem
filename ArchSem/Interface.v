@@ -591,7 +591,7 @@ Module Interface (A : Arch).
           ev = RegWrite reg racc rval &→ () ∧ P reg racc rval.
     Proof.
       destruct ev as [[] fret];
-        split; cdestruct |- ?; destruct fret; naive_solver.
+        split; cdestruct fret |- *** #CDestrSplitGoal; naive_solver.
     Qed.
     Definition is_reg_writeP_cdestr ev := cdestr_simpl false (is_reg_writeP_spec ev).
     #[global] Existing Instance is_reg_writeP_cdestr.
@@ -599,9 +599,34 @@ Module Interface (A : Arch).
     #[global] Instance is_reg_writeP_dec ev: Decision (is_reg_writeP ev).
     Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
 
+    (** ** Register events *)
+    Definition is_reg_eventP ev : Prop :=
+      match ev with
+      | RegRead reg racc &→ rval => P reg racc rval
+      | RegWrite reg racc rval &→ _ => P reg racc rval
+      | _ => False
+      end.
+
+    Definition is_reg_eventP_spec ev :
+      is_reg_eventP ev ↔
+        ∃ reg racc rval,
+          ev = RegRead reg racc &→ rval ∧ P reg racc rval ∨
+                                     ev = RegWrite reg racc rval &→ () ∧ P reg racc rval.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct fret |- *** #CDestrSplitGoal; naive_solver.
+    Qed.
+    Definition is_reg_eventP_cdestr ev := cdestr_simpl false (is_reg_eventP_spec ev).
+    #[global] Existing Instance is_reg_eventP_cdestr.
+
+    #[global] Instance is_reg_eventP_dec ev: Decision (is_reg_eventP ev).
+    Proof using Pdec. destruct ev as [[] ?]; cbn in *; tc_solve. Defined.
+
+
   End isReg.
   Notation is_reg_read := (is_reg_readP (λ _ _ _, True)).
   Notation is_reg_write := (is_reg_writeP (λ _ _ _, True)).
+  Notation is_reg_event := (is_reg_eventP (λ _ _ _, True)).
 
   (** ** Memory reads *)
 
