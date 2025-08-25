@@ -43,9 +43,11 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CBool CDestruct.
+Require Import CBase CBool CDestruct CMonads.
 From stdpp Require Import base.
 From stdpp Require Export option.
+
+Definition cdestr_option T : CDestrCase (option T) := ltac:(constructor).
 
 (** Unpack an option into a monad by throwing an error for None *)
 Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
@@ -237,3 +239,11 @@ Hint Extern 5 (?v = None) =>
        progress (apply (iffRL (@eq_none_unfold _ v _ _))) : option.
 Hint Extern 5 (None = ?v) =>
        progress (symmetry;apply (iffRL (@eq_none_unfold _ v _ _))) : option.
+
+(** * Option are a monad *)
+
+Instance option_monad : Monad option.
+Proof. split; cdestruct |- *** ## cdestr_option. Qed.
+
+Instance option_monad_fmap : MonadFMap option.
+Proof. cdestruct |- *** ## cdestr_option. Qed.

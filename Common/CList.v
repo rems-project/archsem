@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CBool CMaps CArith CDestruct.
+Require Import CBase CBool CMaps CArith CDestruct CMonads.
 From stdpp Require Import base.
 From stdpp Require Export list.
 From stdpp Require Import finite.
@@ -72,8 +72,10 @@ Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
 
 (** * List simplification *)
 
+#[global] Hint Rewrite app_nil_r : list.
 #[global] Hint Rewrite <- app_assoc : list.
 #[global] Hint Rewrite map_app : list.
+#[global] Hint Rewrite @bind_app : list.
 
 Lemma elem_of_app {A} (l l' : list A) (a : A) :
   a ∈ l ++ l' <-> a ∈ l \/ a ∈ l'.
@@ -427,6 +429,8 @@ Tactic Notation "fold_left_inv_ND_pose" uconstr(I) :=
 
 (** * Fmap Unfold *)
 
+(* TODO Move to CMonads *)
+
 (** Typeclass for pushing an fmapped function into the structure. For now only
     on lists *)
 Class FMapUnfold {M : Type → Type} {fm : FMap M}
@@ -612,3 +616,21 @@ Proof. intro H. induction H; auto with eqdec. Defined.
 Lemma InT_fmap_snd A B a b (l : list (A * B)) : InT (a, b) l → InT b l.*2.
 Proof. intro H. induction H; auto with eqdec. Defined.
 #[global] Hint Resolve InT_fmap_snd : eqdec.
+
+(** * List as monad *)
+
+Instance list_monad : Monad list.
+Proof.
+  split.
+  - hauto lq:on db:list.
+  - intros A. induction f; hauto lq:on.
+  - intros A B C. induction a; hauto lq:on db:list.
+Qed.
+
+Instance list_monad_fmap : MonadFMap list.
+Proof.
+  intros A B f.
+  apply functional_extensionality.
+  intro x.
+  induction x; hauto lq:on.
+Qed.

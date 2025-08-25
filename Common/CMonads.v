@@ -42,92 +42,73 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Add a state monad transformer *)
+(** This module cover all thing related to generic monad reasoning *)
 
 Require Import Options.
-Require Import CBase CMonads CDestruct.
-Require Import Effects.
+Require Import CBase.
+Require Import CDestruct.
 
-Section ST.
-  Context {St : Type}.
-  Context `{MRet M} `{MBind M} `{MJoin M} `{FMap M}.
+(** * Generic monad lift
 
-  (** * Definitions *)
+This allows to have a generic monad lifting procedure [mlift]. New instances
+should only be added to [MLift]. [MLiftT] is only for the transitive closure.
 
-  Definition stateT (A : Type):= St → M (St * A).
+Care should be taken to not add two different paths between two monads,
+otherwise there is a risk of the two different paths being selected in two
+different [mlift] terms that will look the same but be silently different.
+ *)
 
-  Definition st_lift {A : Type} (m : M A) : stateT A := λ s, fmap (s,.) m.
+Class MLift (M M' : Type → Type) := mlift_in : ∀ A, M A → M' A.
+Arguments mlift_in {_ _ _ _}.
+Hint Mode MLift - ! : typeclass_instances.
+Class MLiftT (M M' : Type → Type) := mlift : ∀ A, M A → M' A.
+Arguments mlift {_ _ _ _}.
+Hint Mode MLiftT ! ! : typeclass_instances.
+Instance MLiftT_one `{MLift M M'} : MLiftT M M' := ltac:(assumption).
+Instance MLiftT_trans `{MLift M' M'', MLiftT M M'} : MLiftT M M'' :=
+  λ A x, mlift_in (mlift x).
 
-  #[global] Instance st_ret : MRet stateT := λ _ a s, mret (s, a).
-  #[global] Instance st_bind : MBind stateT := λ _ _ f ma s,
-      '(s', a) ← ma s; f a s'.
-  #[global] Instance st_join : MJoin stateT := λ _ mma s, '(s', y) ← mma s; y s'.
-  #[global] Instance st_fmap : FMap stateT := λ _ _ f ma s,
-      (ma s) |$> (λ '(s, a), (s, f a)).
+(** idM can be lifted to any monad *)
+Instance idM_lift_all `{MRet M} : MLift idM M := λ A x, mret x.
 
-  #[global] Instance st_call_MState : MCall (MState St) stateT | 10 := λ eff,
-      match eff with
-      | MSet s => λ _, mret (s, ())
-      | MGet => λ s, mret (s, s)
-      end.
 
-  #[global] Instance st_throw `{MThrow E M}: MThrow E stateT :=
-    λ _ x, st_lift (mthrow x).
+(** * Generic correctness typeclasses *)
 
-  (* Specific instances can override this if they want a state modifying effect
-  different from MState. *)
-  #[global] Instance st_call_inner `{MCall Eff M} : MCall Eff stateT | 100 :=
-    λ eff, st_lift (mcall eff).
+Class Functor F `{FMap F} := {
+    functor_id {A} : fmap id =@{F A → F A} id;
+    functor_assoc {A B C} (f : A → B) (g : B → C) :
+    fmap (g ∘ f) =@{F A → F C} fmap g ∘ fmap f
+  }.
 
-  (** * Monad laws and properties *)
+Class Monad M `{MRet M, MBind M} := {
+    monad_left_id {A B} (a : A) (f : A → M B): mret a ≫= f = f a;
+    monad_right_id : ∀ {A} (f : M A), f ≫= mret = f;
+    monad_assoc : ∀ {A B C} (a : M A) (f : A → M B) (g : B → M C),
+      a ≫= (λ x, f x ≫= g) = (a ≫= f) ≫= g;
+  }.
+Class MonadFMap M `{Monad M, FMap M} :=
+  monad_fmap : ∀ {A B} (f : A → B), fmap f =@{M A → M B} mbind (λ x, mret (f x)).
 
-  Lemma unfold_stateT_bind `(x : stateT A)
-    `(f : A → stateT B) s :
-    (x ≫= f) s = '(s, xv) ← x s; f xv s.
-  Proof. reflexivity. Qed.
-
-  Context {M_monad : Monad M}.
-
-  Instance st_monad : Monad stateT.
-  Proof using M_monad.
-    split; intros; apply functional_extensionality; intro s;
-      unfold mret, st_ret, mbind, st_bind; try pair_let_clean.
-    - by rewrite monad_left_id.
-    - by rewrite monad_right_id.
-    - rewrite monad_assoc.
-      f_equal.
-      cdestruct |- ***.
-  Qed.
-
-  Context {M_monad_fmap : MonadFMap M}.
-
-  Instance fMon_monad_fmap : MonadFMap stateT.
-  Proof using M_monad_fmap.
-    intros A B f.
+Instance Functor_MonadFMap `{MonadFMap M} : Functor M.
+Proof.
+  split.
+  - intros A.
+    rewrite monad_fmap.
     apply functional_extensionality.
     intro x.
-    unfold fmap, mbind, mret, st_fmap, st_bind, st_ret.
+    apply monad_right_id.
+  - intros A B C f g.
+    rewrite ?monad_fmap.
     apply functional_extensionality.
-    intro s.
-    rewrite monad_fmap.
-    by pair_let_clean.
-  Qed.
-
-  Lemma unfold_stateT_mget `(proj : St → T) s :
-    mget (M := stateT) proj s = mret (s, proj s).
-  Proof using M_monad M_monad_fmap.
-    unfold mget, fmap.
+    intro x.
     cbn.
-    by rewrite fmap_mret.
-  Qed.
+    rewrite <- monad_assoc.
+    setoid_rewrite monad_left_id.
+    reflexivity.
+Qed.
 
-End ST.
-Arguments stateT : clear implicits.
-
-(** Move to a state transformer monad over a different monad *)
-Definition st_move {St M M' A} (f : M (St * A)%type → M' (St * A)%type)
-    (mx : stateT St M A) : stateT St M' A :=
-  λ s, f (mx s).
-
-(** The state monad is just the state transformer over the id monad *)
-Notation stateM St := (stateT St idM).
+Lemma fmap_mret `{MonadFMap M} `(x : A) `(f : A → B) : f <$> mret x =@{M B} mret (f x).
+Proof.
+  rewrite monad_fmap.
+  by rewrite monad_left_id.
+Qed.

@@ -15,6 +15,7 @@
    CInduction
    CMaps
    CSets
+   CMonads
    GRel
    CResult
    StateT

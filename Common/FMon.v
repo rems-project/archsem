@@ -99,6 +99,22 @@ Section FMon.
 
   #[global] Instance fMon_call : MCall Eff fMon := λ out, Next out Ret.
 
+  #[export] Instance fMon_monad : Monad fMon.
+  Proof.
+    split.
+    - unfold mret, fMon_ret. done.
+    - intros A. induction f; hauto lq:on use:functional_extensionality.
+    - intros A B C. induction a; hauto lq:on use:functional_extensionality.
+  Qed.
+
+  #[export] Instance fMon_monad_fmap : MonadFMap fMon.
+  Proof.
+    intros A B f.
+    apply functional_extensionality.
+    intro x.
+    induction x; hauto lq:on use:functional_extensionality.
+  Qed.
+
   (** * Events *)
 
   (** A event of an effect type is a combination of an effect call and its

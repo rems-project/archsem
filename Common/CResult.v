@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CDestruct.
+Require Import CBase CDestruct CMonads.
 From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to
@@ -167,23 +167,27 @@ Proof. firstorder. Defined.
 Instance result_inhabited_error `{Inhabited E} {A} : Inhabited (result E A).
 Proof. firstorder. Defined.
 
+(** * CDestruct interaction *)
+
+Definition cdestruct_result (E A : Type) :
+  CDestrCase (result E A) := ltac:(constructor).
 
 (** * Result as monad *)
 Section ResultMonad.
   Context {E : Type}.
 
-  Global Instance result_ret : MRet (result E) := @Ok E.
+  #[export] Instance result_ret : MRet (result E) := @Ok E.
 
-  Global Instance result_throw : MThrow E (result E) := @Error E.
+  #[export] Instance result_throw : MThrow E (result E) := @Error E.
 
-  Global Instance result_bind : MBind (result E) :=
+  #[export] Instance result_bind : MBind (result E) :=
     λ _ _ f r,
       match r with
       | Ok val => f val
       | Error err => Error err
       end.
 
-  Global Instance result_join : MJoin (result E) :=
+  #[export] Instance result_join : MJoin (result E) :=
     λ _ r,
       match r with
       | Error err => Error err
@@ -191,12 +195,18 @@ Section ResultMonad.
       | Ok (Ok a) => Ok a
       end.
 
-  Global Instance result_fmap : FMap (result E) :=
+  #[export] Instance result_fmap : FMap (result E) :=
     λ _ _  f r,
       match r with
       | Ok val => Ok (f val)
       | Error err => Error err
       end.
+
+  #[export] Instance result_monad : Monad (result E).
+  Proof. split; cdestruct |- *** ## cdestruct_result. Qed.
+
+  #[export] Instance result_monad_fmap : MonadFMap (result E).
+  Proof. cdestruct |- *** ## cdestruct_result. Qed.
 
 End ResultMonad.
 
@@ -208,7 +218,3 @@ Definition mapE {E E' A} (f : E → E') (r : result E A) : result E' A :=
   | Error err => Error (f err)
   end.
 
-(** * CDestruct interaction *)
-
-Definition cdestruct_result (E A : Type) :
-  CDestrCase (result E A) := ltac:(constructor).

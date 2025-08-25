@@ -102,6 +102,24 @@ Require Export FunctionalExtensionality PropExtensionality Classical.
 Instance proof_irrelevance_pi (P : Prop) : ProofIrrel P | 1000 :=
   proof_irrelevance P.
 
+(** ** Make functional extensionality work with rewriting *)
+
+Instance pointwise_eq_ext {A B : Type} `(sb : subrelation B RB eq)
+  : subrelation (pointwise_relation A RB) eq.
+Proof. intros f g Hfg. apply functional_extensionality. intro x; apply sb, (Hfg x). Qed.
+
+Instance subrel_eq_refl {A : Type} (R : relation A) `{Reflexive A R}
+  : subrelation eq R.
+Proof. unfold subrelation. naive_solver. Qed.
+
+Instance reflexive_respectful {A B} `{Reflexive C R'}
+  : Reflexive (pointwise_relation A (=@{B}) ==> R')%signature.
+Proof.
+  intros f x y Hpr.
+  enough (x = y) as Heq by naive_solver.
+  by apply functional_extensionality.
+Qed.
+
 
 (** * Notations ***)
 
@@ -932,10 +950,14 @@ Proof. hauto lq:on. Qed.
 
 Lemma pair_let_simp A B (z : A * B) P : (let '(x,y) := z in P x y) ↔ P z.1 z.2.
 Proof. by destruct z. Qed.
+Lemma pair_let_simp_type A B C (z : A * B) (P : A → B → C) : (let '(x,y) := z in P x y) = P z.1 z.2.
+Proof. by destruct z. Qed.
 #[global] Hint Rewrite pair_let_simp : pair.
+#[global] Hint Rewrite pair_let_simp_type : pair.
 #[global] Hint Rewrite <- surjective_pairing : pair.
 Ltac pair_let_clean :=
-  setoid_rewrite pair_let_simp; try (setoid_rewrite <- surjective_pairing).
+  (setoid_rewrite pair_let_simp || setoid_rewrite pair_let_simp_type);
+  try (setoid_rewrite <- surjective_pairing).
 
 (** * EmptyT and DecisionT *)
 
@@ -1101,25 +1123,3 @@ Proof.
   induction a; simp ctrans; congruence.
 Qed.
 
-(** * Generic monad lift
-
-This allows to have a generic monad lifting procedure [mlift]. New instances
-should only be added to [MLift]. [MLiftT] is only for the transitive closure.
-
-Care should be taken to not add two different paths between two monads,
-otherwise there is a risk of the two different paths being selected in two
-different [mlift] terms that will look the same but be silently different.
-*)
-
-Class MLift (M M' : Type → Type) := mlift_in : ∀ A, M A → M' A.
-Arguments mlift_in {_ _ _ _}.
-Hint Mode MLift - ! : typeclass_instances.
-Class MLiftT (M M' : Type → Type) := mlift : ∀ A, M A → M' A.
-Arguments mlift {_ _ _ _}.
-Hint Mode MLiftT ! ! : typeclass_instances.
-Instance MLiftT_one `{MLift M M'} : MLiftT M M' := ltac:(assumption).
-Instance MLiftT_trans `{MLift M' M'', MLiftT M M'} : MLiftT M M'' :=
-  λ A x, mlift_in (mlift x).
-
-(** idM can be lifted to any monad *)
-Instance idM_lift_all `{MRet M} : MLift idM M := λ A x, mret x.

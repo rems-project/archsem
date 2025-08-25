@@ -60,6 +60,7 @@ Require Export Ensembles.
 Require Import Options.
 Require Export CBase.
 Require Export CDestruct.
+Require Export CMonads.
 Require Export CArith.
 Require Export CBool.
 Require Export CList.
