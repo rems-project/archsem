@@ -251,7 +251,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Proof.
         unfold ISA_complete, lookup_instruction.
         cdestruct |- ** as H Ht He # CDestrEqOpt.
-        eapply H; [rewrite elem_of_vlookup | by eapply elem_of_list_lookup_2].
+        eapply Ht; [rewrite elem_of_vlookup | by eapply elem_of_list_lookup_2].
         naive_solver.
       Qed.
 
