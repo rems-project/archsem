@@ -861,7 +861,7 @@ Module TLB.
   Instance Decision_is_active_asid (ts : TState.t)
       (asid : option (bv 16))
       (ttbr : reg) (time : nat) : Decision (is_active_asid ts asid ttbr time).
-  Proof. unfold_decide. Qed.
+  Proof. unfold_decide. Defined.
 
   Definition next_va {clvl : Level}
     (ctxt : Ctxt.t)
