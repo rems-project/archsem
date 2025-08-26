@@ -705,6 +705,9 @@ Definition prefix (lvl : Level) := bv (level_length lvl).
 Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
   bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
 
+Definition prefix_to_val {n : N} (p : bv n) : bv 64 :=
+  bv_concat 64 (bv_0 (64 - n)) p.
+
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
@@ -835,13 +838,9 @@ Module TLB.
   Record t :=
     make {
         vatlb : VATLB.t;
-        (* TODO: add a cache for ttbr *)
-        (* regs : dmap reg (λ reg, reg_type reg * view)%type;
-        regs_relaxed : ∀ reg, is_Some (dmap_lookup reg regs) → reg ∈ relaxed_regs *)
       }.
 
   Definition init := make VATLB.init.
-
 
   (** ** TLB filling *)
 
@@ -869,36 +868,29 @@ Module TLB.
     (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
     bv_concat (level_length clvl) (Ctxt.va ctxt) index.
 
-  Definition va_fill_keep (vatlb :VATLB.t)
-    (ctxt : Ctxt.t)
-    (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    te ∈ (VATLB.get ctxt vatlb).
-  Instance Decision_va_fill_keep (vatlb : VATLB.t)
-    (ctxt : Ctxt.t)
-    (te : Entry.t (Ctxt.lvl ctxt)) : Decision (va_fill_keep vatlb ctxt te).
-  Proof. unfold_decide. Defined.
-
   Definition va_fill_root (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : Exec.res string VATLB.t :=
-    sregs ← Exec.res_error_none "TTBR should be read"
+      (ttbr : reg) : result string VATLB.t :=
+    sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
-    '(regval, _) ← mchoosel sregs;
-    val_ttbr ← Exec.res_error_none "TTBR should be a 64 bit value"
-                $ regval_to_val ttbr regval;
-    let loc := Loc.from_addr_in (val_to_address val_ttbr) in
-    '(memval, _) ←
-      Exec.res_error_none "Reading from unmapped memory" $
-        Memory.read_at loc init mem time;
-    guard_or "A root of a page table should be a table" (is_block memval);;
-
-    let asid := bv_extract 48 16 val_ttbr in
-    let ndctxt := NDCtxt.make va (Some asid) in
-    let vatlb := VATLB.singleton (existT root_lvl ndctxt) [#memval] in
-    mret vatlb.
+    vatlbs ←
+      for sreg in sregs do
+        val_ttbr ← othrow "TTBR should be a 64 bit value"
+                    $ regval_to_val ttbr sreg.1;
+        let table_addr := val_to_address $ bv_add val_ttbr (prefix_to_val va) in
+        let loc := Loc.from_addr_in table_addr in
+        if (Memory.read_at loc init mem time) is Some (memval, _) then
+          guard_or "A root of a page table should be a table" (is_table memval);;
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make va (Some asid) in
+          Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
+        else
+          Ok $ VATLB.init
+      end;
+    Ok (fold_left union vatlbs VATLB.init).
 
   Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
@@ -907,33 +899,31 @@ Module TLB.
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
-      (ttbr : reg) : Exec.res string VATLB.t :=
+      (ttbr : reg) : result string VATLB.t :=
     guard_or "ASID is not active"
       $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
-    guard_or "PTE is not a table"
+    guard_or "The PTE is not a table"
       $ is_table (Entry.pte te);;
-    guard_or "Translation entry is not in the TLB"
-      $ va_fill_keep vatlb ctxt te;;
+    guard_or "The translation entry is not in the TLB"
+      (te ∈ VATLB.get ctxt vatlb);;
 
     let loc := Loc.from_addr_in (val_to_address (Entry.pte te)) in
-    '(memval, _) ←
-      Exec.res_error_none "Reading from unmapped memory"
-        $ Memory.read_at loc init mem time;
-    guard_or
-      "A PTE being filled in a TLB should be a valid value"
-      (is_valid memval);;
-
-    match inspect $ child_lvl (Ctxt.lvl ctxt) with
-    | Some clvl eq:e =>
-      let va := next_va ctxt index (child_lvl_add_one _ _ e) in
-      let asid := if bool_decide (is_global clvl memval) then None
-                  else Ctxt.asid ctxt in
-      let ndctxt := NDCtxt.make va asid in
-      let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
-      let vatlb := VATLB.singleton (existT clvl ndctxt) new_te in
-      mret vatlb
-    | None eq:_ => mthrow "An intermediate level should have a child level"
-    end.
+    if (Memory.read_at loc init mem time) is Some (memval, _) then
+      guard_or
+        "A PTE being filled in a TLB should be a valid value"
+        (is_valid memval);;
+      match inspect $ child_lvl (Ctxt.lvl ctxt) with
+      | Some clvl eq:e =>
+        let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+        let asid := if bool_decide (is_global clvl memval) then None
+                    else Ctxt.asid ctxt in
+        let ndctxt := NDCtxt.make va asid in
+        let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
+        Ok $ VATLB.singleton (existT clvl ndctxt) new_te
+      | None eq:_ => mthrow "An intermediate level should have a child level"
+      end
+    else
+      Ok VATLB.init.
 
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
@@ -942,27 +932,24 @@ Module TLB.
       (lvl : Level)
       (va : bv 64)
       (asid : option (bv 16))
-      (ttbr : reg) : Exec.res string t :=
+      (ttbr : reg) : result string t :=
     vatlb ←
       match parent_lvl lvl with
       | None =>
         vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
-        mret $ tlb.(vatlb) ∪ vatlb_new
+        Ok $ tlb.(vatlb) ∪ vatlb_new
       | Some plvl =>
         let pva := level_prefix va plvl in
         let ndctxt := NDCtxt.make pva asid in
         let ctxt := existT plvl ndctxt in
         let index := level_index va lvl in
-        VATLB.get ctxt tlb.(vatlb)
-        |> set_fold (
-            λ te mvatlb,
-              vatlb_prev ← mvatlb;
-              Exec.res_mbind_inst _ _
-                (λ vatlb_new, mret $ vatlb_new ∪ vatlb_prev)
-                (va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr))
-          (mret tlb.(vatlb))
+        vatlbs ←
+          for te in (set_fold (::) [] (VATLB.get ctxt tlb.(vatlb))) do
+            va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
+          end;
+        Ok $ fold_left union vatlbs tlb.(vatlb)
       end;
-    mret $ TLB.make vatlb.
+    Ok (TLB.make vatlb).
 
   Definition update (tlb : t)
       (ts : TState.t)
@@ -971,7 +958,7 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (asid : option (bv 16))
-      (ttbr : reg) : Exec.res string t :=
+      (ttbr : reg) : result string t :=
     tlb0 ← va_fill tlb ts init mem time root_lvl va asid ttbr;
     tlb1 ← va_fill tlb0 ts init mem time 1%fin va asid ttbr;
     tlb2 ← va_fill tlb1 ts init mem time 2%fin va asid ttbr;
