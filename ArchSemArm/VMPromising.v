@@ -885,7 +885,10 @@ Module TLB.
         if (Memory.read_at loc init mem time) is Some (memval, _) then
           guard_or "A root of a page table should be a table" (is_table memval);;
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make va (Some asid) in
+          let ndctxt :=
+            if decide (asid = bv_0 16)
+              then NDCtxt.make va None
+              else NDCtxt.make va (Some asid) in
           Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
         else
           Ok $ VATLB.init
