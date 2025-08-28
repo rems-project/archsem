@@ -604,13 +604,15 @@ Module CProm.
 
   (** Add the latest msg in the mem to the CProm
       if the corresponding vpre is not bigger than the base *)
-  Definition add_if (mem : Memory.t) (iis : IIS.t) (base : view) (cp : t) : t :=
-    match List.hd_error mem, List.hd_error iis.(IIS.vpres) with
-    | Some msg, Some vpre =>
+  Fixpoint add_if (mem : Memory.t) (vpres : list view) (base : view) (cp : t) : t :=
+    match mem, vpres with
+    | msg :: mem, vpre :: vpres =>
       if decide (vpre ≤ base)%nat then
-        cp |> set proms ({[ msg ]} ∪.)
-      else
         cp
+          |> set proms ({[ msg ]} ∪.)
+          |> add_if mem vpres base
+      else
+        add_if mem vpres base cp
     | _, _ => cp
     end.
 
@@ -638,20 +640,21 @@ Section ComputeProm.
                       (isem : iMon ())
                       (fuel : nat)
                       (base : nat)
-      : Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string () :=
+      : Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
     match fuel with
-    | 0%nat => mthrow "not enough fuel"
+    | 0%nat =>
+      ts ← mget (PPState.state ∘ snd);
+      if term (TState.reg_map ts)
+        then mret true
+        else mret false
     | S fuel =>
+      let handler := run_outcome_with_promise base in
+      cinterp handler isem;;
       ts ← mget (PPState.state ∘ snd);
       if term (TState.reg_map ts) then
-        mret ()
+        mret true
       else
-        let handler := run_outcome_with_promise base in
-        cinterp handler isem;;
-        if term (TState.reg_map ts) then
-          mret ()
-        else
-          runSt_to_termination isem fuel base
+        runSt_to_termination isem fuel base
     end.
 
   Definition run_to_termination (isem : iMon ())
@@ -660,12 +663,15 @@ Section ComputeProm.
                                 (mem : Memory.t)
       : Exec.res string Msg.t :=
     let base := List.length mem in
-    Exec.success_state_list $
-      runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init)
+    let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    guard_or "HW error: could not finish running within the size of the fuel"
+      (∀ r ∈ res, r.2 = true);;
+    res.*1
     |> map fst
     |> foldl union CProm.init
     |> CProm.to_list
     |> mchoosel.
+
 End ComputeProm.
 
 (** * Implement GenPromising ***)
