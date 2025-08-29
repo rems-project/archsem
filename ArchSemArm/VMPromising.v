@@ -884,7 +884,6 @@ Module TLB.
       for sreg in sregs do
         val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
-        (* WARN: TTBR[87:80] is not used here *)
         let entry_addr := next_entry_addr val_ttbr va in
         let loc := Loc.from_addr_in entry_addr in
         if (Memory.read_at loc init mem time) is Some (memval, _) then
@@ -929,7 +928,7 @@ Module TLB.
           end
         else
           Ok VATLB.init
-    | None => Ok VATLB.init
+    | None => mthrow "The location is not initialized in the memory"
     end.
 
   Definition va_fill (tlb : t) (ts : TState.t)
@@ -944,7 +943,7 @@ Module TLB.
       match parent_lvl lvl with
       | None =>
         vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
-        Ok $ vatlb_new
+        Ok $ vatlb_new ∪ tlb.(vatlb)
       | Some plvl =>
         let pva := level_prefix va plvl in
         let ndctxt := NDCtxt.make pva asid in
