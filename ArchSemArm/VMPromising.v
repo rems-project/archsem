@@ -1002,7 +1002,7 @@ Module TLB.
         | Some te_asid => asid = te_asid
         | None => True
         end)
-    ∧ (if last then is_final te_lvl te_val else False).
+    ∧ (if last then is_final te_lvl te_val else True).
   Instance Decision_affects_va (asid : bv 16) (va : bv 36) (last : bool)
                                (ctxt : Ctxt.t)
                                (te : Entry.t (Ctxt.lvl ctxt)) :
@@ -1028,7 +1028,7 @@ Module TLB.
     let '(te_lvl, te_va, te_val) :=
           (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else False).
+    ∧ (if last then is_final te_lvl te_val else True).
   Instance Decision_affects_vaa (va : bv 36) (last : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
