@@ -705,9 +705,6 @@ Definition prefix (lvl : Level) := bv (level_length lvl).
 Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
   bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
 
-Definition prefix_to_val {n : N} (p : bv n) : bv 64 :=
-  bv_concat 64 (bv_0 (64 - n)) p.
-
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
@@ -720,8 +717,14 @@ Proof. unfold_decide. Defined.
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
   bv_extract 0 9 (level_prefix va lvl).
 
+Definition index_to_offset (idx : bv 9) : bv 12 :=
+  bv_concat 12 idx (bv_0 3).
+
 Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
   bv_extract 9 (n - 9) va.
+
+Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
+  bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
 
 Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
   bv_concat 53 (bv_extract 9 44 loc) index.
@@ -832,6 +835,7 @@ Module TLB.
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
 
+    #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
 
@@ -880,15 +884,13 @@ Module TLB.
       for sreg in sregs do
         val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
-        let table_addr := val_to_address $ bv_add val_ttbr (prefix_to_val va) in
-        let loc := Loc.from_addr_in table_addr in
+        (* WARN: TTBR[87:80] is not used here *)
+        let entry_addr := next_entry_addr val_ttbr va in
+        let loc := Loc.from_addr_in entry_addr in
         if (Memory.read_at loc init mem time) is Some (memval, _) then
           guard_or "A root of a page table should be a table" (is_table memval);;
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt :=
-            if decide (asid = bv_0 16)
-              then NDCtxt.make va None
-              else NDCtxt.make va (Some asid) in
+          let ndctxt := NDCtxt.make va (Some asid) in
           Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
         else
           Ok $ VATLB.init
@@ -905,28 +907,30 @@ Module TLB.
       (ttbr : reg) : result string VATLB.t :=
     guard_or "ASID is not active"
       $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
-    guard_or "The PTE is not a table"
-      $ is_table (Entry.pte te);;
     guard_or "The translation entry is not in the TLB"
       (te ∈ VATLB.get ctxt vatlb);;
 
-    let loc := Loc.from_addr_in (val_to_address (Entry.pte te)) in
-    if (Memory.read_at loc init mem time) is Some (memval, _) then
-      guard_or
-        "A PTE being filled in a TLB should be a valid value"
-        (is_valid memval);;
-      match inspect $ child_lvl (Ctxt.lvl ctxt) with
-      | Some clvl eq:e =>
-        let va := next_va ctxt index (child_lvl_add_one _ _ e) in
-        let asid := if bool_decide (is_global clvl memval) then None
-                    else Ctxt.asid ctxt in
-        let ndctxt := NDCtxt.make va asid in
-        let new_te := Entry.append te memval (child_lvl_add_one _ _ e) in
-        Ok $ VATLB.singleton (existT clvl ndctxt) new_te
-      | None eq:_ => mthrow "An intermediate level should have a child level"
-      end
+    if decide (¬is_table (Entry.pte te)) then Ok VATLB.init
     else
-      Ok VATLB.init.
+      let entry_addr := next_entry_addr (Entry.pte te) index in
+      let loc := Loc.from_addr_in entry_addr in
+      match (Memory.read_at loc init mem time) with
+      | Some (next_pte, _) =>
+        if decide (is_valid next_pte) then
+          match inspect $ child_lvl (Ctxt.lvl ctxt) with
+          | Some clvl eq:e =>
+            let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+            let asid := if bool_decide (is_global clvl next_pte) then None
+                        else Ctxt.asid ctxt in
+            let ndctxt := NDCtxt.make va asid in
+            let new_te := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+            Ok $ VATLB.singleton (existT clvl ndctxt) new_te
+          | None eq:_ => mthrow "An intermediate level should have a child level"
+          end
+        else
+          Ok VATLB.init
+    | None => Ok VATLB.init
+    end.
 
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
@@ -940,17 +944,17 @@ Module TLB.
       match parent_lvl lvl with
       | None =>
         vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
-        Ok $ tlb.(vatlb) ∪ vatlb_new
+        Ok $ vatlb_new
       | Some plvl =>
         let pva := level_prefix va plvl in
         let ndctxt := NDCtxt.make pva asid in
         let ctxt := existT plvl ndctxt in
         let index := level_index va lvl in
         vatlbs ←
-          for te in (set_fold (::) [] (VATLB.get ctxt tlb.(vatlb))) do
+          for te in elements (VATLB.get ctxt tlb.(vatlb)) do
             va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
           end;
-        Ok $ fold_left union vatlbs tlb.(vatlb)
+        Ok $ (union_list vatlbs) ∪ tlb.(vatlb)
       end;
     Ok (TLB.make vatlb).
 
