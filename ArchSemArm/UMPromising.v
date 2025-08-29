@@ -603,7 +603,9 @@ Module CProm.
   #[global] Instance eta : Settable _ :=
     settable! make <proms>.
 
-  #[global] Instance union : Union t := fun x y => CProm.make (x.(proms) ∪ y.(proms)).
+  #[global] Instance empty : Empty t := CProm.make ∅.
+
+  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ∪ y.(proms)).
 
   Definition init : t := make ∅.
 
@@ -638,7 +640,7 @@ Section ComputeProm.
       iis ← mget (PPState.iis ∘ snd);
       res ← Exec.addSt snd $ run_outcome tid initmem out;
       mem ← mget (PPState.mem ∘ snd);
-      mset fst (CProm.add_if mem iis base);;
+      mset fst (CProm.add_if mem iis.(IIS.vpres) base);;
       mret res.
 
   Program Fixpoint runSt_to_termination
@@ -649,9 +651,7 @@ Section ComputeProm.
     match fuel with
     | 0%nat =>
       ts ← mget (PPState.state ∘ snd);
-      if term (TState.reg_map ts)
-        then mret true
-        else mret false
+      mret (term (TState.reg_map ts))
     | S fuel =>
       let handler := run_outcome_with_promise base in
       cinterp handler isem;;
@@ -671,9 +671,8 @@ Section ComputeProm.
     let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
     guard_or "HW error: could not finish running within the size of the fuel"
       (∀ r ∈ res, r.2 = true);;
-    res.*1
-    |> map fst
-    |> foldl union CProm.init
+    res.*1.*1
+    |> union_list
     |> CProm.to_list
     |> mchoosel.
 
