@@ -174,11 +174,23 @@ Module Memory.
     |> dom
     |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
     |> set_fold (λ loc map,
-       let val :=
-         for addr in addr_range (Loc.to_addr loc) 8 do mem !! addr end
-         |$> bv_of_bytes 64
-       in
-       partial_alter (λ _, val) loc map) ∅.
+        let base := Loc.to_addr loc in
+        let lo :=
+          for addr in addr_range base 4 do mem !! addr end
+          |$> bv_of_bytes 32
+        in
+        let hi :=
+          for addr in addr_range (addr_addN base 4) 4 do mem !! addr end
+          |$> bv_of_bytes 32
+        in
+        let val :=
+          match lo, hi with
+          | Some lo, Some hi => Some (bv_concat 64 hi lo)
+          | Some lo, _ => Some (bv_concat 64 (bv_0 32) lo)
+          | _, _ => None
+          end
+        in
+        partial_alter (λ _, val) loc map) ∅.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Msg.t.
@@ -455,6 +467,17 @@ Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
     else mret ());;
   mret (vpost, res).
 
+Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
+    Exec.t Memory.t string (bv 32) :=
+  if is_ifetch macc then
+    let aligned_addr := bv_unset_bit 2 addr in
+    let bits2 := bv_get_bit 2 addr in
+    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
+    mem ← mGet;
+    block ← othrow "Modified instruction memory" (Memory.read_initial loc init mem);
+    mret $ (if bits2 then bv_extract 32 32 else bv_extract 0 32) block
+  else mthrow "Non-ifetch 4 bytes access".
+
 (** Performs a memory write for a thread tid at a location loc with view
     vaddr and vdata. Return the new state.
 
@@ -525,7 +548,7 @@ Section RunOutcome.
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
   | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+      guard_or "Non trivial reg access types unsupported" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
       vreg' ←
         (if reg =? pc_reg
@@ -538,7 +561,7 @@ Section RunOutcome.
         TState.set_reg reg (val, vreg') ts;
       msetv PPState.state nts
   | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc ≠ None);;
+      guard_or "Non trivial reg access types unsupported" (racc = None);;
       ts ← mget PPState.state;
       '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
@@ -546,7 +569,7 @@ Section RunOutcome.
     mret val
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← othrow "PA not supported" $ Loc.from_addr addr;
+      loc ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_ifetch macc then
         mthrow "TODO ifetch"
       else if is_explicit macc then
@@ -554,11 +577,16 @@ Section RunOutcome.
         vaddr ← mget (IIS.strict ∘ PPState.iis);
         mem ← mget PPState.mem;
         '(view, val) ← Exec.liftSt
-          PPState.state (read_mem addr vaddr macc initmem mem);
+          PPState.state (read_mem loc vaddr macc initmem mem);
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0))
       else mthrow "Read is not explicit or ifetch"
-  | MemRead _ => mthrow "Memory read of size other than 8"
+  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
+      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      let initmem := Memory.initial_from_memMap initmem in
+      opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
+      mret (Ok (opcode, 0%bv))
+  | MemRead _ => mthrow "Memory read of size other than 8 and 4"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vcap vaddr
@@ -633,7 +661,7 @@ Section ComputeProm.
     Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
       ts ← mget (PPState.state ∘ snd);
       iis ← mget (PPState.iis ∘ snd);
-      res ← Exec.addSt snd $ run_outcome tid initmem out;
+      res ← Exec.liftSt snd $ run_outcome tid initmem out;
       mem ← mget (PPState.mem ∘ snd);
       mset fst (CProm.add_if mem iis.(IIS.vpres) base);;
       mret res.

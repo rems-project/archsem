@@ -360,7 +360,6 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         search but it is obviously correct. If a thread has reached termination
         no progress is made in the thread (either instruction running or
         promises *)
-    (* TODO: Make if/then/else syntax only work on bool *)
     Definition run_step (fuel : nat) : Exec.t t string () :=
       st ← mGet;
       tid ← mchoose n;
