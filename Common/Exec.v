@@ -192,10 +192,6 @@ Definition lift_res_set {St' St} (getter : St → St') `{Setter St St' getter}
     `(r : res (St' * E) (St' * A)) : t St E A :=
   lift_res_set_full (@setv _ _ getter _) r.
 
-Definition addSt {St St' E A} (getter : St * St' → St') `{Setter (St * St') St' getter}
-    (inner : Exec.t St' E A) : Exec.t (St * St') E A :=
-  @liftSt_full (St * St') St' E A getter (@setv _ _ getter _) inner.
-
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).
 #[global] Typeclasses Opaque elem_of_results.
