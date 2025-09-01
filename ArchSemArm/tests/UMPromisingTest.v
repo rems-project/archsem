@@ -78,7 +78,7 @@ Definition init_reg : registerMap :=
   |> reg_insert R1 0x11
   |> reg_insert R2 0x101.
 
-Definition init_mem : memoryMap:=
+Definition init_mem : memoryMap :=
   ∅
   |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
 
@@ -94,13 +94,14 @@ Definition initState :=
         MState.address_space := PAS_NonSecure |};
     MState.termCond := termCond |}.
 
-Definition fuel := 10%nat.
+Definition fuel := 2%nat.
 
 Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
 Goal r0_extract <$> test_results = Listset [Ok 0x110%Z].
   vm_compute (_ <$> _).
-Admitted.
+  reflexivity.
+Qed.
 End EOR.
 
 Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
@@ -127,13 +128,14 @@ Definition initState :=
         MState.address_space := PAS_NonSecure |};
     MState.termCond := termCond |}.
 
-Definition fuel := 10%nat.
+Definition fuel := 3%nat.
 
 Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
 Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
   vm_compute (_ <$> _).
-Admitted.
+  reflexivity.
+Qed.
 End LDR.
 
 Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1100 *)
@@ -162,7 +164,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
           MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
 
-  Definition fuel := 10%nat.
+  Definition fuel := 4%nat.
 
   Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
