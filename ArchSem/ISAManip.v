@@ -115,7 +115,7 @@ Module ISAManip (IWA : InterfaceWithArch) (TM : TermModelsT IWA). (* to be impor
 
     Instance global_vars_consistent_aux_dec itrc r :
       Decision (global_vars_consistent_aux itrc r).
-    Proof. induction itrc as [? | [[] ?]] in r |- *; solve_decision. Defined.
+    Proof. induction itrc as [ | [[]]] in r |- *; solve_decision. Defined.
 
     Definition global_vars_consistent `(itrc : iTrace A) :=
       global_vars_consistent_aux itrc.1 ∅.
@@ -132,7 +132,6 @@ Module ISAManip (IWA : InterfaceWithArch) (TM : TermModelsT IWA). (* to be impor
           reflexivity
       end : typeclass_instances.
 
-    Arguments mget : simpl never.
 
     Lemma remove_global_vars_equiv `(isem : iMon A) (itrc : iTrace A) :
       global_vars_consistent itrc →
@@ -149,8 +148,7 @@ Module ISAManip (IWA : InterfaceWithArch) (TM : TermModelsT IWA). (* to be impor
       all: cdestruct |- *** #CDestrMatch.
       all: try econstructor.
       all: try naive_solver.
-      rewrite ?unfold_stateT_bind.
-      rewrite unfold_stateT_mget.
+      csimp.
       unfold othrow.
       cdestruct |- *** #CDestrMatch #CDestrEqOpt.
       naive_solver.

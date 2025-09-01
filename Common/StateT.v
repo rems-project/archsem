@@ -81,45 +81,45 @@ Section ST.
 
   (** * Monad laws and properties *)
 
-  Lemma unfold_stateT_bind `(x : stateT A)
-    `(f : A → stateT B) s :
+  Lemma unfold_stateT_bind `(x : stateT A) `(f : A → stateT B) s :
     (x ≫= f) s = '(s, xv) ← x s; f xv s.
   Proof. reflexivity. Qed.
 
+  #[export] Instance csimp_stateT_bind `(x : stateT A) `(f : A → stateT B) s :
+    (x ≫= f) s ⇒ '(s, xv) ← x s; f xv s. Proof. apply unfold_stateT_bind. Qed.
+
+  #[export] Instance csimp_stateT_fmap `(x : stateT A) `(f : A → B) s :
+    (f <$> x) s ⇒ (λ '(s, v), (s, f v)) <$> (x s). Proof. reflexivity. Qed.
+
   Context {M_monad : Monad M}.
 
-  Instance st_monad : Monad stateT.
-  Proof using M_monad.
-    split; intros; apply functional_extensionality; intro s;
-      unfold mret, st_ret, mbind, st_bind; try pair_let_clean.
-    - by rewrite monad_left_id.
-    - by rewrite monad_right_id.
-    - rewrite monad_assoc.
-      f_equal.
-      cdestruct |- ***.
-  Qed.
+  #[export] Instance csimp_mret_state {A} (a : A) s :
+    mret (M := stateT) a s ⇒ mret (s, a).
+  Proof. reflexivity. Qed.
+  Import CSimpPairLet.
+
+  #[export] Instance st_monad : Monad stateT.
+  Proof using M_monad. split; intros; extensionality s; by csimp. Qed.
 
   Context {M_monad_fmap : MonadFMap M}.
 
-  Instance fMon_monad_fmap : MonadFMap stateT.
+  #[export] Instance fMon_monad_fmap : MonadFMap stateT.
   Proof using M_monad_fmap.
     intros A B f.
-    apply functional_extensionality.
-    intro x.
-    unfold fmap, mbind, mret, st_fmap, st_bind, st_ret.
-    apply functional_extensionality.
-    intro s.
-    rewrite monad_fmap.
-    by pair_let_clean.
+    extensionality x.
+    extensionality s.
+    csimp.
+    by rewrite monad_fmap.
   Qed.
 
-  Lemma unfold_stateT_mget `(proj : St → T) s :
-    mget (M := stateT) proj s = mret (s, proj s).
-  Proof using M_monad M_monad_fmap.
-    unfold mget, fmap.
-    cbn.
-    by rewrite fmap_mret.
-  Qed.
+  #[export] Instance csimp_stateT_mGet s :
+    (* mGet s ⇒ mret (s, s) *)
+    mcall (MEff:= stateT St) MGet s ⇒ mret (s, s).
+  Proof. reflexivity. Qed.
+
+  #[export] Instance csimp_stateT_mget `(proj : St → T) s :
+    mget (M := stateT) proj s ⇒ mret (s, proj s).
+  Proof using M_monad M_monad_fmap. unfold mget. by csimp. Qed.
 
 End ST.
 Arguments stateT : clear implicits.

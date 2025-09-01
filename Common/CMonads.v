@@ -89,18 +89,27 @@ Class Monad M `{MRet M, MBind M} := {
 Class MonadFMap M `{Monad M, FMap M} :=
   monad_fmap : ∀ {A B} (f : A → B), fmap f =@{M A → M B} mbind (λ x, mret (f x)).
 
+
+Instance csimp_mon_left_id `{Monad M} {A B} (a : A) (f : A → M B) :
+  mret a ≫= f ⇒ f a. Proof. apply monad_left_id. Qed.
+
+Instance csimp_mon_right_id `{Monad M} {A} (f : M A) : f ≫= mret ⇒ f.
+Proof. apply monad_right_id. Qed.
+
+Instance csimp_monad_assoc `{Monad M} {A B C} (a : M A) (f : A → M B) (g : B → M C):
+  a ≫= (λ x : A, f x ≫= g) ⇒ (a ≫= f) ≫= g.
+Proof. apply monad_assoc. Qed.
+
 Instance Functor_MonadFMap `{MonadFMap M} : Functor M.
 Proof.
   split.
   - intros A.
     rewrite monad_fmap.
-    apply functional_extensionality.
-    intro x.
-    apply monad_right_id.
+    extensionality x.
+    by csimp.
   - intros A B C f g.
     rewrite ?monad_fmap.
-    apply functional_extensionality.
-    intro x.
+    extensionality x.
     cbn.
     rewrite <- monad_assoc.
     setoid_rewrite monad_left_id.
@@ -108,7 +117,8 @@ Proof.
 Qed.
 
 Lemma fmap_mret `{MonadFMap M} `(x : A) `(f : A → B) : f <$> mret x =@{M B} mret (f x).
-Proof.
-  rewrite monad_fmap.
-  by rewrite monad_left_id.
-Qed.
+Proof. rewrite monad_fmap. by csimp. Qed.
+
+Instance csimp_fmap_mret `{MonadFMap M} {A B} (a : A) (f : A → B) :
+  f <$> mret (M := M) a ⇒ mret (f a).
+Proof. apply fmap_mret. Qed.

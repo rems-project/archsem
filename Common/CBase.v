@@ -301,6 +301,12 @@ Ltac2 res_to_opt a :=
   | Err _ => None
   end.
 
+Ltac2 case_opt (f: unit -> 'a) : 'a option :=
+  match Control.case f with
+  | Val (v, _) => Some v
+  | Err _ => None
+  end.
+
 (** Get the name of the last hypothesis *)
 Ltac2 last_hyp_name () := let (h, _, _) := List.last (Control.hyps ()) in h.
 (** Introduce an hypothesis and get the automatically generated name *)
@@ -328,6 +334,20 @@ Ltac2 get_var (c: constr) :=
   | _ => None
   end.
 Ltac2 get_var_bt (c: constr) := Option.get_bt (get_var c).
+
+(** Create an evar of the required type *)
+Ltac2 mk_evar (t : constr) : constr :=
+  let res := '(_) in
+  Std.unify (Constr.type res) t;
+  res.
+
+(** Get an instance of a provided typeclass (evar allowed in output positions)
+    Fail (backtracks) if the instance can't be found *)
+Ltac2 get_instance (tc : constr) : constr :=
+  '(ltac2:(Std.unify (Control.goal ()) tc; typeclasses_eauto)).
+(** Same but returns None if instance can't be found *)
+Ltac2 get_instance_opt (tc : constr) : constr option :=
+  case_opt (fun () => get_instance tc).
 
 (** Used when success has been found *)
 Ltac2 Type exn ::= [ Success ].
@@ -435,6 +455,8 @@ Ltac2 prt_strq () s :=
 
 (** Term Ltac2 printer *)
 Ltac2 prt_cstr () := Message.of_constr.
+(** Preterm Ltac2 printer *)
+Ltac2 prt_pret () pt := Message.of_constr (Constr.pretype pt).
 
 (** Bool Ltac2 printer *)
 Ltac2 prt_bool () b :=
@@ -456,6 +478,12 @@ Ltac2 prt_opt (printer : unit -> 'a -> message) () (o : 'a option) :=
   | Some x => fprintf "Some %a" printer x
   | None => fprintf "None"
   end.
+
+(** Pair Ltac2 printer *)
+Ltac2 prt_pair (printer1 : unit -> 'a -> message) (printer2 : unit -> 'b -> message)
+               () (p : 'a * 'b) :=
+  let (a, b) := p in
+  fprintf "(%a, %a)" printer1 a printer2 b.
 
 (** Hypothesis Ltac2 printer. The name must exist in the current goal *)
 Ltac2 prt_hyp () (x : ident) := fprintf "%I:%t" x (Constr.type (Control.hyp x)).

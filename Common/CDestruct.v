@@ -44,6 +44,8 @@
 
 Require Import Options.
 Require Import CBase.
+(* We re-export CSimp as the two tactics go together *)
+Require Export CSimp.
 (* TODO Use Equations for dependent equalities management ? *)
 Require Import Program.Equality.
 

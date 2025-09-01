@@ -6,6 +6,7 @@
    CBase
    CExtraction
    Options
+   CSimp
    CDestruct
    CArith
    CList

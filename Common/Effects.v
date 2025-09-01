@@ -318,6 +318,7 @@ Proof. solve_decision. Defined.
 Notation mGet := (mcall MGet).
 Definition mget `{!MCall (MState St) M, FMap M} {T} (proj : St → T) : M T :=
   mGet |$> proj.
+Arguments mget : simpl never.
 
 Notation mSetv s := (mcall (MSet s)).
 Definition mSet `{!MCall (MState St) M, MBind M} (upd : St → St) : M unit :=
