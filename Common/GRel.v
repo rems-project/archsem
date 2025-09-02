@@ -156,83 +156,83 @@ Section GRel.
 
   Definition grel_to_relation (r : grel) : relation A := fun x y => (x, y) ∈ r.
 
-  Definition grel_map := gmap A (gset A).
-  #[global] Typeclasses Transparent grel_map.
+  Definition grel_gmap := gmap A (gset A).
+  #[global] Typeclasses Transparent grel_gmap.
 
-  Definition grel_to_map (r : grel) : grel_map :=
+  Definition grel_to_gmap (r : grel) : grel_gmap :=
     set_fold (fun '(e1, e2) res => res ∪ₘ {[e1 := {[e2]}]}) ∅ r.
 
-  Definition gmap_to_rel (rm : grel_map) : grel :=
+  Definition gmap_to_grel (rm : grel_gmap) : grel :=
     map_fold (fun e1 se2 res => res ∪ (set_map (e1,.) se2)) ∅ rm.
 
-  Definition grel_map_wf (rm : grel_map) := forall a : A, rm !! a ≠ Some ∅.
+  Definition grel_gmap_wf (rm : grel_gmap) := forall a : A, rm !! a ≠ Some ∅.
 
   (** Hack to add to sauto when rewrite just fails for no reason *)
   Local Ltac auto_setoid_rewrite :=
     repeat (match goal with | H : _ = _ |- _ => setoid_rewrite H end).
 
 
-  Lemma grel_map_eq_wf (rm rm' : grel_map):
-    grel_map_wf rm -> grel_map_wf rm' -> (forall a : A, rm !!! a = rm' !!! a) -> rm = rm'.
+  Lemma grel_gmap_eq_wf (rm rm' : grel_gmap):
+    grel_gmap_wf rm -> grel_gmap_wf rm' -> (forall a : A, rm !!! a = rm' !!! a) -> rm = rm'.
   Proof using.
     intros WF WF' P.
     apply map_eq.
     intro i.
     pose proof (P i) as P.
-    unfold grel_map_wf in *.
+    unfold grel_gmap_wf in *.
     setoid_rewrite lookup_total_lookup in P.
     unfold default in *.
     case_splitting; naive_solver.
   Qed.
 
-  Lemma grel_to_map_spec r e1 e2:
-    e2 ∈ (grel_to_map r !!! e1) <-> (e1, e2) ∈ r.
+  Lemma grel_to_gmap_spec r e1 e2:
+    e2 ∈ (grel_to_gmap r !!! e1) <-> (e1, e2) ∈ r.
   Proof using.
-    unfold grel_to_map.
+    unfold grel_to_gmap.
     funelim (set_fold _ _ _).
     - set_solver.
     - destruct x as [e3 e4].
       set_unfold.
       case_split; naive_solver.
   Qed.
-  Hint Rewrite @grel_to_map_spec : grel.
+  Hint Rewrite @grel_to_gmap_spec : grel.
 
-  Global Instance set_unfold_elem_of_grel_to_map r x y P :
+  Global Instance set_unfold_elem_of_grel_to_gmap r x y P :
     SetUnfoldElemOf (y, x) r P ->
-    SetUnfoldElemOf x (grel_to_map r !!! y) P.
-  Proof using. tcclean. apply grel_to_map_spec. Qed.
+    SetUnfoldElemOf x (grel_to_gmap r !!! y) P.
+  Proof using. tcclean. apply grel_to_gmap_spec. Qed.
 
-  Lemma grel_to_map_wf r: grel_map_wf (grel_to_map r).
+  Lemma grel_to_gmap_wf r: grel_gmap_wf (grel_to_gmap r).
   Proof using.
-    unfold grel_map_wf.
+    unfold grel_gmap_wf.
     intro a.
-    unfold grel_to_map.
+    unfold grel_to_gmap.
     funelim (set_fold _ _ _).
     - rewrite lookup_unfold. congruence.
     - destruct x as [e3 e4].
       rewrite lookup_unfold.
       unfold option_union.
-      unfold grel_map in *.
+      unfold grel_gmap in *.
       case_splitting; (congruence || set_solver).
   Qed.
-  Hint Resolve grel_to_map_wf : grel.
+  Hint Resolve grel_to_gmap_wf : grel.
 
 
-  Lemma grel_map_wf_union rm rm':
-    grel_map_wf rm -> grel_map_wf rm' -> grel_map_wf (rm ∪ₘ rm').
+  Lemma grel_gmap_wf_union rm rm':
+    grel_gmap_wf rm -> grel_gmap_wf rm' -> grel_gmap_wf (rm ∪ₘ rm').
   Proof using.
     intros H H' a Hc.
     setoid_rewrite lookup_unfold in Hc.
     unfold option_union in Hc.
-    unfold grel_map_wf in *.
+    unfold grel_gmap_wf in *.
     hauto db:set lq:on.
   Qed.
-  Hint Resolve grel_map_wf_union : grel.
+  Hint Resolve grel_gmap_wf_union : grel.
 
-  Lemma gmap_to_rel_spec rm e1 e2:
-    (e1, e2) ∈ gmap_to_rel rm <-> e2 ∈ (rm !!! e1).
+  Lemma gmap_to_grel_spec rm e1 e2:
+    (e1, e2) ∈ gmap_to_grel rm <-> e2 ∈ (rm !!! e1).
   Proof using.
-    unfold gmap_to_rel.
+    unfold gmap_to_grel.
     funelim (map_fold _ _ _).
     - rewrite lookup_total_unfold.
       set_solver.
@@ -240,45 +240,45 @@ Section GRel.
       setoid_rewrite lookup_total_unfold.
       set_unfold. hauto q:on.
   Qed.
-  Hint Rewrite gmap_to_rel_spec : grel.
+  Hint Rewrite gmap_to_grel_spec : grel.
 
-  Global Instance set_unfold_elem_of_gmap_to_rel rm x s P :
+  Global Instance set_unfold_elem_of_gmap_to_grel rm x s P :
     LookupTotalUnfold x.1 rm s ->
     SetUnfoldElemOf x.2 s P ->
-    SetUnfoldElemOf x (gmap_to_rel rm) P.
-  Proof using. tcclean. apply gmap_to_rel_spec. Qed.
+    SetUnfoldElemOf x (gmap_to_grel rm) P.
+  Proof using. tcclean. apply gmap_to_grel_spec. Qed.
 
 
-  Lemma grel_to_map_empty :
-    grel_to_map ∅ = ∅.
+  Lemma grel_to_gmap_empty :
+    grel_to_gmap ∅ = ∅.
   Proof using. sfirstorder. Qed.
-  Hint Rewrite grel_to_map_empty : grel.
+  Hint Rewrite grel_to_gmap_empty : grel.
 
-  Lemma grel_to_map_union (r1 r2 : grel) :
-    grel_to_map (r1 ∪ r2) = grel_to_map r1 ∪ₘ grel_to_map r2.
+  Lemma grel_to_gmap_union (r1 r2 : grel) :
+    grel_to_gmap (r1 ∪ r2) = grel_to_gmap r1 ∪ₘ grel_to_gmap r2.
   Proof using.
-    apply grel_map_eq_wf; [auto with grel .. |].
+    apply grel_gmap_eq_wf; [auto with grel .. |].
     intro a.
     setoid_rewrite lookup_total_unfold.
     set_unfold.
     hauto lq:on db:grel.
   Qed.
-  Hint Rewrite grel_to_map_union : grel.
+  Hint Rewrite grel_to_gmap_union : grel.
 
-  Lemma grel_to_map_to_rel (r : grel) :
-    r |> grel_to_map |> gmap_to_rel = r.
+  Lemma grel_to_gmap_to_grel (r : grel) :
+    r |> grel_to_gmap |> gmap_to_grel = r.
   Proof using. set_unfold. hauto lq:on.  Qed.
-  Hint Rewrite grel_to_map_to_rel : grel.
+  Hint Rewrite grel_to_gmap_to_grel : grel.
 
 
-  Lemma gmap_to_rel_to_map (rm : grel_map) :
-    grel_map_wf rm -> rm |> gmap_to_rel |> grel_to_map = rm.
+  Lemma gmap_to_grel_to_gmap (rm : grel_gmap) :
+    grel_gmap_wf rm -> rm |> gmap_to_grel |> grel_to_gmap = rm.
   Proof using.
     intro H.
-    apply grel_map_eq_wf; [auto with grel .. |].
+    apply grel_gmap_eq_wf; [auto with grel .. |].
     set_solver.
   Qed.
-  Hint Rewrite gmap_to_rel_to_map using auto with grel : grel.
+  Hint Rewrite gmap_to_grel_to_gmap using auto with grel : grel.
 
 
   (** ** Domain and range ***)
@@ -303,7 +303,7 @@ Section GRel.
   (** ** Sequence ***)
 
   Definition grel_seq (r r' : grel) : grel :=
-    let rm := grel_to_map r' in
+    let rm := grel_to_gmap r' in
     set_fold (fun '(e1, e2) res => res ∪ set_map (e1,.) (rm !!! e2)) ∅ r.
   Infix "⨾" := grel_seq (at level 39, left associativity) : stdpp_scope.
 
@@ -853,12 +853,12 @@ Section GRel.
     ∀ x y z : A, (x, y) ∈ r → (x, z) ∈ r → y = z.
 
   Definition grel_functional_set_size r:
-    grel_functional r ↔ ∀ a : A, set_size (grel_to_map r !!! a) ≤ 1.
+    grel_functional r ↔ ∀ a : A, set_size (grel_to_gmap r !!! a) ≤ 1.
   Proof using. setoid_rewrite set_size_le1. set_solver. Qed.
 
   Definition grel_functional_set_size_list r:
     grel_functional r ↔
-      ∀ s ∈ (map_to_list (grel_to_map r)).*2, set_size s ≤ 1 .
+      ∀ s ∈ (map_to_list (grel_to_gmap r)).*2, set_size s ≤ 1 .
   Proof using.
     rewrite grel_functional_set_size.
     set_unfold.
