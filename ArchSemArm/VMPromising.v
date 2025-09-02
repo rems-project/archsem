@@ -913,23 +913,21 @@ Module TLB.
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       let loc := Loc.from_addr_in entry_addr in
-      match (Memory.read_at loc init mem time) with
-      | Some (next_pte, _) =>
-        if decide (is_valid next_pte) then
-          match inspect $ child_lvl (Ctxt.lvl ctxt) with
-          | Some clvl eq:e =>
-            let va := next_va ctxt index (child_lvl_add_one _ _ e) in
-            let asid := if bool_decide (is_global clvl next_pte) then None
-                        else Ctxt.asid ctxt in
-            let ndctxt := NDCtxt.make va asid in
-            let new_te := Entry.append te next_pte (child_lvl_add_one _ _ e) in
-            Ok $ VATLB.singleton (existT clvl ndctxt) new_te
-          | None eq:_ => mthrow "An intermediate level should have a child level"
-          end
-        else
-          Ok VATLB.init
-    | None => mthrow "The location is not initialized in the memory"
-    end.
+      '(next_pte, _) ← othrow "The location of the next level address should be read"
+                        $ Memory.read_at loc init mem time;
+      if decide (is_valid next_pte) then
+        match inspect $ child_lvl (Ctxt.lvl ctxt) with
+        | Some clvl eq:e =>
+          let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+          let asid := if bool_decide (is_global clvl next_pte) then None
+                      else Ctxt.asid ctxt in
+          let ndctxt := NDCtxt.make va asid in
+          let new_te := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+          Ok $ VATLB.singleton (existT clvl ndctxt) new_te
+        | None eq:_ => mthrow "An intermediate level should have a child level"
+        end
+      else
+        Ok VATLB.init.
 
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
