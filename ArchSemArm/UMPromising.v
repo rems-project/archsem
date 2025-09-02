@@ -186,8 +186,9 @@ Module Memory.
         let val :=
           match lo, hi with
           | Some lo, Some hi => Some (bv_concat 64 hi lo)
-          | Some lo, _ => Some (bv_concat 64 (bv_0 32) lo)
-          | _, _ => None
+          | Some lo, None => Some (bv_concat 64 (bv_0 32) lo)
+          | None, Some hi => Some (bv_concat 64 hi (bv_0 32))
+          | None, None => None
           end
         in
         partial_alter (λ _, val) loc map) ∅.
@@ -410,22 +411,16 @@ Module IIS.
   Record t :=
     make {
       strict : view;
-      vpres : list view; (* for promise computation *)
-      (* CHECK: why is it a list of view, not a single view *)
     }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <strict; vpres>.
+    settable! make <strict>.
 
-  Definition init : t := make 0 [].
+  Definition init : t := make 0.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
     iis |> set strict (max v).
-
-  (** Add a vpre of a write to the IIS *)
-  Definition add_vpre_if (is_promise : bool) (vpre : view) (iis : t) : t :=
-    if is_promise then iis |> set vpres (vpre ::.) else iis.
 
 End IIS.
 
@@ -484,11 +479,12 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) : Exec.t (TState.t * IIS.t) string (Memory.t * view):=
+           (data : val) : Exec.t (TState.t * IIS.t) string (Memory.t * view * option view):=
+  (* iis no longer used *)
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
   ts ← mget fst;
-  let '(time, mem, is_promise) :=
+  let '(time, mem, new_promise) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem, false)
     | None => (Memory.promise msg mem, true)
@@ -498,12 +494,11 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
-  mset snd $ IIS.add_vpre_if is_promise vpre;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;
-  mret (mem, time).
+  mret (mem, time, (if new_promise then Some vpre else None)).
 
 
 (** Tries to perform a memory write.
@@ -516,11 +511,11 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
-  : Exec.t (TState.t * IIS.t) string Memory.t :=
+  : Exec.t (TState.t * IIS.t) string (Memory.t * option view) :=
   guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
-    '(mem, time) ← write_mem tid loc vdata macc mem data;
+    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
     ts ← mget fst;
     match TState.xclb ts with
     | None => mdiscard
@@ -529,11 +524,11 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
     end;;
     mset fst $ TState.set_fwdb loc (FwdItem.make time vdata true);;
     mset fst TState.clear_xclb;;
-    mret mem
+    mret (mem, vpre_opt)
   else
-    '(mem, time) ← write_mem tid loc vdata macc mem data;
+    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
     mset fst $ TState.set_fwdb loc (FwdItem.make time vdata false);;
-    mret mem.
+    mret (mem, vpre_opt).
 
 (* Set Typeclasses Debug Verbosity 2. *)
 
@@ -546,7 +541,7 @@ Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
 
   Equations run_outcome (out : outcome) :
-      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
   | RegWrite reg racc val =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
@@ -559,14 +554,15 @@ Section RunOutcome.
       ts ← mget PPState.state;
       nts ← othrow "Register isn't mapped, can't write" $
         TState.set_reg reg (val, vreg') ts;
-      msetv PPState.state nts
+      msetv PPState.state nts;;
+      mret ((), None)
   | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       ts ← mget PPState.state;
       '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
-    mret val
+    mret (val, None)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       loc ← othrow "PA not supported" $ Loc.from_addr addr;
@@ -579,43 +575,51 @@ Section RunOutcome.
         '(view, val) ← Exec.liftSt
           PPState.state (read_mem loc vaddr macc initmem mem);
         mset PPState.iis $ IIS.add view;;
-        mret (Ok (val, bv_0 0))
+        mret (Ok (val, bv_0 0), None)
       else mthrow "Read is not explicit or ifetch"
   | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
-      mret (Ok (opcode, 0%bv))
+      mret (Ok (opcode, 0%bv), None)
   | MemRead _ => mthrow "Memory read of size other than 8 and 4"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
-      mset PPState.state $ TState.update TState.vcap vaddr
+      mset PPState.state $ TState.update TState.vcap vaddr;;
+      mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
-        mem ← Exec.liftSt (PPState.state ×× PPState.iis)
+        '(mem, vpre_opt) ← Exec.liftSt (PPState.state ×× PPState.iis)
                 $ write_mem_xcl tid addr vdata macc mem val;
         msetv PPState.mem mem;;
-        mret (Ok ())
+        mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
-    match dmb.(DxB_types) with
-    | MBReqTypes_All (* dmb sy *) =>
-        mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
-    | MBReqTypes_Reads (* dmb ld *) =>
-        mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
-    | MBReqTypes_Writes (* dmb st *) =>
-        mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
-    end
+      match dmb.(DxB_types) with
+      | MBReqTypes_All (* dmb sy *) =>
+          mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
+      | MBReqTypes_Reads (* dmb ld *) =>
+          mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
+      | MBReqTypes_Writes (* dmb st *) =>
+          mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
+      end;;
+      mret ((), None)
   | Barrier (Barrier_ISB ()) => (* isb *)
       ts ← mget PPState.state;
-    mset PPState.state $ TState.update TState.visb (TState.vcap ts)
+    mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
+    mret ((), None)
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
+
+  Definition run_outcome' (out : outcome) :
+      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+    run_outcome out |$> fst.
+
 End RunOutcome.
 
 Module CProm.
@@ -634,17 +638,14 @@ Module CProm.
 
   (** Add the latest msg in the mem to the CProm
       if the corresponding vpre is not bigger than the base *)
-  Fixpoint add_if (mem : Memory.t) (vpres : list view) (base : view) (cp : t) : t :=
-    match mem, vpres with
-    | msg :: mem, vpre :: vpres =>
-      if decide (vpre ≤ base)%nat then
-        cp
-          |> set proms ({[ msg ]} ∪.)
-          |> add_if mem vpres base
-      else
-        add_if mem vpres base cp
-    | _, _ => cp
-    end.
+  Definition add_if (mem : Memory.t) (vpre : view) (base : view) (cp : t) : t :=
+    if decide (vpre ≤ base)%nat then
+      match mem with
+      | msg :: mem =>
+        cp |> set proms ({[ msg ]} ∪.)
+      | [] => cp
+      end
+    else cp.
 
   Definition to_list (cp : t) : list Msg.t :=
     elements cp.(proms).
@@ -658,11 +659,13 @@ Section ComputeProm.
   Definition run_outcome_with_promise
               (base : view)
               (out : outcome) :
-    Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-      res ← Exec.liftSt snd $ run_outcome tid initmem out;
-      iis ← mget (PPState.iis ∘ snd);
+        Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out;
+    if vpre_opt is Some vpre then
       mem ← mget (PPState.mem ∘ snd);
-      mset fst (CProm.add_if mem iis.(IIS.vpres) base);;
+      mset fst (CProm.add_if mem vpre base);;
+      mret res
+    else
       mret res.
 
   Program Fixpoint runSt_to_termination
@@ -691,10 +694,9 @@ Section ComputeProm.
       : Exec.res string Msg.t :=
     let base := List.length mem in
     let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    let outs := filter (λ r, r.2) res in
     guard_or "HW error: could not finish running within the size of the fuel"
-      (outs ≠ []);;
-    outs.*1.*1
+      (∀ r ∈ res, r.2 = true);;
+    res.*1.*1
     |> union_list
     |> CProm.to_list
     |> mchoosel.
@@ -718,7 +720,7 @@ Definition UMPromising_nocert' : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
-    handler := run_outcome;
+    handler := run_outcome';
     allowed_promises := allowed_promises_nocert;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     memory_snapshot :=
@@ -733,7 +735,7 @@ Definition UMPromising_nocert isem :=
 
 Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
   : relation (TState.t * Memory.t) :=
-  let handler := run_outcome tid initmem in
+  let handler := run_outcome' tid initmem in
   λ '(ts, mem) '(ts', mem'),
     (ts', mem') ∈
       PPState.state ×× PPState.mem
@@ -758,7 +760,7 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
-    handler := run_outcome;
+    handler := run_outcome';
     allowed_promises := allowed_promises_cert isem;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     memory_snapshot :=

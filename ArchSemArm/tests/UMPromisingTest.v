@@ -164,7 +164,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
           MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
 
-  Definition fuel := 4%nat.
+  Definition fuel := 3%nat.
 
   Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
@@ -172,3 +172,5 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     vm_compute (_ <$> _).
   Admitted.
 End STRLDR.
+
+(* TODO: at least one concurrency test (maybe MP?) *)
