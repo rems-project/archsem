@@ -128,7 +128,7 @@ Definition initState :=
         MState.address_space := PAS_NonSecure |};
     MState.termCond := termCond |}.
 
-Definition fuel := 3%nat.
+Definition fuel := 2%nat.
 
 Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 

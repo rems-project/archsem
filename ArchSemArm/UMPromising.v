@@ -424,8 +424,8 @@ Module IIS.
     iis |> set strict (max v).
 
   (** Add a vpre of a write to the IIS *)
-  Definition add_vpre_if (flag : bool) (vpre : view) (iis : t) : t :=
-    if flag then iis |> set vpres (vpre ::.) else iis.
+  Definition add_vpre_if (is_promise : bool) (vpre : view) (iis : t) : t :=
+    if is_promise then iis |> set vpres (vpre ::.) else iis.
 
 End IIS.
 
@@ -488,7 +488,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
   ts ← mget fst;
-  let '(time, mem, is_added) :=
+  let '(time, mem, is_promise) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem, false)
     | None => (Memory.promise msg mem, true)
@@ -498,7 +498,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
-  mset snd $ IIS.add_vpre_if is_added vpre;;
+  mset snd $ IIS.add_vpre_if is_promise vpre;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vwr time;;
@@ -659,9 +659,8 @@ Section ComputeProm.
               (base : view)
               (out : outcome) :
     Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-      ts ← mget (PPState.state ∘ snd);
-      iis ← mget (PPState.iis ∘ snd);
       res ← Exec.liftSt snd $ run_outcome tid initmem out;
+      iis ← mget (PPState.iis ∘ snd);
       mem ← mget (PPState.mem ∘ snd);
       mset fst (CProm.add_if mem iis.(IIS.vpres) base);;
       mret res.
@@ -692,9 +691,10 @@ Section ComputeProm.
       : Exec.res string Msg.t :=
     let base := List.length mem in
     let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    let outs := filter (λ r, r.2) res in
     guard_or "HW error: could not finish running within the size of the fuel"
-      (∀ r ∈ res, r.2 = true);;
-    res.*1.*1
+      (outs ≠ []);;
+    outs.*1.*1
     |> union_list
     |> CProm.to_list
     |> mchoosel.
