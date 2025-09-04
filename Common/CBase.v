@@ -129,7 +129,6 @@ Notation "∅" := Datatypes.Empty_set : type_scope.
 Notation "x =ⱼ y" := (@JMeq _ x _ y) (at level 70, no associativity).
 Notation "x ≠ⱼ y" := (¬(x =ⱼ y)) (at level 70, no associativity).
 
-
 (** Monad-annotated fmap notation *)
 Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v)
     (at level 61, only parsing, left associativity).
@@ -657,6 +656,11 @@ Tactic Notation "sinv" ident(x) :=
   hyp_start_block; simple inversion x; hyp_revert_until_block; intros _.
 Tactic Notation "sinv" integer(x) :=
   hyp_start_block; simple inversion x; hyp_revert_until_block; intros _.
+
+(** Funelim that leave new hypotheses in the goal *)
+Tactic Notation "sfunelim" uconstr(t) :=
+  hyp_start_block; funelim t; hyp_revert_until_block.
+
 
 
 (** ** Rewriting *)

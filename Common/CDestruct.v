@@ -44,6 +44,7 @@
 
 Require Import Options.
 Require Import CBase.
+Require Import stdpp.sets.
 (* We re-export CSimp as the two tactics go together *)
 Require Export CSimp.
 (* TODO Use Equations for dependent equalities management ? *)
@@ -301,6 +302,12 @@ Global Hint Extern 4 (ObvTrue _) =>
 Global Hint Extern 2 (ObvTrue ?p) =>
          assert_fails (has_evar p);
          constructor; solve [constructor] : typeclass_instances.
+
+Instance obvTrue_or_left P Q : ObvTrue P → ObvTrue (P ∨ Q).
+Proof. tcclean. naive_solver. Qed.
+
+Instance obvTrue_or_right P Q : ObvTrue Q → ObvTrue (P ∨ Q).
+Proof. tcclean. naive_solver. Qed.
 
 (** * CDestruct
 
@@ -922,3 +929,16 @@ Proof. tcclean. naive_solver. Qed.
 Instance cdestruct_and_True_r b P :
   CDestrSimpl b (P ∧ True) P.
 Proof. tcclean. naive_solver. Qed.
+
+(** ** Set handling *)
+
+(** Import this module to make CDestruct do set unfolding automatically. For now
+    only in the [x ∈ C] case *)
+Module CDestrUnfoldElemOf.
+  Instance cdestr_unfold_elem_of b `{ElemOf A C} (x : A) (S : C) P:
+    SetUnfoldElemOf x S P →
+    Unconvertible Prop (x ∈ S) P →
+    CDestrSimpl b (x ∈ S) P.
+  Proof. by tcclean. Qed.
+  Hint Mode SetUnfoldElemOf + + + + ! - : typeclass_instances.
+End CDestrUnfoldElemOf.

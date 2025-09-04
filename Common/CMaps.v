@@ -58,6 +58,19 @@ Require Import CDestruct.
     lookup accross various map operations *)
 
 
+(** * Map utilities ***)
+
+Section MapRestrict.
+  Context `{Empty M, Insert K A M, MapFold K A M}.
+  Context `{ElemOf K C}.
+  Context `{∀ (k : K) (s : C), Decision (k ∈ s)}.
+
+  Definition map_restrict (m : M) (s : C) : M:=
+    filter (λ '(k, _), k ∈ s) m.
+
+  (* TODO lemmas *)
+End MapRestrict.
+
 (** * Lookup Unfold ***)
 
 Class LookupUnfold {K A M : Type} {lk : Lookup K A M}
@@ -486,6 +499,14 @@ Section DMap.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
 
+  Lemma dmap_lookup_insert_case m k k' v :
+    dmap_insert k v m !d! k' = if decide (k = k') is left e then Some (ctrans e v) else m !d! k'.
+  Proof using ctrans_F_simpl.
+    cdestruct k' |- *** # CDestrMatch.
+    all: rewrite dmap_lookup_insert || rewrite dmap_lookup_insert_ne.
+    all: done.
+  Qed.
+
   Lemma dmap_lookup_delete m k :
     dmap_delete k m !d! k = None.
   Proof using ctrans_F_simpl.
@@ -500,6 +521,7 @@ Section DMap.
     unfold dmap_lookup, dmap_delete.
     cdestruct |- *** # CDestrMatch # CDestrEqOpt.
   Qed.
+
 
   Lemma dmap_lookup_partial_alter m k f :
     dmap_partial_alter k f m !d! k = f (m !d! k).
@@ -563,10 +585,36 @@ Section DMap.
   Definition dmap_to_list (d : dmap) : list (sigT F) :=
     dmap_fold (::) [] d.
 
+  Import CDestrUnfoldElemOf.
+
+  #[export] Instance elem_of_dmap_to_list r m : SetUnfoldElemOf r (dmap_to_list m) (m !d! r.T1 = Some r.T2).
+  Proof using ctrans_F_simpl.
+    constructor.
+    unfold dmap_to_list.
+    funelim (dmap_fold _ _ _).
+    - set_solver.
+    - rewrite dmap_lookup_insert_case.
+      do 4 deintro.
+      cdestruct |- *** #CDestrMatch #CDestrSplitGoal; naive_solver.
+  Qed.
+
+  Definition dmap_of_list : list (sigT F) → dmap :=
+    foldr (λ '(existT k v), dmap_insert k v) ∅.
+
+  #[export] Instance dmap_filter : Filter (sigT F) dmap := λ P PD,
+      dmap_fold (λ '(existT k v) m,
+          if decide (P (existT k v)) then dmap_insert k v m else m) ∅.
+
+  Section DMapRestrict.
+    Context `{ElemOf K C}.
+    Context `{∀ (k : K) (s : C), Decision (k ∈ s)}.
+    Definition dmap_restrict (m : dmap) (s : C) : dmap:=
+      filter (λ '(existT k _), k ∈ s) m.
+  End DMapRestrict.
+
 End DMap.
 Arguments dmap _ {_ _} _.
 Notation "m !d! k" := (dmap_lookup k m) (at level 20).
-
 
 Section DMapMap.
   Context {K : Type}.
