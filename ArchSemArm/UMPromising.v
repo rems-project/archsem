@@ -479,11 +479,10 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) : Exec.t (TState.t * IIS.t) string (Memory.t * view * option view):=
-  (* iis no longer used *)
+           (data : val) : Exec.t TState.t string (Memory.t * view * option view):=
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
-  ts ← mget fst;
+  ts ← mGet;
   let '(time, mem, new_promise) :=
     match Memory.fulfill msg (TState.prom ts) mem with
     | Some t => (t, mem, false)
@@ -494,10 +493,10 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
-  mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
-  mset fst $ TState.update_coh loc time;;
-  mset fst $ TState.update TState.vwr time;;
-  mset fst $ TState.update TState.vrel (view_if is_release time);;
+  mset TState.prom (filter (λ t, t ≠ time));;
+  mSet $ TState.update_coh loc time;;
+  mSet $ TState.update TState.vwr time;;
+  mSet $ TState.update TState.vrel (view_if is_release time);;
   mret (mem, time, (if new_promise then Some vpre else None)).
 
 
@@ -511,27 +510,24 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
-  : Exec.t (TState.t * IIS.t) string (Memory.t * option view) :=
+  : Exec.t TState.t string (Memory.t * option view) :=
   guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
-    ts ← mget fst;
+    ts ← mGet;
     match TState.xclb ts with
     | None => mdiscard
     | Some (xtime, xview) =>
         guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
     end;;
-    mset fst $ TState.set_fwdb loc (FwdItem.make time vdata true);;
-    mset fst TState.clear_xclb;;
+    mSet $ TState.set_fwdb loc (FwdItem.make time vdata true);;
+    mSet TState.clear_xclb;;
     mret (mem, vpre_opt)
   else
     '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
-    mset fst $ TState.set_fwdb loc (FwdItem.make time vdata false);;
+    mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
     mret (mem, vpre_opt).
-
-(* Set Typeclasses Debug Verbosity 2. *)
-
 
 
 (** Runs an outcome in the promising model while doing the correct view tracking
@@ -593,7 +589,7 @@ Section RunOutcome.
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
-        '(mem, vpre_opt) ← Exec.liftSt (PPState.state ×× PPState.iis)
+        '(mem, vpre_opt) ← Exec.liftSt PPState.state
                 $ write_mem_xcl tid addr vdata macc mem val;
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
@@ -776,7 +772,6 @@ Program Definition UMPromising_exe' (isem : iMon ())
     : BasicExecutablePM :=
   {|pModel := UMPromising_cert' isem;
     promise_select :=
-      (* termination condition *)
       λ fuel tid term initmem ts mem,
           run_to_termination tid initmem term isem fuel ts mem
   |}.
