@@ -176,10 +176,6 @@ Definition map_state `(f : St → St') `(r : res (St * E) (St * A)) :
   make (map (λ '(st, a), (f st, a)) r.(results))
        (map (λ '(st, a), (f st, a)) r.(errors)).
 
-Definition liftSt_stateless {St E A} (r : res E A) : Exec.t St E A :=
-  λ st, make (map (λ a, (st, a)) r.(results))
-             (map (λ b, (st, b)) r.(errors)).
-
 Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St → St)
     (inner : Exec.t St' E A) : Exec.t St E A :=
   λ st, map_state (λ st', setter st' st) (inner (getter st)).
