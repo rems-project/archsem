@@ -797,7 +797,7 @@ Module TLB.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe. (* NOTE: cast to TransRes.remaining *)
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
