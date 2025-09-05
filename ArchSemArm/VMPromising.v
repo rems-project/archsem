@@ -211,9 +211,6 @@ Module Memory.
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
-  Definition filter_tlbi (mem : t) : list TLBI.t :=
-    mem |> list_filter_map Ev.get_tlbi.
-
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
 
@@ -654,8 +651,6 @@ End TState.
 
 (*** VA helper ***)
 
-Definition bv_1 (n : N) : bv n := Z_to_bv n 1.
-
 Definition Level := fin 4.
 
 #[export] Typeclasses Transparent Level.
@@ -778,7 +773,7 @@ Module TLB.
     Proof.
       eapply (inj_countable' (fun ndc => (va ndc, asid ndc))
                         (fun x => make x.1 x.2)).
-      sauto.
+      abstract sauto.
     Defined.
   End NDCtxt.
 
@@ -807,7 +802,7 @@ Module TLB.
   (* Full Entry *)
   Module FE.
     Definition t := { ctxt : Ctxt.t & Entry.t (Ctxt.lvl ctxt) }.
-    Definition ctxt : t -> Ctxt.t := projT1.
+    Definition ctxt : t → Ctxt.t := projT1.
     Definition lvl (fe : t) : Level := Ctxt.lvl (ctxt fe).
     Definition va (fe : t) : prefix (lvl fe) := Ctxt.va (ctxt fe).
     Definition asid (fe : t) : option (bv 16) := Ctxt.asid (ctxt fe).
@@ -872,6 +867,13 @@ Module TLB.
     (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
     bv_concat (level_length clvl) (Ctxt.va ctxt) index.
 
+
+  (** Seed root-level TLB entries from [ttbr].
+      - Reads [ttbr] at [time], checks it is 64-bit.
+      - Computes root entry address for [va], reads memory.
+      - If entry is a table, builds a root context with ASID from TTBR
+        and inserts it into VATLB.
+      - Otherwise returns empty VATLB. *)
   Definition va_fill_root (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
@@ -896,6 +898,11 @@ Module TLB.
       end;
     Ok (fold_left union vatlbs VATLB.init).
 
+  (** Extend one level down from a parent table entry [te].
+      - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
+      - Reads next-level PTE at [index]; if valid and table, build child context
+        (ASID dropped if global) and insert into VATLB.
+      - Otherwise returns empty. *)
   Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
@@ -929,6 +936,10 @@ Module TLB.
       else
         Ok VATLB.init.
 
+  (** Make [tlb] containing entries for [va] at [lvl].
+      - At root: call [va_fill_root].
+      - At deeper levels: for each parent entry, call [va_fill_lvl].
+      - Returns [tlb] with added VATLB entries. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
@@ -955,6 +966,9 @@ Module TLB.
       end;
     Ok (TLB.make vatlb).
 
+  (** Fill TLB entries for [va] through all levels 0–3.
+      - Sequentially calls [va_fill] at each level.
+      - Produces a TLB with the full translation chain if available. *)
   Definition update (tlb : t)
       (ts : TState.t)
       (init : Memory.initial)
