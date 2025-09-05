@@ -792,7 +792,7 @@ Module TLB.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe. (* NOTE: cast to TransRes.remaining *)
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
@@ -1134,27 +1134,21 @@ Module TLB.
     let evs := PromMemory.cut_after_with_timestamps time mem in
     invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 
-  Definition ptes_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
+  Definition invalidation_time_of_ptes (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
                                  (time : nat)
                                  (lvl : Level)
                                  (va : bv 64) (asid : option (bv 16))
-                                 (ttbr : reg) : Exec.res string (list val * nat) :=
+                                 (ttbr : reg) : result string (list (list val * nat))  :=
   let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
-  candidates ←
-    VATLB.get ctxt tlb.(TLB.vatlb)
-    |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
-    |> set_fold
-      (λ te acc,
+  VATLB.get ctxt tlb.(TLB.vatlb)
+  |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
+  |> λ tes,
+      for te in (elements tes) do
         ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
-        if (List.hd_error acc.(Exec.results)) is Some prev then
-          mret $ prev ++ [(te, ti)]
-        else
-          mret [(te, ti)]
-      ) (mret $ []);
-  '(te, ti) ← mchoosel candidates;
-  mret (vec_to_list te, ti).
+        mret (vec_to_list te, ti)
+      end.
 End TLB.
 
 Module VATLB := TLB.VATLB.
@@ -1486,13 +1480,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   mset PPState.iis $ IIS.add time.
 
 (* TODO: add match cases on TTBR1/TTBR0 using TCR_EL1, TCR_EL2 *)
-Definition ttbr_of_regime (regime : Regime) : reg :=
+Definition ttbr_of_regime (regime : Regime) : result string reg :=
   match regime with
-  | Regime_EL3 => GReg TTBR0_EL3
-  | Regime_EL30 => GReg TTBR0_EL3
-  | Regime_EL2 => GReg TTBR0_EL2
-  | Regime_EL20 => GReg TTBR0_EL2
-  | Regime_EL10 => GReg TTBR0_EL1
+  | Regime_EL10 => Ok (GReg TTBR0_EL1)
+  | _ => Error "This model does not support multiple regimes"
   end.
 
 Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
@@ -1501,28 +1492,27 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (time : nat)
                       (va : bv 64) (asid : option (bv 16))
                       (ttbr : reg) :
-    Exec.res string (list val * nat) :=
+    result string (list (list val * nat)) :=
   tlb ← TLB.at_timestamp ts init mem time va asid ttbr;
-  res1 ← TLB.ptes_invalidation_time tlb ts init mem tid time 1%fin va asid ttbr;
-  res2 ← TLB.ptes_invalidation_time tlb ts init mem tid time 2%fin va asid ttbr;
-  res3 ← TLB.ptes_invalidation_time tlb ts init mem tid time leaf_lvl va asid ttbr;
-  mchoosel [res1; res2; res3].
+  res1 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time 1%fin va asid ttbr;
+  res2 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time 2%fin va asid ttbr;
+  res3 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time leaf_lvl va asid ttbr;
+  mret (res1 ++ res2 ++ res3).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
-  let max_t := length mem + 1 in
+  let max_t := length mem in
   time_t ← mchoosel $ seq vpre_t max_t;
   (* lookup *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
-  let ttbr := ttbr_of_regime trans_start.(TranslationStartInfo_regime) in
-  '(ptes, ti) ← Exec.liftSt_stateless
-                $ tlb_lookup ts init mem tid time_t va (Some asid) ttbr;
+  ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
+  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va (Some asid) ttbr;
+  '(ptes, ti) ← mchoosel tlb_res;
   (* update *)
   let trans_res := IIS.TransRes.make (va_to_vpn va) time_t ptes ti in
   mset PPState.iis $ IIS.set_trs trans_res.

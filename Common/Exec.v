@@ -165,8 +165,12 @@ Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
     | MGet => λ s, make [(s,s)] []
     end.
 
-Instance res_lift_t {St E} : MLift (res E) (t St E) := λ A r st,
+#[global] Instance res_lift_t {St E} : MLift (res E) (t St E) := λ A r st,
     make (map (st,.) r.(results)) (map (st,.) r.(errors)).
+
+#[global] Instance result_lift_t {St E} : MLift (result E) (t St E) := λ A r st,
+    let res := mlift r in
+    res_lift_t A res st.
 
 Lemma mdiscard_eq {St E A} : mdiscard =@{t St E A} (λ st, make [] []).
 Proof. reflexivity. Qed.
@@ -175,10 +179,6 @@ Definition map_state `(f : St → St') `(r : res (St * E) (St * A)) :
     res (St' * E) (St' * A) :=
   make (map (λ '(st, a), (f st, a)) r.(results))
        (map (λ '(st, a), (f st, a)) r.(errors)).
-
-Definition liftSt_stateless {St E A} (r : res E A) : Exec.t St E A :=
-  λ st, make (map (λ a, (st, a)) r.(results))
-             (map (λ b, (st, b)) r.(errors)).
 
 Definition liftSt_full {St St' E A} (getter : St → St') (setter : St' → St → St)
     (inner : Exec.t St' E A) : Exec.t St E A :=
