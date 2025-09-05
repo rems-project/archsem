@@ -43,7 +43,7 @@
 (******************************************************************************)
 
 Require Import Options.
-Require Import CBase CDestruct CMonads.
+Require Import CBase CDestruct CMonads Effects.
 From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to
@@ -151,9 +151,6 @@ Section Result.
     | Ok val => mret val
     | Error err => mthrow err
     end.
-
-
-
 
 End Result.
 Arguments result : clear implicits.
