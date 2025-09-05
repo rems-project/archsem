@@ -791,7 +791,7 @@ Module TLB.
 
   Module Entry.
     Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe. (* NOTE: cast to TransRes.remaining *)
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
@@ -1487,13 +1487,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   mset PPState.iis $ IIS.add time.
 
 (* TODO: add match cases on TTBR1/TTBR0 using TCR_EL1, TCR_EL2 *)
-Definition ttbr_of_regime (regime : Regime) : reg :=
+Definition ttbr_of_regime (regime : Regime) : result string reg :=
   match regime with
-  | Regime_EL3 => GReg TTBR0_EL3
-  | Regime_EL30 => GReg TTBR0_EL3
-  | Regime_EL2 => GReg TTBR0_EL2
-  | Regime_EL20 => GReg TTBR0_EL2
-  | Regime_EL10 => GReg TTBR0_EL1
+  | Regime_EL10 => Ok (GReg TTBR0_EL1)
+  | _ => Error "This model does not support multiple regimes"
   end.
 
 Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
@@ -1514,16 +1511,15 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
-  let max_t := length mem + 1 in
+  let max_t := length mem in
   time_t ← mchoosel $ seq vpre_t max_t;
   (* lookup *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
-  let ttbr := ttbr_of_regime trans_start.(TranslationStartInfo_regime) in
-  candidates ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
-  '(ptes, ti) ← mchoosel candidates;
+  ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
+  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
+  '(ptes, ti) ← mchoosel tlb_res;
   (* update *)
   let trans_res := IIS.TransRes.make (va_to_vpn va) time_t ptes ti in
   mset PPState.iis $ IIS.set_trs trans_res.
