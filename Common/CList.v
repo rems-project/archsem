@@ -634,3 +634,60 @@ Proof.
   intro x.
   induction x; hauto lq:on.
 Qed.
+
+(** * sublist *)
+
+Section ContigSublist.
+  Context {A : Type}.
+  Context {A_eq_dec : EqDecision A}.
+
+  Definition contig_sublist (l1 l2 : list A) := ∃ k k', l2 = k ++ l1 ++ k'.
+
+  Lemma prefix_contig_sublist l1 l2 : l1 `prefix_of` l2 → contig_sublist l1 l2.
+  Proof. intros [k H]. exists []. naive_solver. Qed.
+
+  Equations contig_sublist_dec l1 l2 : Decision (contig_sublist l1 l2) :=
+    contig_sublist_dec l1 l2 :=
+      if decide (l1 `prefix_of` l2) then left _
+      else match inspect l2 with
+           | [] eq: Heq => right (_ Heq)
+           | (x :: tl) eq:_ => dec_if (contig_sublist_dec l1 tl)
+           end.
+  Next Obligation.
+    intros _. exact prefix_contig_sublist.
+  Qed.
+  Next Obligation.
+    intros _ l1.
+    unfold contig_sublist.
+    cdestruct |- *** as Hp k k' H'.
+    symmetry in H'.
+    repeat rewrite app_nil in H'.
+    cdestruct l1,k,k' |- ***.
+    naive_solver.
+  Qed.
+  Next Obligation.
+    intros _ l1.
+    unfold contig_sublist.
+    cdestruct |- ***.
+    eexists (_ :: _).
+    naive_solver.
+  Qed.
+  Next Obligation.
+    intros _.
+    unfold contig_sublist, prefix.
+    cdestruct |- *** as l1 x tl Hnp Hncs k k' Hcs.
+    destruct k; naive_solver.
+  Qed.
+
+  Lemma contig_sublist_trans l1 l2 l3 : contig_sublist l1 l2 → contig_sublist l2 l3 → contig_sublist l1 l3.
+  Proof.
+    unfold contig_sublist.
+    cdestruct l2,l3 |- ***.
+    (* TODO do that with csimp *)
+    rewrite <- app_assoc.
+    rewrite <- app_assoc.
+    (* TODO do an ++ equality solver *)
+    rewrite app_assoc.
+    naive_solver.
+  Qed.
+End ContigSublist.

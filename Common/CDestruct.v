@@ -582,6 +582,7 @@ Ltac2 cdestruct_step0 () :=
   (* If the goal is blocked, we don't do goal clean-up *)
   | [|- cblock _] => () (* stop on block: (cdestruct_step) is wrapped in progress*)
 
+  | [|- ¬ ?h ] => change (¬ _) with ($h → False)
   (* Goal clean-up *)
   | [|- ?t ] => assert_option (CDestrSplit $t); split
   | [|- _] => apply obv_true
