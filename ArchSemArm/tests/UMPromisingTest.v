@@ -59,7 +59,26 @@ Definition r0_extract (a : Model.Res.t ∅ 1) : result string Z :=
       let regs : registerMap := fs.(MState.regs) !!! 0%fin in
       if reg_lookup R0 regs is Some r0
       then Ok (bv_unsigned r0)
-      else Error "R0 not in state"
+      else Error "R0 not in the thread state"
+  | Model.Res.Error s => Error s
+  | Model.Res.Unspecified e => match e with end
+  end.
+
+Definition regs_r0s (regs_list : list registerMap)
+  : result string (list Z) :=
+  for regs in regs_list do
+    if reg_lookup R0 regs is Some r0 then
+      Ok (bv_unsigned r0)
+    else
+      Error "R0 not in the thread state"
+  end.
+
+Definition r0s_extract {n}
+           (a : Model.Res.t ∅ n)
+  : result string (list Z) :=
+  match a with
+  | Model.Res.FinalState fs =>
+      regs_r0s (MState.regs fs)
   | Model.Res.Error s => Error s
   | Model.Res.Unspecified e => match e with end
   end.
@@ -164,13 +183,14 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
           MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
 
-  Definition fuel := 3%nat.
+  Definition fuel := 2%nat.
 
   Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
   Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
-  Admitted.
+    reflexivity.
+  Qed.
 End STRLDR.
 
 (* TODO: at least one concurrency test (maybe MP?) *)
