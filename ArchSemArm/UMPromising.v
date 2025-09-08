@@ -621,16 +621,16 @@ End RunOutcome.
 Module CProm.
   Record t :=
     make {
-      proms : gset Msg.t;
+      proms : list Msg.t;
     }.
   #[global] Instance eta : Settable _ :=
     settable! make <proms>.
 
-  #[global] Instance empty : Empty t := CProm.make ∅.
+  #[global] Instance empty : Empty t := CProm.make [].
 
-  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ∪ y.(proms)).
+  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ++ y.(proms)).
 
-  Definition init : t := make ∅.
+  Definition init : t := make [].
 
   (** Add the latest msg in the mem to the CProm
       if the corresponding vpre is not bigger than the base *)
@@ -638,13 +638,11 @@ Module CProm.
     if decide (vpre ≤ base)%nat then
       match mem with
       | msg :: mem =>
-        cp |> set proms ({[ msg ]} ∪.)
+        cp |> set proms (msg ::.)
       | [] => cp
       end
     else cp.
 
-  Definition to_list (cp : t) : list Msg.t :=
-    elements cp.(proms).
 End CProm.
 
 Section ComputeProm.
@@ -690,12 +688,11 @@ Section ComputeProm.
       : Exec.res string Msg.t :=
     let base := List.length mem in
     let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or "HW error: could not finish running within the size of the fuel"
-      (∀ r ∈ res, r.2 = true);;
+    (* guard_or ("Could not finish promises within the size of the fuel")%string (∀ r ∈ res, r.2 = true);; *)
+    guard_discard (∀ r ∈ res, r.2 = true);;
     res.*1.*1
     |> union_list
-    |> CProm.to_list
-    |> mchoosel.
+    |> mchoosel ∘ CProm.proms.
 
 End ComputeProm.
 

@@ -195,14 +195,14 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         Exec.res string pModel.(mEvent);
 
       promise_select_sound :
-      ∀ n tid term initMem ts mem,
-        ∀ ev ∈ (promise_select n tid term initMem ts mem),
+      ∀ fuel tid term initMem ts mem,
+        ∀ ev ∈ (promise_select fuel tid term initMem ts mem),
           ev ∈ pModel.(allowed_promises) tid initMem ts mem;
       promise_select_complete :
-      ∀ n tid term initMem ts mem,
-        ¬ Exec.has_error (promise_select n tid term initMem ts mem) →
+      ∀ fuel tid term initMem ts mem,
+        ¬ Exec.has_error (promise_select fuel tid term initMem ts mem) →
         ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem,
-          ev ∈ promise_select n tid term initMem ts mem
+          ev ∈ promise_select fuel tid term initMem ts mem
     }.
   Arguments BasicExecutablePM : clear implicits.
 
@@ -344,7 +344,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      prom.(promise_select) n tid (term tid) (initmem st) (tstate tid st) (events st).
+      prom.(promise_select) fuel tid (term tid) (initmem st) (tstate tid st) (events st).
 
     (** Take any promising step for that tid and promise it *)
     Definition cpromise_tid (fuel : nat) (tid : fin n)
@@ -387,7 +387,11 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         to the promising model prom starting from st *)
     Program Fixpoint run (fuel : nat) : Exec.t t string final :=
       match fuel with
-      | 0%nat => mthrow "not enough fuel"
+      | 0%nat =>
+        st ← mGet;
+        if dec $ terminated prom term st then mret (make_final st _)
+        else
+          mthrow "Could not finish running within the size of the fuel"
       | S fuel =>
           st ← mGet;
           if dec $ terminated prom term st then mret (make_final st _)
