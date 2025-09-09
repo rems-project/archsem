@@ -44,41 +44,26 @@
 
 From ASCommon Require Import Options Common.
 From ArchSemArm Require Import ArmInst.
-From ASCommon Require Import CResult.
+From ASCommon Require Import CResult CList.
 
 From ArchSemArm Require Import UMPromising.
-
 
 Open Scope stdpp.
 Open Scope bv.
 
-(** Extract R0 in a Z on success to have something printable by Coq *)
-Definition r0_extract (a : Model.Res.t ∅ 1) : result string Z :=
-  match a with
-  | Model.Res.FinalState fs =>
-      let regs : registerMap := fs.(MState.regs) !!! 0%fin in
-      if reg_lookup R0 regs is Some r0
-      then Ok (bv_unsigned r0)
-      else Error "R0 not in the thread state"
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
-  end.
-
-Definition regs_r0s (regs_list : list registerMap)
-  : result string (list Z) :=
-  for regs in regs_list do
-    if reg_lookup R0 regs is Some r0 then
+Definition check_regs (reg : register_bitvector_64) (regs : registerMap)
+  : result string Z :=
+    if reg_lookup reg regs is Some r0 then
       Ok (bv_unsigned r0)
     else
-      Error "R0 not in the thread state"
-  end.
+      Error "R0 not in the thread state".
 
-Definition r0s_extract {n}
-           (a : Model.Res.t ∅ n)
-  : result string (list Z) :=
+Definition r_extract {n} (reg : register_bitvector_64) (tid : fin n)
+    (a : Model.Res.t ∅ n) : result string Z :=
   match a with
   | Model.Res.FinalState fs =>
-      regs_r0s (MState.regs fs)
+    let regs : registerMap := fs.(MState.regs) !!! tid in
+    check_regs reg regs
   | Model.Res.Error s => Error s
   | Model.Res.Unspecified e => match e with end
   end.
@@ -89,72 +74,71 @@ Definition arm_sem := sail_tiny_arm_sem true.
 
 (* Run EOR X0, X1, X2 at pc address 0x500, whose opcode is 0xca020020 *)
 Module EOR.
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x11
+    |> reg_insert R2 0x101.
 
-Definition init_reg : registerMap :=
-  ∅
-  |> reg_insert _PC 0x500
-  |> reg_insert R0 0x0
-  |> reg_insert R1 0x11
-  |> reg_insert R2 0x101.
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
 
-Definition init_mem : memoryMap :=
-  ∅
-  |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
+  Definition n_threads := 1%nat.
 
-Definition n_threads := 1%nat.
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
-Definition termCond : terminationCondition n_threads :=
-  (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+  Definition initState :=
+    {|MState.state :=
+        {|MState.memory := init_mem;
+          MState.regs := [# init_reg];
+          MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
 
-Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := PAS_NonSecure |};
-    MState.termCond := termCond |}.
+  Definition fuel := 2%nat.
 
-Definition fuel := 2%nat.
+  Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
-Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
-
-Goal r0_extract <$> test_results = Listset [Ok 0x110%Z].
-  vm_compute (_ <$> _).
-  reflexivity.
-Qed.
+  Goal r_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End EOR.
 
 Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
-Definition init_reg : registerMap :=
-  ∅
-  |> reg_insert _PC 0x500
-  |> reg_insert R0 0x1000
-  |> reg_insert R1 0x0.
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x1000
+    |> reg_insert R1 0x0.
 
-Definition init_mem : memoryMap:=
-  ∅
-  |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
-  |> mem_insert 0x1000 8 0x2a. (* data to be read *)
+  Definition init_mem : memoryMap:=
+    ∅
+    |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
+    |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
-Definition n_threads := 1%nat.
+  Definition n_threads := 1%nat.
 
-Definition termCond : terminationCondition n_threads :=
-  (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
-Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := PAS_NonSecure |};
-    MState.termCond := termCond |}.
+  Definition initState :=
+    {|MState.state :=
+        {|MState.memory := init_mem;
+          MState.regs := [# init_reg];
+          MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
 
-Definition fuel := 2%nat.
+  Definition fuel := 2%nat.
 
-Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
-Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
-  vm_compute (_ <$> _).
-  reflexivity.
-Qed.
+  Goal r_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End LDR.
 
 Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1100 *)
@@ -187,7 +171,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
 
   Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
-  Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
+  Goal r_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
