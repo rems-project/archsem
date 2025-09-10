@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "strldr"
+symbolic = ["x"]
+
+[thread.0]
+init = { X0 = "x", X1 = "0x0", X2 = "0x2a" }
+code = """
+	str x2, [x1, x0]
+	ldr x0, [x1, x0]
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 0x2a"

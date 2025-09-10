@@ -4,14 +4,14 @@
  (modules
    ArmInst
    UMPromising
-   VMPromising
+   ; VMPromising
    GenAxiomaticArm
    UMArm
    UMSeqArm
    VMSA22Arm
    VMUMEquivThm
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem SailTinyArm)
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem SailArm)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
                --external ../../Common/ASCommon.html ASCommon
