@@ -177,4 +177,78 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Qed.
 End STRLDR.
 
-(* TODO: at least one concurrency test (maybe MP?) *)
+Module MP.
+  (* A classic MP litmus test
+     Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
+     Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
+
+     Expected outcome of R2 at Thread 2: 0x2a or 0x0 *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x1000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x1000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x2a
+    |> reg_insert R5 0x1.
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x600
+    |> reg_insert R0 0x1000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x1000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x0
+    |> reg_insert R5 0x0.
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
+    |> mem_insert 0x504 4 0xf8236885  (* STR X5, [X4, X3] *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
+    |> mem_insert 0x604 4 0xf8606822  (* LDR X2, [X1, X0] *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x508 : bv 64); Some (0x608 : bv 64)].
+
+  (* Each thread’s PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {| MState.state :=
+        {| MState.memory := init_mem;
+            MState.regs := [# init_reg_t1; init_reg_t2];
+            MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
+
+  Definition fuel := 4%nat.
+
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads initState.
+
+  Definition test_tid : fin n_threads := 1%fin.
+  Definition test_reg := R2.
+  Definition test_out : listset (result string Z) :=
+    Listset [Ok 0x2a%Z; Ok 0x0%Z].
+
+  (* TODO: Simplify the proof *)
+  Goal test_out ⊆ (r_extract test_reg test_tid <$> test_results).
+    vm_compute (_ <$> _).
+    unfold test_out.
+    tcclean. set_unfold. inv H0.
+    - tauto.
+    - inv H3.
+      + tauto.
+      + inv H2.
+  Qed.
+End MP.
