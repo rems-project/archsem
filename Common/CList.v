@@ -141,6 +141,17 @@ Global Instance set_unfold_elem_of_singleton_list {A : Type} (x a : A) :
   SetUnfoldElemOf x [a] (x = a).
 Proof. tcclean. set_solver. Qed.
 
+(** ** Csimp instances *)
+
+Instance csimp_app_nil_r `(l : list A) : l ++ [] ⇒ l := app_nil_r l.
+Instance csimp_app_nil_l `(l : list A) : [] ++ l ⇒ l := eq_refl.
+Instance csimp_app_assoc {A} (l m n : list A) : (l ++ m) ++ n ⇒ l ++ m ++ n.
+Proof. symmetry. apply app_assoc. Qed.
+Instance csimp_map_app `(f : A → B) (l l' : list A) :
+  map f (l ++ l') ⇒ map f l ++ map f l' := map_app f l l'.
+Instance csimp_bind_app `(f : A → list B) (l l' : list A) :
+  (l ++ l') ≫= f ⇒ (l ≫= f) ++ (l' ≫= f) := bind_app f l l'.
+
 
 (** * List lookup with different keys *)
 
@@ -683,9 +694,7 @@ Section ContigSublist.
   Proof.
     unfold contig_sublist.
     cdestruct l2,l3 |- ***.
-    (* TODO do that with csimp *)
-    rewrite <- app_assoc.
-    rewrite <- app_assoc.
+    csimp.
     (* TODO do an ++ equality solver *)
     rewrite app_assoc.
     naive_solver.
