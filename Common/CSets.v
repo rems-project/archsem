@@ -244,6 +244,11 @@ Global Instance set_unfold_elem_of_filter `{FinSet A B}
   SetUnfoldElemOf x (filter P a) (P x ∧ Q).
 Proof. tcclean. apply elem_of_filter. Qed.
 
+Instance set_unfold_elem_of_Listset {A} x (l : list A) P:
+  SetUnfoldElemOf x l P →
+  SetUnfoldElemOf x (Listset l) P.
+Proof. by tcclean. Qed.
+
 
 (** Import this module so that set_unfold unfold X = Y into
     (x,y) ∈ X  <-> (x,y) ∈ Y if X and Y are sets of pairs *)
