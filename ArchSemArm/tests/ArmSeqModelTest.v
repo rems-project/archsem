@@ -77,7 +77,7 @@ Definition init_reg : registerMap :=
   |> reg_insert R1 0x11
   |> reg_insert R2 0x101.
 
-Definition init_mem : memoryMap:=
+Definition init_mem : memoryMap :=
   ∅
   |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
 
