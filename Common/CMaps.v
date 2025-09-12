@@ -44,6 +44,9 @@
 
 From stdpp Require Export gmap.
 From stdpp Require Export fin_maps.
+From stdpp Require Import pretty.
+
+Require Import Strings.String.
 
 Require Import Options.
 Require Import CBase.
@@ -642,3 +645,52 @@ Section DMapMap.
       + by rewrite ?dmap_lookup_insert_ne.
   Qed.
 End DMapMap.
+
+Fixpoint intercalate (sep : string) (xs : list string) : string :=
+  match xs with
+  | [] => ""
+  | [x] => x
+  | x :: xs' => x ++ sep ++ intercalate sep xs'
+  end.
+
+Section PrettyDMap.
+  Context {K : Type}.
+  Context {K_eq_dec : EqDecision K}.
+  Context {K_countable : Countable K}.
+  Context {F : K → Type}.
+  Context {ctrans_F : CTrans F}.
+  Context {ctrans_F_simpl : CTransSimpl F}.
+
+  Context `{Pretty K}.
+  Context `{forall k : K, Pretty (F k)}.
+
+  Definition string_of_dmap (m : dmap K F) : string :=
+    let entries := List.map
+      (fun '(existT k v) =>
+         (pretty k ++ " ↦ " ++ @pretty _ (H0 k) v)%string)
+      (dmap_to_list m)
+    in
+    ("{" ++ intercalate ", " entries ++ "}")%string.
+
+  #[global] Instance pretty_dmap : Pretty (dmap K F) :=
+    λ m, string_of_dmap m.
+
+End PrettyDMap.
+
+Section PrettyGMap.
+  Context {K A : Type}.
+  Context `{EqDecision K, Countable K}.
+  Context `{Pretty K}.
+  Context `{Pretty A}.
+
+  Definition pretty_kv (kv : K * A) : string :=
+    let '(k, v) := kv in (pretty k ++ " ↦ " ++ pretty v)%string.
+
+  Definition string_of_gmap (m : gmap K A) : string :=
+    let entries := List.map pretty_kv (map_to_list m) in
+    "{" ++ intercalate ", " entries ++ "}".
+
+  #[global] Instance pretty_gmap : Pretty (gmap K A) :=
+    λ m, string_of_gmap m.
+
+End PrettyGMap.

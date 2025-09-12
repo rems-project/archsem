@@ -67,11 +67,48 @@ Proof using.
   - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
 Defined.
 
-Instance pretty_bv {n} : Pretty (bv n) :=
-  λ b, pretty (bv_unsigned b).
-Instance pretty_bvn : Pretty (bvn) :=
-  λ b, pretty (bvn_unsigned b).
+(** Pretty instances *)
 
+Definition hex_of_nibble_str (nz : Z) : string :=
+  if Z.ltb nz 10
+  then String (Ascii.ascii_of_nat (48 + Z.to_nat nz)) EmptyString
+  else String (Ascii.ascii_of_nat (87 + Z.to_nat nz)) EmptyString.
+
+Fixpoint build_hex_k (k : nat) (z : Z) (acc : string) : string :=
+  match k with
+  | 0 => String.rev acc
+  | S k' =>
+      let shift := Z.of_nat (4 * k') in
+      let nib := Z.land (Z.shiftr z shift) 15 in
+      let ch := hex_of_nibble_str nib in
+      build_hex_k k' z (ch +:+ acc)
+  end.
+
+Definition hex_digits_min_Z (z : Z) : nat :=
+  if (z <=? 0)%Z then 1%nat else (Z.to_nat (Z.div (Z.log2 z) 4) + 1)%nat.
+
+Definition hex_digits_for_nat (n : nat) : nat :=
+  let k := Z.to_nat (Z.div (Z.of_nat (n + 3)) 4) in
+  match k with 0 => 1 | _ => k end.
+
+(* same but for N (binary naturals) *)
+Definition hex_digits_for_N (n : N) : nat :=
+  hex_digits_for_nat (N.to_nat n).
+
+Definition hex_of_bv {n : N} (b : bv n) : string :=
+  let z := bv_unsigned b in
+  let k := hex_digits_for_N n in
+  "0x" ++ (build_hex_k k z EmptyString).
+
+Definition hex_of_Z (z : Z) : string :=
+  let k := hex_digits_min_Z z in
+  "0x" ++ (build_hex_k k (Z.abs z) EmptyString).
+
+Instance pretty_bv {n} : Pretty (bv n) :=
+  λ b, hex_of_bv b.
+
+Instance pretty_bvn : Pretty bvn :=
+  λ b, hex_of_Z (bvn_unsigned b).
 
 (** Allow better solving of [BvWf] when the size expression has free-variables
     that are irrelevant and can be removed by [cbn] *)
