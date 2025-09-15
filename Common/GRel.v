@@ -949,3 +949,13 @@ Import this module if you want the general reflexivity notation for finite types
 Module GRelReflNot.
   Notation "a ?" := (grel_rc a) (at level 1, format "a ?") : stdpp_scope.
 End GRelReflNot.
+
+Section GRelMap.
+  Context {A : Type} {eqA : EqDecision A} {countA : Countable A}.
+  Context {B : Type} {eqB : EqDecision B} {countB : Countable B}.
+  Definition grel_map (f : A → B) : grel A → grel B :=
+    set_map (λ '(x, y), (f x, f y)).
+
+  Definition grel_omap (f : A → option B) : grel A → grel B :=
+    set_omap (λ '(x, y), x' ← f x; y' ← f y; Some (x', y')).
+End GRelMap.

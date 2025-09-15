@@ -258,3 +258,16 @@ Fixpoint vmapM {A B} `{MBind M, MRet M} (f : A → M B) {n} (v : vec A n) :
       ntl ← vmapM f tl;
       mret (nhd ::: ntl)
   end.
+
+
+(** * Vector of options *)
+
+Section VecOptions.
+  Context {A : Type}.
+  Equations vec_of_options {n} : vec (option A) n → option (vec A n) :=
+  | [#] := Some [#];
+  | Some a ::: v with vec_of_options v := {
+    | None := None;
+    | Some v' := Some (a ::: v') };
+  | None ::: v := None.
+End VecOptions.

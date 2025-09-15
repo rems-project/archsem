@@ -504,6 +504,13 @@ Module Interface (A : Arch).
       cdestruct bv |- ** #CDestrMatch; cbn; f_equal; lia.
   Qed.
 
+  Definition get_abort (ev : iEvent) : option abort:=
+    match ev with
+    | MemRead _ &→ Error ab => Some ab
+    | MemWrite _ _ _ &→ Error ab => Some ab
+    | _ => None
+    end.
+
   (** Get the content of a barrier, returns none if not a barrier (or is an
         invalid EID) *)
   Definition get_barrier (ev : iEvent) : option barrier:=
@@ -893,6 +900,48 @@ Module Interface (A : Arch).
   #[global] Instance is_return_exception_dec ev :
     Decision (is_return_exception ev).
   Proof. destruct ev as [[]?]; (right + left); abstract (hauto q:on). Defined.
+
+  Section isTranslationStart.
+    Context (P : trans_start → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_trans_startP ev: Prop :=
+      if ev is TranslationStart ts &→ _ then P ts else False.
+    Typeclasses Opaque is_trans_startP.
+
+    Definition is_trans_startP_spec ev:
+      is_trans_startP ev ↔ ∃ trans_start, ev = TranslationStart trans_start &→ () ∧ P trans_start.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct |- ?; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_trans_startP_dec ev: Decision (is_trans_startP ev).
+    Proof using Pdec. unfold is_trans_startP. solve_decision. Defined.
+  End isTranslationStart.
+  Notation is_trans_start := (is_trans_startP (λ _, True)).
+
+  Section isTranslationEnd.
+    Context (P : trans_end → Prop).
+    Implicit Type ev : iEvent.
+
+    Definition is_trans_endP ev: Prop :=
+      if ev is TranslationEnd ts &→ _ then P ts else False.
+    Typeclasses Opaque is_trans_endP.
+
+    Definition is_trans_endP_spec ev:
+      is_trans_endP ev ↔ ∃ trans_end, ev = TranslationEnd trans_end &→ () ∧ P trans_end.
+    Proof.
+      destruct ev as [[] fret];
+        split; cdestruct |- ?; destruct fret; naive_solver.
+    Qed.
+
+    Context `{Pdec: ∀ c, Decision (P c)}.
+    #[global] Instance is_trans_endP_dec ev: Decision (is_trans_endP ev).
+    Proof using Pdec. unfold is_trans_endP. solve_decision. Defined.
+  End isTranslationEnd.
+  Notation is_trans_end := (is_trans_endP (λ _, True)).
 
 End Interface.
 

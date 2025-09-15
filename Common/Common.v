@@ -101,6 +101,7 @@ Next Obligation.
   by repeat (rewrite decode_encode; cbn).
 Qed.
 
+
 (** * Finite decidable quantifiers ***)
 
 (* TODO maybe express with a decidable instance instead : There are consequences

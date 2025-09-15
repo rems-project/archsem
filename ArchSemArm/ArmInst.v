@@ -100,6 +100,8 @@ Export ArmSeqModel.
 (** Make type abbreviations transparent *)
 #[export] Typeclasses Transparent bits.
 #[export] Typeclasses Transparent SA.addr_size.
+#[export] Typeclasses Transparent System_types.addr_size.
+#[export] Typeclasses Transparent Z.to_N.
 #[export] Typeclasses Transparent System_types.addr_space.
 #[export] Typeclasses Transparent SA.addr_space.
 #[export] Typeclasses Transparent SA.sys_reg_id.

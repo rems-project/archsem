@@ -197,6 +197,9 @@ Ltac pair_let_clean_Decision :=
 (** Decidable equality notation that use [Decision] *)
 Notation "x =? y" := (bool_decide (x = y)) (at level 70, no associativity)
     : stdpp_scope.
+Notation "x ≠? y" := (bool_decide (x ≠ y)) (at level 70, no associativity)
+    : stdpp_scope.
+
 
 (** JMeq simplification lemma *)
 Lemma JMeq_simpl A (a b : A) : a =ⱼ b ↔ a = b.

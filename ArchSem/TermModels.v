@@ -152,6 +152,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
           regs: vec registerMap n;
         }.
     Arguments t : clear implicits.
+    Arguments Make {n}.
 
     Definition is_terminated `(termCond : terminationCondition n) (s : t n) :=
       ∀ tid, termCond tid (s.(regs) !!! tid).
@@ -163,6 +164,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   End archState.
   Export (hints) archState.
   Notation archState := archState.t.
+
 
   (** * General terminating architecture model
 
