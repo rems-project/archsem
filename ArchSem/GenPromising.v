@@ -385,21 +385,14 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
     (** Computational evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
-    Program Fixpoint run (fuel : nat) : Exec.t t string final :=
-      match fuel with
-      | 0%nat =>
-        st ← mGet;
-        if dec $ terminated prom term st then mret (make_final st _)
-        else
-          mthrow "Could not finish running within the size of the fuel"
-      | S fuel =>
-          st ← mGet;
-          if dec $ terminated prom term st then mret (make_final st _)
-          else
-            run_step fuel;;
-            run fuel
-      end.
-    Solve All Obligations with naive_solver.
+    Fixpoint run (fuel : nat) : Exec.t t string final :=
+      st ← mGet;
+      if decide $ terminated prom term st is left pt then mret (make_final st pt)
+      else
+        if fuel is S fuel then
+          run_step fuel;;
+          run fuel
+        else mthrow "Could not finish running within the size of the fuel".
     End CPS.
     Arguments to_final_MState {_ _ _}.
   End CPState.

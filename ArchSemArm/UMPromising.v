@@ -146,8 +146,8 @@ Module Msg.
   Proof.
     eapply (inj_countable' (fun msg => (tid msg, loc msg, val msg))
                       (fun x => make x.1.1 x.1.2 x.2)).
-    sauto.
-  Qed.
+    abstract sauto.
+  Defined.
 End Msg.
 
 (* TODO make naming match current latex definition *)
@@ -405,25 +405,6 @@ Module TState.
   Definition promise (v : view) : t -> t := set prom (fun p => v :: p).
 End TState.
 
-(** Intra instruction state for propagating views inside an instruction *)
-Module IIS.
-
-  Record t :=
-    make {
-      strict : view;
-    }.
-
-  #[global] Instance eta : Settable _ :=
-    settable! make <strict>.
-
-  Definition init : t := make 0.
-
-  (** Add a new view to the IIS *)
-  Definition add (v : view) (iis : t) : t :=
-    iis |> set strict (max v).
-
-End IIS.
-
 (*** Instruction semantics ***)
 
 Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
@@ -466,11 +447,11 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t Memory.t string (bv 32) :=
   if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
-    let bits2 := bv_get_bit 2 addr in
+    let bit2 := bv_get_bit 2 addr in
     loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
     mem ← mGet;
     block ← othrow "Modified instruction memory" (Memory.read_initial loc init mem);
-    mret $ (if bits2 then bv_extract 32 32 else bv_extract 0 32) block
+    mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   else mthrow "Non-ifetch 4 bytes access".
 
 (** Performs a memory write for a thread tid at a location loc with view
@@ -528,6 +509,25 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
     '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
     mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
     mret (mem, vpre_opt).
+
+(** Intra instruction state for propagating views inside an instruction *)
+Module IIS.
+
+  Record t :=
+    make {
+      strict : view;
+    }.
+
+  #[global] Instance eta : Settable _ :=
+    settable! make <strict>.
+
+  Definition init : t := make 0.
+
+  (** Add a new view to the IIS *)
+  Definition add (v : view) (iis : t) : t :=
+    iis |> set strict (max v).
+
+End IIS.
 
 
 (** Runs an outcome in the promising model while doing the correct view tracking
@@ -662,7 +662,7 @@ Section ComputeProm.
     else
       mret res.
 
-  Program Fixpoint runSt_to_termination
+  Fixpoint runSt_to_termination
                       (isem : iMon ())
                       (fuel : nat)
                       (base : nat)
@@ -688,8 +688,7 @@ Section ComputeProm.
       : Exec.res string Msg.t :=
     let base := List.length mem in
     let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    (* guard_or ("Could not finish promises within the size of the fuel")%string (∀ r ∈ res, r.2 = true);; *)
-    guard_discard (∀ r ∈ res, r.2 = true);;
+    guard_or ("Could not finish promises within the size of the fuel")%string (∀ r ∈ res, r.2 = true);;
     res.*1.*1
     |> union_list
     |> mchoosel ∘ CProm.proms.

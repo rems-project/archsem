@@ -421,12 +421,12 @@ Module WSReg.
     if decide (wsreg.(sreg) = sr) is left eq
     then Some $ (ctrans eq wsreg.(val), wsreg.(view))
     else None.
-
+  
   #[global] Instance eta : Settable _ := settable! make <sreg;val;view>.
 End WSReg.
 
 Module LEvent.
-  Inductive t :=
+  Inductive t := 
   | Cse (t : nat)
   | Wsreg (wsreg : WSReg.t).
 
@@ -516,7 +516,7 @@ Module TState.
 
   Definition filter_cse (levs: list LEvent.t) : list view :=
     levs |> list_filter_map LEvent.get_cse.
-
+    
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
@@ -563,8 +563,8 @@ Module TState.
     in
     read_sreg_by_cse ts sreg last_cse
       |$> list_filter_map (
-            λ valv,
-              if bool_decide (valv.2 ≤ t)
+            λ valv, 
+              if bool_decide (valv.2 ≤ t) 
               then Some valv
               else None).
 
@@ -1067,7 +1067,7 @@ Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initi
     loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
     mem ← mGet;
     block ← othrow "Modified instruction memory"
-                          (Memory.read_initial loc init mem);
+                            (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   else mthrow "Non-ifetch 4 bytes access".
 

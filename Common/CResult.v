@@ -152,7 +152,7 @@ Section Result.
     | Error err => mthrow err
     end.
 
-  #[export] Instance eq_dec `{EqDecision E} `{EqDecision A} : EqDecision (result).
+  #[export] Instance result_eq_dec `{EqDecision E} `{EqDecision A} : EqDecision (result).
   Proof. solve_decision. Qed.
 
 End Result.
