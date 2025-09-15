@@ -653,6 +653,10 @@ Fixpoint intercalate (sep : string) (xs : list string) : string :=
   | x :: xs' => x ++ sep ++ intercalate sep xs'
   end.
 
+Definition pretty_kv {K V : Type} `{Pretty K} `{Pretty V} (kv : K * V) : string :=
+  let '(k, v) := kv in (pretty k ++ " ↦ " ++ pretty v)%string.
+  (* (pretty k ++ " ↦ " ++ @pretty _ (H0 k) v)%string) *)
+
 Section PrettyDMap.
   Context {K : Type}.
   Context {K_eq_dec : EqDecision K}.
@@ -666,11 +670,9 @@ Section PrettyDMap.
 
   Definition string_of_dmap (m : dmap K F) : string :=
     let entries := List.map
-      (fun '(existT k v) =>
-         (pretty k ++ " ↦ " ++ @pretty _ (H0 k) v)%string)
-      (dmap_to_list m)
-    in
-    ("{" ++ intercalate ", " entries ++ "}")%string.
+      (λ '(existT k v), pretty_kv (k, v))
+      (dmap_to_list m) in
+    "{" ++ intercalate ", " entries ++ "}".
 
   #[global] Instance pretty_dmap : Pretty (dmap K F) :=
     λ m, string_of_dmap m.
@@ -682,9 +684,6 @@ Section PrettyGMap.
   Context `{EqDecision K, Countable K}.
   Context `{Pretty K}.
   Context `{Pretty A}.
-
-  Definition pretty_kv (kv : K * A) : string :=
-    let '(k, v) := kv in (pretty k ++ " ↦ " ++ pretty v)%string.
 
   Definition string_of_gmap (m : gmap K A) : string :=
     let entries := List.map pretty_kv (map_to_list m) in

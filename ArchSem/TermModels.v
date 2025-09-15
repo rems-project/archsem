@@ -118,6 +118,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Definition mem_delete (addr : address) (n : N) : memoryMap → memoryMap :=
     fold_left (λ mm i, delete (addr_addN addr i) mm) (seqN 0 n).
 
+
   (** ** Register map *)
   Definition registerMap := dmap reg reg_type.
   #[global] Typeclasses Transparent registerMap.
