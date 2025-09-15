@@ -167,15 +167,14 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
           MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
 
-  Definition fuel := 2%nat.
+  Definition fuel := 3%nat.
 
   Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
 
-  Goal r_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+  Goal r_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
-  Admitted.
-    (* reflexivity.
-  Qed. *)
+    set_solver.
+  Qed.
 End STRLDR.
 
 Module MP.
@@ -232,7 +231,7 @@ Module MP.
             MState.address_space := PAS_NonSecure |};
       MState.termCond := termCond |}.
 
-  Definition fuel := 4%nat.
+  Definition fuel := 6%nat.
 
   Definition test_results :=
     UMPromising_cert_c arm_sem fuel n_threads initState.
@@ -243,9 +242,8 @@ Module MP.
     Listset [Ok 0x2a%Z; Ok 0x0%Z].
 
   Goal test_out ≡ (r_extract test_reg test_tid <$> test_results).
-  Admitted.
-    (* vm_compute (_ <$> _).
+    vm_compute (_ <$> _).
     unfold test_out.
     set_solver.
-  Qed. *)
+  Qed.
 End MP.

@@ -390,7 +390,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       if decide $ terminated prom term st is left pt then mret (make_final st pt)
       else
         if fuel is S fuel then
-          run_step fuel;;
+          run_step (S fuel);;
           run fuel
         else mthrow "Could not finish running within the size of the fuel".
     End CPS.
