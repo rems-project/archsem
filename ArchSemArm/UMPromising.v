@@ -53,11 +53,6 @@ Require Import ASCommon.FMon.
 Require Import ArchSem.GenPromising.
 Require Import ArmInst.
 
-(* CResult constructors get shadowed by coq-sail *)
-(* TODO upstream result type to stdpp *)
-Require Import ASCommon.CResult.
-
-
 (** The goal of this module is to define an User-mode promising model,
     without mixed-size on top of the new interface *)
 
@@ -253,7 +248,7 @@ Module Memory.
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
   Definition fulfill (msg : Msg.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (fun t => Some msg =? mem !! t)
+    prom |> filter (λ t, mem !! t = Some msg)
          |> reverse
          |> head.
 
@@ -450,7 +445,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
   guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
-  mset TState.prom (delete time);;
+  mset TState.prom (filter (λ t, t ≠ time));;
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vwr time;;
   mSet $ TState.update TState.vrel (view_if is_release time);;

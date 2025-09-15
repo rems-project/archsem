@@ -46,6 +46,7 @@ Require Import ASCommon.Options.
 Require Import ASCommon.Common.
 Require Import ASCommon.GRel.
 Require Import ASCommon.FMon.
+Require Import ArchSem.FromSail.
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
 Require Import SailTinyArm.System_types.

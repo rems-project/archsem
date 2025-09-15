@@ -1090,7 +1090,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (macc : mem_acc)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := ts.(TState.vspec) ⊔ vbob ⊔ viio in
   guard_discard (vpre ⊔ (TState.coh ts !!! loc) < time)%nat;;
-  mset (TState.prom ∘ fst) $ delete time;;
+  mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;

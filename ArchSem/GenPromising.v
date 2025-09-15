@@ -91,7 +91,7 @@ Section PM.
         if k =? 0%nat then None
         else
           let len := List.length mem in
-          if (len <? k)%nat then List.nth_error mem (len - k)%nat else None
+          if (k <=? len)%nat then List.nth_error mem (len - k)%nat else None
     }.
 
   (** Cuts the memory to only what exists before the timestamp, included.
@@ -168,8 +168,10 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
                   (Exec.t (PPState.t tState mEvent iis) string);
       allowed_promises : (* tid *) nat → memoryMap → tState →
                          PromMemory.t mEvent → propset mEvent;
-      (** I'm not considering that emit_promise can fail or have a
-      non-deterministic behaviour *)
+      (** Update the thread state after emission of a promise.
+          The new promise has been added to the memory when calling that function.
+          I'm not considering that emit_promise can fail or have a
+          non-deterministic behaviour *)
       emit_promise : (* tid *) nat → memoryMap → PromMemory.t mEvent →
                      mEvent → tState → tState;
       memory_snapshot : memoryMap → PromMemory.t mEvent → memoryMap;
@@ -271,9 +273,10 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
       (** Emit a promise from a thread by tid *)
       Definition promise_tid (st : t) (tid : fin n) (event : mEvent) :=
-        st |> set (tstate tid)
-                  (prom.(emit_promise) tid st.(initmem) st.(events) event)
-           |> set events (event ::.).
+        let st := set events (event ::.) st in
+        set (tstate tid)
+          (prom.(emit_promise) tid st.(initmem) st.(events) event)
+          st.
 
       (** The inductive stepping relation of the promising model *)
       Inductive step (ps : t) : (t) -> Prop :=

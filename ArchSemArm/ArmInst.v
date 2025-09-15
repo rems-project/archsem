@@ -42,7 +42,7 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Export SailStdpp.Base.
+Require Import SailStdpp.Base.
 Require Export SailStdpp.ConcurrencyInterfaceTypes.
 From ASCommon Require Import Options Common Effects.
 
