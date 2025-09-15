@@ -242,6 +242,19 @@ Proof. reflexivity. Qed.
 #[export] Instance ctrans_vec_simpl T : CTransSimpl (vec T).
 Proof. intros x p v. induction v; simp ctrans; congruence. Qed.
 
+(** ** Vector of options *)
+
+Section VecOptions.
+  Context {A : Type}.
+  Equations vec_of_options {n} : vec (option A) n → option (vec A n) :=
+  | [#] := Some [#];
+  | Some a ::: v with vec_of_options v := {
+    | None := None;
+    | Some v' := Some (vcons a v') };
+  | None ::: v := None.
+End VecOptions.
+
+
 
 (** * Finite decidable quantifiers ***)
 
