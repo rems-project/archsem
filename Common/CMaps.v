@@ -646,7 +646,7 @@ Section DMapMap.
   Qed.
 End DMapMap.
 
-(* * Pretty printing maps *)
+(** * Pretty printing maps *)
 
 Fixpoint intercalate (sep : string) (xs : list string) : string :=
   match xs with
