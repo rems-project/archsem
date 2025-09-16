@@ -303,7 +303,7 @@ Module Memory.
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
   Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (fun t => Some ev =? mem !! t)
+    prom |> filter (λ t, mem !! t = Some ev)
          |> reverse
          |> head.
 
@@ -1482,7 +1482,7 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
           then mret t
           else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
   guard_discard (vpre < time)%nat;;
-  mset (TState.prom ∘ PPState.state) $ delete time;;
+  mset (TState.prom ∘ PPState.state) (filter (λ t, t ≠ time));;
   mset PPState.state $ TState.update TState.vtlbi time;;
   mset PPState.iis $ IIS.add time.
 
