@@ -657,7 +657,6 @@ Fixpoint intercalate (sep : string) (xs : list string) : string :=
 
 Definition pretty_kv {K V : Type} `{Pretty K} `{Pretty V} (kv : K * V) : string :=
   let '(k, v) := kv in (pretty k ++ " ↦ " ++ pretty v)%string.
-  (* (pretty k ++ " ↦ " ++ @pretty _ (H0 k) v)%string) *)
 
 Section PrettyDMap.
   Context {K : Type}.
