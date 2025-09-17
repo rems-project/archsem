@@ -45,14 +45,17 @@
 (** Unfortunately this development needs to support two kinds of bitvector.
     The module will attempt to provide smooth interoperability between the two *)
 
-Require Import Options.
 Require Import Lia.
+Require Import HexString.
+
 Require Import stdpp.decidable.
 Require Import stdpp.countable.
 Require Import stdpp.vector.
 Require Import stdpp.pretty.
 Require Export stdpp.bitvector.bitvector.
 Require Export stdpp.bitvector.tactics.
+
+Require Import Options.
 Require Import CBase.
 Require Import CBool.
 Require Import CList.
@@ -67,11 +70,13 @@ Proof using.
   - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
 Defined.
 
-Instance pretty_bv {n} : Pretty (bv n) :=
-  λ b, pretty (bv_unsigned b).
-Instance pretty_bvn : Pretty (bvn) :=
-  λ b, pretty (bvn_unsigned b).
+(** Pretty instances *)
 
+Instance pretty_bv {n} : Pretty (bv n) :=
+  λ b, HexString.of_Z (bv_unsigned b).
+
+Instance pretty_bvn : Pretty bvn :=
+  λ b, HexString.of_Z (bvn_unsigned b).
 
 (** Allow better solving of [BvWf] when the size expression has free-variables
     that are irrelevant and can be removed by [cbn] *)
