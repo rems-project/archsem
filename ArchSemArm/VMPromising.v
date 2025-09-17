@@ -1134,7 +1134,7 @@ Module TLB.
     let evs := PromMemory.cut_after_with_timestamps time mem in
     invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 
-  Definition invalidation_time_of_ptes (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
+  Definition ptes_with_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
                                  (time : nat)
@@ -1490,13 +1490,13 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (mem : Memory.t)
                       (tid : nat)
                       (time : nat)
-                      (va : bv 64) (asid : option (bv 16))
+                      (va : bv 64) (asid : bv 16)
                       (ttbr : reg) :
     result string (list (list val * nat)) :=
-  tlb ← TLB.at_timestamp ts init mem time va asid ttbr;
-  res1 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time 1%fin va asid ttbr;
-  res2 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time 2%fin va asid ttbr;
-  res3 ← TLB.invalidation_time_of_ptes tlb ts init mem tid time leaf_lvl va asid ttbr;
+  tlb ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
+  res1 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time 1%fin va (Some asid) ttbr;
+  res2 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time 2%fin va (Some asid) ttbr;
+  res3 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time leaf_lvl va (Some asid) ttbr;
   mret (res1 ++ res2 ++ res3).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
@@ -1511,7 +1511,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
   ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
-  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va (Some asid) ttbr;
+  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
   '(ptes, ti) ← mchoosel tlb_res;
   (* update *)
   let trans_res := IIS.TransRes.make (va_to_vpn va) time_t ptes ti in
@@ -1572,7 +1572,10 @@ Section RunOutcome.
   | TranslationEnd trans_end =>
       Exec.liftSt PPState.iis $ run_trans_end trans_end
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome".
+  (* | TakeException fault => mthrow "No Exception Handling"
+  | ReturnException fault => mthrow "No Exception Handling" *)
+  | _ => mthrow "Unsupported outcome"
+  .
 End RunOutcome.
 
 (** * Implement GenPromising ***)
