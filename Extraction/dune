@@ -2,7 +2,7 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories Ltac2 stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
+  (theories Ltac2 stdpp SailStdpp Hammer RecordUpdate Equations SailArm
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec
                      BinNat BinNums BinPosDef BinPos CBase CBitvector CBool
@@ -12,8 +12,8 @@
                      Nat numbers option propset RecordSet pretty
                      sets Specif String0 strings Classes
                      Instances Values MachineWord FromSail ConcurrencyInterfaceV2
-                     System_types
-                     TermModels vector0 VectorDef Vector)
+                     TermModels vector0 VectorDef Vector ZArith_dec
+                     PeanoNat Sumbool pretty armv9_types)
 )
 
 (library

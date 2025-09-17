@@ -49,7 +49,7 @@ Require Import ASCommon.FMon.
 Require Import ArchSem.FromSail.
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
-Require Import SailTinyArm.System_types.
+Require Import SailArm.armv9_types.
 
 Import Candidate.
 
