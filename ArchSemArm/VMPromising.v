@@ -1141,14 +1141,42 @@ Module TLB.
                                  (lvl : Level)
                                  (va : bv 64) (asid : option (bv 16))
                                  (ttbr : reg) : result string (list (list val * nat))  :=
-  let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
-  VATLB.get ctxt tlb.(TLB.vatlb)
-  |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
-  |> λ tes,
-      for te in (elements tes) do
-        ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
-        mret (vec_to_list te, ti)
-      end.
+    let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
+    VATLB.get ctxt tlb.(TLB.vatlb)
+    |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
+    |> λ tes,
+        for te in (elements tes) do
+          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+          mret (vec_to_list te, ti)
+        end.
+
+  Definition faults_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
+                                    (mem : Memory.t)
+                                    (tid : nat)
+                                    (time : nat)
+                                    (lvl : Level)
+                                    (va : bv 64) (asid : option (bv 16))
+                                    (ttbr : reg) : result string (list nat) :=
+    let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
+    VATLB.get ctxt tlb.(TLB.vatlb)
+    |> filter (λ te, lvl < leaf_lvl ∧ is_table (TLB.Entry.pte te))
+    |> λ tes,
+        for te in (elements tes) do
+          match child_lvl lvl with
+          | Some child_lvl =>
+            let entry_addr := next_entry_addr (Entry.pte te) (level_index va child_lvl) in
+            let loc := Loc.from_addr_in entry_addr in
+            if (Memory.read_at loc init mem time) is Some (memval, _) then
+              guard_or "A translation fault should access an invalid value" (¬(is_valid memval));;
+              ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+              mret ti
+            else
+              ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+              mret ti
+          | None => mthrow "The next entry location should be found from parent levels"
+          end
+        end.
+
 End TLB.
 
 Module VATLB := TLB.VATLB.
@@ -1300,7 +1328,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  addr ← othrow "Address not supported" $ Loc.from_addr addr;
+  loc ← othrow "Address not supported" $ Loc.from_addr addr;
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
   if is_explicit macc then
@@ -1309,7 +1337,7 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
     let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
-        $ read_mem_explicit addr vaddr invalidation macc init;
+        $ read_mem_explicit loc vaddr invalidation macc init;
     mset PPState.iis $ IIS.add view;;
     mret val
   else if is_ttw macc then
@@ -1499,6 +1527,19 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
   res3 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time leaf_lvl va (Some asid) ttbr;
   mret (res1 ++ res2 ++ res3).
 
+Definition trans_fault (ts : TState.t) (init : Memory.initial)
+                       (mem : Memory.t)
+                       (tid : nat)
+                       (time : nat)
+                       (va : bv 64) (asid : bv 16)
+                       (ttbr : reg) :
+    result string (list nat) :=
+  tlb ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
+  fault0 ← TLB.faults_invalidation_time tlb ts init mem tid time 0%fin va (Some asid) ttbr;
+  fault1 ← TLB.faults_invalidation_time tlb ts init mem tid time 1%fin va (Some asid) ttbr;
+  fault2 ← TLB.faults_invalidation_time tlb ts init mem tid time 2%fin va (Some asid) ttbr;
+  mret (fault0 ++ fault1 ++ fault2).
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -1507,14 +1548,19 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
   let max_t := length mem in
   time_t ← mchoosel $ seq vpre_t max_t;
-  (* lookup *)
+  (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
   ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
   tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
-  '(ptes, ti) ← mchoosel tlb_res;
-  (* update *)
-  let trans_res := IIS.TransRes.make (va_to_vpn va) time_t ptes ti in
+  faults ← mlift $ trans_fault ts init mem tid time_t va asid ttbr;
+
+  (* update IIS with either a valid translation result or a fault *)
+  let ptes_iis :=
+    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) time_t ptes ti) tlb_res in
+  let fault_iis :=
+    map (λ ti, IIS.TransRes.make (va_to_vpn va) time_t [] ti) faults in
+  trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
 
 Definition run_trans_end (trans_end : trans_end) :
