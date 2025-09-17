@@ -421,6 +421,12 @@ Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
   regval_to_val (GReg (R_bitvector_64 _)) v := Some v.
   (* regval_to_val _ _ := None. *)
 
+Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
+  val_to_regval (GReg (R_bitvector_64 _)) v := Some (v : reg_type r).
+
+Equations cast_regval {r1 r2 : reg} (v : reg_type r1) : option (reg_type r2) :=
+  @cast_regval (GReg (R_bitvector_64 _)) (GReg (R_bitvector_64 _)) v := Some v.
+
 (** * The thread state *)
 
 Module WSReg.
@@ -596,9 +602,14 @@ Module TState.
     dmap_map (λ _, fst) ts.(regs).
 
   (** Sets the value of a register *)
-  Definition set_reg (ts : t) (reg : reg) (rv : reg_type reg * view) : option t :=
+  Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
     if decide (is_Some (dmap_lookup reg ts.(regs))) then
       Some $ set regs (dmap_insert reg rv) ts
+    else None.
+
+  Definition set_reg_by_val (reg : reg) (rv : val * view) (ts : t) : option t :=
+    if (val_to_regval reg rv.1) is Some regval then
+      set_reg reg (regval, rv.2) ts
     else None.
 
   (** Add a system register write event to the local event list *)
@@ -1193,11 +1204,12 @@ Module IIS.
           va : bv 36;
           time : nat;
           remaining : list (bv 64); (* NOTE: translation memory read - ptes *)
-          invalidation : nat
+          invalidation : nat;
+          fault: bool
         }.
 
     #[global] Instance eta : Settable _ :=
-      settable! make <va; time; remaining; invalidation>.
+      settable! make <va; time; remaining; invalidation; fault>.
 
     Definition pop : Exec.t t string (bv 64) :=
       remain ← mget remaining;
@@ -1233,6 +1245,7 @@ Import UMPromising(view_if, read_fwd_view).
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
+  (trans_time : nat)
   (invalidation_time : nat) (macc : mem_acc)
   (init : Memory.initial)
   : Exec.t (TState.t * Memory.t) string (view * val) :=
@@ -1242,7 +1255,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
-  let vpre := vaddr ⊔ vbob in
+  let vpre := vaddr ⊔ vbob ⊔ trans_time in
   (* We only read after the coherence point, because without mixed-size, this
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts !!! loc) in
@@ -1255,7 +1268,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
       if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
     else time in
   let vpost := vpre ⊔ read_view in
-  guard_discard (vpost ≤ invalidation_time)%nat;;
+  guard_discard (vpost < invalidation_time)%nat;;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
@@ -1264,6 +1277,45 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   then mset fst $ TState.set_xclb (time, vpost)
   else mret ());;
   mret (vpost, res).
+
+(* TODO *)
+Definition vbar_of_regime (regime : Regime) : result string reg :=
+  match regime with
+  | Regime_EL10 => Ok (GReg VBAR_EL1)
+  | _ => Error "This model does not support multiple regimes"
+  end.
+
+Definition elr_of_regime (regime : Regime) : result string reg :=
+  match regime with
+  | Regime_EL10 => Ok (GReg ELR_EL1)
+  | _ => Error "This model does not support multiple regimes"
+  end.
+
+Definition translation_fault (vaddr : view)
+  (trans_time : nat)
+  (invalidation_time : nat)
+  : Exec.t TState.t string () :=
+  ts ← mGet;
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
+  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
+  vbar ← mlift (vbar_of_regime Regime_EL10);
+  elr ← mlift (elr_of_regime Regime_EL10);
+  '(regval_vbar, vvbar) ← othrow "VBAR unmapped on direct read"
+                $ TState.read_sreg_direct ts vbar;
+  val_vbar ← othrow "Failed to type-cast to bv 64" (regval_to_val vbar regval_vbar);
+  vpost ← mchoosel $ seq (vpre ⊔ vvbar) invalidation_time;
+  '(regval_pc, _) ← othrow "PC is not found" $ TState.read_reg ts pc_reg;
+  regval_elr ← othrow "Failed to type-cast to a different register" (cast_regval regval_pc);
+  val_elr ← othrow "Failed to type-cast to a bv64" (regval_to_val elr regval_elr);
+
+  mSet $ TState.add_wsreg elr regval_elr vpost;;
+  mSet $ TState.cse vpost;;
+  mSet $ TState.update TState.vcse vpost;;
+  ts ← mGet;
+  nts ← othrow "Failed to update the PC value"
+          $ TState.set_reg_by_val pc_reg ((bv_sub val_elr 4%bv), 0%nat) ts;
+  mSet $ (λ _, nts).
 
 Definition read_pte (vaddr : view) :
     Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
@@ -1321,7 +1373,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     mset PPState.iis $ IIS.add vpost
   else
     nts ← othrow "Register unmapped; cannot write" $
-            TState.set_reg ts reg (val, vreg');
+            TState.set_reg reg (val, vreg') ts;
     msetv PPState.state nts.
 
 (** Run a MemRead outcome.
@@ -1334,10 +1386,11 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
   if is_explicit macc then
     tres_opt ← mget (IIS.trs ∘ PPState.iis);
     trans_res ← othrow "Explicit access before translation" tres_opt;
+    let trans_time := trans_res.(IIS.TransRes.time) in
     let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
-        $ read_mem_explicit loc vaddr invalidation macc init;
+        $ read_mem_explicit loc vaddr trans_time invalidation macc init;
     mset PPState.iis $ IIS.add view;;
     mret val
   else if is_ttw macc then
@@ -1547,27 +1600,33 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   mem ← mget PPState.mem;
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
   let max_t := length mem in
-  time_t ← mchoosel $ seq vpre_t max_t;
+  trans_time ← mchoosel $ seq vpre_t max_t;
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
   ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
-  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
-  faults ← mlift $ trans_fault ts init mem tid time_t va asid ttbr;
+  tlb_res ← mlift $ tlb_lookup ts init mem tid trans_time va asid ttbr;
+  faults ← mlift $ trans_fault ts init mem tid trans_time va asid ttbr;
 
   (* update IIS with either a valid translation result or a fault *)
   let ptes_iis :=
-    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) time_t ptes ti) tlb_res in
+    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) trans_time ptes ti false) tlb_res in
   let fault_iis :=
-    map (λ ti, IIS.TransRes.make (va_to_vpn va) time_t [] ti) faults in
+    map (λ ti, IIS.TransRes.make (va_to_vpn va) trans_time [] ti true) faults in
   trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
 
 Definition run_trans_end (trans_end : trans_end) :
-    Exec.t IIS.t string () :=
-  iis ← mGet;
+    Exec.t (TState.t * IIS.t) string () :=
+  iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
-    mSet $ IIS.add trs.(IIS.TransRes.time)
+    if trs.(IIS.TransRes.fault) then
+      ts ← mget fst;
+      Exec.liftSt fst
+        $ translation_fault iis.(IIS.strict) trs.(IIS.TransRes.time) trs.(IIS.TransRes.invalidation);;
+      mset snd $ IIS.add trs.(IIS.TransRes.time)
+    else
+      mset snd $ IIS.add trs.(IIS.TransRes.time)
   else
     mret ().
 
@@ -1616,7 +1675,7 @@ Section RunOutcome.
       let initmem := Memory.initial_from_memMap initmem in
       run_trans_start trans_start tid initmem
   | TranslationEnd trans_end =>
-      Exec.liftSt PPState.iis $ run_trans_end trans_end
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_trans_end trans_end
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   (* | TakeException fault => mthrow "No Exception Handling"
   | ReturnException fault => mthrow "No Exception Handling" *)
