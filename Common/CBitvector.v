@@ -241,10 +241,10 @@ Definition bv_get_bit (i : N) {n : N} (b : bv n) : bool :=
   negb (bv_extract i 1 b =? bv_0 1).
 
 Definition bv_set_bit (i : N) {n : N} (b : bv n) : bv n :=
-  bv_and b (Z_to_bv n (bv_modulus i)).
+  bv_or b (Z_to_bv n (bv_modulus i)).
 
 Definition bv_unset_bit (i : N) {n : N} (b : bv n) : bv n :=
-  bv_or b (bv_not (Z_to_bv n (bv_modulus i))).
+  bv_and b (bv_not (Z_to_bv n (bv_modulus i))).
 
 Program Definition bv_1 (n : N) := Z_to_bv n 1.
 Program Definition bv_m1 (n : N) := Z_to_bv n (-1).
