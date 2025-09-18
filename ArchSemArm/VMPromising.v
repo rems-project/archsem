@@ -1278,44 +1278,11 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
   else mret ());;
   mret (vpost, res).
 
-(* TODO *)
 Definition vbar_of_regime (regime : Regime) : result string reg :=
   match regime with
   | Regime_EL10 => Ok (GReg VBAR_EL1)
   | _ => Error "This model does not support multiple regimes"
   end.
-
-Definition elr_of_regime (regime : Regime) : result string reg :=
-  match regime with
-  | Regime_EL10 => Ok (GReg ELR_EL1)
-  | _ => Error "This model does not support multiple regimes"
-  end.
-
-Definition translation_fault (vaddr : view)
-  (trans_time : nat)
-  (invalidation_time : nat)
-  : Exec.t TState.t string () :=
-  ts ← mGet;
-  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
-  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
-  vbar ← mlift (vbar_of_regime Regime_EL10);
-  elr ← mlift (elr_of_regime Regime_EL10);
-  '(regval_vbar, vvbar) ← othrow "VBAR unmapped on direct read"
-                $ TState.read_sreg_direct ts vbar;
-  val_vbar ← othrow "Failed to type-cast to bv 64" (regval_to_val vbar regval_vbar);
-  vpost ← mchoosel $ seq (vpre ⊔ vvbar) invalidation_time;
-  '(regval_pc, _) ← othrow "PC is not found" $ TState.read_reg ts pc_reg;
-  regval_elr ← othrow "Failed to type-cast to a different register" (cast_regval regval_pc);
-  val_elr ← othrow "Failed to type-cast to a bv64" (regval_to_val elr regval_elr);
-
-  mSet $ TState.add_wsreg elr regval_elr vpost;;
-  mSet $ TState.cse vpost;;
-  mSet $ TState.update TState.vcse vpost;;
-  ts ← mGet;
-  nts ← othrow "Failed to update the PC value"
-          $ TState.set_reg_by_val pc_reg ((bv_sub val_elr 4%bv), 0%nat) ts;
-  mSet $ (λ _, nts).
 
 Definition read_pte (vaddr : view) :
     Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
@@ -1620,15 +1587,29 @@ Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
-    if trs.(IIS.TransRes.fault) then
-      ts ← mget fst;
-      Exec.liftSt fst
-        $ translation_fault iis.(IIS.strict) trs.(IIS.TransRes.time) trs.(IIS.TransRes.invalidation);;
-      mset snd $ IIS.add trs.(IIS.TransRes.time)
-    else
-      mset snd $ IIS.add trs.(IIS.TransRes.time)
+    mset snd $ IIS.add trs.(IIS.TransRes.time)
   else
     mret ().
+
+Definition run_take_exception (fault : exn) :
+    Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
+  iis ← mget snd;
+  trans_res ← othrow "Translation fault before translation"  iis.(IIS.trs);
+  let vaddr := iis.(IIS.strict) in
+  let trans_time := trans_res.(IIS.TransRes.time) in
+  let invalidation := trans_res.(IIS.TransRes.invalidation) in
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
+  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
+  vbar ← mlift (vbar_of_regime Regime_EL10);
+  '(_, vvbar) ← othrow "VBAR unmapped on direct read"
+                $ TState.read_sreg_direct ts vbar;
+  vpost ← mchoosel $ seq (vpre ⊔ vvbar) invalidation;
+
+  (* mSet $ TState.add_wsreg elr regval_elr vpost;; *)
+  mset fst $ TState.cse vpost;;
+  mset fst $ TState.update TState.vcse vpost.
 
 (** Runs an outcome. *)
 Section RunOutcome.
@@ -1677,8 +1658,9 @@ Section RunOutcome.
   | TranslationEnd trans_end =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_trans_end trans_end
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  (* | TakeException fault => mthrow "No Exception Handling"
-  | ReturnException fault => mthrow "No Exception Handling" *)
+  | TakeException fault =>
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault
+  (* | ReturnException fault => mthrow "No Exception Handling" *)
   | _ => mthrow "Unsupported outcome"
   .
 End RunOutcome.
