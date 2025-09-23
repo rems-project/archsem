@@ -1443,16 +1443,17 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     time ← write_mem tid loc viio macc data;
     mset fst $ TState.set_fwdb loc (FwdItem.make time viio false).
 
-Definition run_cse : Exec.t (TState.t * IIS.t) string () :=
-  mSet
-    (λ '(ts, iis),
-      let vpost :=
-        ts.(TState.vspec) ⊔ ts.(TState.vcse)
-        ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr)
-      in (TState.cse vpost ts, IIS.add vpost iis)).
+Definition run_cse (max_t : view) : Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
+  iis ← mget snd;
+  let v := ts.(TState.vspec) ⊔ ts.(TState.vcse)
+            ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr) in
+  vpost ← mchoosel $ seq (IIS.strict iis ⊔ v) max_t;
+  mset fst $ TState.cse vpost;;
+  mset snd $ IIS.add vpost.
 
 (** Perform a barrier, mostly view shuffling *)
-Definition run_barrier (barrier : barrier) :
+Definition run_barrier (barrier : barrier) (max_t : view) :
   Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   match barrier with
@@ -1495,7 +1496,7 @@ Definition run_barrier (barrier : barrier) :
           mset fst $ TState.update TState.vdsb vpost;;
           mset snd $ IIS.add vpost
       end
-  | Barrier_ISB () => run_cse
+  | Barrier_ISB () => run_cse max_t
   | _ => mthrow "Unsupported barrier"
   end.
 
@@ -1601,55 +1602,46 @@ Definition run_trans_end (trans_end : trans_end) :
   else
     mthrow "Translation ends with an empty translation".
 
-Definition read_fault (is_acq : bool)
-  (vaddr : view)
-  (trans_time : nat)
-  (invalidation : nat) : Exec.t TState.t string () :=
+Definition read_fault_vpre (is_acq : bool)
+  (strict : view)
+  (trans_time : nat) : Exec.t TState.t string view :=
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
               ⊔ view_if is_acq ts.(TState.vrel) in
-  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
-  vpost ← mchoosel $ seq vpre invalidation;
-  mSet $ TState.cse vpost;;
-  mSet $ TState.update TState.vcse vpost.
+  mret $ strict ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-Definition write_fault (is_rel : bool)
-  (vaddr : view)
-  (trans_time : nat)
-  (invalidation : nat) : Exec.t TState.t string () :=
+Definition write_fault_vpre (is_rel : bool)
+  (strict : view)
+  (trans_time : nat) : Exec.t TState.t string view :=
   ts ← mGet;
   let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
               ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  let vpre := vaddr ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
-  vpost ← mchoosel $ seq vpre invalidation;
-  mSet $ TState.cse vpost;;
-  mSet $ TState.update TState.vcse vpost.
+  mret $ strict ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-Definition run_take_exception (fault : exn) :
+Definition run_take_exception (fault : exn) (max_t : view) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
   if iis.(IIS.trs) is Some trans_res then
-    let vaddr := iis.(IIS.strict) in
     let trans_time := trans_res.(IIS.TransRes.time) in
     let invalidation := trans_res.(IIS.TransRes.invalidation) in
 
     fault ← othrow "Unknown fault types" fault;
+    (* if the fault is from read, add the read view *)
     let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
     let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+    read_view ← Exec.liftSt fst $ read_fault_vpre is_acq iis.(IIS.strict) trans_time;
+    mset snd $ IIS.add (view_if is_read read_view);;
+    (* if the fault is from write, add the write view *)
     let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
     let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-    match is_read, is_write with
-    | true, true =>
-      Exec.liftSt fst $ read_fault is_acq vaddr trans_time invalidation;;
-      Exec.liftSt fst $ write_fault is_rel vaddr trans_time invalidation
-    | true, false => Exec.liftSt fst $ read_fault is_acq vaddr trans_time invalidation
-    | false, true => Exec.liftSt fst $ write_fault is_rel vaddr trans_time invalidation
-    | false, false => run_cse
-    end
+    write_view ← Exec.liftSt fst $ write_fault_vpre is_rel iis.(IIS.strict) trans_time;
+    mset snd $ IIS.add (view_if is_read write_view);;
+    (* in both cases, run cse *)
+    run_cse invalidation
   else
-    run_cse.
+    run_cse max_t.
 
 (** Runs an outcome. *)
 Section RunOutcome.
@@ -1686,12 +1678,14 @@ Section RunOutcome.
       else mthrow "Unsupported non-explicit write"
   | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
   | Barrier barrier =>
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier
+      mem ← mget PPState.mem;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier (length mem)
   | TlbOp tlbi =>
       viio ← mget (IIS.strict ∘ PPState.iis);
       run_tlbi tid viio tlbi
   | ReturnException =>
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse
+      mem ← mget PPState.mem;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem)
   | TranslationStart trans_start =>
       let initmem := Memory.initial_from_memMap initmem in
       run_trans_start trans_start tid initmem
@@ -1699,8 +1693,8 @@ Section RunOutcome.
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_trans_end trans_end
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | TakeException fault =>
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault
-  (* | ReturnException fault => mthrow "No Exception Handling" *)
+      mem ← mget PPState.mem;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault (length mem)
   | _ => mthrow "Unsupported outcome"
   .
 End RunOutcome.
