@@ -16,7 +16,8 @@ jobs:
   build:
     strategy:
       matrix:
-        version: [4.14.2]
+        ocaml-version: [4.14.2]
+        dune-version: [3.20.2]
         rocq-version: [8.19.2]
 
     runs-on: ubuntu-22.04
@@ -37,7 +38,7 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: pin-${{ matrix.version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
 
     # Cache with only repo dependencies, in particular Ocaml and Rocq
     - name: Restore base OPAM cache
@@ -46,20 +47,23 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: ${{ matrix.version }}-${{ matrix.rocq-version }}
+        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}
 
     - name: Setup base OPAM
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' &&
               steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       run: |
         opam --version
-        opam init --yes --no-setup --disable-sandboxing --shell=sh --compiler=${{ matrix.version }}
+        opam init --yes --no-setup --disable-sandboxing --shell=sh --compiler=${{ matrix.ocaml-version }}
         opam repo add --yes rocq-released https://rocq-prover.org/opam/released
-        eval $(opam env --switch=${{ matrix.version }})
+        eval $(opam env --switch=${{ matrix.ocaml-version }})
         opam update
+        opam pin --yes --no-action dune ${{ matrix.dune-version }}
         opam pin --yes --no-action coq ${{ matrix.rocq-version }}
         opam pin --yes --no-action coq-stdpp 1.11.0
-        opam install --yes dune coq coq-stdpp
+        opam pin --yes --no-action coq-stdpp-bitvector 1.11.0
+        opam pin --yes --no-action coq-record-update 0.3.6
+        opam install --yes dune coq coq-stdpp coq-stdpp-bitvector coq-record-update
         opam clean
         opam clean -r
 
@@ -69,12 +73,12 @@ jobs:
               steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: ${{ matrix.version }}-${{ matrix.rocq-version }}
+        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}
 
     - name: Install pinned dependencies
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
       run: |
-        opam switch ${{ matrix.version }}
+        opam switch ${{ matrix.ocaml-version }}
         eval $(opam env)
         opam install --deps-only --confirm-level=unsafe-yes .
         # This is needed with opam 2.1, not with opam 2.3. I haven't tested 2.2
@@ -87,16 +91,16 @@ jobs:
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: pin-${{ matrix.version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
 
     - name: Build
       run: |
-        opam switch ${{ matrix.version }}
+        opam switch ${{ matrix.ocaml-version }}
         eval $(opam env)
         dune build
 
     - name: Tests
       run: |
-        opam switch ${{ matrix.version }}
+        opam switch ${{ matrix.ocaml-version }}
         eval $(opam env)
         dune runtest

@@ -1,5 +1,5 @@
 pin-depends: [
-  [ "coq-sail-tiny-arm.dev" "git+https://github.com/rems-project/sail-tiny-arm.git#1a32826"]
+  [ "coq-sail-tiny-arm.dev" "git+https://github.com/rems-project/sail-tiny-arm.git#df3a676"]
   [ "libsail.0.19.1" "git+https://github.com/rems-project/sail.git#54574467"]
   [ "sail.0.19.1" "git+https://github.com/rems-project/sail.git#54574467"]
   [ "sail_c_backend.0.19.1" "git+https://github.com/rems-project/sail.git#54574467"]
