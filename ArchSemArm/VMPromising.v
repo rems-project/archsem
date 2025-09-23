@@ -1145,6 +1145,12 @@ Module TLB.
     let evs := PromMemory.cut_after_with_timestamps time mem in
     invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
 
+  (** Retrieve all leaf or block page table entries from the VATLB,
+      along with the earliest future time each will be invalidated by a TLBI.
+
+      Return a list of pairs [(pte_vals, ti)], where [pte_vals] is the
+      vector representation of the entry [te] converted into a list, and [ti]
+      is the computed invalidation time. *)
   Definition ptes_with_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
@@ -1153,13 +1159,13 @@ Module TLB.
                                  (va : bv 64) (asid : option (bv 16))
                                  (ttbr : reg) : result string (list (list val * nat))  :=
     let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
-    VATLB.get ctxt tlb.(TLB.vatlb)
-    |> filter (λ te, lvl = leaf_lvl ∨ is_block (TLB.Entry.pte te))
-    |> λ tes,
-        for te in (elements tes) do
-          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
-          mret (vec_to_list te, ti)
-        end.
+    let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
+    let tes := if decide (lvl = leaf_lvl) then tes
+               else filter (λ te, is_block (TLB.Entry.pte te)) tes in
+    for te in (elements tes) do
+      ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+      mret (vec_to_list te, ti)
+    end.
 
   Definition faults_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                     (mem : Memory.t)
@@ -1245,7 +1251,6 @@ Import UMPromising(view_if, read_fwd_view).
 (** Performs a memory read at a location with a view and return possible output
     states with the timestamp and value of the read *)
 Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
-  (trans_time : nat)
   (invalidation_time : nat) (macc : mem_acc)
   (init : Memory.initial)
   : Exec.t (TState.t * Memory.t) string (view * val) :=
@@ -1255,7 +1260,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
-  let vpre := vaddr ⊔ vbob ⊔ trans_time in
+  let vpre := vaddr ⊔ vbob in
   (* We only read after the coherence point, because without mixed-size, this
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts !!! loc) in
@@ -1353,11 +1358,10 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
   if is_explicit macc then
     tres_opt ← mget (IIS.trs ∘ PPState.iis);
     trans_res ← othrow "Explicit access before translation" tres_opt;
-    let trans_time := trans_res.(IIS.TransRes.time) in
     let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
-        $ read_mem_explicit loc vaddr trans_time invalidation macc init;
+        $ read_mem_explicit loc vaddr invalidation macc init;
     mset PPState.iis $ IIS.add view;;
     mret val
   else if is_ttw macc then
@@ -1541,11 +1545,17 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (va : bv 64) (asid : bv 16)
                       (ttbr : reg) :
     result string (list (list val * nat)) :=
-  tlb ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
-  res1 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time 1%fin va (Some asid) ttbr;
-  res2 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time 2%fin va (Some asid) ttbr;
-  res3 ← TLB.ptes_with_invalidation_time tlb ts init mem tid time leaf_lvl va (Some asid) ttbr;
-  mret (res1 ++ res2 ++ res3).
+  let child_lvls := [1%fin; 2%fin; leaf_lvl] in
+  tlb_local ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
+  tlb_global ← TLB.at_timestamp ts init mem time va None ttbr;
+
+  res ←
+    for lvl in child_lvls do
+      r1 ← TLB.ptes_with_invalidation_time tlb_local ts init mem tid time lvl va (Some asid) ttbr;
+      r2 ← TLB.ptes_with_invalidation_time tlb_global ts init mem tid time lvl va None ttbr;
+      mret (r1 ++ r2)
+    end;
+  mret $ (foldr List.app [] res).
 
 Definition trans_fault (ts : TState.t) (init : Memory.initial)
                        (mem : Memory.t)
@@ -1589,27 +1599,57 @@ Definition run_trans_end (trans_end : trans_end) :
   if iis.(IIS.trs) is Some trs then
     mset snd $ IIS.add trs.(IIS.TransRes.time)
   else
-    mret ().
+    mthrow "Translation ends with an empty translation".
+
+Definition read_fault (is_acq : bool)
+  (vaddr : view)
+  (trans_time : nat)
+  (invalidation : nat) : Exec.t TState.t string () :=
+  ts ← mGet;
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
+              ⊔ view_if is_acq ts.(TState.vrel) in
+  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
+  vpost ← mchoosel $ seq vpre invalidation;
+  mSet $ TState.cse vpost;;
+  mSet $ TState.update TState.vcse vpost.
+
+Definition write_fault (is_rel : bool)
+  (vaddr : view)
+  (trans_time : nat)
+  (invalidation : nat) : Exec.t TState.t string () :=
+  ts ← mGet;
+  let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
+              ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  let vpre := vaddr ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
+  vpost ← mchoosel $ seq vpre invalidation;
+  mSet $ TState.cse vpost;;
+  mSet $ TState.update TState.vcse vpost.
 
 Definition run_take_exception (fault : exn) :
     Exec.t (TState.t * IIS.t) string () :=
-  ts ← mget fst;
   iis ← mget snd;
-  trans_res ← othrow "Translation fault before translation"  iis.(IIS.trs);
-  let vaddr := iis.(IIS.strict) in
-  let trans_time := trans_res.(IIS.TransRes.time) in
-  let invalidation := trans_res.(IIS.TransRes.invalidation) in
-  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
-  let vpre := vaddr ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr) in
-  vbar ← mlift (vbar_of_regime Regime_EL10);
-  '(_, vvbar) ← othrow "VBAR unmapped on direct read"
-                $ TState.read_sreg_direct ts vbar;
-  vpost ← mchoosel $ seq (vpre ⊔ vvbar) invalidation;
+  if iis.(IIS.trs) is Some trans_res then
+    let vaddr := iis.(IIS.strict) in
+    let trans_time := trans_res.(IIS.TransRes.time) in
+    let invalidation := trans_res.(IIS.TransRes.invalidation) in
 
-  (* mSet $ TState.add_wsreg elr regval_elr vpost;; *)
-  mset fst $ TState.cse vpost;;
-  mset fst $ TState.update TState.vcse vpost.
+    fault ← othrow "Unknown fault types" fault;
+    let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
+    let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+    let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
+    let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+    match is_read, is_write with
+    | true, true =>
+      Exec.liftSt fst $ read_fault is_acq vaddr trans_time invalidation;;
+      Exec.liftSt fst $ write_fault is_rel vaddr trans_time invalidation
+    | true, false => Exec.liftSt fst $ read_fault is_acq vaddr trans_time invalidation
+    | false, true => Exec.liftSt fst $ write_fault is_rel vaddr trans_time invalidation
+    | false, false => run_cse
+    end
+  else
+    run_cse.
 
 (** Runs an outcome. *)
 Section RunOutcome.
