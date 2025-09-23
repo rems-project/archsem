@@ -153,7 +153,7 @@ Section Result.
     end.
 
   #[export] Instance result_eq_dec `{EqDecision E} `{EqDecision A} : EqDecision (result).
-  Proof. solve_decision. Qed.
+  Proof. solve_decision. Defined.
 
 End Result.
 Arguments result : clear implicits.
