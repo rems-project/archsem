@@ -1167,6 +1167,12 @@ Module TLB.
       mret (vec_to_list te, ti)
     end.
 
+  (** Retrieve invalidation times for *fault-inducing* table-walk steps.
+
+      Collect all intermediate-level VATLB entries whose PTE is a *table* entry and
+      that would participate in a table walk for virtual address [va]. For each
+      such entry, compute the earliest future time at which a TLBI renders
+      that step (and thus the resulting fault) no longer observable. *)
   Definition faults_invalidation_time (tlb : TLB.t) (ts : TState.t) (init : Memory.initial)
                                     (mem : Memory.t)
                                     (tid : nat)
@@ -1175,24 +1181,23 @@ Module TLB.
                                     (va : bv 64) (asid : option (bv 16))
                                     (ttbr : reg) : result string (list nat) :=
     let ctxt := existT lvl (NDCtxt.make (level_prefix va lvl) asid) in
-    VATLB.get ctxt tlb.(TLB.vatlb)
-    |> filter (λ te, lvl < leaf_lvl ∧ is_table (TLB.Entry.pte te))
-    |> λ tes,
-        for te in (elements tes) do
-          match child_lvl lvl with
-          | Some child_lvl =>
-            let entry_addr := next_entry_addr (Entry.pte te) (level_index va child_lvl) in
-            let loc := Loc.from_addr_in entry_addr in
-            if (Memory.read_at loc init mem time) is Some (memval, _) then
-              guard_or "A translation fault should access an invalid value" (¬(is_valid memval));;
-              ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
-              mret ti
-            else
-              ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
-              mret ti
-          | None => mthrow "The next entry location should be found from parent levels"
-          end
-        end.
+    let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
+    let tes := filter (λ te, lvl < leaf_lvl ∧ is_table (TLB.Entry.pte te)) tes in
+    for te in (elements tes) do
+      match child_lvl lvl with
+      | Some child_lvl =>
+        let entry_addr := next_entry_addr (Entry.pte te) (level_index va child_lvl) in
+        let loc := Loc.from_addr_in entry_addr in
+        if (Memory.read_at loc init mem time) is Some (memval, _) then
+          guard_or "A translation fault should access an invalid value" (¬(is_valid memval));;
+          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+          mret ti
+        else
+          ti ← TLB.invalidation_time ts init mem tid time ctxt te ttbr;
+          mret ti
+      | None => mthrow "The next entry location should be found from parent levels"
+      end
+    end.
 
 End TLB.
 
@@ -1443,17 +1448,17 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     time ← write_mem tid loc viio macc data;
     mset fst $ TState.set_fwdb loc (FwdItem.make time viio false).
 
-Definition run_cse (max_t : view) : Exec.t (TState.t * IIS.t) string () :=
+Definition run_cse (vmax_t : view) : Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   iis ← mget snd;
   let v := ts.(TState.vspec) ⊔ ts.(TState.vcse)
             ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr) in
-  vpost ← mchoosel $ seq (IIS.strict iis ⊔ v) max_t;
+  vpost ← mchoosel $ seq (IIS.strict iis ⊔ v) vmax_t;
   mset fst $ TState.cse vpost;;
   mset snd $ IIS.add vpost.
 
 (** Perform a barrier, mostly view shuffling *)
-Definition run_barrier (barrier : barrier) (max_t : view) :
+Definition run_barrier (barrier : barrier) (vmax_t : view) :
   Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   match barrier with
@@ -1496,7 +1501,7 @@ Definition run_barrier (barrier : barrier) (max_t : view) :
           mset fst $ TState.update TState.vdsb vpost;;
           mset snd $ IIS.add vpost
       end
-  | Barrier_ISB () => run_cse max_t
+  | Barrier_ISB () => run_cse vmax_t
   | _ => mthrow "Unsupported barrier"
   end.
 
@@ -1546,12 +1551,11 @@ Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (va : bv 64) (asid : bv 16)
                       (ttbr : reg) :
     result string (list (list val * nat)) :=
-  let child_lvls := [1%fin; 2%fin; leaf_lvl] in
+  let lvls := [1%fin; 2%fin; leaf_lvl] in
   tlb_local ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
   tlb_global ← TLB.at_timestamp ts init mem time va None ttbr;
-
   res ←
-    for lvl in child_lvls do
+    for lvl in lvls do
       r1 ← TLB.ptes_with_invalidation_time tlb_local ts init mem tid time lvl va (Some asid) ttbr;
       r2 ← TLB.ptes_with_invalidation_time tlb_global ts init mem tid time lvl va None ttbr;
       mret (r1 ++ r2)
@@ -1565,11 +1569,16 @@ Definition trans_fault (ts : TState.t) (init : Memory.initial)
                        (va : bv 64) (asid : bv 16)
                        (ttbr : reg) :
     result string (list nat) :=
-  tlb ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
-  fault0 ← TLB.faults_invalidation_time tlb ts init mem tid time 0%fin va (Some asid) ttbr;
-  fault1 ← TLB.faults_invalidation_time tlb ts init mem tid time 1%fin va (Some asid) ttbr;
-  fault2 ← TLB.faults_invalidation_time tlb ts init mem tid time 2%fin va (Some asid) ttbr;
-  mret (fault0 ++ fault1 ++ fault2).
+  let lvls := [0%fin; 1%fin; 2%fin] in
+  tlb_local ← TLB.at_timestamp ts init mem time va (Some asid) ttbr;
+  tlb_global ← TLB.at_timestamp ts init mem time va None ttbr;
+  res ←
+    for lvl in lvls do
+      r1 ← TLB.faults_invalidation_time tlb_local ts init mem tid time lvl va (Some asid) ttbr;
+      r2 ← TLB.faults_invalidation_time tlb_global ts init mem tid time lvl va None ttbr;
+      mret (r1 ++ r2)
+    end;
+  mret $ (foldr List.app [] res).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
@@ -1577,8 +1586,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
   let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
-  let max_t := length mem in
-  trans_time ← mchoosel $ seq vpre_t max_t;
+  let vmax_t := length mem in
+  trans_time ← mchoosel $ seq vpre_t vmax_t;
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
@@ -1620,7 +1629,7 @@ Definition write_fault_vpre (is_rel : bool)
               ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   mret $ strict ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-Definition run_take_exception (fault : exn) (max_t : view) :
+Definition run_take_exception (fault : exn) (vmax_t : view) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
   if iis.(IIS.trs) is Some trans_res then
@@ -1641,7 +1650,7 @@ Definition run_take_exception (fault : exn) (max_t : view) :
     (* in both cases, run cse *)
     run_cse invalidation
   else
-    run_cse max_t.
+    run_cse vmax_t.
 
 (** Runs an outcome. *)
 Section RunOutcome.
