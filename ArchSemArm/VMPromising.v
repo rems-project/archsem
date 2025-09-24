@@ -409,7 +409,11 @@ Definition relaxed_regs : gset reg :=
       GReg VBAR_EL1;
       GReg VBAR_EL2;
       GReg VBAR_EL3;
-      GReg VTTBR_EL2].
+      GReg VTTBR_EL2;
+      GReg MMFR0_EL1;
+      GReg MMFR1_EL1;
+      GReg MMFR2_EL1;
+      GReg MMFR3_EL1].
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
@@ -1544,6 +1548,14 @@ Definition ttbr_of_regime (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
+(* TODO: distinguish between ets2 and ets3 *)
+Definition ets2 (ts : TState.t) : result string bool :=
+  let mmfr3 := GReg MMFR3_EL1 in
+  '(regval, view) ← othrow "ETS is indicated in the MMFR3_EL1 register value" (TState.read_reg ts mmfr3);
+  guard_or "MMFR3_EL1 is read-only" (view ≠ 0);;
+  val ← othrow "The register value of MMFR3_EL1 is 64 bit" (regval_to_val mmfr3 regval);
+  mret (bv_extract 0 4 val =? 1%bv).
+
 Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (mem : Memory.t)
                       (tid : nat)
@@ -1585,21 +1597,28 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-  let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
+
+  is_ets ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
   let vmax_t := length mem in
-  trans_time ← mchoosel $ seq vpre_t vmax_t;
+  time_t ← mchoosel $ seq vpre_t vmax_t;
+
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
+  (* - succesful translations *)
   ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
-  tlb_res ← mlift $ tlb_lookup ts init mem tid trans_time va asid ttbr;
-  faults ← mlift $ trans_fault ts init mem tid trans_time va asid ttbr;
+  tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
+  (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
+  let vets := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  time_f ← mchoosel $ seq (vpre_t ⊔ vets) vmax_t;
+  faults ← mlift $ trans_fault ts init mem tid time_f va asid ttbr;
 
-  (* update IIS with either a valid translation result or a fault *)
+  (* update IIS *)
   let ptes_iis :=
-    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) trans_time ptes ti false) tlb_res in
+    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) time_t ptes ti false) tlb_res in
   let fault_iis :=
-    map (λ ti, IIS.TransRes.make (va_to_vpn va) trans_time [] ti true) faults in
+    map (λ ti, IIS.TransRes.make (va_to_vpn va) time_f [] ti true) faults in
   trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
 
