@@ -1611,7 +1611,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   tlb_res ← mlift $ tlb_lookup ts init mem tid time_t va asid ttbr;
   (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
   let vets := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  time_f ← mchoosel $ seq (vpre_t ⊔ vets) max_t;
+  time_f ← mchoosel $ seq (vpre_t ⊔ vets) vmax_t;
   faults ← mlift $ trans_fault ts init mem tid time_f va asid ttbr;
 
   (* update IIS *)
