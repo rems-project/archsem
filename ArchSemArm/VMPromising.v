@@ -418,14 +418,12 @@ Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
-  regval_to_val (GReg (R_bitvector_64 _)) v := Some v.
-  (* regval_to_val _ _ := None. *)
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg register_ProcState, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
-  val_to_regval (GReg (R_bitvector_64 _)) v := Some (v : reg_type r).
-
-Equations cast_regval {r1 r2 : reg} (v : reg_type r1) : option (reg_type r2) :=
-  @cast_regval (GReg (R_bitvector_64 _)) (GReg (R_bitvector_64 _)) v := Some v.
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg register_ProcState, v => None.
 
 (** * The thread state *)
 
@@ -604,11 +602,6 @@ Module TState.
   Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
     if decide (is_Some (dmap_lookup reg ts.(regs))) then
       Some $ set regs (dmap_insert reg rv) ts
-    else None.
-
-  Definition set_reg_by_val (reg : reg) (rv : val * view) (ts : t) : option t :=
-    if (val_to_regval reg rv.1) is Some regval then
-      set_reg reg (regval, rv.2) ts
     else None.
 
   (** Add a system register write event to the local event list *)
@@ -1408,10 +1401,12 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     mset PPState.state $ TState.add_wsreg reg val vpost;;
     mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
-  else
+  else if decide (reg ∈ strict_regs) then
     nts ← othrow "Register unmapped; cannot write" $
             TState.set_reg reg (val, vreg') ts;
-    msetv PPState.state nts.
+    msetv PPState.state nts
+  else
+    mthrow "Register read-only".
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
@@ -1619,12 +1614,21 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
+(* TODO: distinguish between ets2 and ets3 *)
+Definition ets2 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, view) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 2%bv).
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-  let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
+
+  is_ets ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
   let vmax_t := length mem in
   trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
   (* lookup (successful results or faults) *)
