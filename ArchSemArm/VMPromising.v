@@ -418,14 +418,12 @@ Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
-  regval_to_val (GReg (R_bitvector_64 _)) v := Some v.
-  (* regval_to_val _ _ := None. *)
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg register_ProcState, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
-  val_to_regval (GReg (R_bitvector_64 _)) v := Some (v : reg_type r).
-
-Equations cast_regval {r1 r2 : reg} (v : reg_type r1) : option (reg_type r2) :=
-  @cast_regval (GReg (R_bitvector_64 _)) (GReg (R_bitvector_64 _)) v := Some v.
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg register_ProcState, v => None.
 
 (** * The thread state *)
 
@@ -1380,10 +1378,12 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     mset PPState.state $ TState.add_wsreg reg val vpost;;
     mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
-  else
+  else if decide (reg ∈ strict_regs) then
     nts ← othrow "Register unmapped; cannot write" $
             TState.set_reg reg (val, vreg') ts;
-    msetv PPState.state nts.
+    msetv PPState.state nts
+  else
+    mthrow "Register read-only".
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
@@ -1576,6 +1576,13 @@ Definition ttbr_of_regime (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
+(* TODO: distinguish between ets2 and ets3 *)
+Definition ets2 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, view) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 2%bv).
+
 Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (mem : Memory.t)
                       (tid : nat)
@@ -1605,22 +1612,32 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-  let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
+
+  is_ets ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
   let vmax_t := length mem in
-  trans_time ← mchoosel $ seq vpre_t vmax_t;
+  time_t ← mchoosel $ seq vpre_t vmax_t;
+
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va := trans_start.(TranslationStartInfo_va) in
-  ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
-  tlb ←  mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
-  tlb_res ← mlift $ tlb_lookup ts init mem tid tlb trans_time va asid ttbr;
-  faults ← mlift $ trans_fault ts init mem tid tlb trans_time va asid ttbr;
 
-  (* update IIS with either a valid translation result or a fault *)
+  (* - succesful translations *)
+  ttbr ← mlift $ ttbr_of_regime trans_start.(TranslationStartInfo_regime);
+  tlb ← mlift $ TLB.at_timestamp ts init mem time_t va ttbr;
+  tlb_res ← mlift $ tlb_lookup ts init mem tid tlb time_t va asid ttbr;
+
+  (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
+  let vets := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  time_f ← mchoosel $ seq (vpre_t ⊔ vets) vmax_t;
+  tlb_f ← mlift $ TLB.at_timestamp ts init mem time_t va ttbr;
+  faults ← mlift $ trans_fault ts init mem tid tlb_f time_f va asid ttbr;
+
+  (* update IIS *)
   let ptes_iis :=
-    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) trans_time path ti false) tlb_res in
+    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) time_t path ti false) tlb_res in
   let fault_iis :=
-    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) trans_time path ti true) faults in
+    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) time_t path ti true) faults in
   trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
 
