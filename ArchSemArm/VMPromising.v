@@ -889,12 +889,14 @@ Module TLB.
         let entry_addr := next_entry_addr val_ttbr va in
         let loc := Loc.from_addr_in entry_addr in
         if (Memory.read_at loc init mem time) is Some (memval, _) then
-          guard_or "A root of a page table should be a table" (is_table memval);;
-          let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make va (Some asid) in
-          Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
+          if decide (is_table memval) then
+            let asid := bv_extract 48 16 val_ttbr in
+            let ndctxt := NDCtxt.make va (Some asid) in
+            Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
+          else
+            Ok VATLB.init
         else
-          Ok $ VATLB.init
+          Ok VATLB.init
       end;
     Ok (fold_left union vatlbs VATLB.init).
 
@@ -946,7 +948,7 @@ Module TLB.
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (asid : option (bv 16))
+      (asid : bv 16)
       (ttbr : reg) : result string t :=
     vatlb ←
       match parent_lvl lvl with
@@ -955,7 +957,7 @@ Module TLB.
         Ok $ vatlb_new ∪ tlb.(vatlb)
       | Some plvl =>
         let pva := level_prefix va plvl in
-        let ndctxt := NDCtxt.make pva asid in
+        let ndctxt := NDCtxt.make pva (Some asid) in
         let ctxt := existT plvl ndctxt in
         let index := level_index va lvl in
         vatlbs ←
@@ -975,7 +977,7 @@ Module TLB.
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
-      (asid : option (bv 16))
+      (asid : bv 16)
       (ttbr : reg) : result string t :=
     tlb0 ← va_fill tlb ts init mem time root_lvl va asid ttbr;
     tlb1 ← va_fill tlb0 ts init mem time 1%fin va asid ttbr;
