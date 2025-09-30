@@ -829,6 +829,9 @@ Module TLB.
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
 
+    Definition setFEs (ctxt : Ctxt.t) (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
+      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
+
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
@@ -992,23 +995,6 @@ Module TLB.
 
   (** ** TLB invalidation *)
 
-  Definition affects_va (asid : bv 16) (va : bv 36) (last : bool)
-                        (ctxt : Ctxt.t)
-                        (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    let '(te_lvl, te_va, te_asid, te_val) :=
-          (Ctxt.lvl ctxt, Ctxt.va ctxt, Ctxt.asid ctxt, Entry.pte te) in
-    (match_prefix_at te_lvl te_va va)
-    ∧ (match te_asid with
-        | Some te_asid => asid = te_asid
-        | None => True
-        end)
-    ∧ (if last then is_final te_lvl te_val else True).
-  Instance Decision_affects_va (asid : bv 16) (va : bv 36) (last : bool)
-                               (ctxt : Ctxt.t)
-                               (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_va asid va last ctxt te).
-  Proof. unfold_decide. Defined.
-
   Definition affects_asid (asid : bv 16)
                           (ctxt : Ctxt.t)
                           (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
@@ -1039,7 +1025,8 @@ Module TLB.
                      (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     match tlbi with
     | TLBI.All tid => True
-    | TLBI.Va tid asid va last => affects_va asid va last ctxt te
+    | TLBI.Va tid asid va last =>
+      affects_asid asid ctxt te ∧ affects_vaa va last ctxt te
     | TLBI.Asid tid asid => affects_asid asid ctxt te
     | TLBI.Vaa tid va last => affects_vaa va last ctxt te
     end.
@@ -1054,52 +1041,76 @@ Module TLB.
                   (tlbi : TLBI.t)
                   (lvl : Level)
                   (va : bv 64)
-                  (asid : option (bv 16)) : t :=
-    let ndctxt := NDCtxt.make (level_prefix va lvl) asid in
-    let ctxt := existT lvl ndctxt in
-    VATLB.get ctxt tlb.(vatlb)
-    |> filter (λ te, ¬(affects tlbi ctxt te))
-    |> λ tes,
-        TLB.make $ hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := tes]} tlb.(vatlb).
+                  (ttbr : reg) : result string t :=
+    sregs ← othrow "TTBR should exist in initial state"
+              $ TState.read_sreg_at ts ttbr time;
+    active_vatlbs ←
+      for sreg in sregs do
+        val_ttbr ← othrow "TTBR should be a 64 bit value"
+                $ regval_to_val ttbr sreg.1;
+        let asid := bv_extract 48 16 val_ttbr in
+        let ndctxt_asid := NDCtxt.make (level_prefix va lvl) (Some asid) in
+        let ndctxt_global := NDCtxt.make (level_prefix va lvl) None in
+        vatlbs ←
+          for ndctxt in [ndctxt_asid; ndctxt_global] do
+            let ctxt := existT lvl ndctxt in
+            let tes := VATLB.get ctxt tlb.(vatlb)
+                        |> filter (λ te, ¬(affects tlbi ctxt te)) in
+            Ok $ VATLB.setFEs ctxt tes tlb.(vatlb)
+          end;
+        Ok $ (union_list vatlbs)
+      end;
+    Ok $ TLB.make (union_list active_vatlbs).
 
   Definition tlbi_apply (tlb : t) (ts : TState.t)
                   (init : Memory.initial) (mem : Memory.t)
                   (time : nat)
                   (tlbi : TLBI.t)
                   (va : bv 64)
-                  (asid : option (bv 16)) : t :=
-    let tlb0 := tlbi_apply_lvl tlb ts init mem time tlbi root_lvl va asid in
-    let tlb1 := tlbi_apply_lvl tlb0 ts init mem time tlbi 1%fin va asid in
-    let tlb2 := tlbi_apply_lvl tlb1 ts init mem time tlbi 2%fin va asid in
-    tlbi_apply_lvl tlb2 ts init mem time tlbi 3%fin va asid.
+                  (ttbr : reg) : result string t :=
+    tlb0 ← tlbi_apply_lvl tlb ts init mem time tlbi root_lvl va ttbr;
+    tlb1 ← tlbi_apply_lvl tlb0 ts init mem time tlbi 1%fin va ttbr;
+    tlb2 ← tlbi_apply_lvl tlb1 ts init mem time tlbi 2%fin va ttbr;
+    tlbi_apply_lvl tlb2 ts init mem time tlbi 3%fin va ttbr.
 
-  (** Get the TLB state at a certain timestamp *)
-  Fixpoint at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+  (** Get the TLB state at a timestamp (time_prev + cnt) *)
+  Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+                       (tlb_prev : t)
+                       (time_prev cnt : nat)
+                       (va : bv 64)
+                       (ttbr : reg)
+                      {struct cnt} : result string t :=
+    match cnt with
+    | O => mret tlb_prev
+    | S ccnt =>
+      let time_cur := time_prev + 1 in
+      tlb ←
+        match mem !! time_cur with
+        | Some ev =>
+          match Ev.get_tlbi ev with
+          | Some tlbi => tlbi_apply tlb_prev ts mem_init mem time_cur tlbi va ttbr
+          | None => update tlb_prev ts mem_init mem time_cur va ttbr
+          end
+        | None => mret init
+        end;
+      at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
+    end.
+
+
+  (** Get the TLB state at a timestamp `time` *)
+  Definition at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
                        (time : nat)
                        (va : bv 64)
-                       (asid : option (bv 16))
-                       (ttbr : reg)
-                      {struct time} : result string t :=
-    match time with
-    | O => update init ts mem_init mem 0 va ttbr
-    | S ptime =>
-      tlb ← at_timestamp ts mem_init mem ptime va asid ttbr;
-      match mem !! time with
-      | Some ev =>
-        match Ev.get_tlbi ev with
-        | Some tlbi => mret $ tlbi_apply tlb ts mem_init mem time tlbi va asid
-        | None => update tlb ts mem_init mem time va ttbr
-        end
-      | None => mret init
-      end
-    end.
+                       (ttbr : reg) : result string t :=
+    tlb ← update init ts mem_init mem 0 va ttbr;
+    at_timestamp_from ts mem_init mem tlb 0 time va ttbr.
 
   Definition is_te_invalidated_by_tlbi (tlb : t)
                 (tlbi : TLBI.t)
                 (tid : nat)
                 (ctxt : Ctxt.t)
                 (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-      TLBI.tid tlbi <> tid ∧ te ∉ VATLB.get ctxt tlb.(vatlb).
+      TLBI.tid tlbi <> tid ∧ (affects tlbi ctxt te).
   Instance Decision_is_te_invalidated_by_tlbi (tlb : t) (tlbi : TLBI.t) (tid : nat)
                 (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :
     Decision (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te).
@@ -1111,7 +1122,8 @@ Module TLB.
                                       (ctxt : Ctxt.t)
                                       (te : Entry.t (Ctxt.lvl ctxt))
                                       (ttbr : reg)
-                                      (evs : list (Ev.t * nat)) : result string nat :=
+                                      (evs : list (Ev.t * nat))
+                                      (tlb_base : t) (time_base : nat) : result string nat :=
     match evs with
     | nil => mret 0
     | (ev, t) :: tl =>
@@ -1119,24 +1131,25 @@ Module TLB.
       | Ev.Tlbi tlbi =>
         let va := Ctxt.va ctxt in
         let asid := Ctxt.asid ctxt in
-        tlb ← at_timestamp ts init mem t (prefix_to_va va) asid ttbr;
+        tlb ← at_timestamp_from ts init mem tlb_base time_base (t - time_base) (prefix_to_va va) ttbr;
         if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
           mret t
         else
-          invalidation_time_from_evs ts init mem tid ctxt te ttbr tl
-      | _ => invalidation_time_from_evs ts init mem tid ctxt te ttbr tl
+          invalidation_time_from_evs ts init mem tid ctxt te ttbr tl tlb_base time_base
+      | _ => invalidation_time_from_evs ts init mem tid ctxt te ttbr tl tlb_base time_base
       end
     end.
 
   (** Calculate the earliest future time at which a translation entry is effectively invalidated
       in the TLB due to an TLBI event *)
   Definition invalidation_time (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
-                               (tid : nat) (time : nat)
+                               (tid : nat)
+                               (tlb_base : t) (time_base : nat)
                                (ctxt : Ctxt.t)
                                (te : Entry.t (Ctxt.lvl ctxt))
                                (ttbr : reg) : result string nat :=
-    let evs := PromMemory.cut_after_with_timestamps time mem in
-    invalidation_time_from_evs ts init mem tid ctxt te ttbr evs.
+    let evs := PromMemory.cut_after_with_timestamps time_base mem in
+    invalidation_time_from_evs ts init mem tid ctxt te ttbr evs tlb_base time_base.
 End TLB.
 
 Module VATLB := TLB.VATLB.
