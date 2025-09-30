@@ -1078,7 +1078,6 @@ Module TLB.
       at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
     end.
 
-
   (** Get the TLB state at a timestamp `time` *)
   Definition at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
                        (time : nat)
