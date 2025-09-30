@@ -1192,7 +1192,7 @@ Module TLB.
           invalidation_time mem tid time_base ctxt te
         else
           invalidation_time mem tid time_base ctxt te
-      | None => mthrow "The next entry location should be found from parent levels"
+      | None => mthrow "Translation faults should be triggered from entries in the intermediate level"
       end
     end.
 
