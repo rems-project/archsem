@@ -1155,12 +1155,8 @@ Module TLB.
       mret ((vec_to_list te), ti)
     end.
 
-  (** Retrieve invalidation times for *fault-inducing* table-walk steps.
-
-      Collect all intermediate-level VATLB entries whose PTE is a *table* entry and
-      that would participate in a table walk for virtual address [va]. For each
-      such entry, compute the earliest future time at which a TLBI renders
-      that step (and thus the resulting fault) no longer observable. *)
+  (** Calculate the earliest future time at which a translation entry is effectively invalidated
+      in the TLB due to an TLBI event *)
   Definition ptes_invalidation_time (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
@@ -1200,6 +1196,12 @@ Module TLB.
       end
     end.
 
+  (** Retrieve invalidation times for *fault-inducing* table-walk steps.
+
+    Collect all intermediate-level VATLB entries whose PTE is a *table* entry and
+    that would participate in a table walk for virtual address [va]. For each
+    such entry, compute the earliest future time at which a TLBI renders
+    that step (and thus the resulting fault) no longer observable. *)
   Definition faults_invalidation_time (ts : TState.t) (init : Memory.initial)
                                     (mem : Memory.t)
                                     (tid : nat)
