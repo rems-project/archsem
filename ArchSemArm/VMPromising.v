@@ -948,25 +948,33 @@ Module TLB.
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (asid : bv 16)
       (ttbr : reg) : result string t :=
-    vatlb ←
+    new_vatlb ←
       match parent_lvl lvl with
       | None =>
         vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
         Ok $ vatlb_new ∪ tlb.(vatlb)
       | Some plvl =>
-        let pva := level_prefix va plvl in
-        let ndctxt := NDCtxt.make pva (Some asid) in
-        let ctxt := existT plvl ndctxt in
-        let index := level_index va lvl in
-        vatlbs ←
-          for te in elements (VATLB.get ctxt tlb.(vatlb)) do
-            va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
+        sregs ← othrow "TTBR should exist in initial state"
+                $ TState.read_sreg_at ts ttbr time;
+        active_vatlbs ←
+          let pva := level_prefix va plvl in
+          let index := level_index va lvl in
+          for sreg in sregs do
+            val_ttbr ← othrow "TTBR should be a 64 bit value"
+                    $ regval_to_val ttbr sreg.1;
+            let asid := bv_extract 48 16 val_ttbr in
+            let ndctxt := NDCtxt.make pva (Some asid) in
+            let ctxt := existT plvl ndctxt in
+            vatlbs ←
+              for te in elements (VATLB.get ctxt tlb.(vatlb)) do
+                va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
+              end;
+            Ok (union_list vatlbs)
           end;
-        Ok $ (union_list vatlbs) ∪ tlb.(vatlb)
+        Ok $ (union_list active_vatlbs)
       end;
-    Ok (TLB.make vatlb).
+    Ok (TLB.make (new_vatlb ∪ tlb.(vatlb))).
 
   (** Fill TLB entries for [va] through all levels 0–3.
       - Sequentially calls [va_fill] at each level.
@@ -977,12 +985,11 @@ Module TLB.
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
-      (asid : bv 16)
       (ttbr : reg) : result string t :=
-    tlb0 ← va_fill tlb ts init mem time root_lvl va asid ttbr;
-    tlb1 ← va_fill tlb0 ts init mem time 1%fin va asid ttbr;
-    tlb2 ← va_fill tlb1 ts init mem time 2%fin va asid ttbr;
-    va_fill tlb2 ts init mem time 3%fin va asid ttbr.
+    tlb0 ← va_fill tlb ts init mem time root_lvl va ttbr;
+    tlb1 ← va_fill tlb0 ts init mem time 1%fin va ttbr;
+    tlb2 ← va_fill tlb1 ts init mem time 2%fin va ttbr;
+    va_fill tlb2 ts init mem time 3%fin va ttbr.
 End TLB.
 
 Module VATLB := TLB.VATLB.
