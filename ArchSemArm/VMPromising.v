@@ -1119,24 +1119,23 @@ Module TLB.
   Fixpoint invalidation_time_from_evs (ts : TState.t) (init : Memory.initial)
                                       (mem : Memory.t)
                                       (tid : nat)
+                                      (tlb_base : t) (time_base : nat)
                                       (ctxt : Ctxt.t)
                                       (te : Entry.t (Ctxt.lvl ctxt))
                                       (ttbr : reg)
-                                      (evs : list (Ev.t * nat))
-                                      (tlb_base : t) (time_base : nat) : result string nat :=
+                                      (evs : list (Ev.t * nat)) : result string nat :=
     match evs with
     | nil => mret 0
     | (ev, t) :: tl =>
       match ev with
       | Ev.Tlbi tlbi =>
-        let va := Ctxt.va ctxt in
-        let asid := Ctxt.asid ctxt in
-        tlb ← at_timestamp_from ts init mem tlb_base time_base (t - time_base) (prefix_to_va va) ttbr;
+        let va := prefix_to_va (Ctxt.va ctxt) in
+        tlb ← at_timestamp_from ts init mem tlb_base time_base (t - time_base) va ttbr;
         if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
           mret t
         else
-          invalidation_time_from_evs ts init mem tid ctxt te ttbr tl tlb_base time_base
-      | _ => invalidation_time_from_evs ts init mem tid ctxt te ttbr tl tlb_base time_base
+          invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr tl
+      | _ => invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr tl
       end
     end.
 
@@ -1149,7 +1148,7 @@ Module TLB.
                                (te : Entry.t (Ctxt.lvl ctxt))
                                (ttbr : reg) : result string nat :=
     let evs := PromMemory.cut_after_with_timestamps time_base mem in
-    invalidation_time_from_evs ts init mem tid ctxt te ttbr evs tlb_base time_base.
+    invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr evs.
 End TLB.
 
 Module VATLB := TLB.VATLB.
