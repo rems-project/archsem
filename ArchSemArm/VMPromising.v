@@ -1638,7 +1638,7 @@ Definition ttbr_of_regime (regime : Regime) : result string reg :=
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr3 := GReg MMFR3_EL1 in
   '(regval, view) ← othrow "ETS is indicated in the MMFR3_EL1 register value" (TState.read_reg ts mmfr3);
-  guard_or "MMFR3_EL1 is read-only" (view ≠ 0);;
+  guard_or "MMFR3_EL1 is read-only" (view = 0);;
   val ← othrow "The register value of MMFR3_EL1 is 64 bit" (regval_to_val mmfr3 regval);
   mret (bv_extract 0 4 val =? 1%bv).
 
