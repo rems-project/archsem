@@ -200,12 +200,24 @@ Module Memory.
     |> dom
     |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
     |> set_fold (λ loc map,
-          let val :=
-            for addr in addr_range (Loc.to_addr loc) 8 do mem !! addr end
-            |$> bv_of_bytes 64
-          in
-          partial_alter (λ _, val) loc map) ∅.
-
+        let base := Loc.to_addr loc in
+        let lo :=
+          for addr in addr_range base 4 do mem !! addr end
+          |$> bv_of_bytes 32
+        in
+        let hi :=
+          for addr in addr_range (addr_addN base 4) 4 do mem !! addr end
+          |$> bv_of_bytes 32
+        in
+        let val :=
+          match lo, hi with
+          | Some lo, Some hi => Some (bv_concat 64 hi lo)
+          | Some lo, None => Some (bv_concat 64 (bv_0 32) lo)
+          | None, Some hi => Some (bv_concat 64 hi (bv_0 32))
+          | None, None => None
+          end
+        in
+        partial_alter (λ _, val) loc map) ∅.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
