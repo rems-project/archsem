@@ -413,7 +413,10 @@ Definition relaxed_regs : gset reg :=
       GReg MMFR0_EL1;
       GReg MMFR1_EL1;
       GReg MMFR2_EL1;
-      GReg MMFR3_EL1].
+      GReg MMFR3_EL1;
+      GReg SCTLR_EL1;
+      GReg SCTLR_EL2;
+      GReg SCTLR_EL3].
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=

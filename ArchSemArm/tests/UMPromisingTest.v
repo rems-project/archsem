@@ -92,7 +92,8 @@ Module EOR.
     |> reg_insert _PC 0x500
     |> reg_insert R0 0x0
     |> reg_insert R1 0x11
-    |> reg_insert R2 0x101.
+    |> reg_insert R2 0x101
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -125,7 +126,8 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
     ∅
     |> reg_insert _PC 0x500
     |> reg_insert R0 0x1000
-    |> reg_insert R1 0x0.
+    |> reg_insert R1 0x0
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -160,7 +162,8 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     |> reg_insert _PC 0x500
     |> reg_insert R0 0x1000
     |> reg_insert R1 0x100
-    |> reg_insert R2 0x2a.
+    |> reg_insert R2 0x2a
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -205,7 +208,8 @@ Module MP.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x200
     |> reg_insert R2 0x2a
-    |> reg_insert R5 0x1.
+    |> reg_insert R5 0x1
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -215,7 +219,8 @@ Module MP.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x200
     |> reg_insert R2 0x0
-    |> reg_insert R5 0x0.
+    |> reg_insert R5 0x0
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -272,7 +277,8 @@ Module MPDMBS.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x200
     |> reg_insert R2 0x2a
-    |> reg_insert R5 0x1.
+    |> reg_insert R5 0x1
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -282,7 +288,8 @@ Module MPDMBS.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x200
     |> reg_insert R2 0x0
-    |> reg_insert R5 0x0.
+    |> reg_insert R5 0x0
+    |> reg_insert SCTLR_EL1 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
