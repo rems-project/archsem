@@ -1170,6 +1170,27 @@ Module TLB.
     candidates_global ← ptes_invalidation_time_with_ndctxt mem tid tlb_base time_base lvl ndctxt_global;
     mret (candidates_asid ++ candidates_global).
 
+
+  Definition trigger_fault (init : Memory.initial) (mem : Memory.t)
+              (time_base : nat)
+              (child_lvl : Level)
+              (va : bv 64)
+              (ctxt : Ctxt.t)
+              (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+  let entry_addr := next_entry_addr (Entry.pte te) (level_index va child_lvl) in
+  let loc := Loc.from_addr_in entry_addr in
+  if (Memory.read_at loc init mem time_base) is Some (memval, _) then
+    ¬(is_valid memval)
+  else
+    True.
+  Instance Decision_trigger_fault (init : Memory.initial) (mem : Memory.t)
+              (time : nat)
+              (child_lvl : Level)
+              (va : bv 64)
+              (ctxt : Ctxt.t)
+              (te : Entry.t (Ctxt.lvl ctxt)) : Decision (trigger_fault init mem time child_lvl va ctxt te).
+  Proof. unfold_decide. Defined.
+
   Definition faults_invalidation_time_with_ndctxt (ts : TState.t) (init : Memory.initial)
                                  (mem : Memory.t)
                                  (tid : nat)
@@ -1178,23 +1199,16 @@ Module TLB.
                                  (va : bv 64)
                                  (ndctxt : NDCtxt.t lvl)
                                 : result string (list nat) :=
-    let ctxt := existT lvl ndctxt in
-    let tes := VATLB.get ctxt tlb_base.(TLB.vatlb) in
-    let tes := if decide (lvl = leaf_lvl) then ∅
-               else filter (λ te, is_table (TLB.Entry.pte te)) tes in
-    for te in (elements tes) do
-      match child_lvl lvl with
-      | Some child_lvl =>
-        let entry_addr := next_entry_addr (Entry.pte te) (level_index va child_lvl) in
-        let loc := Loc.from_addr_in entry_addr in
-        if (Memory.read_at loc init mem time_base) is Some (memval, _) then
-          guard_or "A translation fault should access an invalid value" (¬(is_valid memval));;
-          invalidation_time mem tid time_base ctxt te
-        else
-          invalidation_time mem tid time_base ctxt te
-      | None => mthrow "Translation faults should be triggered from entries in the intermediate level"
+    if child_lvl lvl is Some child_lvl then
+      let ctxt := existT lvl ndctxt in
+      let tes := VATLB.get ctxt tlb_base.(TLB.vatlb) in
+      let tes :=
+        filter (λ te, is_table (TLB.Entry.pte te)
+                ∧ (trigger_fault init mem time_base child_lvl va ctxt te)) tes in
+      for te in (elements tes) do
+        invalidation_time mem tid time_base ctxt te
       end
-    end.
+    else mret [].
 
   (** Retrieve invalidation times for *fault-inducing* table-walk steps.
 
