@@ -151,11 +151,11 @@ End EORMMUOFF.
 
    So the PA of that VA should be 0x500.
 *)
-(* Module EOR.
+Module EOR.
   Definition L0 := 0x80000%Z.
   Definition L1 := 0x81000%Z.
   Definition L2 := 0x82000%Z.
-  Definition L3 := 0x82000%Z.
+  Definition L3 := 0x83000%Z.
 
   Definition init_reg : registerMap :=
     ∅
@@ -176,7 +176,7 @@ End EORMMUOFF.
     (* L1[0] -> L2 *)
     |> mem_insert 0x81000 8 0x82003
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x82003
+    |> mem_insert 0x82000 8 0x83003
     (* L3[0] : map VA_PC page -> PA page 0x0000 (executable) *)
     |> mem_insert 0x83000 8 0x3.
 
@@ -200,4 +200,4 @@ End EORMMUOFF.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
-End EOR. *)
+End EOR.

@@ -60,6 +60,7 @@ Require Import ArmInst.
 From stdpp Require Import decidable list vector.
 From stdpp Require Import pretty.
 
+#[global] Typeclasses Transparent elements.
 
 (* Shadow constructor name from coq-sail with our result type *)
 Import ASCommon.CResult.
