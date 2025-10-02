@@ -1698,7 +1698,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
 
   is_ets ← mlift (ets2 ts);
   let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
-  let vmax_t := length mem in
+  let vmax_t := length mem + 1 in
   time_t ← mchoosel $ seq vpre_t vmax_t;
 
   (* lookup (successful results or faults) *)
@@ -1812,7 +1812,7 @@ Section RunOutcome.
   | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
   | Barrier barrier =>
       mem ← mget PPState.mem;
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier (length mem);;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier (length mem + 1);;
       mret ((), None)
   | TlbOp tlbi =>
       viio ← mget (IIS.strict ∘ PPState.iis);
@@ -1820,7 +1820,7 @@ Section RunOutcome.
       mret ((), None)
   | ReturnException =>
       mem ← mget PPState.mem;
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem);;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem + 1);;
       mret ((), None)
   | TranslationStart trans_start =>
       let initmem := Memory.initial_from_memMap initmem in
@@ -1832,7 +1832,7 @@ Section RunOutcome.
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | TakeException fault =>
       mem ← mget PPState.mem;
-      Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault (length mem);;
+      Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault (length mem + 1);;
       mret ((), None)
   | _ => mthrow "Unsupported outcome".
 
