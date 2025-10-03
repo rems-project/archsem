@@ -829,9 +829,26 @@ Module TLB.
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
 
+    Instance filter : Filter FE.t t :=
+      λ P P_dec,
+        hmap
+          (λ lvl,
+            iomap
+              (λ ctxt entry_set,
+                let new_entry_set :=
+                  filter
+                    (λ ent, P (existT (existT lvl ctxt) (ent : Entry.t lvl)))
+                    entry_set
+                in
+                if decide (new_entry_set = ∅) then None else Some new_entry_set)).
+
+    Definition setFEs (ctxt : Ctxt.t) (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
+      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
+
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
+  Export (hints) VATLB.
 
   Record t :=
     make {
@@ -989,11 +1006,132 @@ Module TLB.
     tlb1 ← va_fill tlb0 ts init mem time 1%fin va ttbr;
     tlb2 ← va_fill tlb1 ts init mem time 2%fin va ttbr;
     va_fill tlb2 ts init mem time 3%fin va ttbr.
+
+  (** ** TLB invalidation *)
+
+  (** Decide if a TLB entry is affected by an invalidation by asid at this asid *)
+  Definition affects_asid (asid : bv 16)
+                          (ctxt : Ctxt.t)
+                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    match (Ctxt.asid ctxt) with
+    | Some te_asid => te_asid = asid
+    | None => False
+    end.
+  Instance Decision_affects_asid (asid : bv 16)
+                                 (ctxt : Ctxt.t)
+                                 (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_asid asid ctxt te).
+  Proof. unfold_decide. Defined.
+
+  (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
+  Definition affects_va (va : bv 36) (last : bool)
+                         (ctxt : Ctxt.t)
+                         (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    let '(te_lvl, te_va, te_val) :=
+          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
+    (match_prefix_at te_lvl te_va va)
+    ∧ (if last then is_final te_lvl te_val else True).
+  Instance Decision_affects_va (va : bv 36) (last : bool)
+                                (ctxt : Ctxt.t)
+                                (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects_va va last ctxt te).
+  Proof. unfold_decide. Defined.
+
+  (** Decide a TLBI instruction affects a given TLB entry *)
+  Definition affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+    match tlbi with
+    | TLBI.All tid => True
+    | TLBI.Va tid asid va last =>
+      affects_asid asid ctxt te ∧ affects_va va last ctxt te
+    | TLBI.Asid tid asid => affects_asid asid ctxt te
+    | TLBI.Vaa tid va last => affects_va va last ctxt te
+    end.
+  Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
+                     (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (affects tlbi ctxt te).
+  Proof. unfold_decide. Defined.
+
+  Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
+    set vatlb (filter (λ '(existT ctxt te), affects tlbi ctxt te)) tlb.
+
+  (** Get the TLB state at a timestamp (time_prev + cnt) *)
+  Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+                       (tlb_prev : t)
+                       (time_prev cnt : nat)
+                       (va : bv 64)
+                       (ttbr : reg)
+                      {struct cnt} : result string t :=
+    match cnt with
+    | O => mret tlb_prev
+    | S ccnt =>
+      let time_cur := time_prev + 1 in
+      tlb ←
+        match mem !! time_cur with
+        | Some ev =>
+            let tlb_inv :=
+              if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
+            in
+            update tlb_prev ts mem_init mem time_cur va ttbr
+        | None => mret init
+        end;
+      at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
+    end.
+
+
+  (** Get the TLB state at a timestamp `time` *)
+  Definition at_timestamp (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+                       (time : nat)
+                       (va : bv 64)
+                       (ttbr : reg) : result string t :=
+    tlb ← update init ts mem_init mem 0 va ttbr;
+    at_timestamp_from ts mem_init mem tlb 0 time va ttbr.
+
+  Definition is_te_invalidated_by_tlbi
+                (tlbi : TLBI.t)
+                (tid : nat)
+                (ctxt : Ctxt.t)
+                (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+      TLBI.tid tlbi <> tid ∧ (affects tlbi ctxt te).
+  Instance Decision_is_te_invalidated_by_tlbi (tlbi : TLBI.t) (tid : nat)
+                (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (is_te_invalidated_by_tlbi tlbi tid ctxt te).
+  Proof. unfold_decide. Defined.
+
+  Fixpoint invalidation_time_from_evs (tid : nat)
+                                      (ctxt : Ctxt.t)
+                                      (te : Entry.t (Ctxt.lvl ctxt))
+                                      (evs : list (Ev.t * nat)) : result string nat :=
+    match evs with
+    | nil => mret 0
+    | (ev, t) :: tl =>
+      match ev with
+      | Ev.Tlbi tlbi =>
+        let va := prefix_to_va (Ctxt.va ctxt) in
+        if decide (is_te_invalidated_by_tlbi tlbi tid ctxt te) then
+          mret t
+        else
+          invalidation_time_from_evs tid ctxt te tl
+      | _ => invalidation_time_from_evs tid ctxt te tl
+      end
+    end.
+
+  (** Calculate the earliest future time at which a translation entry is effectively invalidated
+      in the TLB due to an TLBI event *)
+  Definition invalidation_time (ts : TState.t) (init : Memory.initial) (mem : Memory.t)
+                               (tid : nat)
+                               (tlb_base : t) (time_base : nat)
+                               (ctxt : Ctxt.t)
+                               (te : Entry.t (Ctxt.lvl ctxt))
+                               (ttbr : reg) : result string nat :=
+    let evs := PromMemory.cut_after_with_timestamps time_base mem in
+    invalidation_time_from_evs tid ctxt te evs.
 End TLB.
+Export (hints) TLB.
 
 Module VATLB := TLB.VATLB.
 
-(*** Instruction semantics ***)
+(** * Instruction semantics ***)
 
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
