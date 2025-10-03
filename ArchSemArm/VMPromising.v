@@ -829,12 +829,26 @@ Module TLB.
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
 
+    Instance filter : Filter FE.t t :=
+      λ P P_dec,
+        hmap
+          (λ lvl,
+            iomap
+              (λ ctxt entry_set,
+                let new_entry_set :=
+                  filter
+                    (λ ent, P (existT (existT lvl ctxt) (ent : Entry.t lvl)))
+                    entry_set
+                in
+                if decide (new_entry_set = ∅) then None else Some new_entry_set)).
+
     Definition setFEs (ctxt : Ctxt.t) (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
 
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
+  Export (hints) VATLB.
 
   Record t :=
     make {
@@ -995,6 +1009,7 @@ Module TLB.
 
   (** ** TLB invalidation *)
 
+  (** Decide if a TLB entry is affected by an invalidation by asid at this asid *)
   Definition affects_asid (asid : bv 16)
                           (ctxt : Ctxt.t)
                           (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
@@ -1008,70 +1023,37 @@ Module TLB.
     Decision (affects_asid asid ctxt te).
   Proof. unfold_decide. Defined.
 
-  Definition affects_vaa (va : bv 36) (last : bool)
+  (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
+  Definition affects_va (va : bv 36) (last : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     let '(te_lvl, te_va, te_val) :=
           (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
     ∧ (if last then is_final te_lvl te_val else True).
-  Instance Decision_affects_vaa (va : bv 36) (last : bool)
+  Instance Decision_affects_va (va : bv 36) (last : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_vaa va last ctxt te).
+    Decision (affects_va va last ctxt te).
   Proof. unfold_decide. Defined.
 
+  (** Decide a TLBI instruction affects a given TLB entry *)
   Definition affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
                      (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     match tlbi with
     | TLBI.All tid => True
     | TLBI.Va tid asid va last =>
-      affects_asid asid ctxt te ∧ affects_vaa va last ctxt te
+      affects_asid asid ctxt te ∧ affects_va va last ctxt te
     | TLBI.Asid tid asid => affects_asid asid ctxt te
-    | TLBI.Vaa tid va last => affects_vaa va last ctxt te
+    | TLBI.Vaa tid va last => affects_va va last ctxt te
     end.
   Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
                      (te : Entry.t (Ctxt.lvl ctxt)) :
     Decision (affects tlbi ctxt te).
   Proof. unfold_decide. Defined.
 
-  Definition tlbi_apply_lvl (tlb : t) (ts : TState.t)
-                  (init : Memory.initial) (mem : Memory.t)
-                  (time : nat)
-                  (tlbi : TLBI.t)
-                  (lvl : Level)
-                  (va : bv 64)
-                  (ttbr : reg) : result string t :=
-    sregs ← othrow "TTBR should exist in initial state"
-              $ TState.read_sreg_at ts ttbr time;
-    active_vatlbs ←
-      for sreg in sregs do
-        val_ttbr ← othrow "TTBR should be a 64 bit value"
-                $ regval_to_val ttbr sreg.1;
-        let asid := bv_extract 48 16 val_ttbr in
-        let ndctxt_asid := NDCtxt.make (level_prefix va lvl) (Some asid) in
-        let ndctxt_global := NDCtxt.make (level_prefix va lvl) None in
-        vatlbs ←
-          for ndctxt in [ndctxt_asid; ndctxt_global] do
-            let ctxt := existT lvl ndctxt in
-            let tes := VATLB.get ctxt tlb.(vatlb)
-                        |> filter (λ te, ¬(affects tlbi ctxt te)) in
-            Ok $ VATLB.setFEs ctxt tes tlb.(vatlb)
-          end;
-        Ok $ (union_list vatlbs)
-      end;
-    Ok $ TLB.make (union_list active_vatlbs).
-
-  Definition tlbi_apply (tlb : t) (ts : TState.t)
-                  (init : Memory.initial) (mem : Memory.t)
-                  (time : nat)
-                  (tlbi : TLBI.t)
-                  (va : bv 64)
-                  (ttbr : reg) : result string t :=
-    tlb0 ← tlbi_apply_lvl tlb ts init mem time tlbi root_lvl va ttbr;
-    tlb1 ← tlbi_apply_lvl tlb0 ts init mem time tlbi 1%fin va ttbr;
-    tlb2 ← tlbi_apply_lvl tlb1 ts init mem time tlbi 2%fin va ttbr;
-    tlbi_apply_lvl tlb2 ts init mem time tlbi 3%fin va ttbr.
+  Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
+    set vatlb (filter (λ '(existT ctxt te), affects tlbi ctxt te)) tlb.
 
   (** Get the TLB state at a timestamp (time_prev + cnt) *)
   Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
@@ -1087,10 +1069,10 @@ Module TLB.
       tlb ←
         match mem !! time_cur with
         | Some ev =>
-          match Ev.get_tlbi ev with
-          | Some tlbi => tlbi_apply tlb_prev ts mem_init mem time_cur tlbi va ttbr
-          | None => update tlb_prev ts mem_init mem time_cur va ttbr
-          end
+            let tlb_inv :=
+              if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
+            in
+            update tlb_prev ts mem_init mem time_cur va ttbr
         | None => mret init
         end;
       at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
@@ -1105,24 +1087,20 @@ Module TLB.
     tlb ← update init ts mem_init mem 0 va ttbr;
     at_timestamp_from ts mem_init mem tlb 0 time va ttbr.
 
-  Definition is_te_invalidated_by_tlbi (tlb : t)
+  Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
                 (tid : nat)
                 (ctxt : Ctxt.t)
                 (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
       TLBI.tid tlbi <> tid ∧ (affects tlbi ctxt te).
-  Instance Decision_is_te_invalidated_by_tlbi (tlb : t) (tlbi : TLBI.t) (tid : nat)
+  Instance Decision_is_te_invalidated_by_tlbi (tlbi : TLBI.t) (tid : nat)
                 (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te).
+    Decision (is_te_invalidated_by_tlbi tlbi tid ctxt te).
   Proof. unfold_decide. Defined.
 
-  Fixpoint invalidation_time_from_evs (ts : TState.t) (init : Memory.initial)
-                                      (mem : Memory.t)
-                                      (tid : nat)
-                                      (tlb_base : t) (time_base : nat)
+  Fixpoint invalidation_time_from_evs (tid : nat)
                                       (ctxt : Ctxt.t)
                                       (te : Entry.t (Ctxt.lvl ctxt))
-                                      (ttbr : reg)
                                       (evs : list (Ev.t * nat)) : result string nat :=
     match evs with
     | nil => mret 0
@@ -1130,12 +1108,11 @@ Module TLB.
       match ev with
       | Ev.Tlbi tlbi =>
         let va := prefix_to_va (Ctxt.va ctxt) in
-        tlb ← at_timestamp_from ts init mem tlb_base time_base (t - time_base) va ttbr;
-        if decide (is_te_invalidated_by_tlbi tlb tlbi tid ctxt te) then
+        if decide (is_te_invalidated_by_tlbi tlbi tid ctxt te) then
           mret t
         else
-          invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr tl
-      | _ => invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr tl
+          invalidation_time_from_evs tid ctxt te tl
+      | _ => invalidation_time_from_evs tid ctxt te tl
       end
     end.
 
@@ -1148,8 +1125,9 @@ Module TLB.
                                (te : Entry.t (Ctxt.lvl ctxt))
                                (ttbr : reg) : result string nat :=
     let evs := PromMemory.cut_after_with_timestamps time_base mem in
-    invalidation_time_from_evs ts init mem tid tlb_base time_base ctxt te ttbr evs.
+    invalidation_time_from_evs tid ctxt te evs.
 End TLB.
+Export (hints) TLB.
 
 Module VATLB := TLB.VATLB.
 
