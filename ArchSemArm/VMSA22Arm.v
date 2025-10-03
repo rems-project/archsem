@@ -311,7 +311,7 @@ Section VMSAArm.
   Definition get_translation_start (eid : EID.t) : option trans_start :=
     '(instr_trace, _) ← lookup_instruction cd eid.(EID.tid) eid.(EID.iid);
     let trace_before := take eid.(EID.ieid) instr_trace in
-    list.last $ list_filter_map get_trans_start trace_before.
+    list.last $ omap get_trans_start trace_before.
 
   Definition get_vmid (eid : EID.t) (event : iEvent) :=
     if event is TlbOp tlbop &→ _

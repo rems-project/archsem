@@ -70,6 +70,17 @@ Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
 
 #[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
 
+Instance list_imap : IMap nat list := @list.imap.
+
+Instance list_iomap : IOMap nat list := λ A B,
+  fix go (f : nat → A → option B) (l : list A) :=
+    if l is x :: l then
+      if f 0 x is Some v then
+        v :: go (f ∘ S) l
+      else
+        go (f ∘ S) l
+    else [].
+
 (** * List simplification *)
 
 #[global] Hint Rewrite app_nil_r : list.
@@ -310,24 +321,6 @@ Proof.
   setoid_rewrite lookup_unfold.
   hauto l:on simp+:eexists simp+:list_saturate.
 Qed.
-
-Section FilterMap.
-  Context {A B : Type}.
-  Variable f : A -> option B.
-  Fixpoint list_filter_map (l : list A) :=
-    match l with
-    | [] => []
-    | hd :: tl =>
-        match f hd with
-        | Some b => b :: (list_filter_map tl)
-        | None => list_filter_map tl
-        end
-    end.
-
-  Lemma list_filter_map_mbind (l : list A) :
-    list_filter_map l = a ← l; f a |> option_list.
-  Proof using. induction l; hauto lq:on. Qed.
-End FilterMap.
 
 (** ** seqN *)
 

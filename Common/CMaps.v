@@ -74,6 +74,12 @@ Section MapRestrict.
   (* TODO lemmas *)
 End MapRestrict.
 
+Instance gmap_imap `{Countable K}: IMap K (gmap K) := λ A B f,
+    map_fold (λ k v, <[ k := f k v ]>) ∅.
+
+Instance gmap_iomap `{Countable K}: IOMap K (gmap K) := λ A B f,
+    map_fold (λ k v m, if f k v is Some v' then <[ k := v' ]> m else m) ∅.
+
 (** * Lookup Unfold ***)
 
 Class LookupUnfold {K A M : Type} {lk : Lookup K A M}

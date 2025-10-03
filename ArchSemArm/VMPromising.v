@@ -278,7 +278,7 @@ Module Memory.
     first ← mem |> cut_before v |> read_last loc init;
     let lasts :=
       mem |> cut_after_with_timestamps v
-      |> list_filter_map
+      |> omap
            (λ '(ev, v),
              match ev with
              | Ev.Msg msg =>
@@ -526,11 +526,9 @@ Module TState.
 
   Definition lev_cur (ts : t) := length ts.(levs).
 
-  Definition filter_wsreg (levs : list LEv.t) : list WSReg.t :=
-    levs |> list_filter_map LEv.get_wsreg.
+  Definition filter_wsreg : list LEv.t → list WSReg.t := omap LEv.get_wsreg.
 
-  Definition filter_cse (levs: list LEv.t) : list view :=
-    levs |> list_filter_map LEv.get_cse.
+  Definition filter_cse : list LEv.t → list view := omap LEv.get_cse.
 
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
@@ -538,7 +536,7 @@ Module TState.
       ts.(levs)
       |> drop ((lev_cur ts) - s)
       |> filter_wsreg
-      |> list_filter_map (WSReg.to_val_view_if sreg)
+      |> omap (WSReg.to_val_view_if sreg)
       |> hd_error in
     newval ∪ dmap_lookup sreg ts.(regs).
 
@@ -552,7 +550,7 @@ Module TState.
       ts.(levs)
       |> take ((lev_cur ts) - s)
       |> filter_wsreg
-      |> list_filter_map (WSReg.to_val_view_if sreg)
+      |> omap (WSReg.to_val_view_if sreg)
     in Some $ sync_val :: rest.
 
   (** Read the most recent system register write (for MRS implementation). *)
@@ -569,7 +567,8 @@ Module TState.
     read_sreg_by_cse ts sreg max_cse.
 
   (** Read system register values at the timestamp t *)
-  Definition read_sreg_at (ts : t) (sreg : reg) (t : nat) :=
+  Definition read_sreg_at (ts : t) (sreg : reg) (t : nat) :
+      option (list (reg_type sreg * nat)) :=
     let last_cse :=
       ts.(levs)
            |> filter_cse
@@ -577,7 +576,7 @@ Module TState.
            |> hd 0%nat
     in
     read_sreg_by_cse ts sreg last_cse
-      |$> list_filter_map (
+      |$> omap (M:=list) (
             λ '(val, view),
               if bool_decide (view ≤ t)
               then Some (val, view)

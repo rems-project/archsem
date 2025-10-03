@@ -170,6 +170,19 @@ Notation "x .T2" := (projT2 x) (at level 1, left associativity, format "x .T2").
 Notation "'is_patP' pat pred" := (λ x, match x with pat => pred | _ => False end) (pat pattern, at level 10).
 Notation "'is_pat' pat" := (λ x, match x with pat => True | _ => False end) (pat pattern, at level 10).
 
+(** * Operator typeclasses *)
+
+Class IMap (K : Type) (M : Type → Type) := imap : ∀ {A B}, (K → A → B) → M A → M B.
+#[global] Arguments imap {_ _ _ _ _} _ !_ / : assert.
+#[export] Instance: Params (@imap) 5 := {}.
+#[export] Hint Mode IMap - ! : typeclass_instances.
+
+Class IOMap (K : Type) (M : Type → Type) :=
+  iomap : ∀ {A B}, (K → A → option B) → M A → M B.
+#[global] Arguments iomap {_ _ _ _ _} _ !_ / : assert.
+#[export] Instance: Params (@iomap) 5 := {}.
+#[export] Hint Mode IOMap - ! : typeclass_instances.
+
 
 (** * Utility functions ***)
 
