@@ -1579,7 +1579,7 @@ Definition ttbr_of_regime (regime : Regime) : result string reg :=
 (* TODO: distinguish between ets2 and ets3 *)
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
-  '(regval, view) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 2%bv).
 
@@ -1628,8 +1628,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   tlb_res ← mlift $ tlb_lookup ts init mem tid tlb time_t va asid ttbr;
 
   (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
-  let vets := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  time_f ← mchoosel $ seq (vpre_t ⊔ vets) vmax_t;
+  let vets_faults := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  time_f ← mchoosel $ seq (vpre_t ⊔ vets_faults) vmax_t;
   tlb_f ← mlift $ TLB.at_timestamp ts init mem time_t va ttbr;
   faults ← mlift $ trans_fault ts init mem tid tlb_f time_f va asid ttbr;
 
