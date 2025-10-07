@@ -1629,9 +1629,9 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
 
   (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
   let vets_faults := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  time_f ← mchoosel $ seq (vpre_t ⊔ vets_faults) vmax_t;
-  tlb_f ← mlift $ TLB.at_timestamp ts init mem time_t va ttbr;
-  faults ← mlift $ trans_fault ts init mem tid tlb_f time_f va asid ttbr;
+  faults ←
+    if time_t <? (vets_faults ⊔ vpre_t) then mret []
+    else mlift $ trans_fault ts init mem tid tlb time_t va asid ttbr;
 
   (* update IIS *)
   let ptes_iis :=
