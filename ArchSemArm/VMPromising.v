@@ -1198,7 +1198,7 @@ Module TLB.
                                  (lvl : Level)
                                  (va : bv 64)
                                  (ndctxt : NDCtxt.t lvl)
-                                : result string (list nat) :=
+                                : result string (list (list val * nat)) :=
     if child_lvl lvl is Some child_lvl then
       let ctxt := existT lvl ndctxt in
       let tes := VATLB.get ctxt tlb_base.(TLB.vatlb) in
@@ -1206,7 +1206,8 @@ Module TLB.
         filter (λ te, is_table (TLB.Entry.pte te)
                 ∧ (trigger_fault init mem time_base child_lvl va ctxt te)) tes in
       for te in (elements tes) do
-        invalidation_time mem tid time_base ctxt te
+        ti ← invalidation_time mem tid time_base ctxt te;
+        mret ((vec_to_list te), ti)
       end
     else mret [].
 
@@ -1222,7 +1223,7 @@ Module TLB.
                                     (tlb_base : t) (time_base : nat)
                                     (lvl : Level)
                                     (va : bv 64) (asid : bv 16)
-                                    (ttbr : reg) : result string (list nat) :=
+                                    (ttbr : reg) : result string (list (list val * nat)) :=
     let ndctxt_asid := NDCtxt.make (level_prefix va lvl) (Some asid) in
     let ndctxt_global := NDCtxt.make (level_prefix va lvl) None in
     candidates_asid ← faults_invalidation_time_with_ndctxt ts init mem tid tlb_base time_base lvl va ndctxt_asid;
@@ -1593,7 +1594,7 @@ Definition trans_fault (ts : TState.t) (init : Memory.initial)
                        (tlb : TLB.t) (time : nat)
                        (va : bv 64) (asid : bv 16)
                        (ttbr : reg) :
-    result string (list nat) :=
+    result string (list (list val * nat)) :=
   fault0 ← TLB.faults_invalidation_time ts init mem tid tlb time 0%fin va asid ttbr;
   fault1 ← TLB.faults_invalidation_time ts init mem tid tlb time 1%fin va asid ttbr;
   fault2 ← TLB.faults_invalidation_time ts init mem tid tlb time 2%fin va asid ttbr;
@@ -1617,9 +1618,9 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
 
   (* update IIS with either a valid translation result or a fault *)
   let ptes_iis :=
-    map (λ '(ptes, ti), IIS.TransRes.make (va_to_vpn va) trans_time ptes ti false) tlb_res in
+    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) trans_time path ti false) tlb_res in
   let fault_iis :=
-    map (λ ti, IIS.TransRes.make (va_to_vpn va) trans_time [] ti true) faults in
+    map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) trans_time path ti true) faults in
   trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
 
