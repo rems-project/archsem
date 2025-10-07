@@ -1403,12 +1403,10 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     mset PPState.state $ TState.add_wsreg reg val vpost;;
     mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
-  else if decide (reg ∈ strict_regs) then
+  else
     nts ← othrow "Register unmapped; cannot write" $
             TState.set_reg reg (val, vreg') ts;
-    msetv PPState.state nts
-  else
-    mthrow "Register read-only".
+    msetv PPState.state nts.
 
 (** Run a MemRead outcome.
     Returns the new thread state, the vpost of the read and the read value. *)
