@@ -1666,21 +1666,26 @@ Definition write_fault_vpre (is_rel : bool)
 
 Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
     let fault := trans_end.(AddressDescriptor_fault) in
     let trans_time := trs.(IIS.TransRes.time) in
-    mset snd $ IIS.add trans_time;;
-    (* if the fault is from read, add the read view *)
-    let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
-    let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
-    read_view ← Exec.liftSt fst $ read_fault_vpre is_acq iis.(IIS.strict) trans_time;
-    mset snd $ IIS.add (view_if is_read read_view);;
-    (* if the fault is from write, add the write view *)
-    let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-    let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-    write_view ← Exec.liftSt fst $ write_fault_vpre is_rel iis.(IIS.strict) trans_time;
-    mset snd $ IIS.add (view_if is_write write_view)
+    is_ets3 ← mlift (ets3 ts);
+    if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+    then mdiscard
+    else
+      mset snd $ IIS.add trans_time;;
+      (* if the fault is from read, add the read view *)
+      let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
+      let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+      read_view ← Exec.liftSt fst $ read_fault_vpre is_acq iis.(IIS.strict) trans_time;
+      mset snd $ IIS.add (view_if is_read read_view);;
+      (* if the fault is from write, add the write view *)
+      let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
+      let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+      write_view ← Exec.liftSt fst $ write_fault_vpre is_rel iis.(IIS.strict) trans_time;
+      mset snd $ IIS.add (view_if is_write write_view)
   else
     mthrow "Translation ends with an empty translation".
 
@@ -1691,10 +1696,7 @@ Definition run_take_exception (fault : exn) (vmax_t : view) :
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
     let invalidation := trs.(IIS.TransRes.invalidation) in
-    (* ets 3 *)
-    if decide (trans_time < (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
-      then mdiscard
-      else run_cse invalidation
+    run_cse invalidation
   else
     run_cse vmax_t.
 
