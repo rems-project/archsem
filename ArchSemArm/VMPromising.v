@@ -392,6 +392,9 @@ Definition strict_regs : gset reg :=
       GReg ELR_EL3;
       (* These registers are system registers, but they are considered
          strict in the model. *)
+      GReg ESR_EL1;
+      GReg ESR_EL2;
+      GReg ESR_EL3;
       GReg FAR_EL1;
       GReg FAR_EL2;
       GReg FAR_EL3;
@@ -400,9 +403,6 @@ Definition strict_regs : gset reg :=
 (** Relaxed registers are not guaranteed to read the latest value. *)
 Definition relaxed_regs : gset reg :=
   list_to_set [
-      GReg ESR_EL1;
-      GReg ESR_EL2;
-      GReg ESR_EL3;
       GReg TTBR0_EL1;
       GReg TTBR0_EL2;
       GReg TTBR0_EL3;
