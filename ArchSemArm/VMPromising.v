@@ -1424,7 +1424,7 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
   if is_explicit macc then
     tres_opt ← mget (IIS.trs ∘ PPState.iis);
     trans_res ← othrow "Explicit access before translation" tres_opt;
-    let invalidation :=  trans_res.(IIS.TransRes.invalidation) in
+    let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
         $ read_mem_explicit loc vaddr invalidation macc init;
@@ -1462,7 +1462,8 @@ Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initi
     vaddr and vdata. Return the new state.
 
     This may mutate memory if no existing promise can be fullfilled *)
-Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (macc : mem_acc)
+Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
+    (invalidation_time : option nat) (macc : mem_acc)
     (data : val) : Exec.t (TState.t * Memory.t) string view :=
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
@@ -1475,6 +1476,11 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (macc : mem_acc)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := ts.(TState.vspec) ⊔ vbob ⊔ viio in
+  let check_vpost :=
+    if invalidation_time is Some invalidation_time then
+      (time <? invalidation_time)%nat
+    else true in
+  guard_discard (check_vpost);;
   guard_discard (vpre ⊔ (TState.coh ts !!! loc) < time)%nat;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
@@ -1491,12 +1497,12 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view) (macc : mem_acc)
     If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
-    (macc : mem_acc) (data : val) :
+    (invalidation_time : option nat) (macc : mem_acc) (data : val) :
   Exec.t (TState.t * Memory.t) string () :=
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
-    time ← write_mem tid loc viio macc data;
+    time ← write_mem tid loc viio invalidation_time macc data;
     '(ts, mem) ← mGet;
     match TState.xclb ts with
     | None => mdiscard
@@ -1506,7 +1512,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     mset fst $ TState.set_fwdb loc (FwdItem.make time viio true);;
     mset fst TState.clear_xclb
   else
-    time ← write_mem tid loc viio macc data;
+    time ← write_mem tid loc viio invalidation_time macc data;
     mset fst $ TState.set_fwdb loc (FwdItem.make time viio false).
 
 Definition run_cse (vmax_t : view) : Exec.t (TState.t * IIS.t) string () :=
@@ -1723,8 +1729,11 @@ Section RunOutcome.
       addr ← othrow "Address not supported" $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
       if is_explicit macc then
+        tres_opt ← mget (IIS.trs ∘ PPState.iis);
+        trans_res ← othrow "Explicit access before translation" tres_opt;
+        let invalidation := trans_res.(IIS.TransRes.invalidation) in
         Exec.liftSt (PPState.state ×× PPState.mem) $
-            write_mem_xcl tid addr viio macc val;;
+            write_mem_xcl tid addr viio invalidation macc val;;
         mret (Ok ())
       else mthrow "Unsupported non-explicit write"
   | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
