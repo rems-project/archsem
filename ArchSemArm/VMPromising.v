@@ -389,7 +389,13 @@ Definition strict_regs : gset reg :=
       GReg PSTATE;
       GReg ELR_EL1;
       GReg ELR_EL2;
-      GReg ELR_EL3].
+      GReg ELR_EL3;
+      (* These registers are system registers, but they are considered
+         strict in the model. *)
+      GReg FAR_EL1;
+      GReg FAR_EL2;
+      GReg FAR_EL3;
+      GReg PAR_EL1].
 
 (** Relaxed registers are not guaranteed to read the latest value. *)
 Definition relaxed_regs : gset reg :=
@@ -397,10 +403,6 @@ Definition relaxed_regs : gset reg :=
       GReg ESR_EL1;
       GReg ESR_EL2;
       GReg ESR_EL3;
-      GReg FAR_EL1;
-      GReg FAR_EL2;
-      GReg FAR_EL3;
-      GReg PAR_EL1;
       GReg TTBR0_EL1;
       GReg TTBR0_EL2;
       GReg TTBR0_EL3;
