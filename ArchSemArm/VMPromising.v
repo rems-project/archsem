@@ -1627,6 +1627,12 @@ Definition ets3 (ts : TState.t) : result string bool :=
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).
 
+Definition ets3 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 3%bv).
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
