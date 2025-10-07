@@ -1685,23 +1685,30 @@ Definition write_fault_vpre (is_rel : bool)
 
 Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
-    let fault := trans_end.(AddressDescriptor_fault) in
-    if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-      mret ()
+    is_ets3 ← mlift (ets3 ts);
+    if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+    then mdiscard
     else
-      (* if the fault is from read, add the read view *)
-      let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
-      let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
-      read_view ← read_fault_vpre is_acq trans_time;
-      mset snd $ IIS.add (view_if is_read read_view);;
-      (* if the fault is from write, add the write view *)
-      let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-      let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-      write_view ← write_fault_vpre is_rel trans_time;
-      mset snd $ IIS.add (view_if is_write write_view)
+      let fault := trans_end.(AddressDescriptor_fault) in
+      if decide (fault.(FaultRecord_statuscode) = Fault_None) then
+        mret ()
+      else
+        mset snd $ IIS.add trans_time;;
+        (* if the fault is from read, add the read view *)
+        let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
+        let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+        read_view ← read_fault_vpre is_acq trans_time;
+
+        mset snd $ IIS.add (view_if is_read read_view);;
+        (* if the fault is from write, add the write view *)
+        let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
+        let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+        write_view ← write_fault_vpre is_rel trans_time;
+        mset snd $ IIS.add (view_if is_write write_view)
   else
     mthrow "Translation ends with an empty translation".
 
