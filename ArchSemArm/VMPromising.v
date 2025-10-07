@@ -389,17 +389,17 @@ Definition strict_regs : gset reg :=
       GReg PSTATE;
       GReg ELR_EL1;
       GReg ELR_EL2;
-      GReg ELR_EL3].
-
-(** Relaxed registers are not guaranteed to read the latest value. *)
-Definition relaxed_regs : gset reg :=
-  list_to_set [
+      GReg ELR_EL3;
       GReg ESR_EL1;
       GReg ESR_EL2;
       GReg ESR_EL3;
       GReg FAR_EL1;
       GReg FAR_EL2;
-      GReg FAR_EL3;
+      GReg FAR_EL3].
+
+(** Relaxed registers are not guaranteed to read the latest value. *)
+Definition relaxed_regs : gset reg :=
+  list_to_set [
       GReg PAR_EL1;
       GReg TTBR0_EL1;
       GReg TTBR0_EL2;
@@ -1576,12 +1576,17 @@ Definition ttbr_of_regime (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
-(* TODO: distinguish between ets2 and ets3 *)
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 2%bv).
+
+Definition ets3 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 3%bv).
 
 Definition tlb_lookup (ts : TState.t) (init : Memory.initial)
                       (mem : Memory.t)
@@ -1613,8 +1618,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
 
-  is_ets ← mlift (ets2 ts);
-  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
+  is_ets2 ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets2 ts.(TState.vdsb)) in
   let vmax_t := length mem in
   time_t ← mchoosel $ seq vpre_t vmax_t;
 
@@ -1628,7 +1633,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   tlb_res ← mlift $ tlb_lookup ts init mem tid tlb time_t va asid ttbr;
 
   (* - faults (if ETS, faults should be ordered after explicit memory effects (vrd, vwr)) *)
-  let vets_faults := view_if is_ets (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  let vets_faults := view_if is_ets2 (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   faults ←
     if time_t <? (vets_faults ⊔ vpre_t) then mret []
     else mlift $ trans_fault ts init mem tid tlb time_t va asid ttbr;
@@ -1640,14 +1645,6 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     map (λ '(path, ti), IIS.TransRes.make (va_to_vpn va) time_t path ti true) faults in
   trans_res ← mchoosel (ptes_iis ++ fault_iis);
   mset PPState.iis $ IIS.set_trs trans_res.
-
-Definition run_trans_end (trans_end : trans_end) :
-    Exec.t (TState.t * IIS.t) string () :=
-  iis ← mget snd;
-  if iis.(IIS.trs) is Some trs then
-    mset snd $ IIS.add trs.(IIS.TransRes.time)
-  else
-    mthrow "Translation ends with an empty translation".
 
 Definition read_fault_vpre (is_acq : bool)
   (strict : view)
@@ -1667,14 +1664,13 @@ Definition write_fault_vpre (is_rel : bool)
               ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   mret $ strict ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-Definition run_take_exception (fault : exn) (vmax_t : view) :
+Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
-  if iis.(IIS.trs) is Some trans_res then
-    let trans_time := trans_res.(IIS.TransRes.time) in
-    let invalidation := trans_res.(IIS.TransRes.invalidation) in
-
-    fault ← othrow "Unknown fault types" fault;
+  if iis.(IIS.trs) is Some trs then
+    let fault := trans_end.(AddressDescriptor_fault) in
+    let trans_time := trs.(IIS.TransRes.time) in
+    mset snd $ IIS.add trans_time;;
     (* if the fault is from read, add the read view *)
     let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
     let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
@@ -1684,9 +1680,21 @@ Definition run_take_exception (fault : exn) (vmax_t : view) :
     let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
     let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
     write_view ← Exec.liftSt fst $ write_fault_vpre is_rel iis.(IIS.strict) trans_time;
-    mset snd $ IIS.add (view_if is_read write_view);;
-    (* in both cases, run cse *)
-    run_cse invalidation
+    mset snd $ IIS.add (view_if is_write write_view)
+  else
+    mthrow "Translation ends with an empty translation".
+
+Definition run_take_exception (fault : exn) (vmax_t : view) :
+    Exec.t (TState.t * IIS.t) string () :=
+  iis ← mget snd;
+  ts ← mget fst;
+  if iis.(IIS.trs) is Some trs then
+    let trans_time := trs.(IIS.TransRes.time) in
+    let invalidation := trs.(IIS.TransRes.invalidation) in
+    (* ets 3 *)
+    if decide (trans_time < (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+      then mdiscard
+      else run_cse invalidation
   else
     run_cse vmax_t.
 
