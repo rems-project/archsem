@@ -1614,12 +1614,17 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
-(* TODO: distinguish between ets2 and ets3 *)
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 2%bv).
+
+Definition ets3 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 3%bv).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
