@@ -241,6 +241,8 @@ Proof.
   - sauto db:list simp+:cbn;rewrite IHn.
 Qed.
 
+Definition seq_bounds (s e : nat) := seq s (e + 1 - s).
+
 Lemma seq_end n l : seq n (S l) = seq n l ++ [n + l].
 Proof.
   generalize dependent n.
