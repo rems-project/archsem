@@ -84,11 +84,18 @@ Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
 
 
 (** * Helper functions for page table setup *)
+
 Definition table_desc (next_pa : Z) : Z :=
     Z.lor (Z.land next_pa (Z.lnot 0xFFF%Z)) 0x3%Z. (* Valid=1, Table=1 *)
 
 Definition page_desc (out_pa : Z) : Z :=
   Z.lor (Z.lor (Z.land out_pa (Z.lnot 0xFFF%Z)) 0x400%Z) 0x3%Z.  (* Valid=1, Page=1, AF=1 *)
+
+(** * Helper functions for PSTATE setup *)
+Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
+  inhabitant
+  |> set ProcState_EL (λ _, el)
+  |> set ProcState_SP (λ _, sp).
 
 (** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
 Definition arm_sem := sail_tiny_arm_sem true.
@@ -102,7 +109,8 @@ Module EORMMUOFF.
     |> reg_insert R0 0x0
     |> reg_insert R1 0x11
     |> reg_insert R2 0x101
-    |> reg_insert SCTLR_EL1 0x0.
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
   Definition init_mem : memoryMap :=
     ∅
@@ -132,8 +140,8 @@ End EORMMUOFF.
 
 (* Run EOR X0, X1, X2 at PC.
 
-   This test includes address translation from a virtual address to a physical address.
-   PAs of the page table is set up as follows:
+   This test includes address translation from a virtual address
+   to a physical address. PAs of the page table is set up as follows:
    - Level 0: 0x80000
    - Level 1: 0x81000
    - Level 2: 0x82000
@@ -151,11 +159,6 @@ End EORMMUOFF.
    So the PA of that VA should be 0x500.
 *)
 Module EOR.
-  Definition L0 := 0x80000%Z.
-  Definition L1 := 0x81000%Z.
-  Definition L2 := 0x82000%Z.
-  Definition L3 := 0x82000%Z.
-
   Definition init_reg : registerMap :=
     ∅
     |> reg_insert _PC 0x8000000500
@@ -165,7 +168,8 @@ Module EOR.
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
-    |> reg_insert ID_AA64MMFR1_EL1 0x0.
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
   Definition init_mem : memoryMap :=
     ∅
@@ -175,7 +179,7 @@ Module EOR.
     (* L1[0] -> L2 *)
     |> mem_insert 0x81000 8 0x82003
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x82003
+    |> mem_insert 0x82000 8 0x83003
     (* L3[0] : map VA_PC page -> PA page 0x0000 (executable) *)
     |> mem_insert 0x83000 8 0x3.
 
