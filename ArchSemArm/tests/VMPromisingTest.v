@@ -204,3 +204,57 @@ Module EOR.
     reflexivity.
   Qed.
 End EOR.
+
+(* LDR X0, [X1, X0] at VA 0x8000000500, loading from VA 0x8000001000
+
+  VA 0x8000000500 maps to PA 0x500 (instruction)
+  A 0x8000001000 maps to PA 0x1000 (data) *)
+Module LDR.
+
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x0
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap:=
+    ∅
+    |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
+    |> mem_insert 0x1000 8 0x2a (* data to be read *)
+    (* L0[1] -> L1  (for VA with L0 index = 1) *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
+    |> mem_insert 0x83000 8 0x3
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x1003.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x8000000504 : bv 64)).
+
+  Definition initState :=
+    {|MState.state :=
+        {|MState.memory := init_mem;
+          MState.regs := [# init_reg];
+          MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
+
+  Definition fuel := 2%nat.
+
+  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+
+  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
+End LDR.
