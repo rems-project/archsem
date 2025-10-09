@@ -1391,14 +1391,18 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
   '(val, view) ←
     (if decide (reg ∈ relaxed_regs) then
       if decide (is_Some racc)
-        then othrow "Register unmapped on direct read"
+        then othrow
+              ("Register " ++ pretty reg ++ " unmapped on direct read")%string
               $ TState.read_sreg_direct ts reg
-        else
-          valvs ← othrow "Register unmapped on indirect read"
-                  $ TState.read_sreg_indirect ts reg;
-          mchoosel valvs
+      else
+        valvs ← othrow
+                ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
+                $ TState.read_sreg_indirect ts reg;
+        mchoosel valvs
     else
-      othrow "Register unmapped; cannot read" $ TState.read_reg ts reg);
+      othrow
+        ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+        $ TState.read_reg ts reg);
   mset snd $ IIS.add view;;
   mret val.
 
@@ -1407,7 +1411,7 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
 Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   guard_or
-    "Cannot write to unknown register"
+    ("Cannot write to unknown register " ++ pretty reg)%string
     (¬(is_reg_unknown reg));;
   guard_or
     "Non trivial write reg access types unsupported"
@@ -1422,16 +1426,18 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
         mret 0%nat
       else mret vreg);
   if decide (reg ∈ relaxed_regs) then
-    '(val, view) ← othrow "Register unmapped on direct read" $
-                     TState.read_sreg_direct ts reg;
+    '(val, view) ← othrow
+                  ("Register " ++ pretty reg ++ " unmapped on direct read")%string
+                  $ TState.read_sreg_direct ts reg;
     let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
     let vpost := vreg' ⊔ vpre in
     mset PPState.state $ TState.add_wsreg reg val vpost;;
     mset PPState.state $ TState.update TState.vmsr vpost;;
     mset PPState.iis $ IIS.add vpost
   else
-    nts ← othrow "Register unmapped; cannot write" $
-            TState.set_reg reg (val, vreg') ts;
+    nts ← othrow
+            ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+            $ TState.set_reg reg (val, vreg') ts;
     msetv PPState.state nts.
 
 (** Run a MemRead outcome.
@@ -1472,7 +1478,7 @@ Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initi
     let bit2 := bv_get_bit 2 addr in
     loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
     mem ← mGet;
-    block ← othrow "Modified instruction memory"
+    block ← othrow ("Modified instruction memory" ++ (pretty loc))%string
                             (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   else mthrow "Non-ifetch 4 bytes access".
@@ -1655,12 +1661,6 @@ Definition ets2 (ts : TState.t) : result string bool :=
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   let ets_bits := bv_extract 36 4 val in
   mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
-
-Definition ets3 (ts : TState.t) : result string bool :=
-  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
-  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
-  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
-  mret (bv_extract 36 4 val =? 3%bv).
 
 Definition ets3 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
