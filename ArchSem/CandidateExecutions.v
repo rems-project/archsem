@@ -999,7 +999,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       make {
           (** The preexecution this candidate is based on *)
           pre_exec : pre et nmth;
-          (** Relate a memory read with the write it gets it's value from *)
+          (** Relate a memory read with the write it gets its value from *)
           reads_from : grel EID.t;
           (** Register read from (needed because of potentially relaxed
               register). For non-relaxed register, this must link a register
