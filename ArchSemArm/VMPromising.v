@@ -829,17 +829,29 @@ Module TLB.
 
     Definition init : t := hvec_func (fun lvl => ∅).
 
-    Definition get (ctxt : Ctxt.t) (vatlb : t)
-      : gset (Entry.t (Ctxt.lvl ctxt)) :=
+    Definition get (ctxt : Ctxt.t) (vatlb : t) :
+        gset (Entry.t (Ctxt.lvl ctxt)) :=
       (hget (Ctxt.lvl ctxt) vatlb) !! (Ctxt.nd ctxt) |> default ∅.
 
-    Definition getFE (ctxt : Ctxt.t) (vatlb : t)
-      : gset (FE.t) :=
+    Definition getFE (ctxt : Ctxt.t) (vatlb : t) : gset (FE.t) :=
       get ctxt vatlb
       |> set_map (fun (e : Entry.t (Ctxt.lvl ctxt)) => existT ctxt e).
 
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
+
+    #[global] Instance elements : Elements FE.t t :=
+      λ vatlb,
+        let lists :=
+          map (λ lvl : Level,
+            map_fold
+              (λ ctxt entry_set cur,
+                  set_fold (λ ent,
+                    let fent := existT (existT lvl ctxt) (ent : Entry.t lvl) in
+                    (fent ::.)) cur entry_set)
+              [] (hget lvl vatlb))
+          (enum Level) in
+        List.concat lists.
 
     Instance filter : Filter FE.t t :=
       λ P P_dec,
@@ -854,7 +866,8 @@ Module TLB.
                 in
                 if decide (new_entry_set = ∅) then None else Some new_entry_set)).
 
-    Definition setFEs (ctxt : Ctxt.t) (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
+    Definition setFEs (ctxt : Ctxt.t)
+        (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
 
     #[global] Instance empty : Empty t := VATLB.init.
