@@ -242,6 +242,29 @@ Proof. reflexivity. Qed.
 #[export] Instance ctrans_vec_simpl T : CTransSimpl (vec T).
 Proof. intros x p v. induction v; simp ctrans; congruence. Qed.
 
+(** ** Vector countable
+
+The stdpp instance of [vec_countable] doesn't compute. This is one that does *)
+
+(** Convert a list to a vector a specified length.
+    Returns [None] is list is of the wrong length *)
+Fixpoint list_to_vec_n {A} n l : option (vec A n) :=
+  match n,l with
+  | 0%nat, [] => Some [#]
+  | S n, x :: tl => vcons x <$> list_to_vec_n n tl
+  | _, _ => None
+  end.
+
+Lemma list_to_vec_n_vec_to_list {A} n (v : vec A n): list_to_vec_n n v = Some v.
+Proof.
+  induction v.
+  - reflexivity.
+  - cbn. rewrite IHv. done.
+Qed.
+
+#[export] Remove Hints stdpp.vector.vec_countable : typeclass_instances.
+Instance vec_countable `{Countable A} n : Countable (vec A n) :=
+  (inj_countable vec_to_list (list_to_vec_n n) (list_to_vec_n_vec_to_list n)).
 
 (** * Finite decidable quantifiers ***)
 
