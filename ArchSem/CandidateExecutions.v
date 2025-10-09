@@ -1095,7 +1095,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         coherence-later write)*)
     Definition from_reads cd :=
       (⦗mem_reads cd⦘⨾ overlapping cd ⨾⦗mem_writes cd⦘)
-        ∖ ((coherence cd ∪ ⦗reg_writes cd⦘) ⨾ reads_from cd)⁻¹.
+        ∖ ((coherence cd ∪ ⦗mem_writes cd⦘) ⨾ reads_from cd)⁻¹.
     #[global] Typeclasses Opaque from_reads.
 
 
