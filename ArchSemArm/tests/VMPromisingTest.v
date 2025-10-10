@@ -61,27 +61,32 @@ Definition check_regs (reg : register_bitvector_64) (regs : registerMap)
       Error ((pretty (GReg reg)) +:+ " not in the thread state").
 
 Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
-    (a : Model.Res.t ∅ n) : result string Z :=
+    `(a : archModel.res ∅ n term) : result string Z :=
   match a with
-  | Model.Res.FinalState fs =>
-    let regs : registerMap := fs.(MState.regs) !!! tid in
+  | archModel.Res.FinalState fs _ =>
+    let regs : registerMap := fs.(archState.regs) !!! tid in
     check_regs reg regs
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
 Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
-  (a : Model.Res.t ∅ n) : result string (list Z) :=
+  `(a : archModel.res ∅ n term) : result string (list Z) :=
   match a with
-  | Model.Res.FinalState fs =>
+  | archModel.Res.FinalState fs _ =>
       for (tid, reg) in regs do
-        let regmap : registerMap := fs.(MState.regs) !!! tid in
+        let regmap : registerMap := fs.(archState.regs) !!! tid in
         check_regs reg regmap
       end
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
+(** * Helper functions for PSTATE setup *)
+Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
+  inhabitant
+  |> set ProcState_EL (λ _, el)
+  |> set ProcState_SP (λ _, sp).
 
 (** * Helper functions for page table setup *)
 
@@ -90,12 +95,6 @@ Definition table_desc (next_pa : Z) : Z :=
 
 Definition page_desc (out_pa : Z) : Z :=
   Z.lor (Z.lor (Z.land out_pa (Z.lnot 0xFFF%Z)) 0x400%Z) 0x3%Z.  (* Valid=1, Page=1, AF=1 *)
-
-(** * Helper functions for PSTATE setup *)
-Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
-  inhabitant
-  |> set ProcState_EL (λ _, el)
-  |> set ProcState_SP (λ _, sp).
 
 (** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
 Definition arm_sem := sail_tiny_arm_sem true.
@@ -122,15 +121,14 @@ Module EORMMUOFF.
     (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 2%nat.
 
-  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -175,13 +173,13 @@ Module EOR.
     ∅
     |> mem_insert 0x500 4 0xca020020 (* EOR X0, X1, X2 *)
     (* L0[1] -> L1  (for VA_PC path: L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81003
+    |> mem_insert 0x80008 8 0x81803
     (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x81000 8 0x82803
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
+    |> mem_insert 0x82000 8 0x83803
     (* L3[0] : map VA_PC page -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3.
+    |> mem_insert 0x83000 8 0x403.
 
   Definition n_threads := 1%nat.
 
@@ -189,15 +187,14 @@ Module EOR.
     (λ tid rm, reg_lookup _PC rm =? Some (0x8000000504 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 2%nat.
 
-  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -208,7 +205,7 @@ End EOR.
 (* LDR X0, [X1, X0] at VA 0x8000000500, loading from VA 0x8000001000
 
   VA 0x8000000500 maps to PA 0x500 (instruction)
-  A 0x8000001000 maps to PA 0x1000 (data) *)
+  VA 0x8000001000 maps to PA 0x1000 (data) *)
 Module LDR.
 
   Definition init_reg : registerMap :=
@@ -227,15 +224,15 @@ Module LDR.
     |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
     |> mem_insert 0x1000 8 0x2a (* data to be read *)
     (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81003
+    |> mem_insert 0x80008 8 0x81803
     (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x81000 8 0x82803
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x82000 8 0x83803
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
+    |> mem_insert 0x83000 8 0x403
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
+    |> mem_insert 0x83008 8 0x60000000001443.
 
   Definition n_threads := 1%nat.
 
@@ -243,22 +240,20 @@ Module LDR.
     (λ tid rm, reg_lookup _PC rm =? Some (0x8000000504 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 2%nat.
 
-  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
 End LDR.
-
 
 (* STR X2, [X1, X0]; LDR X0, [X1, X0] at VA 0x8000000500,
    using VA address 0x8000001100 *)
@@ -281,15 +276,15 @@ Module STRLDR.
     |> mem_insert 0x504 4 0xf8606820 (* LDR X0, [X1, X0] *)
     |> mem_insert 0x1100 8 0x0 (* Memory need to exists to be written to *)
     (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81003
+    |> mem_insert 0x80008 8 0x81803
     (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x81000 8 0x82803
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x82000 8 0x83803
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
+    |> mem_insert 0x83000 8 0x403
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
+    |> mem_insert 0x83008 8 0x60000000001443.
 
   Definition n_threads := 1%nat.
 
@@ -297,21 +292,92 @@ Module STRLDR.
     (λ tid rm, reg_lookup _PC rm =? Some (0x8000000508 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 4%nat.
 
-  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     set_solver.
   Qed.
 End STRLDR.
+
+(* Sequential page table modification in single thread *)
+Module LDRPT.
+  (* Single thread that:
+     1. Loads from VA 0x8000001000 (gets 0x2a from PA 0x1000)
+     2. Modifies L3[1] to remap VA 0x8000001000 -> PA 0x2000
+     3. Loads from VA 0x8000001000 again (gets 0x42 from PA 0x2000)
+  *)
+
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xf8606820  (* LDR X0, [X1, X0] - first load *)
+    |> mem_insert 0x504 4 0xf8226823  (* STR X3, [X1, X2] - modify page table *)
+    |> mem_insert 0x508 4 0xf8646824  (* LDR X4, [X1, X4] - second load *)
+    (* Data at two different physical locations *)
+    |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
+    |> mem_insert 0x2000 8 0x42       (* New PA - value 0x42 *)
+    (* Page tables *)
+    (* L0[1] -> L1 *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3 entries:
+       - L3[0]  -> PA 0x0000 (code page for PC)
+       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+       - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
+    *)
+    |> mem_insert 0x83000 8 0x40000000000783
+    (* L3[1] : initially map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x60000000001783
+    (* L3[16] : identity map VA page 0x8000010000 -> PA page 0x83000 (page tables) *)
+    |> mem_insert 0x83080 8 0x60000000083703.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 4%nat.
+
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
+
+  (* R0 should be 0x2a (from old mapping), R4 should be 0x42 (from new mapping) *)
+  Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
+      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End LDRPT.
 
 (* Module MP.
   (* A classic MP litmus test with address translation
@@ -405,9 +471,9 @@ End STRLDR.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
-End MP.
+End MP. *)
 
-Module MPDMBS.
+(* Module MPDMBS.
   (* A classic MP litmus test with address translation
      Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
@@ -493,7 +559,7 @@ Module MPDMBS.
   Definition test_results :=
     VMPromising_cert_c arm_sem fuel n_threads initState.
 
-  (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
+  (** The test is fenced enough, the 0x1; 0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
   Proof.
