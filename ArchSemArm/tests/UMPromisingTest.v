@@ -203,7 +203,9 @@ Module MP.
      Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
 
-     Expected outcome of R2 at Thread 2: 0x2a or 0x0 *)
+     Expected outcome of (R5, R2) at Thread 2:
+      (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0), (0x1, 0x0)
+  *)
 
   Definition init_reg_t1 : registerMap :=
     ∅
@@ -272,7 +274,9 @@ Module MPDMBS.
      Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
 
-     Expected outcome of R2 at Thread 2: only 0x2a *)
+     Expected outcome of (R5, R2) at Thread 2:
+       (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0)
+  *)
 
   Definition init_reg_t1 : registerMap :=
     ∅
