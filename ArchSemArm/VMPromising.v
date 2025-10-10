@@ -1225,7 +1225,7 @@ Module TLB.
               ti ← invalidation_time mem tid trans_time ctxt te;
               mret $ Some ((vec_to_list te) ++ [memval], ti)
           else
-            mthrow "The PTE entry is missing"
+            mthrow "The PTE is missing"
         end;
       mret $ omap id invalid_ptes
     else
@@ -1242,7 +1242,7 @@ Module TLB.
             if decide (is_valid memval) then mret None
             else
               mret $ Some ([memval], None)
-          else mthrow "The root PTE entry is missing"
+          else mthrow "The root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
 
@@ -1465,7 +1465,7 @@ Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initi
     let bit2 := bv_get_bit 2 addr in
     loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
     mem ← mGet;
-    block ← othrow ("Modified instruction memory" ++ (pretty loc))%string
+    block ← othrow ("Modified instruction memory at " ++ (pretty loc))%string
                             (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
   else mthrow "Non-ifetch 4 bytes access".
@@ -1667,13 +1667,13 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let vpre_t := ts.(TState.vcse) ⊔
                  (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
-  trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
+      trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
       tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
       valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
       invalid_ptes ←
@@ -1715,6 +1715,7 @@ Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   iis ← mget snd;
+  let v : bv 56 := trans_end.(AddressDescriptor_paddress).(FullAddress_address) in
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
     let fault := trans_end.(AddressDescriptor_fault) in
