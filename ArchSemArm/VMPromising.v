@@ -630,8 +630,8 @@ Module TState.
 
   (** Updates the coherence view of a location by taking the max of the new
       view and of the existing value *)
-  Definition update_coh (loc : Loc.t) (v : view) : t → t :=
-    set coh (alter (max v) loc).
+  Definition update_coh (loc : Loc.t) (v : view) (ts : t) : t :=
+    set_coh loc (max v (ts.(coh) !!! loc)) ts.
 
   (** Updates the forwarding database for a location. *)
   Definition set_fwdb (loc : Loc.t) (fi : FwdItem.t) : t → t :=
@@ -1340,8 +1340,8 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts !!! loc) in
   mem ← mget snd;
-  reads ← othrow "Reading from unmapped memory" $
-            Memory.read loc vread init mem;
+  reads ← othrow ("Reading from unmapped memory " ++ (pretty loc))%string
+            $ Memory.read loc vread init mem;
   '(res, time) ← mchoosel reads;
   let read_view :=
     if (ts.(TState.fwdb) !! loc) is Some fwd then
@@ -1497,13 +1497,12 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
     if invalidation_time is Some invalidation_time then
       (time <? invalidation_time)%nat
     else true in
-  guard_discard (check_vpost);;
+  guard_discard check_vpost;;
   guard_discard (vpre ⊔ (TState.coh ts !!! loc) < time)%nat;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;
-  (* if then else somehow not working *)
   match new_promise with
   | true => mret (time, Some vpre)
   | false => mret (time, None)

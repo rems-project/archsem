@@ -258,3 +258,246 @@ Module LDR.
     reflexivity.
   Qed.
 End LDR.
+
+
+(* STR X2, [X1, X0]; LDR X0, [X1, X0] at VA 0x8000000500,
+   using VA address 0x8000001100 *)
+Module STRLDR.
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x100
+    |> reg_insert R2 0x2a
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap:=
+    ∅
+    |> mem_insert 0x500 4 0xf8206822 (* STR X2, [X1, X0] *)
+    |> mem_insert 0x504 4 0xf8606820 (* LDR X0, [X1, X0] *)
+    |> mem_insert 0x1100 8 0x0 (* Memory need to exists to be written to *)
+    (* L0[1] -> L1  (for VA with L0 index = 1) *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
+    |> mem_insert 0x83000 8 0x3
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x1003.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x8000000508 : bv 64)).
+
+  Definition initState :=
+    {|MState.state :=
+        {|MState.memory := init_mem;
+          MState.regs := [# init_reg];
+          MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
+
+  Definition fuel := 4%nat.
+
+  Definition test_results := VMPromising_cert_c arm_sem fuel n_threads initState.
+
+  Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    set_solver.
+  Qed.
+End STRLDR.
+
+(* Module MP.
+  (* A classic MP litmus test with address translation
+     Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
+     Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
+
+     VAs map to PAs:
+     - Instructions: 0x8000000500 -> 0x500, 0x8000000600 -> 0x600
+     - Data: 0x8000001100 -> 0x1100, 0x8000001200 -> 0x1200
+
+     Expected outcome of (R5, R2) at Thread 2:
+      (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0), (0x1, 0x0)
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x8000001000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x2a
+    |> reg_insert R5 0x1
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000600
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x8000001000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x0
+    |> reg_insert R5 0x0
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ PA 0x500 *)
+    |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
+    |> mem_insert 0x504 4 0xf8236885  (* STR X5, [X4, X3] *)
+    (* Thread 2 @ PA 0x600 *)
+    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
+    |> mem_insert 0x604 4 0xf8606822  (* LDR X2, [X1, X0] *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0
+    (* L0[1] -> L1  (for VA with L0 index = 1) *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
+    |> mem_insert 0x83000 8 0x3
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x1003.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at :=
+    [#Some (0x8000000508 : bv 64); Some (0x8000000608 : bv 64)].
+
+  (* Each thread's PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {| MState.state :=
+        {| MState.memory := init_mem;
+            MState.regs := [# init_reg_t1; init_reg_t2];
+            MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
+
+  Definition fuel := 6%nat.
+
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads initState.
+
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End MP.
+
+Module MPDMBS.
+  (* A classic MP litmus test with address translation
+     Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
+     Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
+
+     VAs map to PAs:
+     - Instructions: 0x8000000500 -> 0x500, 0x8000000600 -> 0x600
+     - Data: 0x8000001100 -> 0x1100, 0x8000001200 -> 0x1200
+
+     Expected outcome of (R5, R2) at Thread 2:
+      (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0) *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x8000001000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x2a
+    |> reg_insert R5 0x1
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000600
+    |> reg_insert R0 0x8000001000
+    |> reg_insert R1 0x100
+    |> reg_insert R3 0x8000001000
+    |> reg_insert R4 0x200
+    |> reg_insert R2 0x0
+    |> reg_insert R5 0x0
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ PA 0x500 *)
+    |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
+    |> mem_insert 0x504 4 0xd5033fbf  (* DMB SY *)
+    |> mem_insert 0x508 4 0xf8236885  (* STR X5, [X4, X3] *)
+    (* Thread 2 @ PA 0x600 *)
+    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
+    |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
+    |> mem_insert 0x608 4 0xf8606822  (* LDR X2, [X1, X0] *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0
+    (* L0[1] -> L1  (for VA with L0 index = 1) *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
+    |> mem_insert 0x83000 8 0x3
+    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x1003.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x800000050c : bv 64); Some (0x800000060c : bv 64)].
+
+  (* Each thread's PC must reach the end of its three instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {| MState.state :=
+        {| MState.memory := init_mem;
+            MState.regs := [# init_reg_t1; init_reg_t2];
+            MState.address_space := PAS_NonSecure |};
+      MState.termCond := termCond |}.
+
+  Definition fuel := 8%nat.
+
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads initState.
+
+  (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End MPDMBS. *)
