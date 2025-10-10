@@ -1627,8 +1627,12 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
 
-  is_ets ← mlift (ets2 ts);
-  let vpre_t := ts.(TState.vcse) ⊔ (view_if is_ets ts.(TState.vdsb)) in
+  let is_ifetch :=
+    trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
+    AccessType_IFETCH in
+  is_ets2 ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔
+                 (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
   trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
   (* lookup (successful results or faults) *)
@@ -1640,7 +1644,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
       valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
       invalid_ptes ←
-        if decide (is_ets ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+        if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
           mret []
         else
           mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
