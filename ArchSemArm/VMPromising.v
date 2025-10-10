@@ -421,11 +421,11 @@ Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
   | GReg (R_bitvector_64 _), v => Some v
-  | GReg register_ProcState, v => None.
+  | GReg _, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
   | GReg (R_bitvector_64 _), v => Some v
-  | GReg register_ProcState, v => None.
+  | GReg _, v => None.
 
 (** * The thread state *)
 
@@ -1639,7 +1639,11 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
       valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
-      invalid_ptes ← mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+      invalid_ptes ←
+        if decide (is_ets ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+          mret []
+        else
+          mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
       (* update IIS with either a valid translation result or a fault *)
       let valid_trs :=
         map (λ '(path, ti),
