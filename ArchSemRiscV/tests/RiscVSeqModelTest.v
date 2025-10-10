@@ -52,35 +52,36 @@ Open Scope stdpp.
 Open Scope bv.
 
 (** Extract x1 in a Z on success to have something printable by Coq *)
-Definition x1_extract (a : Model.Res.t ∅ 1) : result string Z :=
+Definition x1_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
   match a with
-  | Model.Res.FinalState fs =>
-      let regs : registerMap := fs.(MState.regs) !!! 0%fin in
+  | archModel.Res.FinalState fs _ =>
+      let regs : registerMap := fs.(archState.regs) !!! 0%fin in
       if reg_lookup x1 regs is Some x
       then Ok (bv_unsigned x)
       else Error "x1 not in state"
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
-Definition a0_extract (a : Model.Res.t ∅ 1) : result string Z :=
+Definition a0_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
   match a with
-  | Model.Res.FinalState fs =>
-      let regs : registerMap := fs.(MState.regs) !!! 0%fin in
+  | archModel.Res.FinalState fs _ =>
+      let regs : registerMap := fs.(archState.regs) !!! 0%fin in
       if reg_lookup x10 regs is Some x
       then Ok (bv_unsigned x)
       else Error "x10 not in state"
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
-Definition regs_extract (a : Model.Res.t ∅ 1) : result string (list (sigT reg_type)) :=
+Definition regs_extract `(a : archModel.Res.t ∅ 1 term) :
+    result string (list (sigT reg_type)) :=
   match a with
-  | Model.Res.FinalState fs =>
-      let regs : registerMap := fs.(MState.regs) !!! 0%fin in
+  | archModel.Res.FinalState fs _ =>
+      let regs : registerMap := fs.(archState.regs) !!! 0%fin in
       Ok (dmap_to_list regs)
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
 (** Common configuration from Isla config files *)
@@ -144,12 +145,11 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup PC rm =? Some (0x504 : bv 64)).
 
 Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := tt |};
-    MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 riscv_sem 1%nat initState.
+  {|archState.memory := init_mem;
+    archState.regs := [# init_reg];
+    archState.address_space := () |}.
+Definition test_results :=
+  sequential_modelc None 2 riscv_sem 1%nat termCond initState.
 
 Goal x1_extract <$> test_results = Listset [Ok 0x110%Z].
   vm_compute (_ <$> _).
@@ -173,12 +173,11 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup PC rm =? Some (0x502 : bv 64)).
 
 Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := () |};
-    MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 riscv_sem 1%nat initState.
+  {|archState.memory := init_mem;
+    archState.regs := [# init_reg];
+    archState.address_space := () |}.
+Definition test_results :=
+  sequential_modelc None 2 riscv_sem 1%nat termCond initState.
 
 Goal x1_extract <$> test_results = Listset [Ok 0x2a%Z].
   vm_compute (_ <$> _).
@@ -203,12 +202,11 @@ Module STRLDR. (* sd x2, 0x100(x1); ld x1, 0x100(x1) at 0x500, using address 0x1
     (λ tid rm, reg_lookup PC rm =? Some (0x508 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := () |};
-      MState.termCond := termCond |}.
-  Definition test_results := sequential_modelc None 2 riscv_sem 1%nat initState.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := () |}.
+  Definition test_results :=
+    sequential_modelc None 2 riscv_sem 1%nat termCond initState.
 
   Goal x1_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -238,12 +236,12 @@ Module Factorial. (* https://godbolt.org/z/fzzajP9nq *)
     (λ tid rm, reg_lookup PC rm =? Some (0x1234 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := () |};
-      MState.termCond := termCond |}.
-  Definition test_results := sequential_modelc None 1000 riscv_sem 1%nat initState.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := () |}.
+  Definition test_results :=
+    sequential_modelc None 100 riscv_sem 1%nat termCond initState.
+
 
   Goal a0_extract <$> test_results = Listset [Ok 120%Z].
     vm_compute (_ <$> _).

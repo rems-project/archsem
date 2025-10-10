@@ -186,7 +186,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
     Record pre {et : exec_type} {nmth : nat} :=
       make_pre {
           (** Initial state *)
-          init : MState.t nmth;
+          init : archState nmth;
           (** Each thread is a list of instruction who each have a trace,
               we force the return type to be unit, but it just means we
               forget the actual value *)
@@ -543,7 +543,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
                   dmap_insert reg val map
                 else map
               ) map itrc.1
-          ) (pe.(init).(MState.regs) !!! tid) (pe.(events) !!! tid).
+          ) (pe.(init).(archState.regs) !!! tid) (pe.(events) !!! tid).
 
       (** Get all the final register map from a pre-execution *)
       Definition final_reg_map pe : vec registerMap nmth :=
@@ -886,7 +886,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
 
       Definition is_valid_init_reg_read pe (eid : EID.t) : iEvent → Prop :=
         is_reg_readP (λ reg _ rv,
-            match pe.(init).(MState.regs) !! eid.(EID.tid) with
+            match pe.(init).(archState.regs) !! eid.(EID.tid) with
             | Some regmap => dmap_lookup reg regmap = Some rv
             | None => False
             end).
@@ -899,7 +899,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           ∃ reg reg_acc rv,
             (ev = RegRead reg reg_acc &→ rv) ∧
               ∃ H : eid.(EID.tid) < nmth,
-                dmap_lookup reg (pe.(init).(MState.regs) !!! nat_to_fin H) =
+                dmap_lookup reg (pe.(init).(archState.regs) !!! nat_to_fin H) =
                   Some rv.
       Proof.
         unfold is_valid_init_reg_read.
@@ -931,7 +931,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         addr ← get_addr read;
         val ← get_mem_value read;
         guard' (
-            mem_lookup addr (bvn_n val / 8) pe.(init).(MState.memory)
+            mem_lookup addr (bvn_n val / 8) pe.(init).(archState.memory)
               |$> bv_to_bvn = Some val).
       #[export] Instance is_valid_init_mem_read_dec pe eid :
         Decision (is_valid_init_mem_read pe eid).
@@ -1068,17 +1068,12 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
 
     Definition final_mem_map (cd : t) : memoryMap :=
       let written_values := final_write_per_addr cd |$> snd in
-      union_with (λ old new, Some new) cd.(init).(MState.memory) written_values.
+      union_with (λ old new, Some new) cd.(init).(archState.memory) written_values.
 
-    Definition cd_to_MState (cd : t) : MState.t nmth :=
-      {|MState.regs := final_reg_map cd;
-        MState.memory := final_mem_map cd;
-        MState.address_space := cd.(init).(MState.address_space)|}.
-
-    Definition cd_to_MState_final (cd : t) (term : terminationCondition nmth) :
-        option (MState.final nmth) :=
-      MState.finalize (MState.MakeI (cd_to_MState cd) term).
-
+    Definition cd_to_archState (cd : t) : archState nmth :=
+      {|archState.regs := final_reg_map cd;
+        archState.memory := final_mem_map cd;
+        archState.address_space := cd.(init).(archState.address_space)|}.
 
     (** ** Memory based relations *)
 
@@ -1245,7 +1240,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
     Definition addr_space_wf cd :=
       ∀ '(eid, ev) ∈ event_list cd,
         if get_addr_space ev is Some a
-        then a = cd.(init).(MState.address_space)
+        then a = cd.(init).(archState.address_space)
         else True.
     Instance addr_space_wf_dec {cd : t} : Decision (addr_space_wf cd).
     Proof. unfold addr_space_wf. tc_solve. Defined.
@@ -1260,14 +1255,14 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           ∀ instr ∈ cd.(events) !!! tid,
           ∀ ev ∈ fst instr,
           if get_reg ev is Some reg
-          then reg ∈ dom (cd.(init).(MState.regs) !!! tid)
+          then reg ∈ dom (cd.(init).(archState.regs) !!! tid)
           else True;
         (** All memory operations are in the initial footprint *)
         mem_footprint_valid:
         ∀ '(eid, ev) ∈ event_list cd,
           if get_addr ev is Some addr then
             if get_size ev is Some n then
-              ∀ addr' ∈ addr_range addr n, addr' ∈ dom cd.(init).(MState.memory)
+              ∀ addr' ∈ addr_range addr n, addr' ∈ dom cd.(init).(archState.memory)
             else False
           else True
       }.
@@ -1356,20 +1351,23 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
 
     Module Res.
       Section Res.
-        Context {et : exec_type}.
-        Context {unspec : Type}.
-        Notation axres := (result string (behavior unspec)).
-        Notation mres := (Model.Res.t unspec).
-        Notation model := (Model.nc unspec).
-        Notation cand := (cand et).
+      Context {et : exec_type}.
+      Context {unspec : Type}.
+      Notation axres := (result string (behavior unspec)).
+      Notation archres := (archModel.res unspec).
+      Notation cand := (cand et).
 
-      Definition to_ModelResult (axr : axres) {n} (cd : cand n)
-        (term : terminationCondition n) : option (mres n) :=
+      Definition to_archModel (axr : axres) {n} (cd : cand n)
+        (term : terminationCondition n) : option (archres n term) :=
         match axr with
-        | Ok Allowed => cd_to_MState_final cd term |$> Model.Res.FinalState
+        | Ok Allowed =>
+            let finalState := cd_to_archState cd in
+            if decide (archState.is_terminated term finalState) is left p then
+              Some (archModel.Res.FinalState finalState p)
+            else None
         | Ok Rejected => None
-        | Ok (Unspecified u) => Some (Model.Res.Unspecified u)
-        | Error msg => Some (Model.Res.Error msg)
+        | Ok (Unspecified u) => Some (archModel.Res.Unspecified u)
+        | Error msg => Some (archModel.Res.Error msg)
         end.
 
       (** When a model gives a more precise definition for the error of another
@@ -1420,10 +1418,10 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Context {et : exec_type}.
       Context {unspec : Type}.
       Notation axres := (result string (behavior unspec)).
-      Notation mres := (Model.Res.t unspec).
-      Notation model := (Model.nc unspec).
+      Notation archres := (archModel.res unspec).
+      Notation model := (archModel.nc unspec).
       Notation t := (t et unspec).
-        Notation cand := (cand et).
+      Notation cand := (cand et).
 
       (** Lifting Res definition to Ax *)
       Definition wider (ax ax' : t) := ∀ n cd, Res.wider (ax n cd) (ax' n cd).
@@ -1454,32 +1452,29 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         unfold equiv. intros. apply Res.equiv_is_ok. naive_solver.
       Qed.
 
-      Definition to_ModelResult (ax : t) {n} (cd : cand n)
-        (term : terminationCondition n) : option (mres n) :=
-        Res.to_ModelResult (ax n cd) cd term.
-
-      (** Creates a non-computational model from an instruction semantic and an
-          axiomatic model *)
-      Definition to_Modelnc (isem : iMon ()) (ax : t) : model :=
-        λ n initSt,
-          {[ mr |
+      (** Creates a non-computational architecture model from an instruction
+          semantic and an axiomatic model *)
+      Definition to_archModel_nc (isem : iMon ()) (ax : t) : model :=
+        λ n term initSt,
+          {[ model_result : archres n term |
              ∃ cd : cand n,
                cd.(init) = initSt
                ∧ wf cd
                ∧ ISA_match cd isem
-               ∧ to_ModelResult ax cd initSt.(MState.termCond) = Some mr
+               ∧ Res.to_archModel (ax n cd) cd term = Some model_result
           ]}.
-      #[global] Typeclasses Transparent to_Modelnc.
+      #[global] Typeclasses Transparent to_archModel_nc.
 
       Lemma wider_Model (isem : iMon ()) (ax ax' : t) :
-        wider ax ax' → Model.wider (to_Modelnc isem ax) (to_Modelnc isem ax').
+        wider ax ax' →
+        archModel.wider (to_archModel_nc isem ax) (to_archModel_nc isem ax').
       Proof using.
-        intros WD nmth initSt.
+        intros WD nmth term initSt.
         split.
         all: intros NE.
         all: set_unfold.
         all: repeat split_and.
-        all: intros ?.
+        all: (intros [] ||intros ?).
         all: try split.
         all: intros [cd ?].
         all: specialize (WD nmth cd); unfold Res.wider.
@@ -1487,39 +1482,42 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         all: destruct (ax' nmth cd) as [[]|] eqn:Heqn'.
         all: try (eapply NE; clear NE).
         all: (exists cd; intuition).
-        all: unfold to_ModelResult, Res.to_ModelResult in *.
-        all: rewrite Heqn in *.
-        all: rewrite Heqn' in *.
-        all: hauto l:on.
+        all: try rewrite Heqn' in *.
+        all: try rewrite Heqn in *.
+        all: cbn in *.
+        all: try hauto l:on.
         Unshelve.
         all: exact "".
       Qed.
 
       Lemma weaker_Model (isem : iMon ()) (ax ax' : t) :
-        weaker ax ax' → Model.weaker (to_Modelnc isem ax) (to_Modelnc isem ax').
+        weaker ax ax' →
+        archModel.weaker (to_archModel_nc isem ax) (to_archModel_nc isem ax').
       Proof using.
-        intros WD nmth initSt.
+        intros WD nmth term initSt.
         intros NE.
         repeat split_and.
         all: set_unfold.
-        all: intros ? [cd ?].
+        all: (intros [] || intros ?).
+        all: intros [cd ?].
         all: specialize (WD nmth cd); unfold Res.weaker.
         all: destruct (ax nmth cd) as [[]|] eqn:Heqn.
         all: destruct (ax' nmth cd) as [[]|] eqn:Heqn'.
         all: try (eapply NE; clear NE).
         all: (exists cd; intuition).
-        all: unfold to_ModelResult, Res.to_ModelResult in *.
-        all: rewrite Heqn in *.
-        all: rewrite Heqn' in *.
+        all: try rewrite Heqn in *.
+        all: try rewrite Heqn' in *.
+        all: cbn in *.
         all: hauto l:on.
         Unshelve.
         all: exact "".
       Qed.
 
       Lemma equiv_Model (isem : iMon ()) (ax ax' : t) :
-        equiv ax ax' → Model.equiv (to_Modelnc isem ax) (to_Modelnc isem ax').
+        equiv ax ax' →
+        archModel.equiv (to_archModel_nc isem ax) (to_archModel_nc isem ax').
       Proof using.
-        rewrite Model.equiv_weaker.
+        rewrite archModel.equiv_weaker.
         rewrite equiv_weaker.
         intros [].
         split; by apply weaker_Model.

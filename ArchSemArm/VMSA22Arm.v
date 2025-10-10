@@ -680,13 +680,13 @@ End VMSAArm.
 
 Require Import ASCommon.CResult.
 
-(** The SC Arm axiomatic model *)
+(** The VMSA22 Arm axiomatic model *)
 Definition axmodel regs_whitelist : Ax.t NMS ∅ :=
   λ _ cd, if decide (consistent cd) then
             if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
             else Error ""
           else Ok Ax.Rejected.
 
-(** The SC Arm architecture model *)
-Definition archmodel regs_whitelist isem : Model.nc ∅ :=
-  Ax.to_Modelnc isem (axmodel regs_whitelist).
+(** The VMSA22 Arm architecture model *)
+Definition archmodel regs_whitelist isem : archModel.nc ∅ :=
+  Ax.to_archModel_nc isem (axmodel regs_whitelist).

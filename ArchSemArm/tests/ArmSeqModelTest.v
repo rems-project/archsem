@@ -52,15 +52,15 @@ Open Scope stdpp.
 Open Scope bv.
 
 (** Extract R0 in a Z on success to have something printable by Coq *)
-Definition r0_extract (a : Model.Res.t ∅ 1) : result string Z :=
+Definition r0_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
   match a with
-  | Model.Res.FinalState fs =>
-      let regs : registerMap := fs.(MState.regs) !!! 0%fin in
+  | archModel.Res.FinalState fs _ =>
+      let regs : registerMap := fs.(archState.regs) !!! 0%fin in
       if reg_lookup R0 regs is Some r0
       then Ok (bv_unsigned r0)
       else Error "R0 not in state"
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
 (** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
@@ -85,12 +85,11 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
 Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := PAS_NonSecure |};
-    MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
+  {|archState.memory := init_mem;
+    archState.regs := [# init_reg];
+    archState.address_space := PAS_NonSecure |}.
+Definition test_results :=
+  sequential_modelc None 2 arm_sem 1%nat termCond initState.
 
 
 Goal r0_extract <$> test_results = Listset [Ok 0x110%Z].
@@ -115,12 +114,11 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
 Definition initState :=
-  {|MState.state :=
-      {|MState.memory := init_mem;
-        MState.regs := [# init_reg];
-        MState.address_space := PAS_NonSecure |};
-    MState.termCond := termCond |}.
-Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
+  {|archState.memory := init_mem;
+    archState.regs := [# init_reg];
+    archState.address_space := PAS_NonSecure |}.
+Definition test_results :=
+  sequential_modelc None 2 arm_sem 1%nat termCond initState.
 
 Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
   vm_compute (_ <$> _).
@@ -146,12 +144,11 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
-  Definition test_results := sequential_modelc None 2 arm_sem 1%nat initState.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+  Definition test_results :=
+    sequential_modelc None 2 arm_sem 1%nat termCond initState.
 
   Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).

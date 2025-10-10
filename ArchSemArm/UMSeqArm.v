@@ -202,5 +202,5 @@ Definition axmodel regs_whitelist : Ax.t NMS ∅ :=
           else Ok Ax.Rejected.
 
 (** The SC Arm architecture model *)
-Definition archmodel regs_whitelist isem : Model.nc ∅ :=
-  Ax.to_Modelnc isem (axmodel regs_whitelist).
+Definition archmodel regs_whitelist isem : archModel.nc ∅ :=
+  Ax.to_archModel_nc isem (axmodel regs_whitelist).

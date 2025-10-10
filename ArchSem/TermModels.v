@@ -57,28 +57,26 @@ Require Import Program.
 Require Import Interface.
 
 
-(** This module specify general definitions of hardware models over finite
-    executions. Models only define behavior up to a specified termination
-    condition at which all relaxed behavior disappear as if it was an infinitely
-    strong barrier.
+(** This module specify general definitions of hardware architecture models for
+    finite executions. Models only define behaviours up to a specified
+    termination condition at which all relaxed behavior disappear as if it was
+    an infinitely strong barrier.
 
-    The definitions in this module are highly experimental and will change
-    heavily depending on various requirements that are not yet known.
- *)
+    The definitions here will need to change to accommodate infinite execution
+    or any externally observable behaviour (I/O). *)
 Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Import IWA.Arch.
   Import IWA.Interface.
 
-  (** * Machine States
+  (** * Architectural States
 
-      This section defines types to represent architecturally defined state
-      called "machine state" (Not a great name, to be changed).
-      Those states allow express initial and final states uniformly across all
-      kinds of models *)
+      This section defines types to represent architecturally defined state.
+      Those states allow to express initial and final states uniformly across
+      all kinds of models *)
 
   (** ** Memory map *)
 
-  (** Assuming bytes of 8 bits, not caring about weird architectures for now *)
+  (** Assuming bytes of 8 bits, not caring about weird architectures *)
   Definition memoryMap := gmap address (bv 8).
   #[global] Typeclasses Transparent memoryMap.
 
@@ -133,108 +131,66 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
   (** A termination condition that define when each thread should stop.
 
-      For now it only needs a register maps as I expect it will most often just
-      be `PC = ...` or `PC >= ...` *)
+      We expect this will be restricted to only being about the PC (RIP on x86)
+      soon (maybe also the privilege level) *)
   Definition terminationCondition (n : nat) := fin n → registerMap → bool.
 
-  (** ** Machine state *)
-  (** This module define a concept of simple machine state without any
-      micro-architectural details.
+  (** ** Architectural state
 
-      TODO decide among other possible name:
-      - SeqState, for sequential state.
-      - SimpState, for simple state.
-      - SState for one of the above but shorter. *)
-  Module MState. (* namespace *)
+  This module define a concept of an architecturally defined state. This is a
+  state that is fully defined architecturally and independent of any
+  micro-architectural details (and is therefore independent of concrete
+  hardware).
 
-    Section MS.
-    Context {n : nat}. (* thread number *)
+  Such a state is an abstraction of a micro architectural state where all the
+  caches are fully coherent, including things like TLB and icaches
 
-    (** A simple machine state for comparing models and defining sequential
-        semantics *)
-    Record t :=
+  Those state should be interpretable by any concurrency models.
+
+  Currently this does not support CHERI tags, even if the interface supports
+  them *)
+  Module archState. (* namespace *)
+
+    (** An architecture state, [archState n] outside this module.
+          [n] is the number of hardware threads*)
+    Record t {n : nat} :=
       Make {
           memory : memoryMap;
           address_space : addr_space;
           regs: vec registerMap n;
         }.
-
-    #[export] Instance eta : Settable t :=
-      settable! Make <memory; address_space; regs>.
-
-    (** A initial state for a machine model test. This means that the
-        machine must stop at the required termination condition *)
-    Record init :=
-      MakeI {
-          state :> t;
-          termCond : terminationCondition n
-        }.
-
-    #[export] Instance eta_init : Settable init :=
-      settable! MakeI <state;termCond>.
-
-
-    Definition is_terminated (s : init) :=
-      ∀ tid, s.(termCond) tid (s.(regs) !!! tid).
-    Typeclasses Transparent is_terminated.
-
-    (** A final state for a machine model test. This means that the machine has
-        stopped at the required termination condition *)
-    Record final :=
-      MakeF {
-          istate :> init;
-          terminated' : bool_decide (is_terminated istate)
-        }.
-
-    #[export] Instance eta_final : Settable final :=
-      settable! MakeF <istate;terminated'>.
-
-
-    Definition terminated (f : final) : is_terminated f :=
-      bool_decide_unpack (terminated' f).
-
-    Definition finalize (s : init) : option final :=
-      match decide (is_terminated s) with
-      | left yes => Some $ MakeF s $ bool_decide_pack yes
-      | right _ => None
-      end.
-
-
-    Lemma finalize_same (s : init) (f : final) : finalize s = Some f → s = f.
-    Proof. unfold finalize. hauto lq:on. Qed.
-
-    Lemma finalize_final (s : final) : finalize s = Some s.
-    Proof.
-      unfold finalize. destruct s.
-      case_decide.
-      - repeat f_equal;apply proof_irrel.
-      - hauto lqb:on.
-    Qed.
-    End MS.
     Arguments t : clear implicits.
-    Arguments init : clear implicits.
-    Arguments final : clear implicits.
 
-  End MState.
-  Export (hints, coercions) MState.
+    Definition is_terminated `(termCond : terminationCondition n) (s : t n) :=
+      ∀ tid, termCond tid (s.(regs) !!! tid).
 
+    #[export] Instance is_terminated_dec n term s :
+      Decision (@is_terminated n term s).
+    Proof. unfold_decide. Defined.
 
-  (** * General terminating model
+  End archState.
+  Export (hints) archState.
+  Notation archState := archState.t.
+
+  (** * General terminating architecture model
 
       This section defines general terminating models which are CPU architecture
       models that are defined by the set of final state reachable from a given
       initial state. Given that there is no fundamental notion of termination,
-      we use a provided [terminationCondition] that gives the program point at
-      which one must examine final state as if this program point was a strong
+      they use a provided [terminationCondition] that gives the program point at
+      which one must examine final state as if that program point was a strong
       synchronization point. *)
-  Module Model. (* namespace *)
+  Module archModel. (* namespace *)
+
+    (** ** Model results *)
     Module Res. (* namespace *)
-      Section MR.
+      Section AMR.
       Context {unspecified : Type} {n : nat}.
-      (* TODO consider replacing this type with:
-         result string (MState.final n + unspecified) *)
+      Context {termCond : terminationCondition n}.
+
+      (** A model result is the output of a model on a given initial state. *)
       Inductive t :=
-      | FinalState (finSt : MState.final n)
+      | FinalState (s : archState n) (t : archState.is_terminated termCond s)
       (** Unspecified is any kind of behavior that is not fully specified but is
         not a model error. For example a BBM failure. *)
       | Unspecified (unspec : unspecified)
@@ -249,21 +205,23 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         - The test has an infinite execution (not the fault of the model) *)
       | Error (msg : string).
 
-      Definition from_result (res : result string (MState.final n)) : t :=
+      Definition from_result
+        (res : result string {s & archState.is_terminated termCond s}) : t :=
         match res with
-        | Ok fs => FinalState fs
+        | Ok fs => FinalState fs.T1 fs.T2
         | CResult.Error msg => Error msg
         end.
 
       (** ** Sets of model results *)
 
       (** We are only interested in monadsets, so sets that support fmap, bind,
-      ... *)
+          mret, ... *)
       Context `{MonadSet E}.
+
 
       Definition finalStates (ts : E t) :=
         mset_omap
-          (λ x, match x with | FinalState fs => Some fs | _ => None end) ts.
+          (λ x, match x with | FinalState s t => Some (existT s t) | _ => None end) ts.
 
       Definition unspecifieds (ts : E t) :=
         mset_omap
@@ -283,7 +241,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         SetUnfoldElemOf us (unspecifieds ts) P.
       Proof using. tcclean. unfold unspecifieds. hauto l:on simp+:set_unfold simp+:eexists. Qed.
       #[global] Instance set_unfold_elem_of_finalStates ts fs P:
-        SetUnfoldElemOf (FinalState fs) ts P →
+        SetUnfoldElemOf (FinalState fs.T1 fs.T2) ts P →
         SetUnfoldElemOf fs (finalStates ts) P.
       Proof using. tcclean. unfold finalStates. hauto l:on simp+:set_unfold simp+:eexists. Qed.
       #[global] Instance set_unfold_elem_of_errors ts msg P:
@@ -292,10 +250,6 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       #[global] Typeclasses Opaque finalStates.
       #[global] Typeclasses Opaque unspecifieds.
       #[global] Typeclasses Opaque errors.
-
-
-      (* The definition of weaker and wider are intended as an experimental
-         guide, not as final definitions *)
 
       (** A model is weaker if it allows more behaviors. This assumes all
           unspecified behaviors to be independent of regular final states, later
@@ -324,11 +278,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       Lemma wider_weaker (ts ts' : E t) : wider ts ts' → weaker ts' ts.
       Proof using. firstorder. Qed.
 
-      (** Both kind of equivalence are the same when there is no error.
-          The strong equivalence is too restrictive
-       *)
       Definition equiv (ts ts' : E t) := weaker ts ts' ∧ weaker ts' ts.
-
 
       Lemma equiv_wider (ts ts' : E t) :
         equiv ts ts' ↔ wider ts ts' ∧ (no_error ts' → no_error ts).
@@ -341,32 +291,37 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         equiv ts ts' → (no_error ts ↔ no_error ts').
       Proof using. firstorder. Qed.
 
-
-      End MR.
+      End AMR.
       Arguments t : clear implicits.
 
-      Definition from_exec {St n} (e : Exec.t St string (MState.final n)) (st : St) :
-          listset (t ∅ n) :=
+      Definition from_exec {St n term}
+          (e : Exec.t St string {s & archState.is_terminated term s}) (st : St) :
+          listset (t ∅ n term) :=
         e st |> Exec.to_stateful_result_list |$> snd |$> from_result |> Listset.
 
     End Res.
+    Notation res := Res.t.
 
     (** ** Models *)
     Section Model.
       Context `{MonadSet E}.
       Context {unspec : Type}.
 
+      (** Definition of an architectural model. This is parametric on the set
+          type [E] of results, so that this definition supports both executable
+          and non-executable models *)
       Definition t : Type :=
-        ∀ n : nat, MState.init n → E (Res.t unspec n).
+        ∀ (n : nat) (term : terminationCondition n),
+        archState n → E (res unspec n term).
 
       Definition weaker (m m' : t) : Prop
-        := ∀ n initSt, Res.weaker (m n initSt) (m' n initSt).
+        := ∀ n term initSt, Res.weaker (m n term initSt) (m' n term initSt).
 
       Definition wider (m m' : t)
-        := ∀ n initSt, Res.wider (m n initSt) (m' n initSt).
+        := ∀ n term initSt, Res.wider (m n term initSt) (m' n term initSt).
 
       Instance equiv : Equiv t :=
-        λ m m', ∀ n initSt, Res.equiv (m n initSt) (m' n initSt).
+        λ m m', ∀ n term initSt, Res.equiv (m n term initSt) (m' n term initSt).
 
       Lemma wider_weaker (m m' : t) : wider m m' → weaker m' m.
       Proof using.
@@ -380,7 +335,8 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       Lemma equiv_wider (m m' : t) :
         equiv m m' ↔
           wider m m' ∧
-          (∀ n initSt, Res.no_error (m' n initSt) → Res.no_error (m n initSt)).
+          (∀ n term initSt,
+             Res.no_error (m' n term initSt) → Res.no_error (m n term initSt)).
       Proof using.
         unfold equiv, wider. setoid_rewrite Res.equiv_wider. naive_solver.
       Qed.
@@ -389,7 +345,8 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       Proof using. rewrite equiv_wider. naive_solver. Qed.
       Lemma equiv_errors (m m' : t) :
         equiv m m' →
-        (∀ n initSt, Res.no_error (m n initSt) ↔ Res.no_error (m' n initSt)).
+        (∀ n term initSt,
+           Res.no_error (m n term initSt) ↔ Res.no_error (m' n term initSt)).
       Proof using.
         unfold equiv. intros. apply Res.equiv_errors. naive_solver.
       Qed.
@@ -397,8 +354,9 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     End Model.
     Arguments t : clear implicits.
 
+    (** Change the set type of a model *)
     Definition map_set {E E' unspec} (f : ∀ {A}, E A → E' A) (m : t E unspec)
-      : t E' unspec := λ n initSt, f (m n initSt).
+      : t E' unspec := λ n term initSt, f (m n term initSt).
 
     (** Non computational model *)
     Notation nc := (t propset).
@@ -408,7 +366,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
     Definition to_nc {unspec} `{MonadSet E} : t E unspec → nc unspec :=
       map_set (λ A, set_to_propset).
-  End Model.
+  End archModel.
 
 
 End TermModels.

@@ -232,5 +232,5 @@ Definition axmodel ms regs_whitelist : Ax.t ms ∅ :=
             else Ok Ax.Rejected.
 
 (** The user mode Arm architecture model, mixed or not based on [ms] *)
-Definition archmodel ms regs_whitelist isem : Model.nc ∅ :=
-  Ax.to_Modelnc isem (axmodel ms regs_whitelist).
+Definition archmodel ms regs_whitelist isem : archModel.nc ∅ :=
+  Ax.to_archModel_nc isem (axmodel ms regs_whitelist).

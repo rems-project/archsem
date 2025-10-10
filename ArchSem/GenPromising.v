@@ -291,38 +291,37 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       Proof using. sauto l:on. Qed.
 
       (** Create an initial promising state from a generic machine state *)
-      Definition from_MState (ms: MState.t n) : t :=
+      Definition from_archState (ms: archState n) : t :=
         {|tstates :=
             fun_to_vec
               (λ tid,
-                 prom.(tState_init) tid ms.(MState.memory)
-                                                  $ ms.(MState.regs) !!! tid);
-          initmem := ms.(MState.memory);
+                 prom.(tState_init) tid ms.(archState.memory)
+                                                  $ ms.(archState.regs) !!! tid);
+          initmem := ms.(archState.memory);
           events := []|}.
 
       (** Convert a promising state to a generic machine state.
           This is a lossy conversion *)
-      Definition to_MState (ps: t) : MState.t n :=
-        {|MState.regs := vmap (prom.(tState_regs)) ps.(tstates);
-          MState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events);
-          MState.address_space := prom.(address_space) |}.
+      Definition to_archState (ps: t) : archState n :=
+        {|archState.regs := vmap (prom.(tState_regs)) ps.(tstates);
+          archState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events);
+          archState.address_space := prom.(address_space) |}.
     End PSProm.
 
   End PState.
 
   (** Create a non-computational model from an ISA model and promising model *)
   Definition Promising_to_Modelnc (isem : iMon ()) (prom : PromisingModel)
-    : Model.nc False :=
-    λ n (initMs : MState.init n),
-      {[ mr |
-         let initPs := PState.from_MState prom initMs in
+    : archModel.nc ∅ :=
+    λ n term (initMs : archState n),
+      {[ mr : archModel.res ∅ n term |
+         let initPs := PState.from_archState prom initMs in
          match mr with
-         | Model.Res.FinalState fs =>
+         | archModel.Res.FinalState fs _ =>
              ∃ finPs, rtc (PState.step isem prom) initPs finPs ∧
-                        fs.(MState.state) = PState.to_MState prom finPs ∧
-                        fs.(MState.termCond) = initMs.(MState.termCond) ∧
+                        PState.to_archState prom finPs = fs ∧
                         PState.nopromises prom finPs
-         | Model.Res.Error s =>
+         | archModel.Res.Error s =>
              ∃ finPs tid, rtc (PState.step isem prom) initPs finPs ∧
                             Error s ∈ PState.run_tid isem prom tid finPs
          | _ => False
@@ -375,13 +374,11 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 
     (** Convert a final promising state to a generic final state *)
-    Program Definition to_final_MState (f : final) : MState.final n :=
-      {|MState.istate :=
-          {|MState.state := to_MState prom f;
-            MState.termCond := term|};
-        MState.terminated' := _ |}.
+    Program Definition to_final_archState (f : final) :
+        {s & archState.is_terminated term s} :=
+      existT (to_archState prom f) _.
     Solve All Obligations with
-      hauto unfold:terminated unfold:MState.is_terminated l:on db:vec, brefl.
+      hauto unfold:terminated unfold:archState.is_terminated l:on db:vec, brefl.
 
     (** Computational evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
@@ -394,17 +391,17 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           run fuel
         else mthrow "Could not finish running within the size of the fuel".
     End CPS.
-    Arguments to_final_MState {_ _ _}.
+    Arguments to_final_archState {_ _ _}.
   End CPState.
 
   (** Create a computational model from an ISA model and promising model *)
   Definition Promising_to_Modelc (isem : iMon ()) (prom : BasicExecutablePM)
-      (fuel : nat) : Model.c ∅ :=
-    fun n (initMs : MState.init n) =>
-      PState.from_MState prom initMs |>
-      Model.Res.from_exec
-        $ CPState.to_final_MState
-        <$> CPState.run isem prom initMs.(MState.termCond) fuel.
+      (fuel : nat) : archModel.c ∅ :=
+    fun n term (initMs : archState n) =>
+      PState.from_archState prom initMs |>
+      archModel.Res.from_exec
+        $ CPState.to_final_archState
+        <$> CPState.run isem prom term fuel.
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)

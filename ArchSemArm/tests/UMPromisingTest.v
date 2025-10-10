@@ -59,25 +59,25 @@ Definition check_regs (reg : register_bitvector_64) (regs : registerMap)
       Error ((pretty (GReg reg)) +:+ " not in the thread state").
 
 Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
-    (a : Model.Res.t ∅ n) : result string Z :=
+    `(a : archModel.res ∅ n term) : result string Z :=
   match a with
-  | Model.Res.FinalState fs =>
-    let regs : registerMap := fs.(MState.regs) !!! tid in
+  | archModel.Res.FinalState fs _ =>
+    let regs : registerMap := fs.(archState.regs) !!! tid in
     check_regs reg regs
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
 Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
-  (a : Model.Res.t ∅ n) : result string (list Z) :=
+  `(a : archModel.res ∅ n term) : result string (list Z) :=
   match a with
-  | Model.Res.FinalState fs =>
+  | archModel.Res.FinalState fs _ =>
       for (tid, reg) in regs do
-        let regmap : registerMap := fs.(MState.regs) !!! tid in
+        let regmap : registerMap := fs.(archState.regs) !!! tid in
         check_regs reg regmap
       end
-  | Model.Res.Error s => Error s
-  | Model.Res.Unspecified e => match e with end
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Unspecified e => match e with end
   end.
 
 
@@ -104,15 +104,14 @@ Module EOR.
     (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 2%nat.
 
-  Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -138,15 +137,14 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
     (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 2%nat.
 
-  Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -174,15 +172,14 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
 
   Definition initState :=
-    {|MState.state :=
-        {|MState.memory := init_mem;
-          MState.regs := [# init_reg];
-          MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 3%nat.
 
-  Definition test_results := UMPromising_cert_c arm_sem fuel n_threads initState.
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -238,16 +235,14 @@ Module MP.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {| MState.state :=
-        {| MState.memory := init_mem;
-            MState.regs := [# init_reg_t1; init_reg_t2];
-            MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 6%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads initState.
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -307,16 +302,14 @@ Module MPDMBS.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {| MState.state :=
-        {| MState.memory := init_mem;
-            MState.regs := [# init_reg_t1; init_reg_t2];
-            MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads initState.
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ

@@ -68,29 +68,26 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
     Record seq_state := {
         (** The sequential model is simple enough to use directly a [MState.t]
             as an internal mutable state *)
-        sst : MState.init 1;
+        sst : archState 1;
         (** [written] records addresses that were written to since the start *)
         written : gset address;
       }.
-
-    Instance eta_seq_state : Settable seq_state :=
-      settable! Build_seq_state <sst;written>.
 
     (** Sequential state monad *)
     Notation seqmon := (Exec.t seq_state string).
 
     Definition read_reg_seq_state (reg : reg) (seqst : seq_state) :
         option (reg_type reg) :=
-      seqst.(sst).(MState.regs) !!! 0%fin |> dmap_lookup reg.
+      seqst.(sst).(archState.regs) !!! 0%fin |> dmap_lookup reg.
 
     Definition write_reg_seq_state (reg : reg) (val : reg_type reg) :
         seq_state → seq_state :=
-      set (lookup_total 0%fin ∘ MState.regs ∘ MState.state ∘ sst)
+      set (lookup_total 0%fin ∘ archState.regs ∘ sst)
         (dmap_insert reg val).
 
     Definition read_byte_seq_state (seqst : seq_state) (addr : address) :
         option (bv 8) :=
-      seqst.(sst).(MState.memory) !! addr.
+      seqst.(sst).(archState.memory) !! addr.
 
     Definition read_mem_seq_state (n : N) (addr : address) (seqst : seq_state) :
         option (bv (8 * n)) :=
@@ -104,7 +101,7 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
       bool_decide (∃ a ∈ addr_range addr n, a ∈ seqst.(written)).
 
     Definition check_address_space (pas : addr_space) : seqmon unit :=
-      init_pas ← mget (MState.address_space ∘ sst);
+      init_pas ← mget (archState.address_space ∘ sst);
       guard_or "Wrong address space" (pas = init_pas);;
       mret ().
 
@@ -113,7 +110,7 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
       then
         opt ← mget $ read_mem_seq_state (N.of_nat (length bytes)) addr;
         guard_or "Memory isn't mapped to write" $ is_Some opt;;
-        msetv (lookup addr ∘ MState.memory ∘ MState.state ∘ sst) (Some byte);;
+        msetv (lookup addr ∘ archState.memory ∘ sst) (Some byte);;
         mset written (.∪{[addr]});;
         write_mem_seq_state (addr `+Z` 1)%bv bytes
       else mret ().
@@ -162,27 +159,27 @@ Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
       | GenericFail s => mthrow ("Instruction failure: " ++ s)%string.
 
     (** Run instructions until a final state has been reached or fuel is depleted *)
-    Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ())
-      : seqmon (MState.final 1) :=
+    Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ()) (term : terminationCondition 1)
+      : seqmon {s : archState 1 & archState.is_terminated term s}:=
       if fuel is S fuel
       then
         FMon.cinterp sequential_model_outcome isem;;
         st ← mget sst;
-        if MState.finalize st is Some final
-        then mret final
-        else sequential_model_seqmon fuel isem
+        if decide (archState.is_terminated term st) is left p
+        then mret (existT st p)
+        else sequential_model_seqmon fuel isem term
       else mthrow "Out of fuel".
 
     (** Top-level one-threaded sequential model function that takes fuel (guaranteed
         termination) and an instruction monad, and returns a computational set of
         all possible final states. *)
-    Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (Model.c ∅) :=
+    Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (archModel.c ∅) :=
       λ n,
       match n with
-      | 1 => λ initSt : MState.init 1,
+      | 1 => λ term initSt,
         {| sst := initSt; written := ∅ |}
-        |> Model.Res.from_exec (sequential_model_seqmon fuel isem)
-      | _ => λ _, mret (Model.Res.Error "Exptected one thread")
+        |> archModel.Res.from_exec (sequential_model_seqmon fuel isem term)
+      | _ => λ _ _, mret (archModel.Res.Error "Exptected one thread")
       end.
 
   End Seq.
