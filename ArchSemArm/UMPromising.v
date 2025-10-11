@@ -411,7 +411,7 @@ Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
 Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
            (init : Memory.initial) (mem : Memory.t) :
     Exec.t TState.t string (view * val) :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
@@ -452,15 +452,18 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) : Exec.t TState.t string (Memory.t * view * option view):=
+           (data : val) (mem_update : bool) :
+          Exec.t TState.t string (Memory.t * view * option view):=
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
   ts ← mGet;
-  let '(time, mem, new_promise) :=
+  '(time, mem, new_promise) ←
     match Memory.fulfill msg (TState.prom ts) mem with
-    | Some t => (t, mem, false)
-    | None => (Memory.promise msg mem, true)
-    end in
+    | Some t => mret (t, mem, false)
+    | None =>
+      if mem_update then mret (Memory.promise msg mem, true)
+      else mdiscard
+    end;
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
@@ -470,8 +473,10 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vwr time;;
   mSet $ TState.update TState.vrel (view_if is_release time);;
-  mret (mem, time, (if new_promise then Some vpre else None)).
-
+  mret $ match new_promise with
+        | true => (mem, time, Some vpre)
+        | false => (mem, time, None)
+        end.
 
 (** Tries to perform a memory write.
 
@@ -482,12 +487,12 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
     return value indicate the success (true for success, false for error) *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
-           (mem : Memory.t) (data : val)
+           (mem : Memory.t) (data : val) (mem_update : bool)
   : Exec.t TState.t string (Memory.t * option view) :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
-    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
+    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data mem_update;
     ts ← mGet;
     match TState.xclb ts with
     | None => mdiscard
@@ -498,7 +503,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
     mSet TState.clear_xclb;;
     mret (mem, vpre_opt)
   else
-    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
+    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data mem_update;
     mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
     mret (mem, vpre_opt).
 
@@ -528,9 +533,9 @@ End IIS.
 Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
 
-  Equations run_outcome (out : outcome) :
+  Equations run_outcome (out : outcome) (mem_update : bool) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
-  | RegWrite reg racc val =>
+  | RegWrite reg racc val, mem_update =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
       vreg' ←
@@ -544,14 +549,14 @@ Section RunOutcome.
         TState.set_reg reg (val, vreg') ts;
       msetv PPState.state nts;;
       mret ((), None)
-  | RegRead reg racc =>
+  | RegRead reg racc, mem_update =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       ts ← mget PPState.state;
       '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret (val, None)
-  | MemRead (MemReq.make macc addr addr_space 8 0) =>
+  | MemRead (MemReq.make macc addr addr_space 8 0), mem_update =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       loc ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_ifetch macc then
@@ -565,28 +570,28 @@ Section RunOutcome.
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0), None)
       else mthrow "Read is not explicit or ifetch"
-  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
+  | MemRead (MemReq.make macc addr addr_space 4 0), mem_update => (* ifetch *)
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
       mret (Ok (opcode, 0%bv), None)
-  | MemRead _ => mthrow "Memory read of size other than 8 and 4"
-  | MemWriteAddrAnnounce _ =>
+  | MemRead _, mem_update => mthrow "Memory read of size other than 8 and 4"
+  | MemWriteAddrAnnounce _, mem_update =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vcap vaddr;;
       mret ((), None)
-  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
+  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags, mem_update =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
         '(mem, vpre_opt) ← Exec.liftSt PPState.state
-                $ write_mem_xcl tid addr vdata macc mem val;
+                $ write_mem_xcl tid addr vdata macc mem val mem_update;
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
-  | Barrier (Barrier_DMB dmb) => (* dmb *)
+  | Barrier (Barrier_DMB dmb), mem_update => (* dmb *)
       ts ← mget PPState.state;
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
@@ -597,17 +602,16 @@ Section RunOutcome.
           mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
       end;;
       mret ((), None)
-  | Barrier (Barrier_ISB ()) => (* isb *)
+  | Barrier (Barrier_ISB ()), mem_update => (* isb *)
       ts ← mget PPState.state;
     mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
     mret ((), None)
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome".
+  | GenericFail s, mem_update => mthrow ("Instruction failure: " ++ s)%string
+  | _, _ => mthrow "Unsupported outcome".
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    run_outcome out |$> fst.
-
+    run_outcome out true |$> fst.
 End RunOutcome.
 
 Module CProm.
@@ -646,7 +650,7 @@ Section ComputeProm.
               (base : view)
               (out : outcome) :
         Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out;
+    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out true;
     if vpre_opt is Some vpre then
       mem ← mget (PPState.mem ∘ snd);
       mset fst (CProm.add_if mem vpre base);;
@@ -654,11 +658,11 @@ Section ComputeProm.
     else
       mret res.
 
-  Fixpoint runSt_to_termination
+  Fixpoint run_to_termination_promise
                       (isem : iMon ())
                       (fuel : nat)
-                      (base : nat)
-      : Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
+                      (base : nat) :
+      Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
     match fuel with
     | 0%nat =>
       ts ← mget (PPState.state ∘ snd);
@@ -670,20 +674,62 @@ Section ComputeProm.
       if term (TState.reg_map ts) then
         mret true
       else
-        runSt_to_termination isem fuel base
+        run_to_termination_promise isem fuel base
     end.
 
-  Definition run_to_termination (isem : iMon ())
+    Definition run_to_termination (isem : iMon ())
+                                (fuel : nat)
+                                (ts : TState.t)
+                                (mem : Memory.t) :
+      result string (list Msg.t * list TState.t) :=
+    let base := List.length mem in
+    let res := Exec.results $
+      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    guard_or ("Could not finish promises within the size of the fuel")%string
+      (∀ r ∈ res, r.2 = true);;
+    mret $ (CProm.proms (union_list res.*1.*1), []).
+
+    Definition run_outcome_with_no_promise
+              (out : outcome) :
+        Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+    '(res, _) ← run_outcome tid initmem out false;
+    mret res.
+
+  Fixpoint run_to_termination_no_promise
+                      (isem : iMon ())
+                      (fuel : nat) :
+      Exec.t (PPState.t TState.t Msg.t IIS.t) string bool :=
+    match fuel with
+    | 0%nat =>
+      ts ← mget PPState.state;
+      mret (term (TState.reg_map ts))
+    | S fuel =>
+      let handler := run_outcome_with_no_promise in
+      cinterp handler isem;;
+      ts ← mget PPState.state;
+      if term (TState.reg_map ts) then
+        mret true
+      else
+        run_to_termination_no_promise isem fuel
+    end.
+
+  Definition run_to_termination_pf (isem : iMon ())
                                 (fuel : nat)
                                 (ts : TState.t)
                                 (mem : Memory.t)
-      : Exec.res string Msg.t :=
+      : result string (list Msg.t * list TState.t) :=
     let base := List.length mem in
-    let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Could not finish promises within the size of the fuel")%string (∀ r ∈ res, r.2 = true);;
-    res.*1.*1
-    |> union_list
-    |> mchoosel ∘ CProm.proms.
+    let res_proms := Exec.results $
+      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    guard_or ("Could not finish promises within the size of the fuel")%string
+      (∀ r ∈ res_proms, r.2 = true);;
+    let promises := res_proms.*1.*1 |> CProm.proms ∘ union_list in
+    let res := Exec.results $
+      run_to_termination_no_promise isem fuel (PPState.Make ts mem IIS.init) in
+    guard_or ("Could not finish the remaining states within the size of the fuel")%string
+      (∀ r ∈ res, r.2 = true);;
+    let tstates := map PPState.state res.*1 in
+    mret (promises, tstates).
 
 End ComputeProm.
 
@@ -759,12 +805,29 @@ Definition UMPromising_cert_nc isem :=
 Program Definition UMPromising_exe' (isem : iMon ())
     : BasicExecutablePM :=
   {|pModel := UMPromising_cert' isem;
-    promise_select :=
+    enumerate_promises_and_terminal_states :=
       λ fuel tid term initmem ts mem,
           run_to_termination tid initmem term isem fuel ts mem
   |}.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
+
+Program Definition UMPromising_exe_pf' (isem : iMon ())
+    : BasicExecutablePM :=
+  {|pModel := UMPromising_cert' isem;
+    enumerate_promises_and_terminal_states :=
+      λ fuel tid term initmem ts mem,
+          run_to_termination_pf tid initmem term isem fuel ts mem
+  |}.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
 
 Definition UMPromising_cert_c isem fuel :=
   Promising_to_Modelc isem (UMPromising_exe' isem) fuel.
+
+Definition UMPromising_cert_c_pf isem fuel :=
+  Promising_to_Modelc_pf isem (UMPromising_exe_pf' isem) fuel.
