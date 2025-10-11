@@ -982,19 +982,18 @@ Module TLB.
   (** Make [tlb] containing entries for [va] at [lvl].
       - At root: call [va_fill_root].
       - At deeper levels: for each parent entry, call [va_fill_lvl].
-      - Returns [tlb] with added VATLB entries. *)
+      - Returns [(tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (ttbr : reg) : result string t :=
-    new_vatlb ←
+      (ttbr : reg) : result string (t * bool) :=
+    vatlb_new ←
       match parent_lvl lvl with
       | None =>
-        vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
-        Ok $ vatlb_new ∪ tlb.(vatlb)
+        va_fill_root ts init mem time (level_index va root_lvl) ttbr
       | Some plvl =>
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
@@ -1015,7 +1014,7 @@ Module TLB.
           end;
         Ok $ (union_list active_vatlbs)
       end;
-    Ok (TLB.make (new_vatlb ∪ tlb.(vatlb))).
+    mret $ (TLB.make (vatlb_new ∪ tlb.(vatlb)), vatlb_new =? ∅).
 
   (** Fill TLB entries for [va] through all levels 0–3.
       - Sequentially calls [va_fill] at each level.
@@ -1026,11 +1025,12 @@ Module TLB.
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
-      (ttbr : reg) : result string t :=
-    tlb0 ← va_fill tlb ts init mem time root_lvl va ttbr;
-    tlb1 ← va_fill tlb0 ts init mem time 1%fin va ttbr;
-    tlb2 ← va_fill tlb1 ts init mem time 2%fin va ttbr;
-    va_fill tlb2 ts init mem time 3%fin va ttbr.
+      (ttbr : reg) : result string (t * bool) :=
+    fold_left (λ prev lvl,
+      '(tlb_prev, is_changed_prev) ← prev;
+      '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
+      mret (tlb_new, is_changed || is_changed_prev)
+    ) (enum Level) (mret (tlb, false)).
 
   (** ** TLB invalidation *)
 
@@ -1080,37 +1080,53 @@ Module TLB.
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
-  (** Get the TLB state at a timestamp (time_prev + cnt) *)
-  Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+  (** Get the TLB states up until the timestamp along with
+      a boolean value that shows if it is different from the previous tlb and
+      the timestamp used to compute that state. [list (TLB.t * bool * nat)] *)
+  Fixpoint snapshots_until_timestamp (ts : TState.t) (mem_init : Memory.initial)
+                       (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
                        (va : bv 64)
                        (ttbr : reg)
-                      {struct cnt} : result string t :=
+                       (acc : list (t * bool * nat)) :
+                      result string (list (t * bool * nat)) :=
     match cnt with
-    | O => mret tlb_prev
+    | O => mret acc
     | S ccnt =>
       let time_cur := time_prev + 1 in
-      tlb ←
+      '(tlb, is_changed) ←
         match mem !! time_cur with
         | Some ev =>
             let tlb_inv :=
               if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
             in
-            update tlb_prev ts mem_init mem time_cur va ttbr
-        | None => mret init
+            update tlb_inv ts mem_init mem time_cur va ttbr
+        | None => mret (init, false)
         end;
-      at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
+      snapshots_until_timestamp
+        ts mem_init mem tlb time_cur ccnt va ttbr
+        ((tlb, is_changed, time_cur) :: acc)
     end.
 
-  (** Get the TLB state at a timestamp `time` *)
-  Definition at_timestamp (ts : TState.t) (mem_init : Memory.initial)
+  (** Get the unique TLB states up until the timestamp along with the timestamp
+      used to compute that state. [list (TLB.t * nat)] *)
+  Definition unique_snapshots_until_timestamp (ts : TState.t)
+                       (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (time : nat)
                        (va : bv 64)
-                       (ttbr : reg) : result string t :=
-    tlb ← update init ts mem_init mem 0 va ttbr;
-    at_timestamp_from ts mem_init mem tlb 0 time va ttbr.
+                       (ttbr : reg) : result string (list (t * nat)) :=
+    '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
+    snapshots ← snapshots_until_timestamp ts mem_init mem tlb 0 time va ttbr [];
+    mret $
+      omap (M:=list)
+          (λ '(tlb, is_changed, time),
+              match is_changed with
+              | true => Some (tlb, time)
+              | false => None
+              end)
+          snapshots.
 
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
@@ -1675,8 +1691,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
-      tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
+      snapshots ← mlift $ TLB.unique_snapshots_until_timestamp ts init mem vmax_t va ttbr;
+      '(tlb, trans_time) ← mchoosel snapshots;
       valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
       invalid_ptes ←
         if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
