@@ -1498,7 +1498,7 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
     mret val
   else mthrow "Unsupported 8 bytes access".
 
-Definition run_mem_read4  (addr : address) (macc : mem_acc) (init : Memory.initial) :
+Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t Memory.t string (bv 32) :=
   if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
@@ -1767,6 +1767,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
   trans_res ←
     if decide (va_in_range va) then
+      guard_or "throw" false;;
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       snapshots ← mlift $ TLB.unique_snapshots_until_timestamp ts init mem vmax_t va ttbr;
       valid_entries ← mlift $ get_valid_entries_from_snapshots snapshots mem tid va asid;

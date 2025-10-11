@@ -367,6 +367,13 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
+    Definition run_step_promise_first (fuel : nat) : Exec.t t string () :=
+      st ← mGet;
+      tid ← mchoose n;
+      if terminated_tid prom term st tid then mdiscard
+      else
+        run_tid isem prom tid.
+
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated prom term x }.
 
@@ -390,6 +397,17 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           run_step (S fuel);;
           run fuel
         else mthrow "Could not finish running within the size of the fuel".
+
+    (** Computational evaluate all the possible allowed final states according
+        to the promising model prom starting from st *)
+    Fixpoint run_promise_first (fuel : nat) : Exec.t t string final :=
+      st ← mGet;
+      if decide $ terminated prom term st is left pt then mret (make_final st pt)
+      else
+        if fuel is S fuel then
+          run_step_promise_first (S fuel);;
+          run_promise_first fuel
+        else mthrow "Could not finish running within the size of the fuel".
     End CPS.
     Arguments to_final_archState {_ _ _}.
   End CPState.
@@ -402,6 +420,15 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       archModel.Res.from_exec
         $ CPState.to_final_archState
         <$> CPState.run isem prom term fuel.
+
+  (** Create a computational model from an ISA model and promising model *)
+  Definition Promising_to_Modelc_promise_first (isem : iMon ()) (prom : BasicExecutablePM)
+      (fuel : nat) : archModel.c ∅ :=
+    fun n term (initMs : archState n) =>
+      PState.from_archState prom initMs |>
+      archModel.Res.from_exec
+        $ CPState.to_final_archState
+        <$> CPState.run_promise_first isem prom term fuel.
 
     (* TODO state some soundness lemma between Promising_to_Modelnc and
         Promising_Modelc *)
