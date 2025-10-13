@@ -232,7 +232,7 @@ Module LDR.
     (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
     |> mem_insert 0x83000 8 0x403
     (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
-    |> mem_insert 0x83008 8 0x60000000001443.
+    |> mem_insert 0x83008 8 0x1443.
 
   Definition n_threads := 1%nat.
 
@@ -284,7 +284,7 @@ Module STRLDR.
     (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
     |> mem_insert 0x83000 8 0x403
     (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
-    |> mem_insert 0x83008 8 0x60000000001443.
+    |> mem_insert 0x83008 8 0x1443.
 
   Definition n_threads := 1%nat.
 
@@ -349,9 +349,9 @@ Module LDRPT.
        - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
        - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
     *)
-    |> mem_insert 0x83000 8 0x40000000000783
+    |> mem_insert 0x83000 8 0x783
     (* L3[1] : initially map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83008 8 0x1783
     (* L3[16] : identity map VA page 0x8000010000 -> PA page 0x83000 (page tables) *)
     |> mem_insert 0x83080 8 0x60000000083703.
 
@@ -433,16 +433,12 @@ End LDRPT.
     (* Backing memory so the addresses exist *)
     |> mem_insert 0x1100 8 0x0
     |> mem_insert 0x1200 8 0x0
-    (* L0[1] -> L1  (for VA with L0 index = 1) *)
+    (* Page Table *)
     |> mem_insert 0x80008 8 0x81003
-    (* L1[0] -> L2 *)
     |> mem_insert 0x81000 8 0x82003
-    (* L2[0] -> L3 *)
     |> mem_insert 0x82000 8 0x83003
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x83000 8 0x483
+    |> mem_insert 0x83008 8 0x1443.
 
   Definition n_threads := 2%nat.
 
@@ -453,22 +449,20 @@ End LDRPT.
   Definition termCond : terminationCondition n_threads :=
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
-  Definition initState :=
-    {| MState.state :=
-        {| MState.memory := init_mem;
-            MState.regs := [# init_reg_t1; init_reg_t2];
-            MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 6%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads initState.
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
   Proof.
-    vm_compute (elements _).
+    Time vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End MP. *)
@@ -535,9 +529,9 @@ End MP. *)
     (* L2[0] -> L3 *)
     |> mem_insert 0x82000 8 0x83003
     (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
+    |> mem_insert 0x83000 8 0x483
     (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x83008 8 0x1443.
 
   Definition n_threads := 2%nat.
 
