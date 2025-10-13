@@ -389,18 +389,20 @@ Definition strict_regs : gset reg :=
       GReg PSTATE;
       GReg ELR_EL1;
       GReg ELR_EL2;
-      GReg ELR_EL3].
-
-(** Relaxed registers are not guaranteed to read the latest value. *)
-Definition relaxed_regs : gset reg :=
-  list_to_set [
+      GReg ELR_EL3;
+      (* These registers are system registers, but they are considered
+         strict in the model. *)
       GReg ESR_EL1;
       GReg ESR_EL2;
       GReg ESR_EL3;
       GReg FAR_EL1;
       GReg FAR_EL2;
       GReg FAR_EL3;
-      GReg PAR_EL1;
+      GReg PAR_EL1].
+
+(** Relaxed registers are not guaranteed to read the latest value. *)
+Definition relaxed_regs : gset reg :=
+  list_to_set [
       GReg TTBR0_EL1;
       GReg TTBR0_EL2;
       GReg TTBR0_EL3;
@@ -418,14 +420,12 @@ Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
-  regval_to_val (GReg (R_bitvector_64 _)) v := Some v.
-  (* regval_to_val _ _ := None. *)
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg _, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
-  val_to_regval (GReg (R_bitvector_64 _)) v := Some (v : reg_type r).
-
-Equations cast_regval {r1 r2 : reg} (v : reg_type r1) : option (reg_type r2) :=
-  @cast_regval (GReg (R_bitvector_64 _)) (GReg (R_bitvector_64 _)) v := Some v.
+  | GReg (R_bitvector_64 _), v => Some v
+  | GReg _, v => None.
 
 (** * The thread state *)
 
@@ -604,11 +604,6 @@ Module TState.
   Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
     if decide (is_Some (dmap_lookup reg ts.(regs))) then
       Some $ set regs (dmap_insert reg rv) ts
-    else None.
-
-  Definition set_reg_by_val (reg : reg) (rv : val * view) (ts : t) : option t :=
-    if (val_to_regval reg rv.1) is Some regval then
-      set_reg reg (regval, rv.2) ts
     else None.
 
   (** Add a system register write event to the local event list *)
@@ -1267,7 +1262,6 @@ Module TLB.
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
     end;
   mret $ List.concat fault_ptes.
-
 End TLB.
 Export (hints) TLB.
 
@@ -1620,12 +1614,25 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
+(* TODO: distinguish between ets2 and ets3 *)
+Definition ets2 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 2%bv).
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
-  let vpre_t := ts.(TState.vcse) (* ⊔ ETS ? ts.(TState.vdsb) *) in
+
+  let is_ifetch :=
+    trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
+    AccessType_IFETCH in
+  is_ets2 ← mlift (ets2 ts);
+  let vpre_t := ts.(TState.vcse) ⊔
+                 (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
   trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
   (* lookup (successful results or faults) *)
@@ -1636,7 +1643,11 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
       valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
-      invalid_ptes ← mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+      invalid_ptes ←
+        if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+          mret []
+        else
+          mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
       (* update IIS with either a valid translation result or a fault *)
       let valid_trs :=
         map (λ '(path, ti),
