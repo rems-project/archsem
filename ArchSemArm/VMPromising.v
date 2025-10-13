@@ -939,7 +939,7 @@ Module TLB.
         else
           Ok VATLB.init
       end;
-    Ok (fold_left union vatlbs VATLB.init).
+    Ok (union_list vatlbs).
 
   (** Extend one level down from a parent table entry [te].
       - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
@@ -995,11 +995,11 @@ Module TLB.
       | None =>
         va_fill_root ts init mem time (level_index va root_lvl) ttbr
       | Some plvl =>
+        let pva := level_prefix va plvl in
+        let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
         active_vatlbs ←
-          let pva := level_prefix va plvl in
-          let index := level_index va lvl in
           for sreg in sregs do
             val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
@@ -1014,7 +1014,7 @@ Module TLB.
           end;
         Ok $ (union_list active_vatlbs)
       end;
-    mret $ (TLB.make (vatlb_new ∪ tlb.(vatlb)), vatlb_new =? ∅).
+    mret $ (TLB.make (vatlb_new ∪ tlb.(vatlb)), negb(vatlb_new =? ∅)).
 
   (** Fill TLB entries for [va] through all levels 0–3.
       - Sequentially calls [va_fill] at each level.
@@ -1089,8 +1089,8 @@ Module TLB.
                        (time_prev cnt : nat)
                        (va : bv 64)
                        (ttbr : reg)
-                       (acc : list (t * bool * nat)) :
-                      result string (list (t * bool * nat)) :=
+                       (acc : list (t * nat)) :
+                      result string (list (t * nat)) :=
     match cnt with
     | O => mret acc
     | S ccnt =>
@@ -1104,9 +1104,13 @@ Module TLB.
             update tlb_inv ts mem_init mem time_cur va ttbr
         | None => mret (init, false)
         end;
+      let acc :=
+        match is_changed with
+        | true => (tlb, time_cur) :: acc
+        | false => acc
+        end in
       snapshots_until_timestamp
-        ts mem_init mem tlb time_cur ccnt va ttbr
-        ((tlb, is_changed, time_cur) :: acc)
+        ts mem_init mem tlb time_cur ccnt va ttbr acc
     end.
 
   (** Get the unique TLB states up until the timestamp along with the timestamp
@@ -1118,15 +1122,7 @@ Module TLB.
                        (va : bv 64)
                        (ttbr : reg) : result string (list (t * nat)) :=
     '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
-    snapshots ← snapshots_until_timestamp ts mem_init mem tlb 0 time va ttbr [];
-    mret $
-      omap (M:=list)
-          (λ '(tlb, is_changed, time),
-              match is_changed with
-              | true => Some (tlb, time)
-              | false => None
-              end)
-          snapshots.
+    snapshots_until_timestamp ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
 
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
