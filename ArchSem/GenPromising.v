@@ -53,6 +53,7 @@ Require Import ASCommon.Common.
 Require Import ASCommon.Exec.
 Require Import ASCommon.Effects.
 Require Import ASCommon.FMon.
+Require Import ASCommon.HVec.
 Require Import ASCommon.StateT.
 
 Require Import Relations.
@@ -367,12 +368,31 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
-    Definition run_step_promise_first (fuel : nat) : Exec.t t string () :=
+    (** Run only promise steps. If a thread has reached termination
+        no progress is made in the thread (either instruction running or
+        promises *)
+    Fixpoint run_step_promise_first (fuel : nat) (terminated : fin n -> bool) : Exec.t t string () :=
       st ← mGet;
-      tid ← mchoose n;
-      if terminated_tid prom term st tid then mdiscard
+      let all_terminated := ∀ tid ∈ (enum (fin n)), terminated tid in
+      if decide all_terminated then
+        mret ()
       else
-        run_tid isem prom tid.
+        if fuel is S fuel then
+          tid ← mchoose n;
+          if decide $ (terminated tid) then
+            run_step_promise_first fuel terminated
+          else
+            let ev_res := promise_select_tid fuel st tid in
+            if decide (Exec.has_error ev_res) then
+              run_step_promise_first fuel (λ t, if decide (t = tid) then true else (terminated t))
+            else
+              let res_st :=
+                ev ← ev_res;
+                mret $ promise_tid prom st tid ev
+              in
+              mlift $ Exec.make ((.,()) <$> res_st.(Exec.results)) ((st,.) <$> res_st.(Exec.errors));;
+              run_step_promise_first fuel terminated
+        else mthrow "Could not finish promise-first within the size of the fuel".
 
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated prom term x }.
@@ -407,6 +427,20 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         if fuel is S fuel then
           run_step_promise_first (S fuel);;
           run_promise_first fuel
+
+    (** Computational evaluate all the possible allowed final states according
+        to the promising model prom starting from st
+        with promise-first optimization *)
+    Definition run_promise_first (fuel : nat) : Exec.t t string final :=
+      st ← mGet;
+      (* Execute promise-first *)
+      run_step_promise_first fuel;;
+
+      if decide $ terminated prom term st is left pt then mret (make_final st pt)
+      else
+        if fuel is S fuel then
+          run_step (S fuel);;
+          run fuel
         else mthrow "Could not finish running within the size of the fuel".
     End CPS.
     Arguments to_final_archState {_ _ _}.
@@ -421,7 +455,8 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         $ CPState.to_final_archState
         <$> CPState.run isem prom term fuel.
 
-  (** Create a computational model from an ISA model and promising model *)
+  (** Create a computational model from an ISA model and promising model
+      with promise-free optimization *)
   Definition Promising_to_Modelc_promise_first (isem : iMon ()) (prom : BasicExecutablePM)
       (fuel : nat) : archModel.c ∅ :=
     fun n term (initMs : archState n) =>
