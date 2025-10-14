@@ -1618,7 +1618,8 @@ Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
-  mret (bv_extract 36 4 val =? 2%bv).
+  let ets_bits := bv_extract 36 4 val in
+  mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
 
 Definition ets3 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
@@ -1689,13 +1690,13 @@ Definition run_trans_end (trans_end : trans_end) :
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
-    is_ets3 ← mlift (ets3 ts);
-    if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
-    then mdiscard
+    let fault := trans_end.(AddressDescriptor_fault) in
+    if decide (fault.(FaultRecord_statuscode) = Fault_None) then
+      mret ()
     else
-      let fault := trans_end.(AddressDescriptor_fault) in
-      if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-        mret ()
+      is_ets3 ← mlift (ets3 ts);
+      if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+      then mdiscard
       else
         mset snd $ IIS.add trans_time;;
         (* if the fault is from read, add the read view *)
