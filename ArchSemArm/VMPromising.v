@@ -870,6 +870,10 @@ Module TLB.
         (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
 
+    Definition add (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) (vatlb : t) : t :=
+      let entries := get ctxt vatlb in
+      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries ∪ {[ entry ]}]} vatlb.
+
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
   End VATLB.
@@ -915,31 +919,35 @@ Module TLB.
       - If entry is a table, builds a root context with ASID from TTBR
         and inserts it into VATLB.
       - Otherwise returns empty VATLB. *)
-  Definition va_fill_root (ts : TState.t)
+  Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : result string VATLB.t :=
+      (ttbr : reg) : result string (VATLB.t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
-    vatlbs ←
-      for sreg in sregs do
-        val_ttbr ← othrow "TTBR should be a 64 bit value"
+    fold_left (λ prev sreg,
+      '(vatlb, is_changed) ← prev;
+      val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
-        let entry_addr := next_entry_addr val_ttbr va in
-        let loc := Loc.from_addr_in entry_addr in
-        if (Memory.read_at loc init mem time) is Some (memval, _) then
-          if decide (is_table memval) then
-            let asid := bv_extract 48 16 val_ttbr in
-            let ndctxt := NDCtxt.make va (Some asid) in
-            Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
-          else
-            Ok VATLB.init
+      let entry_addr := next_entry_addr val_ttbr va in
+      let loc := Loc.from_addr_in entry_addr in
+      if (Memory.read_at loc init mem time) is Some (memval, _) then
+        if decide (is_table memval) then
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make va (Some asid) in
+          let ctxt := existT root_lvl ndctxt in
+          let entry : Entry.t (Ctxt.lvl ctxt) := [#memval] in
+          (* add the entry to vatlb only when it is not in the original vatlb *)
+          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+            Ok (VATLB.add ctxt entry vatlb, true)
+          else Ok (vatlb, is_changed)
         else
-          Ok VATLB.init
-      end;
-    Ok (union_list vatlbs).
+          Ok (vatlb, is_changed)
+      else
+        Ok (vatlb, is_changed)
+    ) sregs (mret (vatlb, false)).
 
   (** Extend one level down from a parent table entry [te].
       - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
@@ -953,13 +961,13 @@ Module TLB.
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
-      (ttbr : reg) : result string VATLB.t :=
+      (ttbr : reg) : result string (VATLB.t * bool) :=
     guard_or "ASID is not active"
       $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
     guard_or "The translation entry is not in the TLB"
       (te ∈ VATLB.get ctxt vatlb);;
 
-    if decide (¬is_table (Entry.pte te)) then Ok VATLB.init
+    if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       let loc := Loc.from_addr_in entry_addr in
@@ -972,12 +980,16 @@ Module TLB.
           let asid := if bool_decide (is_global clvl next_pte) then None
                       else Ctxt.asid ctxt in
           let ndctxt := NDCtxt.make va asid in
-          let new_te := Entry.append te next_pte (child_lvl_add_one _ _ e) in
-          Ok $ VATLB.singleton (existT clvl ndctxt) new_te
+          let ctxt := existT clvl ndctxt in
+          let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+          (* add the entry to vatlb only when it is not in the original vatlb *)
+          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+            Ok (VATLB.add ctxt entry vatlb, true)
+          else Ok (vatlb, false)
         | None eq:_ => mthrow "An intermediate level should have a child level"
         end
       else
-        Ok VATLB.init.
+        Ok (vatlb, false).
 
   (** Make [tlb] containing entries for [va] at [lvl].
       - At root: call [va_fill_root].
@@ -990,31 +1002,32 @@ Module TLB.
       (lvl : Level)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    vatlb_new ←
+    '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        va_fill_root ts init mem time (level_index va root_lvl) ttbr
+        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) ttbr
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
-        active_vatlbs ←
-          for sreg in sregs do
-            val_ttbr ← othrow "TTBR should be a 64 bit value"
-                    $ regval_to_val ttbr sreg.1;
-            let asid := bv_extract 48 16 val_ttbr in
-            let ndctxt := NDCtxt.make pva (Some asid) in
-            let ctxt := existT plvl ndctxt in
-            vatlbs ←
-              for te in elements (VATLB.get ctxt tlb.(vatlb)) do
-                va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
-              end;
-            Ok (union_list vatlbs)
-          end;
-        Ok $ (union_list active_vatlbs)
+        fold_left (λ prev sreg,
+          val_ttbr ← othrow "TTBR should be a 64 bit value"
+                  $ regval_to_val ttbr sreg.1;
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make pva (Some asid) in
+          let ctxt := existT plvl ndctxt in
+          (* parent entries should be from the original TLB (in the parent level) *)
+          let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
+          fold_left (λ prev te,
+            '(vatlb_prev, is_changed_prev) ← prev;
+            '(vatlb_lvl, is_changed_lvl) ←
+               va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr;
+            mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
+          ) tes prev
+        ) sregs (mret (tlb.(vatlb), false))
       end;
-    mret $ (TLB.make (vatlb_new ∪ tlb.(vatlb)), negb(vatlb_new =? ∅)).
+    mret $ (TLB.make vatlb_new, is_changed).
 
   (** Fill TLB entries for [va] through all levels 0–3.
       - Sequentially calls [va_fill] at each level.
@@ -1026,7 +1039,6 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    (* make an incremental update *)
     fold_left (λ prev lvl,
       '(tlb_prev, is_changed_prev) ← prev;
       '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
@@ -1100,10 +1112,11 @@ Module TLB.
         match mem !! time_cur with
         | Some ev =>
             (* always true if tlbi is applied *)
-            let tlb_inv :=
-              if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
+            let (tlb_inv, is_changed_by_tlbi) :=
+              if ev is Ev.Tlbi tlbi then (tlbi_apply tlbi tlb_prev, true) else (tlb_prev, false)
             in
-            update tlb_inv ts mem_init mem time_cur va ttbr
+            '(tlb, is_changed) ← update tlb_inv ts mem_init mem time_cur va ttbr;
+            mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
       let acc :=
