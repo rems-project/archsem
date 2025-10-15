@@ -1614,12 +1614,18 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
-(* TODO: distinguish between ets2 and ets3 *)
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 := GReg ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
-  mret (bv_extract 36 4 val =? 2%bv).
+  let ets_bits := bv_extract 36 4 val in
+  mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
+
+Definition ets3 (ts : TState.t) : result string bool :=
+  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
+  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  mret (bv_extract 36 4 val =? 3%bv).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
@@ -1680,6 +1686,7 @@ Definition write_fault_vpre (is_rel : bool)
 
 Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
+  ts ← mget fst;
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
@@ -1687,16 +1694,22 @@ Definition run_trans_end (trans_end : trans_end) :
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
       mret ()
     else
-      (* if the fault is from read, add the read view *)
-      let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
-      let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
-      read_view ← read_fault_vpre is_acq trans_time;
-      mset snd $ IIS.add (view_if is_read read_view);;
-      (* if the fault is from write, add the write view *)
-      let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-      let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-      write_view ← write_fault_vpre is_rel trans_time;
-      mset snd $ IIS.add (view_if is_write write_view)
+      is_ets3 ← mlift (ets3 ts);
+      if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+      then mdiscard
+      else
+        mset snd $ IIS.add trans_time;;
+        (* if the fault is from read, add the read view *)
+        let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
+        let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+        read_view ← read_fault_vpre is_acq trans_time;
+
+        mset snd $ IIS.add (view_if is_read read_view);;
+        (* if the fault is from write, add the write view *)
+        let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
+        let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+        write_view ← write_fault_vpre is_rel trans_time;
+        mset snd $ IIS.add (view_if is_write write_view)
   else
     mthrow "Translation ends with an empty translation".
 
