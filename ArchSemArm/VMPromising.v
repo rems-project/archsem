@@ -1026,6 +1026,7 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
+    (* make an incremental update *)
     fold_left (λ prev lvl,
       '(tlb_prev, is_changed_prev) ← prev;
       '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
@@ -1098,6 +1099,7 @@ Module TLB.
       '(tlb, is_changed) ←
         match mem !! time_cur with
         | Some ev =>
+            (* always true if tlbi is applied *)
             let tlb_inv :=
               if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
             in
@@ -1668,6 +1670,61 @@ Definition ets3 (ts : TState.t) : result string bool :=
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).
 
+Definition new_invalidation_opt (ti_new ti_old : option nat) : bool :=
+  match ti_new, ti_old with
+  | Some ti_new, Some ti_old => ti_old <? ti_new
+  | None, None => false
+  | Some _, None => true
+  | None, Some _ => true
+  end.
+
+Definition is_new_entry (path : list val) (ti_new : option nat)
+    (entries : list (list val * nat * option nat)) : bool :=
+  forallb
+    (λ '(p, t, ti),
+      negb(path =? p) || new_invalidation_opt ti_new ti) entries.
+
+(* Snapshots are sorted in the descending order of `trans_time`.
+   Thus, we do not have to use `trans_time` to check the interval *)
+Definition get_valid_entries_from_snapshots (snapshots : list (TLB.t * nat))
+              (mem : Memory.t)
+              (tid : nat)
+              (va : bv 64) (asid : bv 16) :
+            result string (list (list val * nat * option nat)) :=
+  fold_right (λ '(tlb, trans_time) entries,
+    candidates ← TLB.lookup mem tid tlb trans_time va asid;
+    prev ←@{result string} entries;
+    let new :=
+      omap (λ '(path, ti_opt),
+        if decide (is_new_entry path ti_opt prev) then
+          Some (path, trans_time, ti_opt)
+        else None
+      ) candidates in
+    mret (new ++ prev)
+  ) (mret nil) snapshots.
+
+Definition get_invalid_entries_from_snapshots (snapshots : list (TLB.t * nat))
+              (ts : TState.t)
+              (init : Memory.initial)
+              (mem : Memory.t)
+              (tid : nat) (is_ets2 : bool)
+              (va : bv 64) (asid : bv 16) (ttbr : reg) :
+            result string (list (list val * nat * option nat)) :=
+  fold_right (λ '(tlb, trans_time) entries,
+    if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+      entries
+    else
+      candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+      prev ←@{result string} entries;
+      let new :=
+        omap (λ '(path, ti_opt),
+          if decide (is_new_entry path ti_opt prev) then
+            Some (path, trans_time, ti_opt)
+          else None
+        ) candidates in
+      mret (new ++ prev)
+  ) (mret nil) snapshots.
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -1688,20 +1745,16 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       snapshots ← mlift $ TLB.unique_snapshots_until_timestamp ts init mem vmax_t va ttbr;
-      '(tlb, trans_time) ← mchoosel snapshots;
-      valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
-      invalid_ptes ←
-        if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
-          mret []
-        else
-          mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+      valid_entries ← mlift $ get_valid_entries_from_snapshots snapshots mem tid va asid;
+      invalid_entries ← mlift $
+        get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or a fault *)
       let valid_trs :=
-        map (λ '(path, ti),
-          IIS.TransRes.make (va_to_vpn va) trans_time path ti) valid_ptes in
+        map (λ '(path, t, ti),
+          IIS.TransRes.make (va_to_vpn va) t path ti) valid_entries in
       let invalid_trs :=
-        map (λ '(path, ti),
-          IIS.TransRes.make (va_to_vpn va) trans_time path ti) invalid_ptes in
+        map (λ '(path, t, ti),
+          IIS.TransRes.make (va_to_vpn va) t path ti) invalid_entries in
       mchoosel (valid_trs ++ invalid_trs)
     else
       mret $ IIS.TransRes.make (va_to_vpn va) vpre_t [] None;
