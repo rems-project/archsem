@@ -1050,7 +1050,6 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    (* make an incremental update *)
     fold_left (λ prev lvl,
       '(tlb_prev, is_changed_prev) ← prev;
       '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
