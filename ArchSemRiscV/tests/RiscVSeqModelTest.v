@@ -60,7 +60,7 @@ Definition x1_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
       then Ok (bv_unsigned x)
       else Error "x1 not in state"
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged e => match e with end
   end.
 
 Definition a0_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
@@ -71,7 +71,7 @@ Definition a0_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
       then Ok (bv_unsigned x)
       else Error "x10 not in state"
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged e => match e with end
   end.
 
 Definition regs_extract `(a : archModel.Res.t ∅ 1 term) :
@@ -81,7 +81,7 @@ Definition regs_extract `(a : archModel.Res.t ∅ 1 term) :
       let regs : registerMap := fs.(archState.regs) !!! 0%fin in
       Ok (dmap_to_list regs)
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged e => match e with end
   end.
 
 (** Common configuration from Isla config files *)

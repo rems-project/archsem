@@ -1330,31 +1330,31 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
   Module Ax.
     Import Candidate.
     Notation cand := t.
-      (* Context {unspec : Type}. *)
-      (* Notation mresult := (ModelResult.t unspec). *)
-      (* Notation model := (Model.nc unspec). *)
+      (* Context {flag : Type}. *)
+      (* Notation mresult := (ModelResult.t flag). *)
+      (* Notation model := (Model.nc flag). *)
 
     (** Behaviors an axiomatic model can give to a candidate *)
-    Inductive behavior {unspec : Type} :=
+    Inductive behavior {flag : Type} :=
     (** The candidate execution is allowed *)
     | Allowed
     (** The candidate execution is forbidden *)
     | Rejected
-    (** The candidate execution leads to some unspecified behavior.
-          Unspecified is any kind of behavior that is not fully specified but is
+    (** The candidate execution leads to some special flagged behavior.
+          This is any kind of behavior that is not fully described but is
           not a model error. For example a BBM failure. *)
-    | Unspecified (u : unspec).
+    | Flagged (f : flag).
     Arguments behavior : clear implicits.
 
     (** An axiomatic model is just a candidate classifier. *)
-    Definition t et unspec := ∀ n, cand et n → result string (behavior unspec).
+    Definition t et flag := ∀ n, cand et n → result string (behavior flag).
 
     Module Res.
       Section Res.
       Context {et : exec_type}.
-      Context {unspec : Type}.
-      Notation axres := (result string (behavior unspec)).
-      Notation archres := (archModel.res unspec).
+      Context {flag : Type}.
+      Notation axres := (result string (behavior flag)).
+      Notation archres := (archModel.res flag).
       Notation cand := (cand et).
 
       Definition to_archModel (axr : axres) {n} (cd : cand n)
@@ -1366,7 +1366,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
               Some (archModel.Res.FinalState finalState p)
             else None
         | Ok Rejected => None
-        | Ok (Unspecified u) => Some (archModel.Res.Unspecified u)
+        | Ok (Flagged u) => Some (archModel.Res.Flagged u)
         | Error msg => Some (archModel.Res.Error msg)
         end.
 
@@ -1383,7 +1383,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         | _, Error _ => True
         | Ok Allowed, Ok Allowed => True
         | Ok Rejected, _ => True
-        | Ok (Unspecified u), Ok (Unspecified u') => u = u'
+        | Ok (Flagged u), Ok (Flagged u') => u = u'
         | _, _ => False
         end.
 
@@ -1416,11 +1416,11 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
 
     Section Ax.
       Context {et : exec_type}.
-      Context {unspec : Type}.
-      Notation axres := (result string (behavior unspec)).
-      Notation archres := (archModel.res unspec).
-      Notation model := (archModel.nc unspec).
-      Notation t := (t et unspec).
+      Context {flag : Type}.
+      Notation axres := (result string (behavior flag)).
+      Notation archres := (archModel.res flag).
+      Notation model := (archModel.nc flag).
+      Notation t := (t et flag).
       Notation cand := (cand et).
 
       (** Lifting Res definition to Ax *)

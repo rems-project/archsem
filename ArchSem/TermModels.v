@@ -185,16 +185,18 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     (** ** Model results *)
     Module Res. (* namespace *)
       Section AMR.
-      Context {unspecified : Type} {n : nat}.
+      Context {flag : Type} {n : nat}.
       Context {termCond : terminationCondition n}.
 
       (** A model result is the output of a model on a given initial state. *)
       Inductive t :=
       | FinalState (s : archState n) (t : archState.is_terminated termCond s)
-      (** Unspecified is any kind of behavior that is not fully specified but is
-        not a model error. For example a BBM failure. *)
-      | Unspecified (unspec : unspecified)
-      (** Expected reasons for failures:
+      (** Flagged behaviours is any kind of behaviour that is not fully
+        described but is not a UB error. For example a BBM failure or any other
+        constrained unpredictable behaviour for Arm. *)
+      | Flagged (f : flag)
+      (** An error means Undefined Behaviour (UB), this means that the initial
+        state is out of scope for the model. Expected reasons for failures:
 
         - The model does not support a specific outcome.
 
@@ -223,9 +225,9 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
         mset_omap
           (λ x, match x with | FinalState s t => Some (existT s t) | _ => None end) ts.
 
-      Definition unspecifieds (ts : E t) :=
+      Definition flags (ts : E t) :=
         mset_omap
-          (λ x, match x with | Unspecified us => Some us | _ => None end) ts.
+          (λ x, match x with | Flagged fs => Some fs | _ => None end) ts.
 
       Definition errors (ts : E t) :=
         mset_omap (λ x, match x with | Error us => Some us | _ => None end) ts.
@@ -236,29 +238,41 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
       (* TODO SetUnfold instances for othrow *)
       #[local] Typeclasses Transparent othrow.
 
-      #[global] Instance set_unfold_elem_of_unspecifieds ts us P:
-        SetUnfoldElemOf (Unspecified us) ts P →
-        SetUnfoldElemOf us (unspecifieds ts) P.
-      Proof using. tcclean. unfold unspecifieds. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      #[global] Instance set_unfold_elem_of_flagifieds ts fs P:
+        SetUnfoldElemOf (Flagged fs) ts P →
+        SetUnfoldElemOf fs (flags ts) P.
+      Proof using.
+        tcclean.
+        unfold flags.
+        hauto l:on simp+:set_unfold simp+:eexists.
+      Qed.
       #[global] Instance set_unfold_elem_of_finalStates ts fs P:
         SetUnfoldElemOf (FinalState fs.T1 fs.T2) ts P →
         SetUnfoldElemOf fs (finalStates ts) P.
-      Proof using. tcclean. unfold finalStates. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      Proof using.
+        tcclean.
+        unfold finalStates.
+        hauto l:on simp+:set_unfold simp+:eexists.
+      Qed.
       #[global] Instance set_unfold_elem_of_errors ts msg P:
         SetUnfoldElemOf (Error msg) ts P → SetUnfoldElemOf msg (errors ts) P.
-      Proof using. tcclean. unfold errors. hauto l:on simp+:set_unfold simp+:eexists. Qed.
+      Proof using.
+        tcclean.
+        unfold errors.
+        hauto l:on simp+:set_unfold simp+:eexists.
+      Qed.
       #[global] Typeclasses Opaque finalStates.
-      #[global] Typeclasses Opaque unspecifieds.
+      #[global] Typeclasses Opaque flags.
       #[global] Typeclasses Opaque errors.
 
       (** A model is weaker if it allows more behaviors. This assumes all
-          unspecified behaviors to be independent of regular final states, later
-          this may be expanded with an order on the unspecified objects.
+          flagified behaviors to be independent of regular final states, later
+          this may be expanded with an order on the flagified objects.
           weaker ts ts' ↔ "ts' is weaker than ts" ↔
           "ts' has more behaviours than ts" *)
       Definition weaker (ts ts' : E t) :=
         no_error ts' →
-        finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts'
+        finalStates ts ⊆ finalStates ts' ∧ flags ts ⊆ flags ts'
         ∧ no_error ts.
 
       (** A model is wider if it matches exactly the narrow model when the
@@ -269,10 +283,10 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
        *)
       Definition wider (ts ts' : E t) :=
         (no_error ts' →
-         finalStates ts ⊆ finalStates ts' ∧ unspecifieds ts ⊆ unspecifieds ts') ∧
+         finalStates ts ⊆ finalStates ts' ∧ flags ts ⊆ flags ts') ∧
           (no_error ts →
            finalStates ts ≡ finalStates ts' ∧
-             unspecifieds ts ≡ unspecifieds ts' ∧
+             flags ts ≡ flags ts' ∧
              no_error ts').
 
       Lemma wider_weaker (ts ts' : E t) : wider ts ts' → weaker ts' ts.
@@ -305,14 +319,14 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     (** ** Models *)
     Section Model.
       Context `{MonadSet E}.
-      Context {unspec : Type}.
+      Context {flag : Type}.
 
       (** Definition of an architectural model. This is parametric on the set
           type [E] of results, so that this definition supports both executable
           and non-executable models *)
       Definition t : Type :=
         ∀ (n : nat) (term : terminationCondition n),
-        archState n → E (res unspec n term).
+        archState n → E (res flag n term).
 
       Definition weaker (m m' : t) : Prop
         := ∀ n term initSt, Res.weaker (m n term initSt) (m' n term initSt).
@@ -355,8 +369,8 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     Arguments t : clear implicits.
 
     (** Change the set type of a model *)
-    Definition map_set {E E' unspec} (f : ∀ {A}, E A → E' A) (m : t E unspec)
-      : t E' unspec := λ n term initSt, f (m n term initSt).
+    Definition map_set {E E' flag} (f : ∀ {A}, E A → E' A) (m : t E flag)
+      : t E' flag := λ n term initSt, f (m n term initSt).
 
     (** Non computational model *)
     Notation nc := (t propset).
@@ -364,7 +378,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     (** Computational model *)
     Notation c := (t listset).
 
-    Definition to_nc {unspec} `{MonadSet E} : t E unspec → nc unspec :=
+    Definition to_nc {flag} `{MonadSet E} : t E flag → nc flag :=
       map_set (λ A, set_to_propset).
   End archModel.
 

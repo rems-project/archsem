@@ -60,7 +60,7 @@ Definition r0_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
       then Ok (bv_unsigned r0)
       else Error "R0 not in state"
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged e => match e with end
   end.
 
 (** * Helper functions for PSTATE setup *)
