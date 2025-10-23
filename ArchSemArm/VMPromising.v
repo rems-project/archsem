@@ -1470,11 +1470,12 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := ts.(TState.vspec) ⊔ vbob ⊔ viio in
-  let check_vpost :=
+  let check_inv_time :=
     if invalidation_time is Some invalidation_time then
       (time <? invalidation_time)%nat
+      && (ts.(TState.vspec) <? invalidation_time)%nat
     else true in
-  guard_discard (check_vpost);;
+  guard_discard (check_inv_time);;
   guard_discard (vpre ⊔ (TState.coh ts !!! loc) < time)%nat;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_coh loc time;;
