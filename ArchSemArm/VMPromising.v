@@ -793,17 +793,38 @@ Module TLB.
   #[export] Typeclasses Transparent Ctxt.t.
 
   Module Entry.
-    Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+    Record t (lvl : Level) :=
+      make {
+        val_ttbr : val;
+        ptes : vec val (S lvl);
+      }.
+    Arguments make {_} _ _.
+    Arguments val_ttbr {_}.
+    Arguments ptes {_}.
+
+    #[global] Instance eq_dec lvl : EqDecision (t lvl).
+    Proof. solve_decision. Defined.
+
+    #[global] Instance eqdep_dec : EqDepDecision t.
+    Proof. intros ? ? ? [] []. decide_jmeq. Defined.
+
+    #[global] Instance count lvl : Countable (t lvl).
+    Proof.
+      eapply (inj_countable' (fun ent => (val_ttbr ent, ptes ent))
+                        (fun x => make x.1 x.2)).
+      abstract sauto.
+    Defined.
+
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.(ptes).
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
         (pte : val)
         (CHILD : lvl + 1 = clvl) : t clvl :=
-      ctrans _ (tlbe +++ [#pte]).
+      make tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte])).
     Solve All Obligations with lia.
   End Entry.
-  #[export] Typeclasses Transparent Entry.t.
+  Export (hints) Entry.
 
   (* Full Entry *)
   Module FE.
@@ -934,7 +955,8 @@ Module TLB.
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
-          let entry : Entry.t (Ctxt.lvl ctxt) := [#memval] in
+          let entry : Entry.t (Ctxt.lvl ctxt) :=
+            Entry.make val_ttbr ([#memval] : vec val (S root_lvl)) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
             Ok (VATLB.insert ctxt entry vatlb, true)
@@ -958,8 +980,8 @@ Module TLB.
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
       (ttbr : reg) : result string (VATLB.t * bool) :=
-    guard_or "ASID is not active"
-      $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
+    (* guard_or "ASID is not active"
+      $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;; *)
     guard_or "The translation entry is not in the TLB"
       (te ∈ VATLB.get ctxt vatlb);;
 
@@ -1185,7 +1207,7 @@ Module TLB.
                else filter (λ te, is_block (TLB.Entry.pte te)) tes in
     for te in (elements tes) do
       ti ← invalidation_time mem tid trans_time ctxt te;
-      mret ((vec_to_list te), ti)
+      mret ((vec_to_list (Entry.ptes te)), ti)
     end.
 
   (** Get all the TLB entries that could translate the given VA
@@ -1247,7 +1269,7 @@ Module TLB.
             if decide (is_valid memval) then mret None
             else
               ti ← invalidation_time mem tid trans_time ctxt te;
-              mret $ Some ((vec_to_list te) ++ [memval], ti)
+              mret $ Some ((vec_to_list (Entry.ptes te)) ++ [memval], ti)
           else
             mthrow "The PTE is missing"
         end;
@@ -1282,9 +1304,11 @@ Module TLB.
                 (va : bv 64) (asid : bv 16)
                 (ttbr : reg) : result string (list (list val * (option nat))) :=
     candidates_asid ←
-      get_invalid_ptes_with_inv_time_by_lvl_asid ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
+      get_invalid_ptes_with_inv_time_by_lvl_asid
+        ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
     candidates_global ←
-      get_invalid_ptes_with_inv_time_by_lvl_asid ts init mem tid tlb trans_time lvl va None ttbr;
+      get_invalid_ptes_with_inv_time_by_lvl_asid
+        ts init mem tid tlb trans_time lvl va None ttbr;
     mret (candidates_asid ++ candidates_global).
 
   Definition get_invalid_ptes_with_inv_time (ts : TState.t) (init : Memory.initial)
