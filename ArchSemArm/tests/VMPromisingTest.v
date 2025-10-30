@@ -67,7 +67,7 @@ Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
     let regs : registerMap := fs.(archState.regs) !!! tid in
     check_regs reg regs
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged f => match f with end
   end.
 
 Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
@@ -79,7 +79,7 @@ Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
         check_regs reg regmap
       end
   | archModel.Res.Error s => Error s
-  | archModel.Res.Unspecified e => match e with end
+  | archModel.Res.Flagged f => match f with end
   end.
 
 (** * Helper functions for PSTATE setup *)
