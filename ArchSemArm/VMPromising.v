@@ -1715,7 +1715,6 @@ Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   iis ← mget snd;
-  let v : bv 56 := trans_end.(AddressDescriptor_paddress).(FullAddress_address) in
   if iis.(IIS.trs) is Some trs then
     let trans_time := trs.(IIS.TransRes.time) in
     let fault := trans_end.(AddressDescriptor_fault) in
