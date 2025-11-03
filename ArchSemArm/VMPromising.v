@@ -703,8 +703,11 @@ Definition prefix (lvl : Level) := bv (level_length lvl).
 Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
   bv_extract 12 n va.
 
-Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
-  bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
+Definition prefix_to_va {n : N} (is_upper : bool) (p : bv n) : bv 64 :=
+  if is_upper then
+    bv_concat 64 (bv_1 16) (bv_concat 48 p (bv_0 (48 - n)))
+  else
+    bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
 
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
@@ -1188,7 +1191,7 @@ Module TLB.
     | (ev, t) :: tl =>
       match ev with
       | Ev.Tlbi tlbi =>
-        let va := prefix_to_va (Ctxt.va ctxt) in
+        let va := prefix_to_va (Entry.is_upper te) (Ctxt.va ctxt) in
         if decide (is_te_invalidated_by_tlbi tlbi tid ctxt te) then
           mret (Some t)
         else
