@@ -704,10 +704,8 @@ Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
   bv_extract 12 n va.
 
 Definition prefix_to_va {n : N} (is_upper : bool) (p : bv n) : bv 64 :=
-  if is_upper then
-    bv_concat 64 (bv_1 16) (bv_concat 48 p (bv_0 (48 - n)))
-  else
-    bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
+  let varange_bit := if is_upper then (bv_1 16) else (bv_0 16) in
+  bv_concat 64 varange_bit (bv_concat 48 p (bv_0 (48 - n))).
 
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
