@@ -20,7 +20,7 @@
  (name coq-archsem-common)
  (synopsis "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library")
  (depends
-  (coq (= 8.19.2))
+  (coq (>= 9.0))
    coq-stdlib
   (coq-equations (>= 1.3))
   (coq-record-update (>= 0.3.4))
@@ -53,10 +53,8 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
  (depends
    coq-archsem
-   (coq-sail-riscv :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-riscv :dev) ; See coq-archsem-riscv.opam.template for the commit number
  )
 )
-
-
 
 (generate_opam_files)

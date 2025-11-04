@@ -44,13 +44,13 @@
 
 (** This file provide support for handling algebraic effects.*)
 
-Require Import Options.
-Require Import CBase CBool CDestruct.
 From stdpp Require Import base.
 From stdpp Require Import fin.
 From stdpp Require Import vector.
 From stdpp Require Import finite.
 
+Require Import Options.
+Require Import CBase CBool CDestruct.
 
 (** * Base effect definitions *)
 

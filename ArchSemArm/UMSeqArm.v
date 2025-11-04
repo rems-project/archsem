@@ -42,12 +42,12 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.GRel.
-Require Import ASCommon.FMon.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common GRel FMon.
+
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
+
 
 (** This is an implementation of a user-mode SC Axiomatic model in ARM style.
 

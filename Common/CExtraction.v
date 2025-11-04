@@ -42,16 +42,16 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ZArith.
+From Stdlib Require Import ZArith.
 Require Import Options.
 Require Import CBase.
 
-Require Import Extraction.
+From Stdlib Require Import Extraction.
 
-Require Import ExtrOcamlBasic.
-Require Import ExtrOcamlNativeString.
-Require Import ExtrOcamlZBigInt.
-Require Import ExtrOcamlNatBigInt.
+From Stdlib Require Import ExtrOcamlBasic.
+From Stdlib Require Import ExtrOcamlNativeString.
+From Stdlib Require Import ExtrOcamlZBigInt.
+From Stdlib Require Import ExtrOcamlNatBigInt.
 
 Extraction Blacklist String.
 Extract Inlined Constant ctrans => "(fun x -> x)".

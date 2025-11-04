@@ -45,15 +45,10 @@
 (** Unfortunately this development needs to support two kinds of bitvector.
     The module will attempt to provide smooth interoperability between the two *)
 
-Require Import Lia.
-Require Import HexString.
+From Stdlib Require Import Lia HexString.
 
-Require Import stdpp.decidable.
-Require Import stdpp.countable.
-Require Import stdpp.vector.
-Require Import stdpp.pretty.
-Require Export stdpp.bitvector.bitvector.
-Require Export stdpp.bitvector.tactics.
+From stdpp Require Import decidable countable vector pretty.
+From stdpp.bitvector Require Import bitvector tactics.
 
 Require Import Options.
 Require Import CBase.

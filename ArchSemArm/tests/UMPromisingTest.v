@@ -42,11 +42,10 @@
 (*                                                                            *)
 (******************************************************************************)
 
-From ASCommon Require Import Options Common.
-From ArchSemArm Require Import ArmInst.
-From ASCommon Require Import CResult CList.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common CResult CList.
 
-From ArchSemArm Require Import UMPromising.
+From ArchSemArm Require Import ArmInst UMPromising.
 
 Open Scope stdpp.
 Open Scope bv.

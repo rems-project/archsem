@@ -42,19 +42,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Strings.String.
-
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Exec.
-
-Require Import Relations.
-Require Import Program.
-
-#[local] Open Scope Z_scope.
-#[local] Open Scope stdpp_scope.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Exec.
 
 Require Import Interface.
+
 
 
 (** This module specify general definitions of hardware architecture models for

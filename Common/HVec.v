@@ -42,10 +42,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import CArith.
-
 From stdpp Require Export fin.
-From Hammer Require Export Tactics.
+
+Require Import Options.
+Require Import CBase CArith.
+
 
 Fixpoint hvec (n : nat) : (fin n -> Type) -> Type :=
   match n with

@@ -25,7 +25,7 @@
    Exec
    HVec
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2)
+ (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
                --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib

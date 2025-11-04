@@ -42,13 +42,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
+From stdpp Require Import base list finite sets list listset.
+
 Require Import Options.
 Require Import CBase CBool CMaps CArith CDestruct CMonads.
-From stdpp Require Import base.
-From stdpp Require Export list.
-From stdpp Require Import finite.
-From stdpp Require Import sets.
-From stdpp Require Export listset.
+
 
 Global Instance proper_list_mbind A B :
   Proper (pointwise_relation A (=) ==> (=@{list A}) ==> (=@{list B})) mbind.

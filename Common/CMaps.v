@@ -46,7 +46,7 @@ From stdpp Require Export gmap.
 From stdpp Require Export fin_maps.
 From stdpp Require Import pretty.
 
-Require Import Strings.String.
+From Stdlib Require Import Strings.String.
 
 Require Import Options.
 Require Import CBase.
@@ -317,19 +317,37 @@ Program Global Instance map_cind `{FinMap K M} A (m : M A) (P : M A -> Prop) :
   |}.
 Solve All Obligations with intros; apply map_ind; naive_solver.
 
-(* See CSets induction for set_fold for explanation of funelim instances *)
-Lemma map_fold_ind' `{FinMap K M} {A B}
-  (f : K → A → B → B) (b : B) (P : M A → B → Prop) :
-  P ∅ b → (∀ i x m r, m !! i = None → P m r → P (<[i:=x]> m) (f i x r)) →
-  ∀ m, P m (map_fold f b m).
-Proof. eapply (map_fold_weak_ind (flip P)). Qed.
+(** Support for [map_fold] in [funelim]. For it to work, [FinMap] must
+    resolvable from global context (e.g. if already applied to [gmap]) or from
+    section variable, not from local variables *)
+Section MapFoldElim.
+  Context `{F : FinMap K M} {A B} (f : K → A → B → B) (b : B).
 
-(* Same Warning as set_unfold: FinMap needs to be resolvable from global context
-or section variable, not local variable *)
-#[global] Instance FunctionalElimination_map_fold
-  `{FinMap K M} {A B} f b :
-  FunctionalElimination (@map_fold K A (M A) _ B f b) _ 3 :=
-  map_fold_ind' (K := K) (M := M) (A:= A) (B := B) f b.
+  (** [funelim] compatible elimination of [map_fold] *)
+  (* In general, for [funelim], the order of parameters needs to be: *)
+  (*    - Fixed parameters that are not changing in the induction *)
+  (*    - The induction property P *)
+  (*    - The induction cases *)
+  (*    - The arguments that are being inducted upon *)
+  (*    - The conclusion, which is P applied to the arguments in function order, *)
+  (*      then the function application *)
+  Lemma map_fold_elim  (P : M A → B → Prop) :
+    P ∅ b →
+    (∀ i x m, m !! i = None →
+              P m (map_fold f b m) →
+              P (<[i:=x]> m) (f i x (map_fold f b m))) →
+    ∀ m, P m (map_fold f b m).
+  Proof using F.
+    intros ? ? m.
+    induction m using map_first_key_ind.
+    - rewrite map_fold_empty. done.
+    - rewrite map_fold_insert_first_key by done.
+    naive_solver.
+  Qed.
+  #[export] Instance FunctionalElimination_map_fold :
+    FunctionalElimination (@map_fold K A (M A) _ B f b) _ 3 :=
+    map_fold_elim.
+End MapFoldElim.
 
 
 (** * FinMap reduce ***)
@@ -359,19 +377,9 @@ Section FinMapReduce.
     tcclean. clear dependent P.
     unfold finmap_reduce_union, finmap_reduce.
     funelim (map_fold _ _ _).
-    - setoid_rewrite lookup_unfold.
-      set_solver.
-    - do 7 deintro. intros i v m r Hn Hxr.
-      set_unfold.
-      setoid_rewrite Hxr; clear Hxr.
-      split.
-      + intros [(k&v'&?) | ?].
-        * exists k.
-          exists v'.
-          rewrite lookup_unfold.
-          hauto l:on.
-        * sfirstorder.
-      + hauto lq:on rew:off simp+:rewrite lookup_unfold in *.
+    all: set_unfold.
+    all: setoid_rewrite lookup_unfold.
+    all: hauto.
   Qed.
 End FinMapReduce.
 
@@ -553,17 +561,17 @@ Section DMap.
       map_fold (λ _, f) init m.(dmap_car).
 
     Context (P : dmap → B → Prop) (Hi : P ∅ init)
-      (Hr : ∀ k v m r,
-         dmap_lookup k m = None → P m r →
-         P (dmap_insert k v m) (f (existT k v) r)).
-    Lemma dmap_fold_ind : ∀ m, P m (dmap_fold m).
+      (Hr : ∀ k v m,
+         dmap_lookup k m = None → P m (dmap_fold m) →
+         P (dmap_insert k v m) (f (existT k v) (dmap_fold m))).
+    Lemma dmap_fold_elim : ∀ m, P m (dmap_fold m).
     Proof using Hi Hr ctrans_F.
       intro m.
       unfold dmap_fold.
       funelim (map_fold _ _ _).
       - enough (∅ = m) as <- by done.
-      by apply dmap_eq_car.
-      - do 8 deintro. intros k [k' v] mold b Hknew HInd mnew Hmnew.
+        by apply dmap_eq_car.
+      - do 8 deintro. intros k [k' v] mold Hknew HInd mnew Hmnew _.
         assert (k' = k). {
           enough (dmap_car mnew !! k = Some (existT k' v)) as H'' by
               by apply dmap_wf in H''.
@@ -589,7 +597,7 @@ Section DMap.
 
   #[export] Instance FunctionalElimination_dmap_fold {B} f b :
     FunctionalElimination (dmap_fold f b) _ 3 :=
-    dmap_fold_ind (B := B) f b.
+    dmap_fold_elim (B := B) f b.
 
   Definition dmap_to_list (d : dmap) : list (sigT F) :=
     dmap_fold (::) [] d.

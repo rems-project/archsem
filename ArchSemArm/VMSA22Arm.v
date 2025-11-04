@@ -42,16 +42,13 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.GRel.
-Require Import ASCommon.FMon.
-Require Import ArchSem.FromSail.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common GRel FMon.
+
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
-Require Import SailTinyArm.System_types.
 
-Import Candidate.
+(* Import Candidate. *)
 
 (** This file define the VMSA model from the ESOP 22 paper by Ben Simner et al.
     The reference implementation is at: TODO
@@ -678,10 +675,8 @@ Section VMSAArm.
 
 End VMSAArm.
 
-Require Import ASCommon.CResult.
-
 (** The VMSA22 Arm axiomatic model *)
-Definition axmodel regs_whitelist : Ax.t NMS ∅ :=
+Definition axmodel regs_whitelist : Ax.t Candidate.NMS ∅ :=
   λ _ cd, if decide (consistent cd) then
             if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
             else Error ""

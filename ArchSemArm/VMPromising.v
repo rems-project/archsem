@@ -42,28 +42,17 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Exec.
-Require Import ASCommon.GRel.
-Require Import ASCommon.StateT.
-Require Import ASCommon.FMon.
-Require Import ASCommon.HVec.
-Require Import Coq.Program.Equality.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common GRel Exec FMon StateT HVec.
+
+From ArchSem Require Import GenPromising.
+Require Import ArmInst.
 
 Require UMPromising.
 Import (hints) UMPromising.
 
-Require Import ArchSem.GenPromising.
-Require Import ArmInst.
-
-From stdpp Require Import decidable list vector.
-From stdpp Require Import pretty.
-
-
-(* Shadow constructor name from coq-sail with our result type *)
-Import ASCommon.CResult.
-
+#[local] Open Scope list.
+#[local] Open Scope nat.
 #[local] Open Scope stdpp.
 
 (** The goal of this module is to define an Virtual memory promising model,
@@ -1180,7 +1169,7 @@ Module TLB.
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_asid;
     candidates_global ←
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_global;
-    mret (candidates_asid ++ candidates_global).
+    mret (candidates_asid ++ candidates_global)%list.
 
   (** Get all the TLB entries that could translate the given VA
       in the provided ASID context.

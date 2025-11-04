@@ -42,9 +42,9 @@
 (*                                                                            *)
 (******************************************************************************)
 
-From ASCommon Require Import Options Common.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common CResult.
 From ArchSemArm Require Import ArmInst.
-From ASCommon Require Import CResult.
 
 
 

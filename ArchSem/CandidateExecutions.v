@@ -52,19 +52,13 @@
  *)
 
 
-Require Import Ensembles.
-
-Require Import Strings.String.
+From Stdlib Require Import Strings.String.
 
 From stdpp Require Export listset.
 From stdpp Require Export gmap.
 
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Exec.
-Require Import ASCommon.GRel.
-Require Import ASCommon.FMon.
-Require Import ASCommon.StateT.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Exec GRel FMon StateT.
 
 Require Import Interface.
 Require Import TermModels.
