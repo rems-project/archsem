@@ -43,8 +43,8 @@
 (******************************************************************************)
 
 Require Export Equations.Prop.Equations.
-Require Export Program.Equality Relations.
-Require Import ZArith JMeq.
+From Stdlib Require Export Program.Equality Relations.
+From Stdlib Require Import ZArith JMeq.
 
 From Ltac2 Require Export Ltac2.
 Export Ltac2.Printf.
@@ -57,6 +57,7 @@ From stdpp Require Export fin.
 From stdpp Require Export tactics.
 From stdpp Require Import vector.
 From stdpp Require Import decidable.
+From stdpp Require Import sets.
 
 From RecordUpdate Require Export RecordSet.
 From Hammer Require Export Tactics.
@@ -95,7 +96,7 @@ Remove Hints decide_rel : typeclass_instances.
    function using a generic [Acc] predicate. But it's fine for function whose
    termination is derived from a measure *)
 
-Require Export FunctionalExtensionality PropExtensionality Classical.
+From Stdlib Require Export FunctionalExtensionality PropExtensionality Classical.
 
 (** Axiomatic proof irrelevance has low priority so that search for proof
     irrelevance try to find axiom-free instances first *)
@@ -254,6 +255,10 @@ Notation "(.× x )" := (λ y, cprod y x) (only parsing) : stdpp_scope.
 
 (** * Constrained quantifiers ***)
 
+(* Need this until https://github.com/rocq-prover/rocq/issues/19631 gets
+   fixed *)
+#[export] Set Warnings "-notation-incompatible-prefix".
+
 #[local] Notation "∀in x ∈ b , P" := (∀ x, x ∈ b → P)
   (at level 10, x binder, only parsing, P at level 200) : type_scope.
 
@@ -264,7 +269,7 @@ Notation "∀ x .. y ∈ b , P" := (∀in x ∈ b, .. (∀in y ∈ b, P) ..)
    quantifiers one by one, and not as a group. This allows to specify the proper
    "closed binder" printing specification *)
 Notation "∀ x ∈ b , P" := (∀ x, x ∈ b → P)
-  (at level 200, x closed binder, only printing,
+  (at level 10, x closed binder, only printing,
     format "'[  ' '[  ' ∀  x  ∈  b ']' ,  '/' P ']'") : type_scope.
 
 #[local] Notation "∃in x ∈ b , P" := (∃ x, x ∈ b ∧ P)
@@ -288,7 +293,7 @@ Arguments clos_refl_trans {_}.
 Ltac2 Notation x(self) "|>" f(self) : 4 := f x.
 
 (** Fix up the do notation. The default one doesn't work *)
-Ltac2 Notation terminal("do") n(thunk(tactic(0))) t(thunk(self)) := do0 n t.
+Ltac2 Notation "do" n(thunk(tactic(0))) t(thunk(self)) := do0 n t.
 
 (** or else notation, same as [||] in Ltac1. Due to parser limitations this is a
     the same level as [;] and also right associative, so [a ; b ||ₜ c] is
@@ -390,7 +395,7 @@ Ltac2 rec removelast_rev (l : 'a list) :=
   let rec aux (acc : 'a list) (ls : 'a list) :=
     match ls with
     | [] => []
-    | [a] => acc
+    | [_] => acc
     | x :: (_ :: _ as t) => aux (x :: acc) t
     end
   in aux [] l.
@@ -423,7 +428,7 @@ Ltac2 Notation "revert" "until" "*" p(pattern) := revert_until true p.
 
 (** Get an hypothesis by pattern *)
 Ltac2 get_hyp (p : pattern) : (ident * constr option * constr) option :=
-  Control.hyps () |> List.find_opt (fun (h, _, c) => match_pat p c).
+  Control.hyps () |> List.find_opt (fun (_, _, c) => match_pat p c).
 
 (** Get an hypothesis name by pattern *)
 Ltac2 get_hyp_id (p : pattern) : ident option :=
@@ -506,8 +511,8 @@ Ltac2 prt_hyp () (x : ident) := fprintf "%I:%t" x (Constr.type (Control.hyp x)).
 (** Get the number of constructor of an inductive type. Does [get_head] automatically if needed. *)
 Ltac2 rec get_nconstructors(ind_type : constr) : int option :=
   match Constr.Unsafe.kind ind_type with
-  | Constr.Unsafe.Ind i inst => Some (Ind.nconstructors (Ind.data i))
-  | Constr.Unsafe.App c a => get_nconstructors c
+  | Constr.Unsafe.Ind i _ => Some (Ind.nconstructors (Ind.data i))
+  | Constr.Unsafe.App c _ => get_nconstructors c
   | _ => None
   end.
 
@@ -797,8 +802,7 @@ Hint Extern 10 => lia : lia.
 
 Require Import Morphisms.
 Import Morphisms.ProperNotations.
-Require Import Coq.Classes.RelationClasses.
-From stdpp Require Import sets.
+Require Import Stdlib.Classes.RelationClasses.
 
 Opaque Unconvertible.
 

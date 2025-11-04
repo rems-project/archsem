@@ -42,13 +42,14 @@
 (*                                                                            *)
 (******************************************************************************)
 
+
+From Stdlib Require Import Program.Equality.
+From stdpp Require Import sets.
+
 Require Import Options.
 Require Import CBase.
-Require Import stdpp.sets.
 (* We re-export CSimp as the two tactics go together *)
 Require Export CSimp.
-(* TODO Use Equations for dependent equalities management ? *)
-Require Import Program.Equality.
 
 (** CDestruct is context cleaner/clarifier.
 
@@ -514,6 +515,7 @@ context. The general idea being that hypotheses to be processes are in the goal,
 and hypotheses already processed are in the context. *)
 
 (** Core [cdestruct] engine: One single step *)
+#[warnings="-ltac2-unused-variable"]
 Ltac2 cdestruct_step0 () :=
   match! goal with
   | [|- ∀ _ : ?t, _] => (* Case splitting *)
@@ -577,7 +579,7 @@ Ltac2 cdestruct_step0 () :=
       revert $h2; revert $hn
  (* If there is nothing to do, introduce the hypothesis, this commits it as
     being "processed" and we won't go back to it (unless modified). *)
-  | [|- ∀ _ : ?h, _] => intro
+  | [|- ∀ _ : _, _] => intro
 
   (* If the goal is blocked, we don't do goal clean-up *)
   | [|- cblock _] => () (* stop on block: (cdestruct_step) is wrapped in progress*)

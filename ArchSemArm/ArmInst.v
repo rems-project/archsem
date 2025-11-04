@@ -42,15 +42,17 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import SailStdpp.Base.
-Require Export SailStdpp.ConcurrencyInterfaceTypes.
-From ASCommon Require Import Options Common Effects.
+From SailStdpp Require Import -(notations) Base ConcurrencyInterfaceTypes.
 
-Require Export SailTinyArm.System_types.
+From SailTinyArm Require Export System_types.
+From SailTinyArm Require Import System.
+
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Effects.
+
 From ArchSem Require Import
-  Interface FromSail TermModels CandidateExecutions GenPromising SeqModel.
-
-Open Scope stdpp.
+  Interface TermModels CandidateExecutions GenPromising SeqModel.
+From ArchSem Require Export FromSail.
 
 
 (** Export [GReg] definitions and typeclasses, since it's what we will

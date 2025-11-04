@@ -42,10 +42,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Options.
-Require Import CBase CBool CDestruct CMonads.
 From stdpp Require Import base.
 From stdpp Require Export option.
+
+Require Import Options.
+Require Import CBase CBool CDestruct CMonads.
 
 Definition cdestr_option T : CDestrCase (option T) := ltac:(constructor).
 

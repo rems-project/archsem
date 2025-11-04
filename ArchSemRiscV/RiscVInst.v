@@ -42,16 +42,17 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import SailStdpp.Base.
-Require Import SailStdpp.ConcurrencyInterfaceTypes.
-From ASCommon Require Import Options Common Effects FMon.
+From SailStdpp Require Import -(notations) Base ConcurrencyInterfaceTypes.
 
-Require Export Riscv.rv64d_types.
+From Riscv Require Export rv64d_types.
+From Riscv Require Import rv64d.
+
+From ASCommon Require Import Options.
+From ASCommon Require Import Common FMon.
+
 From ArchSem Require Import
-  Interface FromSail TermModels CandidateExecutions GenPromising SeqModel.
-
-#[global] Open Scope stdpp.
-
+  Interface TermModels CandidateExecutions GenPromising SeqModel.
+From ArchSem Require Export FromSail.
 
 (** Export [GReg] definitions and typeclasses, since it's what we will
     manipulate for registers *)
@@ -122,8 +123,6 @@ Export RiscVSeqModel.
   Inhabited_register_values
   Countable_register_values
   : typeclass_instances.
-
-Require Riscv.rv64d.
 
 (** The semantics of instructions from [sail-riscv] by using the conversion code
     from [ArchSem.FromSail]. *)

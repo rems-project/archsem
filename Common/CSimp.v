@@ -93,9 +93,9 @@ Ltac2 csimp_is_nondep_app (c : constr) :=
     substitution: The result is already locally beta reduced *)
 Ltac2 apply_subst (c: constr) (var : ident) :=
   match Constr.Unsafe.kind c with
-  | Constr.Unsafe.Lambda b c =>
+  | Constr.Unsafe.Lambda _ c =>
       Constr.Unsafe.substnl [Constr.Unsafe.make (Constr.Unsafe.Var var)] 0 c
-  | Constr.Unsafe.Prod b c =>
+  | Constr.Unsafe.Prod _ c =>
       Constr.Unsafe.substnl [Constr.Unsafe.make (Constr.Unsafe.Var var)] 0 c
   | _ => throw_tacticf "apply_subst, not on a lambda or prod abstraction"
   end.

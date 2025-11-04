@@ -42,16 +42,8 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Strings.String.
-
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Exec.
-Require Import ASCommon.FMon.
-Require Import ASCommon.StateT.
-
-#[local] Open Scope Z_scope.
-#[local] Open Scope stdpp_scope.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Exec FMon StateT.
 
 Require Import Interface.
 Require Import TermModels.

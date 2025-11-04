@@ -47,19 +47,14 @@
     now is pa manipulation functions *)
 
 
-Require Import SailStdpp.ConcurrencyInterfaceTypesV2.
-Require Import SailStdpp.ConcurrencyInterfaceV2.
-Require Import SailStdpp.Values.
-Require Import SailStdpp.Instances.
+From SailStdpp Require Import -(notations) Base ConcurrencyInterfaceV2.
 
 Module Type SailArch := Arch.
 Module Type SailInterfaceT := InterfaceT.
 
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Effects.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common FMon.
 
-Require Import ASCommon.FMon.
 Require Import Interface.
 
 (** * Transparency management for [coq-sail] *)

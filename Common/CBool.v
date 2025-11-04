@@ -47,8 +47,7 @@
 
     In particular it will cover boolean reflection and decidable generic
     operations like equality. *)
-Require Import DecidableClass.
-Require Import JMeq.
+From Stdlib Require Import DecidableClass JMeq.
 
 Require Import Equations.Prop.Equations.
 
@@ -313,7 +312,7 @@ Ltac2 decide_record0 () :=
       assert_bt (Option.equal Int.equal (get_nconstructors r) (Some 1));
       let ctr := get_constructor r 0 |> Option.get_bt in
       (* printf "%t" ctr; *)
-      let (args, t) := decompose_non_dep_fun_type (Constr.type ctr) in
+      let (args, _) := decompose_non_dep_fun_type (Constr.type ctr) in
       (* printf "%a and %t" (prt_list prt_cstr) args t; *)
       decide_record_fields args;
       abstract (left; split > [assumption..])

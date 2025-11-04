@@ -42,17 +42,12 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Strings.String.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common GRel FMon.
 
-From stdpp Require Import decidable.
-
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.GRel.
-
-Require Import ASCommon.FMon.
 Require Import ArmInst.
 Require Import GenAxiomaticArm.
+
 Require UMArm.
 Module UM := UMArm.
 Require VMSA22Arm.

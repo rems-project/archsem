@@ -60,10 +60,10 @@
     Sequence is obtained with r⨾r' and a set s is converted to a diagonal
     relation with ⦗s⦘. *)
 
-Require Import Wellfounded.
+From Stdlib Require Import Wellfounded.
+From stdpp Require Export option fin_maps.
 
 Require Import Options.
-From stdpp Require Export option fin_maps.
 Require Import Common.
 
 (* For some reason some typeclass instance defined in CSets is missing even if
@@ -185,11 +185,19 @@ Section GRel.
     case_splitting; naive_solver.
   Qed.
 
+  Ltac set_fold_ind :=
+    match goal with
+    | |- context [set_fold ?f ?b ?X] =>
+        pattern X, (set_fold f b X);
+        apply set_fold_ind_L'
+    end.
+
+
   Lemma grel_to_gmap_spec r e1 e2:
     e2 ∈ (grel_to_gmap r !!! e1) <-> (e1, e2) ∈ r.
   Proof using.
     unfold grel_to_gmap.
-    funelim (set_fold _ _ _).
+    set_fold_ind.
     - set_solver.
     - destruct x as [e3 e4].
       set_unfold.
@@ -207,9 +215,10 @@ Section GRel.
     unfold grel_gmap_wf.
     intro a.
     unfold grel_to_gmap.
-    funelim (set_fold _ _ _).
+    set_fold_ind.
     - rewrite lookup_unfold. congruence.
     - destruct x as [e3 e4].
+      intros.
       rewrite lookup_unfold.
       unfold option_union.
       unfold grel_gmap in *.
@@ -311,7 +320,7 @@ Section GRel.
     (e1, e2) ∈ (r ⨾ r') <-> exists e3, (e1, e3) ∈ r /\ (e3, e2) ∈ r'.
   Proof using.
     unfold grel_seq.
-    funelim (set_fold _ _ _).
+    set_fold_ind; intros.
     - set_solver.
     - case_split.
       set_unfold.

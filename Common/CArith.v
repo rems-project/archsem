@@ -42,10 +42,10 @@
 (*                                                                            *)
 (******************************************************************************)
 
+From Stdlib Require Import ZArith.
+From stdpp Require Import numbers fin.
 Require Import Options.
 Require Import CBase.
-Require Import ZArith.
-From stdpp Require Export numbers fin.
 
 (** This file is about arithmetic helpers and tactic. Concerned types are nat, N, Z and fin *)
 

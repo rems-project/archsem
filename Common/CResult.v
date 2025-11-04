@@ -42,9 +42,9 @@
 (*                                                                            *)
 (******************************************************************************)
 
+From stdpp Require Import option.
 Require Import Options.
 Require Import CBase CDestruct CMonads.
-From stdpp Require Import option.
 
 (** The point of this module is to keep the [sum] type symmetric and use this to
     assign a meaning to success and error (and a corresponding monad instance)

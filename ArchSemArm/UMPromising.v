@@ -42,16 +42,13 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Coq.Program.Equality.
-From stdpp Require Import decidable.
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.Exec.
-Require Import ASCommon.StateT.
-Require Import ASCommon.FMon.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Exec FMon StateT.
 
-Require Import ArchSem.GenPromising.
+From ArchSem Require Import GenPromising.
 Require Import ArmInst.
+
+#[local] Open Scope stdpp.
 
 (** The goal of this module is to define an User-mode promising model,
     without mixed-size on top of the new interface *)

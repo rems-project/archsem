@@ -42,12 +42,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Options.
-Require Import Program.Equality.
-Require Import Common.
 From stdpp Require Import option.
+Require Import Options.
+Require Import Common.
 
-(* Reexporting Effects. Using FMon implies using Effects *)
+(** Reexporting Effects. Using FMon implies using Effects *)
 Require Export Effects.
 
 (* Needed for setoid rewrite along cequiv that is defined as an Equiv instance *)

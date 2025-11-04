@@ -42,9 +42,10 @@
 (*                                                                            *)
 (******************************************************************************)
 
-From stdpp Require Export sets.
-From stdpp Require Export gmap. (* <- contains gset *)
-From stdpp Require Export finite.
+From stdpp Require Import sets.
+From stdpp Require Import gmap. (* <- contains gset *)
+From stdpp Require Import finite.
+From stdpp Require Import listset.
 
 Require Import Options.
 Require Import CBase.
@@ -323,30 +324,20 @@ Program Global Instance set_cind_L `{FinSet A C} {lei : LeibnizEquiv C}
   |}.
 Solve All Obligations with intros; apply set_ind_L; naive_solver.
 
-(* Implement funelim on [set_fold].
-
-In general, the order of parameters needs to be:
-   - Fixed parameters that are not changing in the induction
-   - The induction property P
-   - The induction cases
-   - The arguments that are being inducted upon
-   - The conclusion, which is P applied to the arguments in function order,
-     then the function application
- *)
+(** Reorder the parameter of [set_fold_ind_L] to work nicely with [pattern] *)
 Lemma set_fold_ind_L' `{FinSet A C} `{!LeibnizEquiv C}
   {B} (f : A → B → B) (b : B) (P : C → B → Prop) :
   P ∅ b → (∀ x X r, x ∉ X → P X r → P ({[ x ]} ∪ X) (f x r)) →
   ∀ X, P X (set_fold f b X).
 Proof. eapply (set_fold_ind_L (flip P)). Qed.
 
-(* Then when instantiating the typeclass, all the non-inductive parameters
-   should be instance parameters, and the magic integer should be 1 (for P) +
-   the number of induction cases (here 2)
+(** Perform functional induction on set_fold (without any niceties of actual
+induction tactics
 
-WARN: FinSet (and LeibnizEquiv) typeclass needs to be either resolvable from
-   constants (e.g. with a concrete C type like gset) or be a section variable,
-   otherwise funelim gets confused if it's just a local lemma variable. *)
-#[global] Instance FunctionalElimination_set_fold_L
-  `{FinSet A C} `{!LeibnizEquiv C} {B} f b :
-  FunctionalElimination (@set_fold A C _ B f b) _ 3 :=
-  set_fold_ind_L' (A := A) (C := C) f b.
+TODO: Implement a functional induction tactic that is less rigid than [funelim] *)
+Ltac set_fold_ind :=
+  match goal with
+  | |- context [set_fold ?f ?b ?X] =>
+      pattern X, (set_fold f b X);
+      apply set_fold_ind_L'
+  end.

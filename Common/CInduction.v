@@ -42,10 +42,12 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Program.Tactics.
-Require Import Arith.
-Require Import CBase.
+From Stdlib Require Import Program.Tactics Arith.
+
+From stdpp Require Export fin_maps sets.
+
 Require Import Options.
+Require Import CBase.
 
 (** This module exists because I got fed up by how the normal induction tactic
     did not work on custom induction principles. This new tactic is named
@@ -70,8 +72,6 @@ Require Import Options.
     There is currently no way to use intro patterns in the same way as the
     normal induction. *)
 
-From stdpp Require Export fin_maps.
-From stdpp Require Export sets.
 
 
 Class CInduction {A : Type} (a : A) (P : Prop) :=

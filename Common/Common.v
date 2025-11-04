@@ -47,7 +47,6 @@
  *)
 
 From Hammer Require Export Tactics.
-Require Import DecidableClass.
 From stdpp Require Export strings.
 From stdpp Require Export fin.
 From stdpp Require Export pretty.
@@ -55,7 +54,8 @@ From stdpp Require Export vector.
 From stdpp Require Export finite.
 From stdpp Require Export relations.
 From stdpp Require Export propset.
-Require Export Ensembles.
+From stdpp Require Export listset.
+From stdpp.bitvector Require Export bitvector tactics.
 
 Require Import Options.
 Require Export CBase.

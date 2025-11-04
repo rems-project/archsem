@@ -42,11 +42,8 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import Strings.String.
-
-Require Import ASCommon.Options.
-Require Import ASCommon.Common.
-Require Import ASCommon.FMon.
+From ASCommon Require Import Options.
+From ASCommon Require Import Common FMon.
 
 (** * The architecture requirements
 
