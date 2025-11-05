@@ -130,6 +130,12 @@ Notation "∅" := Datatypes.Empty_set : type_scope.
 Notation "x =ⱼ y" := (@JMeq _ x _ y) (at level 70, no associativity).
 Notation "x ≠ⱼ y" := (¬(x =ⱼ y)) (at level 70, no associativity).
 
+(** Type-annotated list notations *)
+Notation "[ ]@{ T }" := (@nil T) (only parsing) : list_scope.
+Notation "[ x ]@{ T }" := (@cons T x (@nil T)) (only parsing ): list_scope.
+Notation "[ x ; y ; .. ; z ]@{ T }" :=
+  (@cons T x (@cons T y .. (@cons T z (@nil T)) ..)) (only parsing ) : list_scope.
+
 (** Monad-annotated fmap notation *)
 Notation "f <$>@{ M } v" := (@fmap M _ _ _ f v)
     (at level 61, only parsing, left associativity).
