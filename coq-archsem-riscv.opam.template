@@ -1,3 +1,3 @@
 pin-depends: [
-  [ "coq-sail-riscv.dev" "git+https://github.com/bacam/sail-riscv.git#2feb36fb"]
+  [ "coq-sail-riscv.dev" "git+https://github.com/bacam/sail-riscv.git#f6eb4cb7"]
 ]
