@@ -100,14 +100,19 @@ Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
   #[export] Typeclasses Transparent reg_countable.
   Definition pretty_reg : Pretty reg := SA.reg_pretty.
   #[export] Typeclasses Transparent pretty_reg.
+<<<<<<< HEAD
   Definition reg_of_string := AE.reg_of_string.
   #[export] Typeclasses Transparent reg_of_string.
+=======
+
+>>>>>>> 8de4a2c (Update sail-arm and sail-riscv for recent Sail/coq-sail changes)
 
   Definition pc_reg := AE.pc_reg.
   #[export] Typeclasses Transparent pc_reg.
 
   Definition reg_type := SA.reg_type.
   #[export] Typeclasses Transparent reg_type.
+<<<<<<< HEAD
   Definition reg_type_eq := SA.reg_type_eq.
   #[export] Typeclasses Transparent reg_type_eq.
   Definition reg_type_countable := SA.reg_type_countable.
@@ -123,6 +128,24 @@ Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
     intros ra rb Heq rva rvb.
     refine (dec_if (decide (ctrans Heq rva = rvb)));
       abstract (dependent destruction Heq; simp ctrans in *; by rewrite JMeq_simpl).
+=======
+  #[export] Instance reg_type_eq (r : reg) : EqDecision (reg_type r) := SA.reg_type_eq r.
+  #[export] Instance reg_type_countable (r : reg) : Countable (reg_type r) := SA.reg_type_countable r.
+  #[export] Instance reg_type_inhabited (r : reg) : Inhabited (reg_type r) := SA.reg_type_inhabited r.
+  #[export] Instance ctrans_reg_type : CTrans reg_type.
+  Proof.
+    intros x y e a.
+    by eapply SA.regval_transport.
+  Defined.
+  #[export] Instance ctrans_reg_type_simpl : CTransSimpl reg_type.
+  Proof. intros x e a. apply SA.regval_transport_sound. Qed.
+  #[export] Instance reg_type_eq_dep_dec : EqDepDecision reg_type.
+  Proof.
+    intros x y e a b.
+    subst x.
+    rewrite JMeq_simpl.
+    by apply reg_type_eq.
+>>>>>>> 8de4a2c (Update sail-arm and sail-riscv for recent Sail/coq-sail changes)
   Defined.
 
   Definition reg_type_of_gen := AE.reg_type_of_gen.
@@ -257,8 +280,14 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
                     | Ok (val, tags) => inl (val, tags)
                     | Error a => inr a
                     end)
+<<<<<<< HEAD
     | SI.MemWrite wr val tags =>
         mcall (MemWrite (MemReq_from_sail wr) val tags)
+=======
+    | SI.MemWrite wr value tags =>
+        mcall (MemWrite (MemReq_from_sail wr)
+                 value tags)
+>>>>>>> 8de4a2c (Update sail-arm and sail-riscv for recent Sail/coq-sail changes)
           |$> (λ o, match o with
                     | Ok () => inl (Some true)
                     | Error a => inr a

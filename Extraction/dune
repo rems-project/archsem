@@ -5,8 +5,8 @@
   (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm SailArm
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
-                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
-                     CList CMaps COption Common CVec countable CResult CSets Datatypes
+                     BinNat BinNums NatDef BinPos PosDef BinPosDef CBase CBitvector CBool CArith
+                     CList CMaps COption Common CVec countable CRelationClasses CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap HexString Interface list_monad list_relations
                      ListDef List0 list_numbers listset mapset

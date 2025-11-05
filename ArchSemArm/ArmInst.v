@@ -49,6 +49,8 @@ From ArchSem Require Import
   Interface TermModels CandidateExecutions GenPromising SeqModel.
 From ArchSem Require Export FromSail.
 
+Open Scope stdpp.
+
 (** First we import the sail generated interface modules *)
 Module Arm.
   Module SA := System_types.Arch.
