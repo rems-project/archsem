@@ -1,3 +1,3 @@
 pin-depends: [
-  [ "coq-sail-stdpp.0.19.1" "git+https://github.com/rems-project/coq-sail.git#abe978f"]
+  [ "coq-sail-stdpp.0.20" "git+https://github.com/rems-project/coq-sail.git#6136421"]
 ]

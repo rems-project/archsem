@@ -35,7 +35,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part")
  (depends
    coq-archsem-common ; need same commit
-  (coq-sail-stdpp (= 0.19.1)) ; See coq-archsem.opam.template for the commit number
+  (coq-sail-stdpp (= 0.20)) ; See coq-archsem.opam.template for the commit number
  )
 )
 

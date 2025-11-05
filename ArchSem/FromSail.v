@@ -92,46 +92,44 @@ an architecture instantiation that is missing from the Sail generated code *)
 Module Type ArchExtra (SA : SailArch).
   Import SA.
 
-  Parameter pc_reg : greg.
-  Parameter pretty_greg : Pretty greg.
+  Parameter pc_reg : reg.
 End ArchExtra.
 
 (** * Convert from Sail generated instantiations to ArchSem ones *)
 
 Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
   Import (hints) SA.
-  Definition reg := SA.greg.
+  Definition reg := SA.reg.
   #[export] Typeclasses Transparent reg.
-  Definition reg_eq : EqDecision reg := SA.greg_eq.
+  Definition reg_eq : EqDecision reg := SA.reg_eq.
   #[export] Typeclasses Transparent reg_eq.
-  Definition reg_countable : Countable reg := SA.greg_cnt.
+  Definition reg_countable : Countable reg := SA.reg_countable.
   #[export] Typeclasses Transparent reg_countable.
-  Definition pretty_reg : Pretty reg := AE.pretty_greg.
-  #[export] Typeclasses Transparent reg_countable.
+  Definition pretty_reg : Pretty reg := SA.reg_pretty.
+  #[export] Typeclasses Transparent pretty_reg.
 
 
   Definition pc_reg := AE.pc_reg.
   #[export] Typeclasses Transparent pc_reg.
 
-  Definition reg_type (r : reg) := match r with @SA.GReg A _ => A end.
-  #[export] Instance reg_type_eq (r : reg) : EqDecision (reg_type r).
-  Proof. destruct r. by apply SA.regval_eq. Defined.
-  #[export] Instance reg_type_countable (r : reg) : Countable (reg_type r).
-  Proof. destruct r. by apply SA.regval_cnt. Defined.
-  #[export] Instance reg_type_inhabited (r : reg) : Inhabited (reg_type r).
-  Proof. destruct r. by apply SA.regval_inhabited. Defined.
+  Definition reg_type := SA.reg_type.
+  #[export] Typeclasses Transparent reg_type.
+  #[export] Instance reg_type_eq (r : reg) : EqDecision (reg_type r) := SA.reg_type_eq r.
+  #[export] Instance reg_type_countable (r : reg) : Countable (reg_type r) := SA.reg_type_countable r.
+  #[export] Instance reg_type_inhabited (r : reg) : Inhabited (reg_type r) := SA.reg_type_inhabited r.
   #[export] Instance ctrans_reg_type : CTrans reg_type.
   Proof.
-    intros [Tx x] [Ty y] e a. cbn in *.
+    intros x y e a.
     by eapply SA.regval_transport.
   Defined.
   #[export] Instance ctrans_reg_type_simpl : CTransSimpl reg_type.
-  Proof. intros [Tx x] e a. apply SA.regval_transport_sound. Qed.
+  Proof. intros x e a. apply SA.regval_transport_sound. Qed.
   #[export] Instance reg_type_eq_dep_dec : EqDepDecision reg_type.
   Proof.
-    intros [Tx x] [Ty y] e a b.
-    refine (dec_if (decide (ctrans e a = b)));
-      abstract (dependent destruction e; simp ctrans in *; by rewrite JMeq_simpl).
+    intros x y e a b.
+    subst x.
+    rewrite JMeq_simpl.
+    by apply reg_type_eq.
   Defined.
 
   (* TODO get sail to generate reg_acc *)
@@ -218,28 +216,12 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Import I.
   Import (coercions) SA.
 
-  Definition MemReq_from_sail_read {n nt} (rr : SI.ReadReq.t n nt) : MemReq.t :=
-    {|MemReq.address := rr.(SI.ReadReq.address);
-      MemReq.access_kind := rr.(SI.ReadReq.access_kind);
-      MemReq.address_space := rr.(SI.ReadReq.address_space);
-      MemReq.size := n;
-      MemReq.num_tag := nt;
-    |}.
-
-  Definition MemReq_from_sail_announce {n nt} (rr : SI.AddressAnnounce.t n nt) : MemReq.t :=
-    {|MemReq.address := rr.(SI.AddressAnnounce.address);
-      MemReq.access_kind := rr.(SI.AddressAnnounce.access_kind);
-      MemReq.address_space := rr.(SI.AddressAnnounce.address_space);
-      MemReq.size := n;
-      MemReq.num_tag := nt;
-    |}.
-
-  Definition MemReq_from_sail_write {n nt} (rr : SI.WriteReq.t n nt) : MemReq.t :=
-    {|MemReq.address := rr.(SI.WriteReq.address);
-      MemReq.access_kind := rr.(SI.WriteReq.access_kind);
-      MemReq.address_space := rr.(SI.WriteReq.address_space);
-      MemReq.size := n;
-      MemReq.num_tag := nt;
+  Definition MemReq_from_sail (rr : SI.MemReq.t) : MemReq.t :=
+    {|MemReq.address := rr.(SI.MemReq.address);
+      MemReq.access_kind := rr.(SI.MemReq.access_kind);
+      MemReq.address_space := rr.(SI.MemReq.address_space);
+      MemReq.size := rr.(SI.MemReq.size);
+      MemReq.num_tag := rr.(SI.MemReq.num_tag);
     |}.
 
   Definition Sail_choose (ct : ChooseType) : I.iMon (choose_type ct) :=
@@ -272,21 +254,21 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     match out with
     | SI.RegRead reg acc => mcall (RegRead reg acc)
     | SI.RegWrite reg acc regval => mcall (RegWrite reg acc regval)
-    | SI.MemRead n nt rr =>
-        mcall (MemRead (MemReq_from_sail_read rr))
+    | SI.MemRead rr =>
+        mcall (MemRead (MemReq_from_sail rr))
           |$> (λ o, match o with
                     | Ok (val, tags) => inl (val, tags)
                     | Error a => inr a
                     end)
-    | SI.MemWrite n nt wr =>
-        mcall (MemWrite (MemReq_from_sail_write wr)
-                 wr.(SI.WriteReq.value) wr.(SI.WriteReq.tags))
+    | SI.MemWrite wr value tags =>
+        mcall (MemWrite (MemReq_from_sail wr)
+                 value tags)
           |$> (λ o, match o with
                     | Ok () => inl (Some true)
                     | Error a => inr a
                     end)
-    | SI.MemAddressAnnounce n nt aa =>
-        mcall (MemWriteAddrAnnounce (MemReq_from_sail_announce aa))
+    | SI.MemAddressAnnounce aa =>
+        mcall (MemWriteAddrAnnounce (MemReq_from_sail aa))
     | SI.InstrAnnounce _ => mret ()
     | SI.BranchAnnounce _ _ => mret ()
     | SI.Barrier b => mcall (Barrier b)

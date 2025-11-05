@@ -53,13 +53,6 @@ From ArchSem Require Import
 #[global] Open Scope stdpp.
 
 
-(** Export [GReg] definitions and typeclasses, since it's what we will
-    manipulate for registers *)
-Export GRegister.
-Coercion GReg : register >-> greg.
-Instance pretty_greg : Pretty greg :=
-  λ '(GReg reg), string_of_register reg.
-
 (** First we import the sail generated interface modules *)
 Module RiscV.
   Module SA := rv64d_types.Arch.
@@ -69,8 +62,7 @@ Module RiscV.
   Module ArchExtra <: FromSail.ArchExtra SA.
     Import SA.
 
-    Definition pc_reg : greg := PC.
-    Definition pretty_greg : Pretty greg := _.
+    Definition pc_reg : reg := PC.
   End ArchExtra.
 
   (** Then we can use this to generate an ArchSem architecture module *)

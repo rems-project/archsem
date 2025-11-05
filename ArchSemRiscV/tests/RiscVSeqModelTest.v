@@ -64,17 +64,13 @@ Definition common_init_regs :=
   |> reg_insert nextPC inhabitant
   |> reg_insert minstret 0x0
 
-  |> reg_insert plat_clint_base 0x0
-  |> reg_insert plat_clint_size 0x0
-
-  |> reg_insert plat_rom_base 0x0
-  |> reg_insert plat_rom_size 0x0
-
-  |> reg_insert plat_ram_base 0x0
-  |> reg_insert plat_ram_size 0x10000
-
   |> reg_insert pmpcfg_n $ Values.vec_of_list_len $ List.rev (0x0f (* unlocked, TOR, XWR *) :: replicate 63 0x00)
   |> reg_insert pmpaddr_n $ Values.vec_of_list_len $ List.rev (0x20000 :: replicate 63 0x00)
+
+  |> reg_insert pma_regions [{| PMA_Region_base := 0x0; PMA_Region_size := 0x10000; PMA_Region_attributes := {| PMA_cacheable := true; PMA_coherent := true; PMA_executable := true; PMA_readable := true; PMA_writable := true; PMA_read_idempotent := true; PMA_write_idempotent := true; PMA_misaligned_fault := NoFault; PMA_reservability := RsrvEventual; PMA_supports_cbo_zero := true |}; PMA_Region_include_in_device_tree := false |}]
+  |> reg_insert htif_tohost_base None
+  |> reg_insert menvcfg 0
+  |> reg_insert elp 0
 .
 
 (** We test against the sail-riscv semantic, with non-determinism disabled *)
