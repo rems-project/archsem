@@ -8,7 +8,8 @@
                      BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool
                      CList CMaps COption Common countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
-                     FMon gmap HexString Interface list0 ListDef List list_numbers listset mapset
+                     FMon gmap HexString Interface list_monad list_relations
+                     ListDef List list_numbers listset mapset
                      Nat numbers option propset RecordSet pretty
                      sets Specif String0 strings Classes
                      Instances Values MachineWord FromSail ConcurrencyInterfaceV2

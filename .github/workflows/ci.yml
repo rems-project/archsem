@@ -19,6 +19,7 @@ jobs:
         ocaml-version: [4.14.2]
         dune-version: [3.20.2]
         rocq-version: [9.0.1]
+        stdpp-version: [1.12.0]
 
     runs-on: ubuntu-22.04
 
@@ -38,7 +39,7 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}-${{ hashFiles('*.opam') }}
 
     # Cache with only repo dependencies, in particular Ocaml and Rocq
     - name: Restore base OPAM cache
@@ -47,7 +48,7 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}
+        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}
 
     - name: Setup base OPAM
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' &&
@@ -60,8 +61,8 @@ jobs:
         opam update
         opam pin --yes --no-action dune ${{ matrix.dune-version }}
         opam pin --yes --no-action coq ${{ matrix.rocq-version }}
-        opam pin --yes --no-action coq-stdpp 1.11.0
-        opam pin --yes --no-action coq-stdpp-bitvector 1.11.0
+        opam pin --yes --no-action coq-stdpp ${{ matrix.stdpp-version }}
+        opam pin --yes --no-action coq-stdpp-bitvector ${{ matrix.stdpp-version }}
         opam pin --yes --no-action coq-record-update 0.3.6
         opam install --yes dune coq coq-stdpp coq-stdpp-bitvector coq-record-update
         opam clean
@@ -73,7 +74,7 @@ jobs:
               steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}
+        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}
 
     - name: Install pinned dependencies
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
@@ -91,7 +92,7 @@ jobs:
       if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ hashFiles('*.opam') }}
+        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}-${{ hashFiles('*.opam') }}
 
     - name: Build
       run: |

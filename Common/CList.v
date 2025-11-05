@@ -42,7 +42,9 @@
 (*                                                                            *)
 (******************************************************************************)
 
-From stdpp Require Import base list finite sets list listset.
+From stdpp Require Import base list finite sets listset.
+
+Notation stdpp_imap := imap.
 
 Require Import Options.
 Require Import CBase CBool CMaps CArith CDestruct CMonads.
@@ -68,7 +70,7 @@ Proof. tcclean. unfold mret, list_ret. set_solver. Qed.
 
 #[export] Instance list_elements {A} : Elements A (list A) := λ x, x.
 
-Instance list_imap : IMap nat list := @list.imap.
+Instance list_imap : IMap nat list := @stdpp_imap.
 
 Instance list_iomap : IOMap nat list := λ A B,
   fix go (f : nat → A → option B) (l : list A) :=
