@@ -25,8 +25,8 @@
   (coq-equations (>= 1.3))
   (coq-record-update (>= 0.3.4))
   (coq-hammer-tactics (>= 1.3.2))
-  (coq-stdpp (= 1.11.0))
-  (coq-stdpp-bitvector (= 1.11.0))
+  (coq-stdpp (= 1.12.0))
+  (coq-stdpp-bitvector (= 1.12.0))
  )
 )
 

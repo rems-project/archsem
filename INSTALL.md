@@ -18,8 +18,8 @@ opam repo add rocq-released https://rocq-prover.org/opam/released
 Install the dependencies with:
 ```
 opam pin coq 9.0.1
-opam pin coq-stdpp 1.11.0
-opam pin coq-stdpp-bitvector 1.11.0
+opam pin coq-stdpp 1.12.0
+opam pin coq-stdpp-bitvector 1.12.0
 opam install . --deps-only
 ```
 
