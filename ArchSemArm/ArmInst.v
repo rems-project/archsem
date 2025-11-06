@@ -54,14 +54,6 @@ From ArchSem Require Import
   Interface TermModels CandidateExecutions GenPromising SeqModel.
 From ArchSem Require Export FromSail.
 
-
-(** Export [GReg] definitions and typeclasses, since it's what we will
-    manipulate for registers *)
-Export GRegister.
-Coercion GReg : register >-> greg.
-Instance pretty_greg : Pretty greg :=
-  λ '(GReg reg), string_of_register reg.
-
 (** First we import the sail generated interface modules *)
 Module Arm.
   Module SA := System_types.Arch.
@@ -71,8 +63,7 @@ Module Arm.
   Module ArchExtra <: FromSail.ArchExtra SA.
     Import SA.
 
-    Definition pc_reg : greg := GReg _PC.
-    Definition pretty_greg : Pretty greg := _.
+    Definition pc_reg : reg := _PC.
   End ArchExtra.
 
   (** Then we can use this to generate an ArchSem architecture module *)
@@ -129,8 +120,6 @@ Export ArmSeqModel.
   Inhabited_register_values
   Countable_register_values
   : typeclass_instances.
-
-Require SailTinyArm.System.
 
 (** The semantics of instructions from system [sail-tiny-arm] by using the
     conversion code from [ArchSem.FromSail] *)

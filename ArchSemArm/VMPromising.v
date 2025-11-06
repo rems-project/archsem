@@ -353,67 +353,67 @@ Definition ELp_to_EL : ELp -> EL := FS.
     the previous write e.g GP register, stack pointers, ... *)
 Definition strict_regs : gset reg :=
   list_to_set [
-      GReg R0;
-      GReg R1;
-      GReg R2;
-      GReg R3;
-      GReg R4;
-      GReg R5;
-      GReg R6;
-      GReg R7;
-      GReg R8;
-      GReg R9;
-      GReg R10;
-      GReg R11;
-      GReg R12;
-      GReg R13;
-      GReg R14;
-      GReg R15;
-      GReg R16;
-      GReg R17;
-      GReg R18;
-      GReg R19;
-      GReg R20;
-      GReg R21;
-      GReg R22;
-      GReg R23;
-      GReg R24;
-      GReg R25;
-      GReg R26;
-      GReg R27;
-      GReg R28;
-      GReg R29;
-      GReg R30;
-      GReg SP_EL0;
-      GReg SP_EL1;
-      GReg SP_EL2;
-      GReg SP_EL3;
-      GReg PSTATE;
-      GReg ELR_EL1;
-      GReg ELR_EL2;
-      GReg ELR_EL3;
+       R0;
+       R1;
+       R2;
+       R3;
+       R4;
+       R5;
+       R6;
+       R7;
+       R8;
+       R9;
+       R10;
+       R11;
+       R12;
+       R13;
+       R14;
+       R15;
+       R16;
+       R17;
+       R18;
+       R19;
+       R20;
+       R21;
+       R22;
+       R23;
+       R24;
+       R25;
+       R26;
+       R27;
+       R28;
+       R29;
+       R30;
+       SP_EL0;
+       SP_EL1;
+       SP_EL2;
+       SP_EL3;
+       PSTATE;
+       ELR_EL1;
+       ELR_EL2;
+       ELR_EL3;
       (* These registers are system registers, but they are considered
          strict in the model. *)
-      GReg ESR_EL1;
-      GReg ESR_EL2;
-      GReg ESR_EL3;
-      GReg FAR_EL1;
-      GReg FAR_EL2;
-      GReg FAR_EL3;
-      GReg PAR_EL1].
+       ESR_EL1;
+       ESR_EL2;
+       ESR_EL3;
+       FAR_EL1;
+       FAR_EL2;
+       FAR_EL3;
+       PAR_EL1]@{reg}.
 
 (** Relaxed registers are not guaranteed to read the latest value. *)
 Definition relaxed_regs : gset reg :=
   list_to_set [
-      GReg TTBR0_EL1;
-      GReg TTBR0_EL2;
-      GReg TTBR0_EL3;
-      GReg TTBR1_EL1;
-      GReg TTBR1_EL2;
-      GReg VBAR_EL1;
-      GReg VBAR_EL2;
-      GReg VBAR_EL3;
-      GReg VTTBR_EL2].
+       TTBR0_EL1;
+       TTBR0_EL2;
+       TTBR0_EL3;
+       TTBR1_EL1;
+       TTBR1_EL2;
+       VBAR_EL1;
+       VBAR_EL2;
+       VBAR_EL3;
+       VTTBR_EL2]@{reg}.
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
@@ -422,12 +422,12 @@ Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
-  | GReg (R_bitvector_64 _), v => Some v
-  | GReg _, v => None.
+  | R_bitvector_64 _, v => Some v
+  | _, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
-  | GReg (R_bitvector_64 _), v => Some v
-  | GReg _, v => None.
+  | R_bitvector_64 _, v => Some v
+  | _, v => None.
 
 (** * The thread state *)
 
@@ -1625,20 +1625,20 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | Regime_EL10 =>
     let varange_bit := bv_extract 48 1 va in
     if varange_bit =? 1%bv
-      then Ok (GReg TTBR1_EL1)
-      else Ok (GReg TTBR0_EL1)
+      then Ok (TTBR1_EL1 : reg)
+      else Ok (TTBR0_EL1 : reg)
   | _ => Error "This model does not support multiple regimes"
   end.
 
 Definition ets2 (ts : TState.t) : result string bool :=
-  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  let mmfr1 : reg := ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   let ets_bits := bv_extract 36 4 val in
   mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
 
 Definition ets3 (ts : TState.t) : result string bool :=
-  let mmfr1 := GReg ID_AA64MMFR1_EL1 in
+  let mmfr1 : reg := ID_AA64MMFR1_EL1 in
   '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).

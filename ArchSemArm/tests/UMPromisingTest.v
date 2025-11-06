@@ -50,12 +50,12 @@ From ArchSemArm Require Import ArmInst UMPromising.
 Open Scope stdpp.
 Open Scope bv.
 
-Definition check_regs (reg : register_bitvector_64) (regs : registerMap)
+Definition check_regs (r : register_bitvector_64) (regs : registerMap)
   : result string Z :=
-    if reg_lookup reg regs is Some r0 then
+    if reg_lookup r regs is Some r0 then
       Ok (bv_unsigned r0)
     else
-      Error ((pretty (GReg reg)) +:+ " not in the thread state").
+      Error ((pretty (r : reg )) +:+ " not in the thread state").
 
 Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
     `(a : archModel.res ∅ n term) : result string Z :=
