@@ -122,3 +122,17 @@ Proof. rewrite monad_fmap. by csimp. Qed.
 Instance csimp_fmap_mret `{MonadFMap M} {A B} (a : A) (f : A → B) :
   f <$> mret (M := M) a ⇒ mret (f a).
 Proof. apply fmap_mret. Qed.
+
+(** * Monad iterators *)
+
+Fixpoint foldlM {A B} `{MRet M, MBind M} (f : A → B → M A) (a : A) (l : list B) : M A :=
+  if l is hd :: tl then
+    v ← (f a hd);
+    foldlM f v tl
+  else mret a.
+
+Fixpoint foldrM {A B} `{MRet M, MBind M} (f : B → A → M A) (l : list B) (a : A) : M A :=
+  if l is hd :: tl then
+    v ← foldrM f tl a;
+    f hd v
+  else mret a.

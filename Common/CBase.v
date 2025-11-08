@@ -55,6 +55,7 @@ From stdpp Require Export base.
 From stdpp Require Export numbers.
 From stdpp Require Export fin.
 From stdpp Require Export tactics.
+From stdpp Require Export list.
 From stdpp Require Import vector.
 From stdpp Require Import decidable.
 From stdpp Require Import sets.
