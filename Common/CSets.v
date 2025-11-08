@@ -302,6 +302,16 @@ Section SUP.
 End SUP.
 End SetUnfoldPair.
 
+(** Make Csimp call SetUnfoldElemOf, I don't know how good an idea this is for
+    performance but otherwise we have to redeclare all the rule to csimp. *)
+Module CSimpSetUnfoldElemOf.
+  Instance set_unfold_elem_of_csimp `{ElemOf A C} (x : A) (S : C) P:
+    SetUnfoldElemOf x S P →
+    Unconvertible Prop (x ∈ S) P →
+    x ∈ S ⇒ P.
+  Proof. destruct 1. intros _. by apply propositional_extensionality. Qed.
+End CSimpSetUnfoldElemOf.
+
 
 (** * Set Induction ***)
 

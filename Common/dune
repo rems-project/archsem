@@ -10,6 +10,7 @@
    CDestruct
    CArith
    CList
+   CVec
    COption
    CBool
    CBitvector

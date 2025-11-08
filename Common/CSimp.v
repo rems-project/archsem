@@ -75,6 +75,18 @@ Lemma csimp_app_fun_noarg {A B : Type} {f g : A → B} (a : A) :
   f = g → f a = g a.
 Proof. naive_solver. Qed.
 
+Lemma csimp_imp_lr {P P' Q Q' : Prop} :
+  P = P' → Q = Q' → (P → Q) = (P' → Q').
+Proof. naive_solver. Qed.
+
+Lemma csimp_imp_l {P P' : Prop} (Q : Prop) :
+  P = P' → (P → Q) = (P' → Q).
+Proof. naive_solver. Qed.
+
+Lemma csimp_imp_r (P : Prop) {Q Q' : Prop} :
+  Q = Q' → (P → Q) = (P → Q').
+Proof. naive_solver. Qed.
+
 Lemma csimp_forall {A : Type} {P Q: A → Prop} :
   (∀ x, P x = Q x) → (∀ x, P x) = (∀ x, Q x).
 Proof. intro H. setoid_rewrite H. reflexivity. Qed.
@@ -147,6 +159,20 @@ with csimp_go_rec (c : constr) : (preterm * constr) option :=
             Some (preterm:(csimp_app_nofun_arg $f $preterm:ea), '($f $a'))
         | None, None => None
         end
+      else None
+  | ?p → ?q =>
+      if Constr.equal (Constr.type p) 'Prop then
+        if Constr.equal (Constr.type q) 'Prop then
+          match (csimp_go_down p, csimp_go_down q) with
+          | Some (ep, p'), Some (eq, q') =>
+              Some (preterm:(csimp_imp_lr $preterm:ep $preterm:eq), '($p' → $q'))
+          | Some (ep, p'), None =>
+              Some (preterm:(csimp_imp_l $q $preterm:ep), '($p' → $q))
+          | None, Some (eq, q') =>
+              Some (preterm:(csimp_imp_r $p $preterm:eq), '($p → $q'))
+          | None, None => None
+          end
+        else None
       else None
   | ∀ x : ?t, @?f x =>
       let x := Fresh.in_goal @x in
@@ -244,6 +270,15 @@ Module CSimpPairLet.
   Hint Extern 10 ((let '(_,_) := _ in _) ⇒ _) =>
          apply pair_let_simp_type : typeclass_instances.
 End CSimpPairLet.
+
+(** In nearly all situation any exists on a pair can be safely replaces by 2
+    exists on the pair component however this could break stuff so I made
+    optional *)
+Module CSimpPairExists.
+  Instance exists_pair_csimp B C P:
+    (∃ x : C * B, P x) ⇒ (∃ x y, P (x, y)).
+  Proof. apply propositional_extensionality. apply exists_pair. Qed.
+End CSimpPairExists.
 
 Instance csimp_fst_pair {A B} (a : A) (b : B) : (a, b).1 ⇒ a.
 Proof. done. Qed.
