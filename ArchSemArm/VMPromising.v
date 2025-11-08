@@ -1065,7 +1065,7 @@ Module TLB.
   Proof. unfold_decide. Defined.
 
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
-    set vatlb (filter (λ '(existT ctxt te), affects tlbi ctxt te)) tlb.
+    set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
   (** Get the TLB state at a timestamp (time_prev + cnt) *)
   Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
