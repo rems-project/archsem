@@ -1,0 +1,6 @@
+(executable
+ (name main)
+ (public_name archsem_cli)
+ (package coq-archsem)
+ (modules main)
+ (libraries archsem archsem_test))

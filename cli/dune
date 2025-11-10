@@ -1,5 +1,0 @@
-
-(executable
- (name archsem)
- (libraries archsem)
-)

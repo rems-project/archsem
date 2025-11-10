@@ -1,0 +1,4 @@
+(library
+ (name archsem_test)
+ (modules toml_parser test_runner)
+ (libraries archsem otoml str))
