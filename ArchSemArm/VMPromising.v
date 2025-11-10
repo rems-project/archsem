@@ -1012,7 +1012,7 @@ Module TLB.
         let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
-        fold_left (λ prev sreg,
+        foldlM (λ prev sreg,
           val_ttbr ← othrow "TTBR should be a 64 bit value"
                   $ regval_to_val ttbr sreg.1;
           let asid := bv_extract 48 16 val_ttbr in
@@ -1020,13 +1020,12 @@ Module TLB.
           let ctxt := existT plvl ndctxt in
           (* parent entries should be from the original TLB (in the parent level) *)
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
-          fold_left (λ prev te,
-            '(vatlb_prev, is_changed_prev) ← prev;
+          foldlM (λ '(vatlb_prev, is_changed_prev) te,
             '(vatlb_lvl, is_changed_lvl) ←
                va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
-          ) tes prev
-        ) sregs (mret (tlb.(vatlb), false))
+          ) prev tes
+        ) (tlb.(vatlb), false) sregs
       end;
     mret $ (TLB.make vatlb_new, is_changed).
 
@@ -1040,11 +1039,10 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    fold_left (λ prev lvl,
-      '(tlb_prev, is_changed_prev) ← prev;
+    foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
       mret (tlb_new, is_changed || is_changed_prev)
-    ) (enum Level) (mret (tlb, false)).
+    ) (tlb, false) (enum Level).
 
   (** ** TLB invalidation *)
 
