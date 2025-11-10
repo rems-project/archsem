@@ -870,7 +870,8 @@ Module TLB.
         (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
 
-    Definition add (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) (vatlb : t) : t :=
+    Definition insert (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt))
+        (vatlb : t) : t :=
       let entries := get ctxt vatlb in
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries ∪ {[ entry ]}]} vatlb.
 
@@ -917,8 +918,9 @@ Module TLB.
       - Reads [ttbr] at [time], checks it is 64-bit.
       - Computes root entry address for [va], reads memory.
       - If entry is a table, builds a root context with ASID from TTBR
-        and inserts it into VATLB.
-      - Otherwise returns empty VATLB. *)
+        and inserts it into the input VATLB instead of making a new one.
+      - Returns the new VATLB and the boolean value
+        if the new VATLB is different from the input *)
   Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
@@ -927,8 +929,7 @@ Module TLB.
       (ttbr : reg) : result string (VATLB.t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
-    fold_left (λ prev sreg,
-      '(vatlb, is_changed) ← prev;
+    foldlM (λ '(vatlb, is_changed) sreg,
       val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
       let entry_addr := next_entry_addr val_ttbr va in
@@ -941,13 +942,13 @@ Module TLB.
           let entry : Entry.t (Ctxt.lvl ctxt) := [#memval] in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-            Ok (VATLB.add ctxt entry vatlb, true)
+            Ok (VATLB.insert ctxt entry vatlb, true)
           else Ok (vatlb, is_changed)
         else
           Ok (vatlb, is_changed)
       else
         Ok (vatlb, is_changed)
-    ) sregs (mret (vatlb, false)).
+    ) (vatlb, false) sregs.
 
   (** Extend one level down from a parent table entry [te].
       - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
@@ -984,7 +985,7 @@ Module TLB.
           let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-            Ok (VATLB.add ctxt entry vatlb, true)
+            Ok (VATLB.insert ctxt entry vatlb, true)
           else Ok (vatlb, false)
         | None eq:_ => mthrow "An intermediate level should have a child level"
         end
@@ -1093,10 +1094,10 @@ Module TLB.
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
-  (** Get the TLB states up until the timestamp along with
-      a boolean value that shows if it is different from the previous tlb and
-      the timestamp used to compute that state. [list (TLB.t * bool * nat)] *)
-  Fixpoint snapshots_until_timestamp (ts : TState.t) (mem_init : Memory.initial)
+  (** Get the unique TLB states from [time_prev] to [time_prev + cnt]
+      along with their views as a [list (t * nat)].
+      The list is sorted in descending order by timestamp. *)
+  Fixpoint unique_snapshots_between (ts : TState.t) (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
@@ -1124,12 +1125,13 @@ Module TLB.
         | true => (tlb, time_cur) :: acc
         | false => acc
         end in
-      snapshots_until_timestamp
+      unique_snapshots_between
         ts mem_init mem tlb time_cur ccnt va ttbr acc
     end.
 
-  (** Get the unique TLB states up until the timestamp along with the timestamp
-      used to compute that state. [list (TLB.t * nat)] *)
+  (** Get the unique TLB states up until the timestamp [time]
+      along with their views as a [list (TLB.t * nat)].
+      The list is sorted in descending order by timestamp. *)
   Definition unique_snapshots_until_timestamp (ts : TState.t)
                        (mem_init : Memory.initial)
                        (mem : Memory.t)
@@ -1137,7 +1139,7 @@ Module TLB.
                        (va : bv 64)
                        (ttbr : reg) : result string (list (t * nat)) :=
     '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
-    snapshots_until_timestamp ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
+    unique_snapshots_between ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
 
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
@@ -1155,7 +1157,7 @@ Module TLB.
               (te : Entry.t (Ctxt.lvl ctxt))
               (evs : list (Ev.t * nat)) : result string (option nat) :=
     match evs with
-    | nil => mret None
+    | [] => mret None
     | (ev, t) :: tl =>
       match ev with
       | Ev.Tlbi tlbi =>
@@ -1304,6 +1306,59 @@ Module TLB.
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
     end;
   mret $ List.concat fault_ptes.
+
+  Definition invalidation_time_lt (ti_old ti_new : option nat) : bool :=
+    match ti_old, ti_new with
+    | Some ti_old, Some ti_new => ti_old <? ti_new
+    | None, None => false
+    | None, Some _ => false
+    | Some _, None => true
+    end.
+
+  Definition is_new_entry (path : list val) (ti_new : option nat)
+      (entries : list (list val * nat * option nat)) : bool :=
+    forallb
+      (λ '(p, t, ti),
+        negb(path =? p) || invalidation_time_lt ti ti_new) entries.
+
+  (* Snapshots are sorted in the descending order of [trans_time].
+    Thus, we do not have to use [trans_time] to check the interval *)
+  Definition get_valid_entries_from_snapshots (snapshots : list (t * nat))
+                (mem : Memory.t)
+                (tid : nat)
+                (va : bv 64) (asid : bv 16) :
+              result string (list (list val * nat * option nat)) :=
+    foldrM (λ '(tlb, trans_time) entries,
+      candidates ← TLB.lookup mem tid tlb trans_time va asid;
+      let new :=
+        omap (λ '(path, ti_opt),
+          if decide (is_new_entry path ti_opt entries) then
+            Some (path, trans_time, ti_opt)
+          else None
+        ) candidates in
+      mret (new ++ entries)
+    ) snapshots [].
+
+  Definition get_invalid_entries_from_snapshots (snapshots : list (t * nat))
+                (ts : TState.t)
+                (init : Memory.initial)
+                (mem : Memory.t)
+                (tid : nat) (is_ets2 : bool)
+                (va : bv 64) (asid : bv 16) (ttbr : reg) :
+              result string (list (list val * nat * option nat)) :=
+    foldrM (λ '(tlb, trans_time) entries,
+      if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+        mret entries
+      else
+        candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+        let new :=
+          omap (λ '(path, ti_opt),
+            if decide (is_new_entry path ti_opt entries) then
+              Some (path, trans_time, ti_opt)
+            else None
+          ) candidates in
+        mret (new ++ entries)
+    ) snapshots [].
 End TLB.
 Export (hints) TLB.
 
@@ -1683,61 +1738,6 @@ Definition ets3 (ts : TState.t) : result string bool :=
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).
 
-Definition new_invalidation_opt (ti_new ti_old : option nat) : bool :=
-  match ti_new, ti_old with
-  | Some ti_new, Some ti_old => ti_old <? ti_new
-  | None, None => false
-  | Some _, None => true
-  | None, Some _ => true
-  end.
-
-Definition is_new_entry (path : list val) (ti_new : option nat)
-    (entries : list (list val * nat * option nat)) : bool :=
-  forallb
-    (λ '(p, t, ti),
-      negb(path =? p) || new_invalidation_opt ti_new ti) entries.
-
-(* Snapshots are sorted in the descending order of `trans_time`.
-   Thus, we do not have to use `trans_time` to check the interval *)
-Definition get_valid_entries_from_snapshots (snapshots : list (TLB.t * nat))
-              (mem : Memory.t)
-              (tid : nat)
-              (va : bv 64) (asid : bv 16) :
-            result string (list (list val * nat * option nat)) :=
-  fold_right (λ '(tlb, trans_time) entries,
-    candidates ← TLB.lookup mem tid tlb trans_time va asid;
-    prev ←@{result string} entries;
-    let new :=
-      omap (λ '(path, ti_opt),
-        if decide (is_new_entry path ti_opt prev) then
-          Some (path, trans_time, ti_opt)
-        else None
-      ) candidates in
-    mret (new ++ prev)
-  ) (mret nil) snapshots.
-
-Definition get_invalid_entries_from_snapshots (snapshots : list (TLB.t * nat))
-              (ts : TState.t)
-              (init : Memory.initial)
-              (mem : Memory.t)
-              (tid : nat) (is_ets2 : bool)
-              (va : bv 64) (asid : bv 16) (ttbr : reg) :
-            result string (list (list val * nat * option nat)) :=
-  fold_right (λ '(tlb, trans_time) entries,
-    if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
-      entries
-    else
-      candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
-      prev ←@{result string} entries;
-      let new :=
-        omap (λ '(path, ti_opt),
-          if decide (is_new_entry path ti_opt prev) then
-            Some (path, trans_time, ti_opt)
-          else None
-        ) candidates in
-      mret (new ++ prev)
-  ) (mret nil) snapshots.
-
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -1758,9 +1758,9 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       snapshots ← mlift $ TLB.unique_snapshots_until_timestamp ts init mem vmax_t va ttbr;
-      valid_entries ← mlift $ get_valid_entries_from_snapshots snapshots mem tid va asid;
+      valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
-        get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
+        TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or a fault *)
       let valid_trs :=
         map (λ '(path, t, ti),
