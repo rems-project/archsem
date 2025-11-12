@@ -375,7 +375,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
-    (** Computational evaluate all the possible allowed final states according
+    (** Computationally evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
     Fixpoint run (fuel : nat) : Exec.t t string final :=
       st ← mGet;
@@ -386,54 +386,41 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           run fuel
         else mthrow "Could not finish running within the size of the fuel".
 
-    (** Explore all possible promise-based executions across all threads. *)
-    Fixpoint prune_promises_and_states (fuel_per_tid fuel : nat)
-        (finals : list final) : Exec.t t string (list final) :=
+    (** Computationally evaluate all the possible allowed final states according
+        to the promising model prom starting from st with promise-first optimization.
+        The size of fuel should be at least (# of promises) + max(# of instructions) + 1 *)
+    Fixpoint run_promise_first (fuel : nat) : Exec.t t string final :=
       if fuel is S fuel then
         st ← mGet;
         (* Find out next possible promises or terminating states at the current thread *)
         executions ←
-          for (tid : fin n) in enum (fin n) do
+          vmapM (λ '(tid, ts),
             '(promises_per_tid, tstates_per_tid) ←
               mlift $ prom.(enumerate_promises_and_terminal_states)
-                        fuel_per_tid tid (term tid) (initmem st) (tstate tid st) (events st);
-            mret (map (λ ev, (ev, tid)) promises_per_tid, tstates_per_tid)
-          end;
+                        fuel (fin_to_nat tid) (term tid) (initmem st) ts (events st);
+            mret (map (.,tid) promises_per_tid, tstates_per_tid)
+          ) (venumerate (tstates st));
 
-        (* Compute cartesian products of the possible thread states *)
-        let tstates_sys :=
-          fold_left (λ partial_sts tstates_tid,
-            List.flat_map (λ tstate,
-              if is_emptyb partial_sts then [[tstate]]
-              else map (λ partial_st, partial_st ++ [tstate]) partial_sts
-            ) tstates_tid
-          ) (map snd executions) [] in
-        let new_finals :=
-          omap (λ tstates,
-            if (list_to_vec_n n tstates) is Some tstates_vec then
-              let st := Make tstates_vec st.(PState.initmem) st.(PState.events) in
+        promise ← mchoosel (enum bool);
+        if (promise : bool) then
+          (* Non-deterministically choose the next promise and the tid for pruning *)
+          let promises_all := List.concat (vmap fst executions) in
+          '(next_ev, tid) ← mchoosel promises_all;
+          mSet (λ st, promise_tid prom st tid next_ev);;
+          run_promise_first fuel
+        else
+          (* Compute cartesian products of the possible thread states *)
+          let tstates_all := cprodn (vmap snd executions) in
+          let new_finals :=
+            omap (λ tstates,
+              let st := Make tstates st.(PState.initmem) st.(PState.events) in
               if decide $ terminated prom term st is left pt
               then Some (make_final st pt)
               else None
-            else None
-          ) tstates_sys in
-
-        (* Non-deterministically choose the next promise and the tid for pruning *)
-        let promises_all := List.concat (map fst executions) in
-        if is_emptyb promises_all then
-          mret (new_finals ++ finals)
-        else
-          '(next_ev, tid) ← mchoosel promises_all;
-          mSet (λ st, promise_tid prom st tid next_ev);;
-          prune_promises_and_states fuel_per_tid fuel (new_finals ++ finals)
-      else mret finals.
-
-    (** Computational evaluate all the possible allowed final states according
-        to the promising model prom starting from st
-        with promise-first optimization *)
-    Definition run_promise_first (fuel : nat) : Exec.t t string final :=
-      finals ← prune_promises_and_states fuel fuel [];
-      mchoosel finals.
+            ) tstates_all in
+          mchoosel new_finals
+      else
+        mthrow "Could not finish running within the size of the fuel".
 
     End CPS.
     Arguments to_final_archState {_ _ _}.
@@ -446,20 +433,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       PState.from_archState prom initMs |>
       archModel.Res.from_exec
         $ CPState.to_final_archState
-        <$> CPState.run isem prom term fuel.
-
-  (** Create a computational model from an ISA model and promising model
-      with promise-free optimization *)
-  Definition Promising_to_Modelc_pf (isem : iMon ()) (prom : BasicExecutablePM)
-      (fuel : nat) : archModel.c ∅ :=
-    λ n term (initMs : archState n),
-      PState.from_archState prom initMs |>
-      archModel.Res.from_exec
-        $ CPState.to_final_archState
         <$> CPState.run_promise_first prom term fuel.
-
-    (* TODO state some soundness lemma between Promising_to_Modelnc and
-        Promising_Modelc *)
 
 End GenPromising.
 
