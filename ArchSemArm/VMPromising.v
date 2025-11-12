@@ -918,7 +918,7 @@ Module TLB.
       - Reads [ttbr] at [time], checks it is 64-bit.
       - Computes root entry address for [va], reads memory.
       - If entry is a table, builds a root context with ASID from TTBR
-        and inserts it into the input VATLB instead of making a new one.
+        and inserts it into the input VATLB.
       - Returns the new VATLB and the boolean value
         if the new VATLB is different from the input *)
   Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
@@ -995,7 +995,7 @@ Module TLB.
   (** Make [tlb] containing entries for [va] at [lvl].
       - At root: call [va_fill_root].
       - At deeper levels: for each parent entry, call [va_fill_lvl].
-      - Returns [(tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
+      - Returns [(new_tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
@@ -1130,7 +1130,7 @@ Module TLB.
   (** Get the unique TLB states up until the timestamp [time]
       along with their views as a [list (TLB.t * nat)].
       The list is sorted in descending order by timestamp. *)
-  Definition unique_snapshots_until_timestamp (ts : TState.t)
+  Definition unique_snapshots_until (ts : TState.t)
                        (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (time : nat)
@@ -1755,7 +1755,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      snapshots ← mlift $ TLB.unique_snapshots_until_timestamp ts init mem vmax_t va ttbr;
+      snapshots ← mlift $ TLB.unique_snapshots_until ts init mem vmax_t va ttbr;
       valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
