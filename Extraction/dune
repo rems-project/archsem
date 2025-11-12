@@ -4,19 +4,27 @@
   (prelude ArmInstExtr)
   (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
             ASCommon ArchSem ArchSemArm)
-  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec
-                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool
-                     CList CMaps COption CVec countable CResult CSets Datatypes
+  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
+                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
+                     CList CMaps COption Common CVec countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap HexString Interface list_monad list_relations
-                     ListDef List list_numbers listset mapset
+                     ListDef List0 list_numbers listset mapset
                      Nat numbers option propset RecordSet pretty
                      sets Specif String0 strings Classes
                      Instances Values MachineWord FromSail ConcurrencyInterfaceV2
-                     System_types
-                     TermModels vector0 VectorDef Vector)
+                     System_types BinNatDef Compare_dec PeanoNat TypeCasts Sumbool
+                     ConcurrencyInterfaceBuiltinsV2
+                     ConcurrencyInterfaceTypesV2
+                     Rdefinitions ClassicalDedekindReals
+                     ConstructiveCauchyReals QArith_base Ring_theory QExtra Qabs
+                     Qreduction ConstructiveCauchyRealsMult String1 System
+                     BinaryString Operators_mwords GenPromising
+                     TermModels vector0 VectorDef Vector UMPromising
+                     fin_sets list_basics)
 )
 
 (library
-  (name Archsem_ocaml) ; TODO might change
-  (libraries zarith))
+ (name archsem)
+ (libraries zarith)
+)

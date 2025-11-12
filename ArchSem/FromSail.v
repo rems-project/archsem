@@ -88,6 +88,9 @@ Module Type ArchExtra (SA : SailArch).
   Import SA.
 
   Parameter pc_reg : reg.
+  Parameter reg_of_string : string → option reg.
+  Parameter reg_type_of_gen : ∀ r : reg, reg_gen_val → result string (reg_type r).
+  Parameter reg_type_to_gen : ∀ r : reg, reg_type r → reg_gen_val.
 End ArchExtra.
 
 (** * Convert from Sail generated instantiations to ArchSem ones *)
@@ -101,8 +104,9 @@ Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
   Definition reg_countable : Countable reg := SA.reg_countable.
   #[export] Typeclasses Transparent reg_countable.
   Definition pretty_reg : Pretty reg := SA.reg_pretty.
-  #[export] Typeclasses Transparent reg_countable.
-
+  #[export] Typeclasses Transparent pretty_reg.
+  Definition reg_of_string := AE.reg_of_string.
+  #[export] Typeclasses Transparent reg_of_string.
 
   Definition pc_reg := AE.pc_reg.
   #[export] Typeclasses Transparent pc_reg.
@@ -125,6 +129,11 @@ Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
     refine (dec_if (decide (ctrans Heq rva = rvb)));
       abstract (dependent destruction Heq; simp ctrans in *; by rewrite JMeq_simpl).
   Defined.
+
+  Definition reg_type_of_gen := AE.reg_type_of_gen.
+  #[export] Typeclasses Transparent reg_type_of_gen.
+  Definition reg_type_to_gen := AE.reg_type_to_gen.
+  #[export] Typeclasses Transparent reg_type_to_gen.
 
   (* TODO get sail to generate reg_acc *)
   Definition reg_acc := option SA.sys_reg_id.

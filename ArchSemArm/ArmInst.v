@@ -64,6 +64,31 @@ Module Arm.
     Import SA.
 
     Definition pc_reg : reg := _PC.
+    Definition reg_of_string := register_of_string.
+
+    Equations set_ProcState_gen_field (field : string) (val : reg_gen_val)
+        (p : ProcState) : result string ProcState :=
+      set_ProcState_gen_field "EL" (RVNumber z) p :=
+        Ok $ setv ProcState_EL (Z_to_bv 2 z) p;
+      set_ProcState_gen_field "SP" (RVNumber z) p :=
+        Ok $ setv ProcState_SP (Z_to_bv 1 z) p;
+      set_ProcState_gen_field field _ _ :=
+        Error ("error setting " ++ field ++ " in PSTATE")%string.
+
+    Equations reg_type_of_gen (r : reg) (rv : reg_gen_val) :
+        result string (reg_type r) :=
+      reg_type_of_gen (R_bitvector_64 _) (RVNumber z) := Ok (Z_to_bv 64 z);
+      reg_type_of_gen (R_ProcState _) (RVStruct l) :=
+        foldlM (λ ps '(field, val), set_ProcState_gen_field field val ps) inhabitant l;
+      reg_type_of_gen r _ := Error ("error decoding " ++ pretty r)%string.
+
+    Equations reg_type_to_gen (r : reg) (rv : reg_type r) : reg_gen_val :=
+      reg_type_to_gen (R_bitvector_64 _) bv := RVNumber (bv_unsigned bv);
+      reg_type_to_gen (R_ProcState _) ps :=
+        RVStruct [
+            ("EL", RVNumber (bv_unsigned (ProcState_EL ps)));
+            ("SP", RVNumber (bv_unsigned (ProcState_SP ps)));
+            ("TODO", RVString "other fields")].
   End ArchExtra.
 
   (** Then we can use this to generate an ArchSem architecture module *)
