@@ -478,10 +478,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
   mSet $ TState.update_coh loc time;;
   mSet $ TState.update TState.vwr time;;
   mSet $ TState.update TState.vrel (view_if is_release time);;
-  mret $ match new_promise with
-        | true => (mem, time, Some vpre)
-        | false => (mem, time, None)
-        end.
+  mret $ if (new_promise : bool) then (mem, time, Some vpre) else (mem, time, None).
 
 (** Tries to perform a memory write.
 
@@ -536,11 +533,13 @@ End IIS.
     and computation. This can mutate memory because it will append a write at
     the end of memory the corresponding event was not already promised. *)
 Section RunOutcome.
-  Context (tid : nat) (initmem : memoryMap).
+  Context (mem_update : bool).
+  Context (tid : nat).
+  Context (initmem : memoryMap).
 
-  Equations run_outcome (out : outcome) (mem_update : bool) :
+  Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
-  | RegWrite reg racc val, mem_update =>
+  | RegWrite reg racc val =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
       vreg' ←
@@ -554,14 +553,14 @@ Section RunOutcome.
         TState.set_reg reg (val, vreg') ts;
       msetv PPState.state nts;;
       mret ((), None)
-  | RegRead reg racc, mem_update =>
+  | RegRead reg racc =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       ts ← mget PPState.state;
       '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret (val, None)
-  | MemRead (MemReq.make macc addr addr_space 8 0), mem_update =>
+  | MemRead (MemReq.make macc addr addr_space 8 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       loc ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_ifetch macc then
@@ -575,17 +574,17 @@ Section RunOutcome.
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0), None)
       else mthrow "Read is not explicit or ifetch"
-  | MemRead (MemReq.make macc addr addr_space 4 0), mem_update => (* ifetch *)
+  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
       mret (Ok (opcode, 0%bv), None)
-  | MemRead _, mem_update => mthrow "Memory read of size other than 8 and 4"
-  | MemWriteAddrAnnounce _, mem_update =>
+  | MemRead _ => mthrow "Memory read of size other than 8 and 4"
+  | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vcap vaddr;;
       mret ((), None)
-  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags, mem_update =>
+  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
@@ -596,7 +595,7 @@ Section RunOutcome.
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
-  | Barrier (Barrier_DMB dmb), mem_update => (* dmb *)
+  | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
@@ -607,16 +606,16 @@ Section RunOutcome.
           mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
       end;;
       mret ((), None)
-  | Barrier (Barrier_ISB ()), mem_update => (* isb *)
+  | Barrier (Barrier_ISB ()) => (* isb *)
       ts ← mget PPState.state;
     mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
     mret ((), None)
-  | GenericFail s, mem_update => mthrow ("Instruction failure: " ++ s)%string
-  | _, _ => mthrow "Unsupported outcome".
+  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
+  | _ => mthrow "Unsupported outcome".
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    run_outcome out true |$> fst.
+    run_outcome out |$> fst.
 End RunOutcome.
 
 Module CProm.
@@ -655,7 +654,7 @@ Section ComputeProm.
               (base : view)
               (out : outcome) :
         Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out true;
+    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome true tid initmem out;
     if vpre_opt is Some vpre then
       mem ← mget (PPState.mem ∘ snd);
       mset fst (CProm.add_if mem vpre base);;
@@ -663,6 +662,9 @@ Section ComputeProm.
     else
       mret res.
 
+  (* Run the thread state until termination, collecting certifiable promises.
+     Returns true if termination occurs within the given fuel,
+     false otherwise. *)
   Fixpoint run_to_termination_promise
                       (isem : iMon ())
                       (fuel : nat)
@@ -694,12 +696,6 @@ Section ComputeProm.
       (∀ r ∈ res, r.2 = true);;
     mret $ (CProm.proms (union_list res.*1.*1), []).
 
-    Definition run_outcome_with_no_promise
-              (out : outcome) :
-        Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    '(res, _) ← run_outcome tid initmem out false;
-    mret res.
-
   Fixpoint run_to_termination_no_promise
                       (isem : iMon ())
                       (fuel : nat) :
@@ -709,7 +705,7 @@ Section ComputeProm.
       ts ← mget PPState.state;
       mret (term (TState.reg_map ts))
     | S fuel =>
-      let handler := run_outcome_with_no_promise in
+      let handler := run_outcome' false tid initmem in
       cinterp handler isem;;
       ts ← mget PPState.state;
       if term (TState.reg_map ts) then
@@ -755,7 +751,7 @@ Definition UMPromising_nocert' : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
-    handler := run_outcome';
+    handler := run_outcome' true;
     allowed_promises := allowed_promises_nocert;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     memory_snapshot :=
@@ -770,7 +766,7 @@ Definition UMPromising_nocert isem :=
 
 Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
   : relation (TState.t * Memory.t) :=
-  let handler := run_outcome' tid initmem in
+  let handler := run_outcome' true tid initmem in
   λ '(ts, mem) '(ts', mem'),
     (ts', mem') ∈
       PPState.state ×× PPState.mem
@@ -795,7 +791,7 @@ Definition UMPromising_cert' (isem : iMon ()) : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
-    handler := run_outcome';
+    handler := run_outcome' true;
     allowed_promises := allowed_promises_cert isem;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     memory_snapshot :=

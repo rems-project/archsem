@@ -398,33 +398,24 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         st ← mGet;
         (* Find out next possible promises or terminating states at the current thread *)
         executions ←
-          for (tid : fin n) in enum (fin n) do
+          vmapM (λ '(tid, ts),
             '(promises_per_tid, tstates_per_tid) ←
               mlift $ prom.(enumerate_promises_and_terminal_states)
-                        fuel_per_tid tid (term tid) (initmem st) (tstate tid st) (events st);
-            mret (map (λ ev, (ev, tid)) promises_per_tid, tstates_per_tid)
-          end;
-
+                        fuel_per_tid (fin_to_nat tid) (term tid) (initmem st) ts (events st);
+            mret (map (.,tid) promises_per_tid, tstates_per_tid)
+          ) (venumerate (tstates st));
         (* Compute cartesian products of the possible thread states *)
-        let tstates_sys :=
-          fold_left (λ partial_sts tstates_tid,
-            List.flat_map (λ tstate,
-              if is_emptyb partial_sts then [[tstate]]
-              else map (λ partial_st, partial_st ++ [tstate]) partial_sts
-            ) tstates_tid
-          ) (map snd executions) [] in
+        let tstates_all := cprodn (vmap snd executions) in
         let new_finals :=
           omap (λ tstates,
-            if (list_to_vec_n n tstates) is Some tstates_vec then
-              let st := Make tstates_vec st.(PState.initmem) st.(PState.events) in
-              if decide $ terminated prom term st is left pt
-              then Some (make_final st pt)
-              else None
+            let st := Make tstates st.(PState.initmem) st.(PState.events) in
+            if decide $ terminated prom term st is left pt
+            then Some (make_final st pt)
             else None
-          ) tstates_sys in
+          ) tstates_all in
 
         (* Non-deterministically choose the next promise and the tid for pruning *)
-        let promises_all := List.concat (map fst executions) in
+        let promises_all := List.concat executions.*1 in
         if is_emptyb promises_all then
           mret (new_finals ++ finals)
         else
