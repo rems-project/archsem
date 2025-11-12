@@ -829,17 +829,29 @@ Module TLB.
 
     Definition init : t := hvec_func (fun lvl => ∅).
 
-    Definition get (ctxt : Ctxt.t) (vatlb : t)
-      : gset (Entry.t (Ctxt.lvl ctxt)) :=
+    Definition get (ctxt : Ctxt.t) (vatlb : t) :
+        gset (Entry.t (Ctxt.lvl ctxt)) :=
       (hget (Ctxt.lvl ctxt) vatlb) !! (Ctxt.nd ctxt) |> default ∅.
 
-    Definition getFE (ctxt : Ctxt.t) (vatlb : t)
-      : gset (FE.t) :=
+    Definition getFE (ctxt : Ctxt.t) (vatlb : t) : gset (FE.t) :=
       get ctxt vatlb
       |> set_map (fun (e : Entry.t (Ctxt.lvl ctxt)) => existT ctxt e).
 
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
+
+    #[global] Instance elements : Elements FE.t t :=
+      λ vatlb,
+        let lists :=
+          map (λ lvl : Level,
+            map_fold
+              (λ ctxt entry_set cur,
+                  set_fold (λ ent,
+                    let fent := existT (existT lvl ctxt) (ent : Entry.t lvl) in
+                    (fent ::.)) cur entry_set)
+              [] (hget lvl vatlb))
+          (enum Level) in
+        List.concat lists.
 
     Instance filter : Filter FE.t t :=
       λ P P_dec,
@@ -854,8 +866,14 @@ Module TLB.
                 in
                 if decide (new_entry_set = ∅) then None else Some new_entry_set)).
 
-    Definition setFEs (ctxt : Ctxt.t) (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
+    Definition setFEs (ctxt : Ctxt.t)
+        (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
+
+    Definition insert (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt))
+        (vatlb : t) : t :=
+      let entries := get ctxt vatlb in
+      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries ∪ {[ entry ]}]} vatlb.
 
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
@@ -900,33 +918,37 @@ Module TLB.
       - Reads [ttbr] at [time], checks it is 64-bit.
       - Computes root entry address for [va], reads memory.
       - If entry is a table, builds a root context with ASID from TTBR
-        and inserts it into VATLB.
-      - Otherwise returns empty VATLB. *)
-  Definition va_fill_root (ts : TState.t)
+        and inserts it into the input VATLB.
+      - Returns the new VATLB and the boolean value
+        if the new VATLB is different from the input *)
+  Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : result string VATLB.t :=
+      (ttbr : reg) : result string (VATLB.t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
-    vatlbs ←
-      for sreg in sregs do
-        val_ttbr ← othrow "TTBR should be a 64 bit value"
+    foldlM (λ '(vatlb, is_changed) sreg,
+      val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
-        let entry_addr := next_entry_addr val_ttbr va in
-        let loc := Loc.from_addr_in entry_addr in
-        if (Memory.read_at loc init mem time) is Some (memval, _) then
-          if decide (is_table memval) then
-            let asid := bv_extract 48 16 val_ttbr in
-            let ndctxt := NDCtxt.make va (Some asid) in
-            Ok $ VATLB.singleton (existT root_lvl ndctxt) [#memval]
-          else
-            Ok VATLB.init
+      let entry_addr := next_entry_addr val_ttbr va in
+      let loc := Loc.from_addr_in entry_addr in
+      if (Memory.read_at loc init mem time) is Some (memval, _) then
+        if decide (is_table memval) then
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make va (Some asid) in
+          let ctxt := existT root_lvl ndctxt in
+          let entry : Entry.t (Ctxt.lvl ctxt) := [#memval] in
+          (* add the entry to vatlb only when it is not in the original vatlb *)
+          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+            Ok (VATLB.insert ctxt entry vatlb, true)
+          else Ok (vatlb, is_changed)
         else
-          Ok VATLB.init
-      end;
-    Ok (fold_left union vatlbs VATLB.init).
+          Ok (vatlb, is_changed)
+      else
+        Ok (vatlb, is_changed)
+    ) (vatlb, false) sregs.
 
   (** Extend one level down from a parent table entry [te].
       - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
@@ -940,13 +962,13 @@ Module TLB.
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
-      (ttbr : reg) : result string VATLB.t :=
+      (ttbr : reg) : result string (VATLB.t * bool) :=
     guard_or "ASID is not active"
       $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
     guard_or "The translation entry is not in the TLB"
       (te ∈ VATLB.get ctxt vatlb);;
 
-    if decide (¬is_table (Entry.pte te)) then Ok VATLB.init
+    if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       let loc := Loc.from_addr_in entry_addr in
@@ -959,50 +981,53 @@ Module TLB.
           let asid := if bool_decide (is_global clvl next_pte) then None
                       else Ctxt.asid ctxt in
           let ndctxt := NDCtxt.make va asid in
-          let new_te := Entry.append te next_pte (child_lvl_add_one _ _ e) in
-          Ok $ VATLB.singleton (existT clvl ndctxt) new_te
+          let ctxt := existT clvl ndctxt in
+          let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+          (* add the entry to vatlb only when it is not in the original vatlb *)
+          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+            Ok (VATLB.insert ctxt entry vatlb, true)
+          else Ok (vatlb, false)
         | None eq:_ => mthrow "An intermediate level should have a child level"
         end
       else
-        Ok VATLB.init.
+        Ok (vatlb, false).
 
   (** Make [tlb] containing entries for [va] at [lvl].
       - At root: call [va_fill_root].
       - At deeper levels: for each parent entry, call [va_fill_lvl].
-      - Returns [tlb] with added VATLB entries. *)
+      - Returns [(new_tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (ttbr : reg) : result string t :=
-    new_vatlb ←
+      (ttbr : reg) : result string (t * bool) :=
+    '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        vatlb_new ← va_fill_root ts init mem time (level_index va root_lvl) ttbr;
-        Ok $ vatlb_new ∪ tlb.(vatlb)
+        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) ttbr
       | Some plvl =>
+        let pva := level_prefix va plvl in
+        let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
-        active_vatlbs ←
-          let pva := level_prefix va plvl in
-          let index := level_index va lvl in
-          for sreg in sregs do
-            val_ttbr ← othrow "TTBR should be a 64 bit value"
-                    $ regval_to_val ttbr sreg.1;
-            let asid := bv_extract 48 16 val_ttbr in
-            let ndctxt := NDCtxt.make pva (Some asid) in
-            let ctxt := existT plvl ndctxt in
-            vatlbs ←
-              for te in elements (VATLB.get ctxt tlb.(vatlb)) do
-                va_fill_lvl tlb.(vatlb) ts init mem time ctxt te index ttbr
-              end;
-            Ok (union_list vatlbs)
-          end;
-        Ok $ (union_list active_vatlbs)
+        foldlM (λ prev sreg,
+          val_ttbr ← othrow "TTBR should be a 64 bit value"
+                  $ regval_to_val ttbr sreg.1;
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make pva (Some asid) in
+          let ctxt := existT plvl ndctxt in
+          (* parent entries should be from the original TLB (in the parent level) *)
+          let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
+          foldlM (λ '(vatlb_prev, is_changed_prev) te,
+            '(vatlb_lvl, is_changed_lvl) ←
+               va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr;
+            mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
+          ) prev tes
+        ) (tlb.(vatlb), false) sregs
       end;
-    Ok (TLB.make (new_vatlb ∪ tlb.(vatlb))).
+    mret $ (TLB.make vatlb_new, is_changed).
 
   (** Fill TLB entries for [va] through all levels 0–3.
       - Sequentially calls [va_fill] at each level.
@@ -1013,11 +1038,11 @@ Module TLB.
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
-      (ttbr : reg) : result string t :=
-    tlb0 ← va_fill tlb ts init mem time root_lvl va ttbr;
-    tlb1 ← va_fill tlb0 ts init mem time 1%fin va ttbr;
-    tlb2 ← va_fill tlb1 ts init mem time 2%fin va ttbr;
-    va_fill tlb2 ts init mem time 3%fin va ttbr.
+      (ttbr : reg) : result string (t * bool) :=
+    foldlM (λ '(tlb_prev, is_changed_prev) lvl,
+      '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
+      mret (tlb_new, is_changed || is_changed_prev)
+    ) (tlb, false) (enum Level).
 
   (** ** TLB invalidation *)
 
@@ -1067,37 +1092,52 @@ Module TLB.
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
-  (** Get the TLB state at a timestamp (time_prev + cnt) *)
-  Fixpoint at_timestamp_from (ts : TState.t) (mem_init : Memory.initial) (mem : Memory.t)
+  (** Get the unique TLB states from [time_prev] to [time_prev + cnt]
+      along with their views as a [list (t * nat)].
+      The list is sorted in descending order by timestamp. *)
+  Fixpoint unique_snapshots_between (ts : TState.t) (mem_init : Memory.initial)
+                       (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
                        (va : bv 64)
                        (ttbr : reg)
-                      {struct cnt} : result string t :=
+                       (acc : list (t * nat)) :
+                      result string (list (t * nat)) :=
     match cnt with
-    | O => mret tlb_prev
+    | O => mret acc
     | S ccnt =>
       let time_cur := time_prev + 1 in
-      tlb ←
+      '(tlb, is_changed) ←
         match mem !! time_cur with
         | Some ev =>
-            let tlb_inv :=
-              if ev is Ev.Tlbi tlbi then tlbi_apply tlbi tlb_prev else tlb_prev
+            (* always true if tlbi is applied *)
+            let (tlb_inv, is_changed_by_tlbi) :=
+              if ev is Ev.Tlbi tlbi then (tlbi_apply tlbi tlb_prev, true) else (tlb_prev, false)
             in
-            update tlb_prev ts mem_init mem time_cur va ttbr
-        | None => mret init
+            '(tlb, is_changed) ← update tlb_inv ts mem_init mem time_cur va ttbr;
+            mret (tlb, is_changed || is_changed_by_tlbi)
+        | None => mret (init, false)
         end;
-      at_timestamp_from ts mem_init mem tlb time_cur ccnt va ttbr
+      let acc :=
+        match is_changed with
+        | true => (tlb, time_cur) :: acc
+        | false => acc
+        end in
+      unique_snapshots_between
+        ts mem_init mem tlb time_cur ccnt va ttbr acc
     end.
 
-  (** Get the TLB state at a timestamp `time` *)
-  Definition at_timestamp (ts : TState.t) (mem_init : Memory.initial)
+  (** Get the unique TLB states up until the timestamp [time]
+      along with their views as a [list (TLB.t * nat)].
+      The list is sorted in descending order by timestamp. *)
+  Definition unique_snapshots_until (ts : TState.t)
+                       (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (time : nat)
                        (va : bv 64)
-                       (ttbr : reg) : result string t :=
-    tlb ← update init ts mem_init mem 0 va ttbr;
-    at_timestamp_from ts mem_init mem tlb 0 time va ttbr.
+                       (ttbr : reg) : result string (list (t * nat)) :=
+    '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
+    unique_snapshots_between ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
 
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
@@ -1115,7 +1155,7 @@ Module TLB.
               (te : Entry.t (Ctxt.lvl ctxt))
               (evs : list (Ev.t * nat)) : result string (option nat) :=
     match evs with
-    | nil => mret None
+    | [] => mret None
     | (ev, t) :: tl =>
       match ev with
       | Ev.Tlbi tlbi =>
@@ -1264,6 +1304,59 @@ Module TLB.
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
     end;
   mret $ List.concat fault_ptes.
+
+  Definition invalidation_time_lt (ti_old ti_new : option nat) : bool :=
+    match ti_old, ti_new with
+    | Some ti_old, Some ti_new => ti_old <? ti_new
+    | None, None => false
+    | None, Some _ => false
+    | Some _, None => true
+    end.
+
+  Definition is_new_entry (path : list val) (ti_new : option nat)
+      (entries : list (list val * nat * option nat)) : bool :=
+    forallb
+      (λ '(p, t, ti),
+        negb(path =? p) || invalidation_time_lt ti ti_new) entries.
+
+  (* Snapshots are sorted in the descending order of [trans_time].
+    Thus, we do not have to use [trans_time] to check the interval *)
+  Definition get_valid_entries_from_snapshots (snapshots : list (t * nat))
+                (mem : Memory.t)
+                (tid : nat)
+                (va : bv 64) (asid : bv 16) :
+              result string (list (list val * nat * option nat)) :=
+    foldrM (λ '(tlb, trans_time) entries,
+      candidates ← TLB.lookup mem tid tlb trans_time va asid;
+      let new :=
+        omap (λ '(path, ti_opt),
+          if decide (is_new_entry path ti_opt entries) then
+            Some (path, trans_time, ti_opt)
+          else None
+        ) candidates in
+      mret (new ++ entries)
+    ) snapshots [].
+
+  Definition get_invalid_entries_from_snapshots (snapshots : list (t * nat))
+                (ts : TState.t)
+                (init : Memory.initial)
+                (mem : Memory.t)
+                (tid : nat) (is_ets2 : bool)
+                (va : bv 64) (asid : bv 16) (ttbr : reg) :
+              result string (list (list val * nat * option nat)) :=
+    foldrM (λ '(tlb, trans_time) entries,
+      if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+        mret entries
+      else
+        candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+        let new :=
+          omap (λ '(path, ti_opt),
+            if decide (is_new_entry path ti_opt entries) then
+              Some (path, trans_time, ti_opt)
+            else None
+          ) candidates in
+        mret (new ++ entries)
+    ) snapshots [].
 End TLB.
 Export (hints) TLB.
 
@@ -1662,21 +1755,17 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      trans_time ← mchoosel $ seq_bounds vpre_t vmax_t;
-      tlb ← mlift $ TLB.at_timestamp ts init mem trans_time va ttbr;
-      valid_ptes ← mlift $ TLB.lookup mem tid tlb trans_time va asid;
-      invalid_ptes ←
-        if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
-          mret []
-        else
-          mlift $ TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
+      snapshots ← mlift $ TLB.unique_snapshots_until ts init mem vmax_t va ttbr;
+      valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+      invalid_entries ← mlift $
+        TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or a fault *)
       let valid_trs :=
-        map (λ '(path, ti),
-          IIS.TransRes.make (va_to_vpn va) trans_time path ti) valid_ptes in
+        map (λ '(path, t, ti),
+          IIS.TransRes.make (va_to_vpn va) t path ti) valid_entries in
       let invalid_trs :=
-        map (λ '(path, ti),
-          IIS.TransRes.make (va_to_vpn va) trans_time path ti) invalid_ptes in
+        map (λ '(path, t, ti),
+          IIS.TransRes.make (va_to_vpn va) t path ti) invalid_entries in
       mchoosel (valid_trs ++ invalid_trs)
     else
       mret $ IIS.TransRes.make (va_to_vpn va) vpre_t [] None;
