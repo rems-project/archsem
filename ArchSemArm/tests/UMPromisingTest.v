@@ -123,6 +123,14 @@ Module EOR.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End EOR.
 
 Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
@@ -155,6 +163,14 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -192,6 +208,14 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     set_solver.
   Qed.
@@ -266,13 +290,22 @@ Module MP.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
 End MP.
 
 Module MPDMBS.
   (* A classic MP litmus test
      Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
-
      Expected outcome of (R5, R2) at Thread 2:
        (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0)
   *)
@@ -333,8 +366,17 @@ Module MPDMBS.
   Definition test_results :=
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
-  (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
   Proof.
     vm_compute (elements _).
