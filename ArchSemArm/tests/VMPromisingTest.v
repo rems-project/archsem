@@ -647,7 +647,7 @@ Module BBMSuccess.
   Definition n_threads := 2%nat.
 
   Definition terminate_at_t1 rm : bool :=
-    reg_lookup _PC rm =? Some (0x800000050C : bv 64).
+    reg_lookup _PC rm =? Some (0x8000000514 : bv 64).
 
   Definition terminate_at_t2 rm : bool :=
     (* a valid translation *)
