@@ -333,78 +333,6 @@ Module STRLDR.
   Qed.
 End STRLDR.
 
-(* Sequential page table modification in single thread *)
-Module LDRPT.
-  (* Single thread that:
-     1. Loads from VA 0x8000001000 (gets 0x2a from PA 0x1000)
-     2. Modifies L3[1] to remap VA 0x8000001000 -> PA 0x2000
-     3. Loads from VA 0x8000001000 again (gets 0x42 from PA 0x2000)
-  *)
-
-  Definition init_reg : registerMap :=
-    ∅
-    |> reg_insert _PC 0x8000000500
-    |> reg_insert R0 0x8000001000    (* VA to load from *)
-    |> reg_insert R1 0x0
-    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
-    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
-    |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
-    |> reg_insert SCTLR_EL1 0x1
-    |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
-    |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
-
-  Definition init_mem : memoryMap :=
-    ∅
-    |> mem_insert 0x500 4 0xf8606820  (* LDR X0, [X1, X0] - first load *)
-    |> mem_insert 0x504 4 0xf8226823  (* STR X3, [X1, X2] - modify page table *)
-    |> mem_insert 0x508 4 0xf8646824  (* LDR X4, [X1, X4] - second load *)
-    (* Data at two different physical locations *)
-    |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
-    |> mem_insert 0x2000 8 0x42       (* New PA - value 0x42 *)
-    (* Page tables *)
-    (* L0[1] -> L1 *)
-    |> mem_insert 0x80008 8 0x81003
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
-    (* L3 entries:
-       - L3[0]  -> PA 0x0000 (code page for PC)
-       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
-       - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
-    *)
-    |> mem_insert 0x83000 8 0x40000000000783
-    (* L3[1] : initially map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x60000000001783
-    (* L3[16] : identity map VA page 0x8000010000 -> PA page 0x83000 (page tables) *)
-    |> mem_insert 0x83080 8 0x60000000083703.
-
-  Definition n_threads := 1%nat.
-
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 5%nat.
-
-  Definition test_results :=
-    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
-
-  (* R0 should be 0x2a (from old mapping), R4 should be 0x42 (from new mapping) *)
-  Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
-      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-End LDRPT.
-
 Module MP.
   (* A classic MP litmus test with address translation
      Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
@@ -589,3 +517,97 @@ Module MPDMBS.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End MPDMBS.
+
+(* Sequential page table modification in single thread *)
+Module BBM.
+  (* Single thread that:
+     1. Loads from VA 0x8000001000 (gets 0x2a from PA 0x1000)
+     2. Modifies L3[1] to remap VA 0x8000001000 -> PA 0x2000
+     3. Loads from VA 0x8000001000 again (gets 0x42 from PA 0x2000)
+  *)
+
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  (* Instructions
+      LDR X0, [X1, X0] - first load
+      STR X3, [X1, X2] - modify page table
+      LDR X4, [X1, X4] - second load *)
+  Definition instrs : list (bv addr_size * bv 32) :=
+    [(0x500, 0xf8606820); (0x504, 0xf8226823); (0x508, 0xf8646824)].
+
+  (* Data at two different physical locations
+      Original PA - value 0x2a
+      New PA - value 0x42 *)
+  Definition data : list (bv addr_size * bv 64) :=
+    [(0x1000, 0x2a); (0x2000, 0x42)].
+
+  (* Page tables
+      L0[1] -> L1
+      L1[0] -> L2
+      L2[0] -> L3
+      L3 entries:
+        - L3[0]  -> PA 0x0000 (code page for PC)
+        - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+        - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000) *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81003); (0x81000, 0x82003); (0x82000, 0x83003);
+      (0x83000, 0x40000000000783); (0x83008, 0x60000000001783);
+      (0x83080, 0x60000000083703)].
+
+  Definition init_mem (instrs : list (bv addr_size * bv 32))
+      (data pgt : list (bv addr_size * bv 64)) : memoryMap :=
+    let reserved_mem :=
+      ∅
+      |> (λ mem, foldl (λ mem '(addr, val), mem_insert addr 4 val mem) mem instrs)
+      |> (λ mem, foldl (λ mem '(addr, val), mem_insert addr 8 val mem) mem data)
+      |> (λ mem, foldl (λ mem '(addr, val), mem_insert addr 8 val mem) mem pgt) in
+
+    (* WARNING: filling out 512 entries makes the test slow *)
+    let n_entries := 1%Z in
+    let pgt_base : list (bv addr_size) := remove_dups $
+      map (λ '(addr, _), (addr ≫ 3) ≪ 3) pgt in
+    let indices : list (bv addr_size) :=
+      map (λ i, (Z_to_bv addr_size (i * 8))) (seqZ 0 n_entries) in
+    let pgt_addrs := pgt_base × indices in
+    let reserved_addrs := dom reserved_mem in
+    foldl (λ mem '(baddr, index),
+      let addr := baddr + index in
+      if decide (addr ∈ reserved_addrs)
+      then mem
+      else mem_insert addr 8 0 mem) reserved_mem pgt_addrs.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem instrs data pgt;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 5%nat.
+
+  Definition test_results :=
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  (* BBM failure: two different OAs have different memory contents *)
+  Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
+      [Error "BBM check fails"].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End BBM.
