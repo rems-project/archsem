@@ -186,7 +186,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 3%nat.
+  Definition fuel := 4%nat.
 
   Definition test_results :=
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.
@@ -328,7 +328,7 @@ Module MPDMBS.
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 8%nat.
+  Definition fuel := 9%nat.
 
   Definition test_results :=
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.

@@ -364,7 +364,7 @@ Module LDRPT.
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 4%nat.
+  Definition fuel := 5%nat.
 
   Definition test_results :=
     VMPromising_cert_c arm_sem fuel n_threads termCond initState.
@@ -378,7 +378,7 @@ Module LDRPT.
   Qed.
 End LDRPT.
 
-(* Module MP.
+Module MP.
   (* A classic MP litmus test with address translation
      Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
@@ -433,15 +433,15 @@ End LDRPT.
     |> mem_insert 0x1100 8 0x0
     |> mem_insert 0x1200 8 0x0
     (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81003
+    |> mem_insert 0x80008 8 0x81803
     (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x81000 8 0x82803
     (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
+    |> mem_insert 0x82000 8 0x83803
     (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
+    |> mem_insert 0x83000 8 0x403
     (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x83008 8 0x1443.
 
   Definition n_threads := 2%nat.
 
@@ -453,16 +453,14 @@ End LDRPT.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {| MState.state :=
-        {| MState.memory := init_mem;
-            MState.regs := [# init_reg_t1; init_reg_t2];
-            MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 6%nat.
+  Definition fuel := 8%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads initState.
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -470,9 +468,9 @@ End LDRPT.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
-End MP. *)
+End MP.
 
-(* Module MPDMBS.
+Module MPDMBS.
   (* A classic MP litmus test with address translation
      Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
@@ -534,9 +532,9 @@ End MP. *)
     (* L2[0] -> L3 *)
     |> mem_insert 0x82000 8 0x83003
     (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x3
+    |> mem_insert 0x83000 8 0x403
     (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1003.
+    |> mem_insert 0x83008 8 0x60000000001443.
 
   Definition n_threads := 2%nat.
 
@@ -547,16 +545,14 @@ End MP. *)
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {| MState.state :=
-        {| MState.memory := init_mem;
-            MState.regs := [# init_reg_t1; init_reg_t2];
-            MState.address_space := PAS_NonSecure |};
-      MState.termCond := termCond |}.
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
 
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads initState.
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1; 0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
@@ -565,4 +561,4 @@ End MP. *)
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
-End MPDMBS. *)
+End MPDMBS.
