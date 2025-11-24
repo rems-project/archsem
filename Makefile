@@ -4,6 +4,9 @@
 all:
 	dune build
 
+test:
+	dune build @all
+
 TARBALL=ArchSem.tar.gz
 PREFIX=ArchSem
 GIT_ARCHIVE=git archive

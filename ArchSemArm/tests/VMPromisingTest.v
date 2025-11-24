@@ -598,7 +598,7 @@ Module BBMSuccess.
   (* Thread 0 updates the last-level PTE for VA 0x8000001000 and then
      executes a simplified break-before-make sequence that only
      invalidates the last-level mapping for that VA:
-       DSB ishst; TLBI VALE1IS, X0; DSB ish.
+       DSB ISHST; TLBI VAE1IS, X0; DSB ISH.
     Thread 1 performs a data access via VA 0x8000001000.
   *)
 
@@ -632,12 +632,12 @@ Module BBMSuccess.
     (* Instructions of T1 *)
     |> mem_insert 0x500 4 0xf8226823  (* STR X3, [X1, X2] - invalidate the PTE *)
     |> mem_insert 0x504 4 0xd5033a9f  (* DSB ISHST *)
-    |> mem_insert 0x508 4 0xd5088320  (* TLBI VAE1IS - TLB invalidate by 0x8000001000 *)
+    |> mem_insert 0x508 4 0xd5088320  (* TLBI by VA - TLB invalidate by 0x8000001000 *)
     |> mem_insert 0x50C 4 0xd5033b9f  (* DSB ISH *)
     |> mem_insert 0x510 4 0xd5033fdf  (* ISB *)
     (* Instructions of T2 *)
     |> mem_insert 0x600 4 0xf8606820  (* LDR X0, [X1, X0] - read 0x8000001000 *)
-    (* Data at two different physical locations *)
+    (* Data *)
     |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
     (* Page tables *)
     (* L0[1] -> L1 *)
@@ -658,7 +658,7 @@ Module BBMSuccess.
   Definition n_threads := 2%nat.
 
   Definition terminate_at_t1 rm : bool :=
-    reg_lookup _PC rm =? Some (0x8000000514 : bv 64).
+    reg_lookup _PC rm =? Some (0x800000050C : bv 64).
 
   Definition terminate_at_t2 rm : bool :=
     (* a valid translation *)
@@ -680,11 +680,11 @@ Module BBMSuccess.
 
   Definition fuel := 8%nat.
 
-  Definition test_results_pf :=
-    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+  Definition test_results :=
+    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   (* BBM check success *)
-  Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
+  Goal elements (regs_extract [(1%fin, R0)] <$> test_results) ≡ₚ
       [Ok [0x2a%Z]].
   Proof.
     vm_compute (elements _).

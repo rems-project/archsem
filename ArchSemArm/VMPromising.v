@@ -2328,6 +2328,10 @@ Section ComputeProm.
                                 (mem : Memory.t)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
+    (* throw an error *)
+    let exec := run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    let errs := Exec.errors exec in
+    guard_or (String.concat ", " errs.*2) (is_emptyb errs);;
     let res_proms := Exec.results $
       run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
     guard_or ("Out of fuel when searching for new promises")%string
