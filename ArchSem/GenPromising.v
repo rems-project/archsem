@@ -426,8 +426,16 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Arguments to_final_archState {_ _ _}.
   End CPState.
 
-  (** Create a computational model from an ISA model and promising model *)
+  (** Create computational models from an ISA model and promising model *)
   Definition Promising_to_Modelc (isem : iMon ()) (prom : BasicExecutablePM)
+      (fuel : nat) : archModel.c ∅ :=
+    λ n term (initMs : archState n),
+      PState.from_archState prom initMs |>
+      archModel.Res.from_exec
+        $ CPState.to_final_archState
+        <$> CPState.run isem prom term fuel.
+
+  Definition Promising_to_Modelc_pf (isem : iMon ()) (prom : BasicExecutablePM)
       (fuel : nat) : archModel.c ∅ :=
     λ n term (initMs : archState n),
       PState.from_archState prom initMs |>

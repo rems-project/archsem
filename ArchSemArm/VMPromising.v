@@ -1967,9 +1967,9 @@ Section ComputeProm.
     let base := List.length mem in
     let res_proms := Exec.results $
       run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Could not finish promises within the size of the fuel")%string
+    guard_or ("Out of fuel when searching for new promises")%string
       (∀ r ∈ res_proms, r.2 = true);;
-    let promises := res_proms.*1.*1 |> CProm.proms ∘ union_list in
+    let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
     let tstates :=
       res_proms
       |> omap (λ '((cp, st), _),
@@ -2056,3 +2056,6 @@ Next Obligation. Admitted.
 
 Definition VMPromising_cert_c isem fuel :=
   Promising_to_Modelc isem (VMPromising_exe' isem) fuel.
+
+Definition VMPromising_cert_c_pf isem fuel :=
+  Promising_to_Modelc_pf isem (VMPromising_exe' isem) fuel.

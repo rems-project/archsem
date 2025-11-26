@@ -128,6 +128,14 @@ Module EORMMUOFF.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
+
+  Definition test_results_pf :=
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End EORMMUOFF.
 
 (* Run EOR X0, X1, X2 at PC.
@@ -194,6 +202,14 @@ Module EOR.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
+
+  Definition test_results_pf :=
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End EOR.
 
 (* LDR X0, [X1, X0] at VA 0x8000000500, loading from VA 0x8000001000
@@ -247,6 +263,14 @@ Module LDR.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
+
+  Definition test_results_pf :=
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
 End LDR.
 
 (* STR X2, [X1, X0]; LDR X0, [X1, X0] at VA 0x8000000500,
@@ -296,6 +320,14 @@ Module STRLDR.
     VMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     set_solver.
   Qed.
@@ -362,7 +394,7 @@ Module LDRPT.
   Definition fuel := 5%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
   (* R0 should be 0x2a (from old mapping), R4 should be 0x42 (from new mapping) *)
   Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
@@ -455,7 +487,7 @@ Module MP.
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -547,7 +579,7 @@ Module MPDMBS.
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1; 0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
