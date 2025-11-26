@@ -388,7 +388,6 @@ Definition strict_regs : gset reg :=
        SP_EL1;
        SP_EL2;
        SP_EL3;
-       PSTATE;
        ELR_EL1;
        ELR_EL2;
        ELR_EL3;
@@ -709,8 +708,9 @@ Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
   bv_extract 12 n va.
 
 Definition prefix_to_va {n : N} (is_upper : bool) (p : bv n) : bv 64 :=
-  let varange_bit := if is_upper then (bv_1 16) else (bv_0 16) in
-  bv_concat 64 varange_bit (bv_concat 48 p (bv_0 (48 - n))).
+  let varange_bits : bv 16 := if is_upper then (-1)%bv else 0%bv in
+  let padding := bv_0 (48 - n) in
+  bv_concat 64 varange_bits (bv_concat 48 p padding).
 
 Definition is_upper_va (va : bv 64) : option bool :=
   let top_bits := bv_extract 48 16 va in
@@ -801,9 +801,9 @@ Module TLB.
     Definition t := {lvl : Level & NDCtxt.t lvl}.
     Definition lvl : t -> Level := projT1.
     Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
+    Definition is_upper (ctxt : t) : bool := NDCtxt.is_upper (nd ctxt).
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
     Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
-    Definition is_upper (ctxt : t) : bool := NDCtxt.is_upper (nd ctxt).
   End Ctxt.
   #[export] Typeclasses Transparent Ctxt.t.
 
@@ -831,7 +831,7 @@ Module TLB.
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.(ptes).
 
     Program Definition append {lvl clvl : Level}
-        (tlbe : @t lvl)
+        (tlbe : t lvl)
         (pte : val)
         (CHILD : lvl + 1 = clvl) : @t clvl :=
       make _ tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte])).
@@ -1228,7 +1228,7 @@ Module TLB.
       mret ((Entry.val_ttbr te), (vec_to_list (Entry.ptes te)), ti)
     end.
 
-  (** Get all the TLB entries and the corresponding TTBR value that
+  (** Get all the TLB entries (including the TTBR value) TTBR value that
       could translate the given VA at the provided level
       and in the provided ASID context.
       Return each TLB entry as a list of descriptors [list val] with
@@ -1239,7 +1239,7 @@ Module TLB.
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
             result string (list (val * list val * (option nat))) :=
-    is_upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
+    is_upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
                 (is_upper_va va);
     let ndctxt_asid := NDCtxt.make is_upper (level_prefix va lvl) (Some asid) in
     let ndctxt_global := NDCtxt.make is_upper (level_prefix va lvl) None in
@@ -1535,9 +1535,10 @@ Definition run_reg_trans_read (reg : reg) (racc : reg_acc)
     mret (ctrans eq root.T2, 0%nat)
   else
     ts ← mGet;
+    (* We are only allowed to read registers that are never written during the translation *)
     guard_or
       ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
-      $ (reg ∉ strict_regs ∨ reg ∉ relaxed_regs);;
+      $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
     othrow
       ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
       $ TState.read_reg ts reg.
@@ -1841,6 +1842,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
+          let ti := if is_ifetch then ti else None in
           mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
         end;
       invalid_res ←
@@ -1883,7 +1885,7 @@ Definition run_trans_end (trans_end : trans_end) :
     let trans_time := trs.(IIS.TransRes.time) in
     let fault := trans_end.(AddressDescriptor_fault) in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-      mset snd $ setv IIS.trs None
+      msetv (IIS.trs ∘ snd) None
     else
       is_ets3 ← mlift (ets3 ts);
       if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
@@ -1901,7 +1903,7 @@ Definition run_trans_end (trans_end : trans_end) :
         let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
         write_view ← write_fault_vpre is_rel trans_time;
         mset snd $ IIS.add (view_if is_write write_view);;
-        mset snd $ setv IIS.trs None
+        msetv (IIS.trs ∘ snd) None
   else
     mthrow "Translation ends with an empty translation".
 
@@ -1909,13 +1911,10 @@ Definition run_trans_end (trans_end : trans_end) :
 Definition run_take_exception (fault : exn) (vmax_t : view) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
-  if iis.(IIS.trs) is Some trans_res then
-    match iis.(IIS.inv_time) with
-    | Some inv_time => run_cse inv_time
-    | None => mret ()
-    end
-  else
-    run_cse vmax_t.
+  match iis.(IIS.inv_time) with
+  | Some inv_time => run_cse inv_time
+  | None => run_cse vmax_t
+  end.
 
 (** Runs an outcome. *)
 Section RunOutcome.
