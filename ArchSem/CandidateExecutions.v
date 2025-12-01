@@ -218,14 +218,14 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       Definition ISA_failed pe :=
         ∃ thread ∈ (vec_to_list pe.(events)),
         ∃ instr ∈ thread,
-        ∃ msg, instr.2 = FTEStop (GenericFail msg).
+        ∃ msg, instr.2 = FTEOpenCall (GenericFail msg).
 
       #[global] Instance ISA_failed_dec pe : Decision (ISA_failed pe).
       Proof using.
         unfold ISA_failed.
         apply list_exist_dec. intro.
         apply list_exist_dec. intro tr.
-        destruct (tr.2) as [| | call]; try (right; abstract hauto lq:on).
+        destruct (tr.2) as [|call|]; try (right; abstract hauto lq:on).
         destruct call; (right + left); abstract hauto lq:on.
       Defined.
 

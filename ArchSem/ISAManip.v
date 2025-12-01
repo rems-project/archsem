@@ -81,8 +81,8 @@ Module ISAManip (IWA : InterfaceWithArch) (TM : TermModelsT IWA). (* to be impor
 
     Definition remove_global_vars_trace_end `(itrce : fTraceEnd outcome A) : fTraceEnd outcome A :=
       match itrce with
-      | FTEStop (RegRead reg _) => if decide (reg ∈ global_vars) then FTENothing else itrce
-      | FTEStop (RegWrite reg _ _) => if decide (reg ∈ global_vars) then FTENothing else itrce
+      | FTEOpenCall (RegRead reg _) => if decide (reg ∈ global_vars) then FTEStopped else itrce
+      | FTEOpenCall (RegWrite reg _ _) => if decide (reg ∈ global_vars) then FTEStopped else itrce
       | _ => itrce
       end.
 

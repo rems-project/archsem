@@ -273,12 +273,12 @@ Section FMon.
 
   (** *** Trace ends *)
 
-  (** A trace end is either nothing, a return value or an incomplete event i.e a
-      call without a return value *)
+  (** A trace end is either return value, a effect call without a result, or
+  just a stop marker *)
   Inductive fTraceEnd {A : Type} :=
-  | FTERet (a : A)                     (* Terminated            *)
-  | FTENothing                         (* PartialClean          *)
-  | FTEStop (call : Eff).              (* PartialIncompleteCall *)
+  | FTERet (a : A)
+  | FTEOpenCall (call : Eff)
+  | FTEStopped.
   Arguments fTraceEnd : clear implicits.
 
   #[export] Instance fTraceEnd_eqdec `{EqDecision A} : EqDecision (fTraceEnd A).
@@ -287,9 +287,9 @@ Section FMon.
   (** Definition of trance end matching a value of the monad *)
   Definition fmatch_end {A} (f : fMon A) (tre : fTraceEnd A) :=
     match tre with
-    | FTENothing => True
     | FTERet r => if f is Ret r' then r = r' else False
-    | FTEStop call => if f is Next call' _ then call = call' else False
+    | FTEOpenCall call => if f is Next call' _ then call = call' else False
+    | FTEStopped => True
     end.
 
   #[export] Instance fmatch_end_dec `{EqDecision A}
@@ -300,10 +300,10 @@ Section FMon.
   Proof. done. Qed.
   Hint Resolve fmatch_end_ret : fmon.
 
-  Lemma fmatch_end_stop {A} (call : Eff) k :
-    fmatch_end (A := A) (Next call k) (FTEStop call).
+  Lemma fmatch_end_open {A} (call : Eff) k :
+    fmatch_end (A := A) (Next call k) (FTEOpenCall call).
   Proof. done. Qed.
-  Hint Resolve fmatch_end_stop : fmon.
+  Hint Resolve fmatch_end_open : fmon.
 
   (** *** Traces *)
 
@@ -312,17 +312,17 @@ Section FMon.
 
   #[global] Typeclasses Transparent fTrace.
   Notation FTRet a := ([], FTERet a).
-  Notation FTStop call := ([], FTEStop call).
-  Notation FTNothing := ([], FTENothing).
+  Notation FTOpenCall call := ([], FTEOpenCall call).
+  Notation FTStopped := ([], FTEStopped).
   Definition FTCons ev `(itrc : fTrace A) : fTrace A :=
     (ev :: itrc.1, itrc.2).
 
   (** We keep the defintion of a trace matching a monad value as an inductive
   for convenience *)
   Inductive fmatch {A : Type} : fMon A → fTrace A → Prop :=
-  | FTMNothing f : fmatch f FTNothing
+  | FTMStopped f : fmatch f FTStopped
   | FTMRet a : fmatch (Ret a) (FTRet a)
-  | FTMStop call k : fmatch (Next call k) (FTStop call)
+  | FTMOpenCall call k : fmatch (Next call k) (FTOpenCall call)
   | FTMNext call k ret tl tre :
     fmatch (k ret) (tl, tre) → fmatch (Next call k) ((call &→ ret) :: tl, tre).
 
@@ -366,28 +366,28 @@ Section FMon.
   (** Full trace are traces that only stop on a non returning effect *)
   Definition ftfull {A} (ft : fTrace A) :=
     match ft.2 with
-    | FTEStop call => eff_ret call → False
     | FTERet _ => True
-    | FTENothing => False
+    | FTEOpenCall call => eff_ret call → False
+    | FTEStopped => False
     end.
   Lemma ftfull_FTRet {A} (a : A) : ftfull (FTRet a).
   Proof using. naive_solver. Qed.
   Hint Resolve ftfull_FTRet : fmon.
-  Lemma ftfull_FTStop {A} (call : Eff) :
-    (eff_ret call → False) → ftfull (A := A) (FTStop call).
+  Lemma ftfull_FTOpenCall {A} (call : Eff) :
+    (eff_ret call → False) → ftfull (A := A) (FTOpenCall call).
   Proof using. naive_solver. Qed.
-  Hint Resolve ftfull_FTStop : fmon.
-  Lemma ftfull_FTStop_spec {A} (call : Eff) :
-    ftfull (A := A) (FTStop call) ↔ (eff_ret call → False).
-  Proof using. split; [sfirstorder | apply ftfull_FTStop]. Qed.
-  Hint Rewrite @ftfull_FTStop_spec : fmon.
+  Hint Resolve ftfull_FTOpenCall : fmon.
+  Lemma ftfull_FTOpenCall_spec {A} (call : Eff) :
+    ftfull (A := A) (FTOpenCall call) ↔ (eff_ret call → False).
+  Proof using. split; [sfirstorder | apply ftfull_FTOpenCall]. Qed.
+  Hint Rewrite @ftfull_FTOpenCall_spec : fmon.
 
   Equations ftfull_dec {A} `{!EffWf Eff} (ft : fTrace A) : Decision (ftfull ft) :=
-    ftfull_dec (_, FTEStop call) with decideT (eff_ret call) := {
+    ftfull_dec (_, FTEOpenCall call) with decideT (eff_ret call) := {
       | inleft _ => right _
       | inright _ => left _
       };
-    ftfull_dec (_, FTENothing) := right _;
+    ftfull_dec (_, FTEStopped) := right _;
     ftfull_dec (_, FTERet) := left _.
   Solve All Obligations with unfold ftfull; sfirstorder.
 
@@ -474,8 +474,8 @@ Infix "&→@{ Eff }" := (@FEvent Eff _)
 
 Notation fstep f ev f' := (fsteps f [ev] f').
 Notation FTRet a := ([], FTERet a).
-Notation FTStop call := ([], FTEStop call).
-Notation FTNothing := ([], FTENothing).
+Notation FTOpenCall call := ([], FTEOpenCall call).
+Notation FTStopped := ([], FTEStopped).
 
 
 (** Helper for the following Hint Extern. The goal is that in case of an fEvent
@@ -533,9 +533,9 @@ Section CMon.
   (** ** Matching a choice monad with a trace that does not contain choice
          points *)
   Inductive cmatch {A : Type} : cMon A → fTrace Eff A → Prop :=
-  | CTMNothing f : cmatch f FTNothing
+  | CTMNothing f : cmatch f FTStopped
   | CTMRet a : cmatch (Ret a) (FTRet a)
-  | CTMStop (call : Eff) k : cmatch (Nextl call k) (FTStop call)
+  | CTMStop (call : Eff) k : cmatch (Nextl call k) (FTOpenCall call)
   | CTMNext (call : Eff) k ret tl tre :
     cmatch (k ret) (tl, tre) → cmatch (Nextl call k) (call &→ ret :: tl, tre)
   | CTMChoose n i k tr : cmatch (k i) tr →
@@ -558,9 +558,9 @@ Section CMon.
       that bad. *)
   Equations cmatch_dec `{EqDecision A} (f : cMon A) tr
     : Decision (cmatch f tr) :=
-    cmatch_dec _ FTNothing := left _;
+    cmatch_dec _ FTStopped := left _;
     cmatch_dec (Ret r) (FTRet r') := dec_if (decide (r = r'));
-    cmatch_dec (Nextl call k) (FTStop call') :=
+    cmatch_dec (Nextl call k) (FTOpenCall call') :=
       dec_if (decide (call = call'));
     cmatch_dec (Nextl call k) (ev :: tl, tre)
       with inspect (event_extract ev call) := {
