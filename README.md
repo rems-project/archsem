@@ -1,3 +1,6 @@
+![ArchSem logo](https://github.com/rems-project/archsem/blob/main/etc/logo/archsem_logo4.png?raw=true)
+
+
 # ArchSem
 
 ArchSem is a Rocq framework to define the semantics of CPU architectures
