@@ -4,6 +4,15 @@ ArchSem is a Rocq framework to define the semantics of CPU architectures
 such as Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set semantics.
 The framework is designed to be generic, but so far is only instantiated for Arm-A and RISC-V.
 
+## Paper
+
+[ArchSem: Reusable Rigorous Semantics of Relaxed Architectures](https://www.cl.cam.ac.uk/~pes20/Stuff/2025-archsem-paper.pdf). 
+Thibaut Pérami, Thomas Bauereiss, Brian Campbell, Zongyuan Liu, Nils Lauermann, Alasdair Armstrong, and Peter Sewell.
+In POPL 2026.
+[doi](https://doi.org/10.1145/3776650)
+
+
+
 
 ## General goals and organization
 
