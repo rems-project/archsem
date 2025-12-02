@@ -1,4 +1,4 @@
-![ArchSem logo](https://github.com/rems-project/archsem/blob/main/etc/logo/archsem_logo4.png?raw=true)
+![ArchSem logo](/../main/etc/logo/archsem_logo4.png?raw=true)
 
 
 # ArchSem
