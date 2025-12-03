@@ -45,7 +45,7 @@ From stdpp Require Import vector.
 From stdpp Require Import finite.
 
 Require Import Options.
-Require Import CBase CBool CDestruct.
+Require Import CBase CBool CDestruct CArith.
 
 (** * Base effect definitions *)
 
@@ -234,7 +234,7 @@ Proof. solve_decision. Defined.
 Notation MChoose := (@MCall MChoice MChoice_ret).
 Definition mchoose `{!MChoose M} (n : nat) : M (fin n) := mcall (ChooseFin n).
 Definition mdiscard `{MChoose M, FMap M} {A} : M A :=
-  mcall (ChooseFin 0) |$> (λ x, match (x : fin 0) with end).
+  mcall (ChooseFin 0) |$> fin0_magic.
 
 (** Helper to non-deterministically choose in a list *)
 Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
