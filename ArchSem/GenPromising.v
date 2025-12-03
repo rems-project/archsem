@@ -165,27 +165,38 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       it generic *)
   Structure BasicExecutablePM := {
       pModel :> PromisingModel;
-      (** try to compute ALL allowed promises, if that is not possible (not
-          enough fuel) then fail with error message.
 
-          Soundness and completeness proofs are required to show that when not
-          failing, promise_select effectively computes the allowed_promises
-          set.*)
-      promise_select :
+      enumerate_promises_and_terminal_states :
         (* fuel *) nat → (* tid *) nat →
         (* termination condition *) (registerMap → bool) →
         memoryMap → pModel.(tState) → PromMemory.t pModel.(mEvent) →
-        Exec.res string pModel.(mEvent);
+        result string (list pModel.(mEvent) * list pModel.(tState));
 
       promise_select_sound :
-      ∀ fuel tid term initMem ts mem,
-        ∀ ev ∈ (promise_select fuel tid term initMem ts mem),
-          ev ∈ pModel.(allowed_promises) tid initMem ts mem;
+        ∀ fuel tid term initMem ts mem promises tstates,
+          Ok (promises, tstates) =
+            enumerate_promises_and_terminal_states fuel tid term initMem ts mem →
+          ∀ ev ∈ promises, ev ∈ pModel.(allowed_promises) tid initMem ts mem;
+
       promise_select_complete :
-      ∀ fuel tid term initMem ts mem,
-        ¬ Exec.has_error (promise_select fuel tid term initMem ts mem) →
-        ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem,
-          ev ∈ promise_select fuel tid term initMem ts mem
+        ∀ fuel tid term initMem ts mem promises tstates,
+          Ok (promises, tstates) =
+            enumerate_promises_and_terminal_states fuel tid term initMem ts mem →
+          ∀ ev ∈ pModel.(allowed_promises) tid initMem ts mem, ev ∈ promises;
+
+      terminal_state_no_outstanding_promise :
+        ∀ fuel tid term initMem ts mem promises tstates,
+          Ok (promises, tstates) =
+            enumerate_promises_and_terminal_states fuel tid term initMem ts mem →
+          ∀ tts ∈ tstates, pModel.(tState_nopromises) tts;
+
+      terminal_state_is_terminated :
+        ∀ fuel tid term initMem ts mem promises tstates,
+          Ok (promises, tstates) =
+            enumerate_promises_and_terminal_states fuel tid term initMem ts mem →
+          ∀ tts ∈ tstates, term (pModel.(tState_regs) tts);
+
+      (* TODO: add terminal_state_is_reachable *)
     }.
   Arguments BasicExecutablePM : clear implicits.
 
@@ -323,10 +334,24 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Local Notation mEvent := (mEvent prom).
     Local Notation t := (t tState mEvent n).
 
+    (** The type of final promising state return by run *)
+    Definition final := { x : t | terminated prom term x }.
+
+    Definition make_final (p : t) := exist (terminated prom term) p.
+
+    (** Convert a final promising state to a generic final state *)
+    Program Definition to_final_archState (f : final) :
+        {s & archState.is_terminated term s} :=
+      existT (to_archState prom f) _.
+    Solve All Obligations with
+      hauto unfold:terminated unfold:archState.is_terminated l:on db:vec, brefl.
+
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      prom.(promise_select) fuel tid (term tid) (initmem st) (tstate tid st) (events st).
+      '(promises, _) ← mlift $ prom.(enumerate_promises_and_terminal_states)
+                        fuel tid (term tid) (initmem st) (tstate tid st) (events st);
+      mchoosel promises.
 
     (** Take any promising step for that tid and promise it *)
     Definition cpromise_tid (fuel : nat) (tid : fin n)
@@ -350,20 +375,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
-    (** The type of final promising state return by run *)
-    Definition final := { x : t | terminated prom term x }.
-
-    Definition make_final (p : t) := exist (terminated prom term) p.
-
-
-    (** Convert a final promising state to a generic final state *)
-    Program Definition to_final_archState (f : final) :
-        {s & archState.is_terminated term s} :=
-      existT (to_archState prom f) _.
-    Solve All Obligations with
-      hauto unfold:terminated unfold:archState.is_terminated l:on db:vec, brefl.
-
-    (** Computational evaluate all the possible allowed final states according
+    (** Computationally evaluate all the possible allowed final states according
         to the promising model prom starting from st *)
     Fixpoint run (fuel : nat) : Exec.t t string final :=
       st ← mGet;
@@ -373,21 +385,63 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           run_step (S fuel);;
           run fuel
         else mthrow "Could not finish running within the size of the fuel".
+
+    (** Computationally evaluate all the possible allowed final states according
+        to the promising model prom starting from st with promise-first optimization.
+        The size of fuel should be at least (# of promises) + max(# of instructions) + 1 *)
+    Fixpoint run_promise_first (fuel : nat) : Exec.t t string final :=
+      if fuel is S fuel then
+        st ← mGet;
+        (* Find out next possible promises or terminating states at the current thread *)
+        executions ←
+          vmapM (λ '(tid, ts),
+            '(promises_per_tid, tstates_per_tid) ←
+              mlift $ prom.(enumerate_promises_and_terminal_states)
+                        fuel (fin_to_nat tid) (term tid) (initmem st) ts (events st);
+            mret (map (.,tid) promises_per_tid, tstates_per_tid)
+          ) (venumerate (tstates st));
+
+        promise ← mchoosel (enum bool);
+        if (promise : bool) then
+          (* Non-deterministically choose the next promise and the tid for pruning *)
+          let promises_all := List.concat (vmap fst executions) in
+          '(next_ev, tid) ← mchoosel promises_all;
+          mSet (λ st, promise_tid prom st tid next_ev);;
+          run_promise_first fuel
+        else
+          (* Compute cartesian products of the possible thread states *)
+          let tstates_all := cprodn (vmap snd executions) in
+          let new_finals :=
+            omap (λ tstates,
+              let st := Make tstates st.(PState.initmem) st.(PState.events) in
+              if decide $ terminated prom term st is left pt
+              then Some (make_final st pt)
+              else None
+            ) tstates_all in
+          mchoosel new_finals
+      else
+        mthrow "Could not finish running within the size of the fuel".
+
     End CPS.
     Arguments to_final_archState {_ _ _}.
   End CPState.
 
-  (** Create a computational model from an ISA model and promising model *)
+  (** Create computational models from an ISA model and promising model *)
   Definition Promising_to_Modelc (isem : iMon ()) (prom : BasicExecutablePM)
       (fuel : nat) : archModel.c ∅ :=
-    fun n term (initMs : archState n) =>
+    λ n term (initMs : archState n),
       PState.from_archState prom initMs |>
       archModel.Res.from_exec
         $ CPState.to_final_archState
         <$> CPState.run isem prom term fuel.
 
-    (* TODO state some soundness lemma between Promising_to_Modelnc and
-        Promising_Modelc *)
+  Definition Promising_to_Modelc_pf (isem : iMon ()) (prom : BasicExecutablePM)
+      (fuel : nat) : archModel.c ∅ :=
+    λ n term (initMs : archState n),
+      PState.from_archState prom initMs |>
+      archModel.Res.from_exec
+        $ CPState.to_final_archState
+        <$> CPState.run_promise_first prom term fuel.
 
 End GenPromising.
 

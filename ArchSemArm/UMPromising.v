@@ -411,7 +411,7 @@ Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
 Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
            (init : Memory.initial) (mem : Memory.t) :
     Exec.t TState.t string (view * val) :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
@@ -452,7 +452,8 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     This may mutate memory if no existing promise can be fullfilled *)
 Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) : Exec.t TState.t string (Memory.t * view * option view):=
+           (data : val) :
+          Exec.t TState.t string (Memory.t * view * option view):=
   let msg := Msg.make tid loc data in
   let is_release := is_rel_acq macc in
   ts ← mGet;
@@ -484,7 +485,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
   : Exec.t TState.t string (Memory.t * option view) :=
-  guard_or "Atomic RMV unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
@@ -654,11 +655,14 @@ Section ComputeProm.
     else
       mret res.
 
-  Fixpoint runSt_to_termination
+  (* Run the thread state until termination, collecting certified promises.
+     Returns true if termination occurs within the given fuel,
+     false otherwise. *)
+  Fixpoint run_to_termination_promise
                       (isem : iMon ())
                       (fuel : nat)
-                      (base : nat)
-      : Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
+                      (base : nat) :
+      Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
     match fuel with
     | 0%nat =>
       ts ← mget (PPState.state ∘ snd);
@@ -670,20 +674,26 @@ Section ComputeProm.
       if term (TState.reg_map ts) then
         mret true
       else
-        runSt_to_termination isem fuel base
+        run_to_termination_promise isem fuel base
     end.
 
   Definition run_to_termination (isem : iMon ())
                                 (fuel : nat)
                                 (ts : TState.t)
                                 (mem : Memory.t)
-      : Exec.res string Msg.t :=
+      : result string (list Msg.t * list TState.t) :=
     let base := List.length mem in
-    let res := Exec.results $ runSt_to_termination isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Could not finish promises within the size of the fuel")%string (∀ r ∈ res, r.2 = true);;
-    res.*1.*1
-    |> union_list
-    |> mchoosel ∘ CProm.proms.
+    let res_proms := Exec.results $
+      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    guard_or ("Out of fuel when searching for new promises")%string
+      (∀ r ∈ res_proms, r.2 = true);;
+    let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
+    let tstates :=
+      res_proms
+      |> omap (λ '((cp, st), _),
+          if is_emptyb (CProm.proms cp) then Some (PPState.state st)
+          else None) in
+    mret (promises, tstates).
 
 End ComputeProm.
 
@@ -759,12 +769,17 @@ Definition UMPromising_cert_nc isem :=
 Program Definition UMPromising_exe' (isem : iMon ())
     : BasicExecutablePM :=
   {|pModel := UMPromising_cert' isem;
-    promise_select :=
+    enumerate_promises_and_terminal_states :=
       λ fuel tid term initmem ts mem,
           run_to_termination tid initmem term isem fuel ts mem
   |}.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
+Next Obligation. Admitted.
+Next Obligation. Admitted.
 
 Definition UMPromising_cert_c isem fuel :=
   Promising_to_Modelc isem (UMPromising_exe' isem) fuel.
+
+Definition UMPromising_cert_c_pf isem fuel :=
+  Promising_to_Modelc_pf isem (UMPromising_exe' isem) fuel.
