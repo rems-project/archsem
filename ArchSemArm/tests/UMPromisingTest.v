@@ -412,8 +412,8 @@ Module LB.
     |> mem_insert 0x600 4 0xf8646820  (* LDR X0, [X1, X4] *)
     |> mem_insert 0x604 4 0xf8246862  (* STR X2, [X3, X4] *)
     (* Backing memory *)
-    |> mem_insert 0x1000 8 0x1a
-    |> mem_insert 0x2000 8 0x2a.
+    |> mem_insert 0x1000 8 0x00
+    |> mem_insert 0x2000 8 0x00.
 
   Definition n_threads := 2%nat.
 
@@ -434,7 +434,7 @@ Module LB.
     UMPromising_cert_c arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x01%Z; 0x01%Z]; Ok [0x1a%Z; 0x01%Z]; Ok [0x01%Z; 0x2a%Z]; Ok [0x1a%Z; 0x2a%Z]].
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -480,8 +480,8 @@ Module LBDMBS.
     |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
     |> mem_insert 0x608 4 0xf8246862  (* STR X2, [X3, X4] *)
     (* Backing memory *)
-    |> mem_insert 0x1000 8 0x1a
-    |> mem_insert 0x2000 8 0x2a.
+    |> mem_insert 0x1000 8 0x00
+    |> mem_insert 0x2000 8 0x00.
 
   Definition n_threads := 2%nat.
 
@@ -503,7 +503,7 @@ Module LBDMBS.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x1a%Z; 0x01%Z]; Ok [0x01%Z; 0x2a%Z]; Ok [0x1a%Z; 0x2a%Z]].
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
