@@ -383,7 +383,6 @@ Definition strict_regs : gset reg :=
        SP_EL1;
        SP_EL2;
        SP_EL3;
-       PSTATE;
        ELR_EL1;
        ELR_EL2;
        ELR_EL3;
@@ -703,8 +702,16 @@ Definition prefix (lvl : Level) := bv (level_length lvl).
 Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
   bv_extract 12 n va.
 
-Definition prefix_to_va {n : N} (p : bv n) : bv 64 :=
-  bv_concat 64 (bv_0 16) (bv_concat 48 p (bv_0 (48 - n))).
+Definition prefix_to_va {n : N} (is_upper : bool) (p : bv n) : bv 64 :=
+  let varange_bits : bv 16 := if is_upper then (-1)%bv else 0%bv in
+  let padding := bv_0 (48 - n) in
+  bv_concat 64 varange_bits (bv_concat 48 p padding).
+
+Definition is_upper_va (va : bv 64) : option bool :=
+  let top_bits := bv_extract 48 16 va in
+  if top_bits =? (-1)%bv then Some true
+  else if top_bits =? 0%bv then Some false
+  else None.
 
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
@@ -762,10 +769,12 @@ Module TLB.
   Module NDCtxt.
     Record t (lvl : Level) :=
       make {
+          is_upper : bool;
           va : prefix lvl;
           asid : option (bv 16);
         }.
     Arguments make {_} _ _.
+    Arguments is_upper {_}.
     Arguments va {_}.
     Arguments asid {_}.
 
@@ -777,8 +786,8 @@ Module TLB.
 
     #[global] Instance count lvl : Countable (t lvl).
     Proof.
-      eapply (inj_countable' (fun ndc => (va ndc, asid ndc))
-                        (fun x => make x.1 x.2)).
+      eapply (inj_countable' (fun ndc => (is_upper ndc, va ndc, asid ndc))
+                        (fun x => make x.1.1 x.1.2 x.2)).
       abstract sauto.
     Defined.
   End NDCtxt.
@@ -787,23 +796,43 @@ Module TLB.
     Definition t := {lvl : Level & NDCtxt.t lvl}.
     Definition lvl : t -> Level := projT1.
     Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
+    Definition is_upper (ctxt : t) : bool := NDCtxt.is_upper (nd ctxt).
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
     Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
   End Ctxt.
   #[export] Typeclasses Transparent Ctxt.t.
 
   Module Entry.
-    Definition t (lvl : Level) := vec val (S lvl).
-    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.
+    Record t {lvl : Level} :=
+      make {
+        val_ttbr : val;
+        ptes : vec val (S lvl);
+      }.
+    Arguments t : clear implicits.
+
+    #[global] Instance eq_dec lvl : EqDecision (t lvl).
+    Proof. solve_decision. Defined.
+
+    #[global] Instance eqdep_dec : EqDepDecision t.
+    Proof. intros ? ? ? [] []. decide_jmeq. Defined.
+
+    #[global] Instance count lvl : Countable (t lvl).
+    Proof.
+      eapply (inj_countable' (fun ent => (val_ttbr ent, ptes ent))
+                        (fun x => make lvl x.1 x.2)).
+      abstract sauto.
+    Defined.
+
+    Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.(ptes).
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
         (pte : val)
-        (CHILD : lvl + 1 = clvl) : t clvl :=
-      ctrans _ (tlbe +++ [#pte]).
+        (CHILD : lvl + 1 = clvl) : @t clvl :=
+      make _ tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte])).
     Solve All Obligations with lia.
   End Entry.
-  #[export] Typeclasses Transparent Entry.t.
+  Export (hints) Entry.
 
   (* Full Entry *)
   Module FE.
@@ -908,6 +937,15 @@ Module TLB.
     (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
     bv_concat (level_length clvl) (Ctxt.va ctxt) index.
 
+  Definition is_upper_ttbr (ttbr : reg) : option bool :=
+    if decide
+      (ttbr = TTBR0_EL1 ∨
+       ttbr = TTBR0_EL2 ∨
+       ttbr = TTBR0_EL3) then Some false
+    else if decide
+      (ttbr = TTBR1_EL1 ∨
+       ttbr = TTBR1_EL2) then Some true
+    else None.
 
   (** Seed root-level TLB entries from [ttbr].
       - Reads [ttbr] at [time], checks it is 64-bit.
@@ -924,6 +962,7 @@ Module TLB.
       (ttbr : reg) : result string (VATLB.t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
+    is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
     foldlM (λ '(vatlb, is_changed) sreg,
       val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
@@ -932,9 +971,10 @@ Module TLB.
       if (Memory.read_at loc init mem time) is Some (memval, _) then
         if decide (is_table memval) then
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make va (Some asid) in
+          let ndctxt := NDCtxt.make is_upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
-          let entry : Entry.t (Ctxt.lvl ctxt) := [#memval] in
+          let entry : Entry.t (Ctxt.lvl ctxt) :=
+            Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
             Ok (VATLB.insert ctxt entry vatlb, true)
@@ -958,11 +998,6 @@ Module TLB.
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
       (ttbr : reg) : result string (VATLB.t * bool) :=
-    guard_or "ASID is not active"
-      $ is_active_asid ts (Ctxt.asid ctxt) ttbr time;;
-    guard_or "The translation entry is not in the TLB"
-      (te ∈ VATLB.get ctxt vatlb);;
-
     if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
@@ -975,7 +1010,7 @@ Module TLB.
           let va := next_va ctxt index (child_lvl_add_one _ _ e) in
           let asid := if bool_decide (is_global clvl next_pte) then None
                       else Ctxt.asid ctxt in
-          let ndctxt := NDCtxt.make va asid in
+          let ndctxt := NDCtxt.make (Ctxt.is_upper ctxt) va asid in
           let ctxt := existT clvl ndctxt in
           let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
@@ -1007,11 +1042,12 @@ Module TLB.
         let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
+        is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
         foldlM (λ prev sreg,
           val_ttbr ← othrow "TTBR should be a 64 bit value"
                   $ regval_to_val ttbr sreg.1;
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make pva (Some asid) in
+          let ndctxt := NDCtxt.make is_upper pva (Some asid) in
           let ctxt := existT plvl ndctxt in
           (* parent entries should be from the original TLB (in the parent level) *)
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
@@ -1154,7 +1190,6 @@ Module TLB.
     | (ev, t) :: tl =>
       match ev with
       | Ev.Tlbi tlbi =>
-        let va := prefix_to_va (Ctxt.va ctxt) in
         if decide (is_te_invalidated_by_tlbi tlbi tid ctxt te) then
           mret (Some t)
         else
@@ -1178,18 +1213,19 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (ndctxt : NDCtxt.t lvl) :
-            result string (list (list val * (option nat))) :=
+            result string (list (val * list val * (option nat))) :=
     let ctxt := existT lvl ndctxt in
     let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
     let tes := if decide (lvl = leaf_lvl) then tes
                else filter (λ te, is_block (TLB.Entry.pte te)) tes in
     for te in (elements tes) do
       ti ← invalidation_time mem tid trans_time ctxt te;
-      mret ((vec_to_list te), ti)
+      mret ((Entry.val_ttbr te), (vec_to_list (Entry.ptes te)), ti)
     end.
 
-  (** Get all the TLB entries that could translate the given VA
-      at the provided level and in the provided ASID context.
+  (** Get all the TLB entries (including the TTBR value) TTBR value that
+      could translate the given VA at the provided level
+      and in the provided ASID context.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [nat] *)
   Definition get_leaf_ptes_with_inv_time (mem : Memory.t)
@@ -1197,30 +1233,33 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
-            result string (list (list val * (option nat))) :=
-    let ndctxt_asid := NDCtxt.make (level_prefix va lvl) (Some asid) in
-    let ndctxt_global := NDCtxt.make (level_prefix va lvl) None in
+            result string (list (val * list val * (option nat))) :=
+    is_upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
+                (is_upper_va va);
+    let ndctxt_asid := NDCtxt.make is_upper (level_prefix va lvl) (Some asid) in
+    let ndctxt_global := NDCtxt.make is_upper (level_prefix va lvl) None in
     candidates_asid ←
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_asid;
     candidates_global ←
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_global;
     mret (candidates_asid ++ candidates_global)%list.
 
-  (** Get all the TLB entries that could translate the given VA
-      in the provided ASID context.
+  (** Get all the TLB entries and the corresponding TTBR value that
+      could translate the given VA in the provided ASID context.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [nat] *)
   Definition lookup (mem : Memory.t)
               (tid : nat)
               (tlb : TLB.t) (trans_time : nat)
               (va : bv 64) (asid : bv 16) :
-            result string (list (list val * (option nat))) :=
+            result string (list (val * list val * (option nat))) :=
     res1 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 1%fin va asid;
     res2 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 2%fin va asid;
     res3 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time leaf_lvl va asid;
     mret (res1 ++ res2 ++ res3).
 
-  (** Get all the TLB entries that trigger fault from the given VA
+  (** Get all the TLB entries and the corresponding TTBR value that
+      trigger fault from the given VA
       at the provided level and in the provided ASID context.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [option nat] *)
@@ -1232,9 +1271,12 @@ Module TLB.
                 (lvl : Level)
                 (va : bv 64)
                 (asid : option (bv 16))
-                (ttbr : reg) : result string (list (list val * (option nat))) :=
+                (ttbr : reg) :
+        result string (list (val * list val * (option nat))) :=
     if parent_lvl lvl is Some parent_lvl then
-      let ndctxt := NDCtxt.make (level_prefix va parent_lvl) asid in
+      is_upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
+                (is_upper_va va);
+      let ndctxt := NDCtxt.make is_upper (level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
       let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
       let tes := filter (λ te, is_table (TLB.Entry.pte te)) tes in
@@ -1247,7 +1289,8 @@ Module TLB.
             if decide (is_valid memval) then mret None
             else
               ti ← invalidation_time mem tid trans_time ctxt te;
-              mret $ Some ((vec_to_list te) ++ [memval], ti)
+              let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
+              mret $ Some (Entry.val_ttbr te, vals, ti)
           else
             mthrow "The PTE is missing"
         end;
@@ -1265,26 +1308,31 @@ Module TLB.
           if (Memory.read_at loc init mem trans_time) is Some (memval, _) then
             if decide (is_valid memval) then mret None
             else
-              mret $ Some ([memval], None)
+              mret $ Some (val_ttbr, [memval], None)
           else mthrow "The root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
 
-  (** Get all the TLB entries that trigger fault from the given VA
+  (** Get all the TLB entries and the corresponding TTBR value that
+      trigger fault from the given VA
       in the provided ASID context.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [option nat] *)
-  Definition get_invalid_ptes_with_inv_time_by_lvl (ts : TState.t) (init : Memory.initial)
+  Definition get_invalid_ptes_with_inv_time_by_lvl (ts : TState.t)
+                (init : Memory.initial)
                 (mem : Memory.t)
                 (tid : nat)
                 (tlb : t) (trans_time : nat)
                 (lvl : Level)
                 (va : bv 64) (asid : bv 16)
-                (ttbr : reg) : result string (list (list val * (option nat))) :=
+                (ttbr : reg) :
+      result string (list (val * list val * (option nat))) :=
     candidates_asid ←
-      get_invalid_ptes_with_inv_time_by_lvl_asid ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
+      get_invalid_ptes_with_inv_time_by_lvl_asid
+        ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
     candidates_global ←
-      get_invalid_ptes_with_inv_time_by_lvl_asid ts init mem tid tlb trans_time lvl va None ttbr;
+      get_invalid_ptes_with_inv_time_by_lvl_asid
+        ts init mem tid tlb trans_time lvl va None ttbr;
     mret (candidates_asid ++ candidates_global).
 
   Definition get_invalid_ptes_with_inv_time (ts : TState.t) (init : Memory.initial)
@@ -1293,7 +1341,7 @@ Module TLB.
                        (tlb : TLB.t) (time : nat)
                        (va : bv 64) (asid : bv 16)
                        (ttbr : reg) :
-    result string (list (list val * (option nat))) :=
+    result string (list (val * list val * (option nat))) :=
   fault_ptes ←
     for lvl in enum Level do
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
@@ -1308,11 +1356,13 @@ Module TLB.
     | Some _, None => true
     end.
 
-  Definition is_new_entry (path : list val) (ti_new : option nat)
-      (entries : list (list val * nat * option nat)) : bool :=
+  Definition is_new_entry (val_ttbr : val) (path : list val) (ti_new : option nat)
+      (entries : list (val * list val * nat * option nat)) : bool :=
     forallb
-      (λ '(p, t, ti),
-        negb(path =? p) || invalidation_time_lt ti ti_new) entries.
+      (λ '(vt, p, t, ti),
+        negb(val_ttbr =? vt)
+        || negb(path =? p)
+        || invalidation_time_lt ti ti_new) entries.
 
   (* Snapshots are sorted in the descending order of [trans_time].
     Thus, we do not have to use [trans_time] to check the interval *)
@@ -1320,13 +1370,13 @@ Module TLB.
                 (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) :
-              result string (list (list val * nat * option nat)) :=
+              result string (list (val * list val * nat * option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       candidates ← TLB.lookup mem tid tlb trans_time va asid;
       let new :=
-        omap (λ '(path, ti_opt),
-          if decide (is_new_entry path ti_opt entries) then
-            Some (path, trans_time, ti_opt)
+        omap (λ '(val_ttbr, path, ti_opt),
+          if is_new_entry val_ttbr path ti_opt entries then
+            Some (val_ttbr, path, trans_time, ti_opt)
           else None
         ) candidates in
       mret (new ++ entries)
@@ -1338,16 +1388,16 @@ Module TLB.
                 (mem : Memory.t)
                 (tid : nat) (is_ets2 : bool)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
-              result string (list (list val * nat * option nat)) :=
+              result string (list (val * list val * nat * option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
         mret entries
       else
         candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
         let new :=
-          omap (λ '(path, ti_opt),
-            if decide (is_new_entry path ti_opt entries) then
-              Some (path, trans_time, ti_opt)
+          omap (λ '(val_ttbr, path, ti_opt),
+            if is_new_entry val_ttbr path ti_opt entries then
+              Some (val_ttbr, path, trans_time, ti_opt)
             else None
           ) candidates in
         mret (new ++ entries)
@@ -1368,8 +1418,8 @@ Module IIS.
       make {
           va : bv 36;
           time : nat;
-          remaining : list (bv 64); (* NOTE: translation memory read - ptes *)
-          invalidation : option nat
+          root : option {ttbr : reg & reg_type ttbr};
+          remaining : list (bv 64)
         }.
 
     Definition pop : Exec.t t string (bv 64) :=
@@ -1384,10 +1434,11 @@ Module IIS.
     make {
         strict : view;
         (* The translations results of the latest translation *)
-        trs : option TransRes.t
+        trs : option TransRes.t;
+        inv_time : option nat
       }.
 
-  Definition init : t := make 0 None.
+  Definition init : t := make 0 None None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
@@ -1395,6 +1446,9 @@ Module IIS.
 
   Definition set_trs (tres : TransRes.t) :=
     setv trs (Some tres).
+
+  Definition set_inv_time (ti_opt : option nat) :=
+    setv inv_time ti_opt.
 
 End IIS.
 
@@ -1447,26 +1501,54 @@ Definition read_pte (vaddr : view) :
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
 
+Definition run_reg_general_read (reg : reg) (racc : reg_acc) :
+    Exec.t (TState.t * IIS.t) string (reg_type reg * view) :=
+  ts ← mget fst;
+  if decide (reg ∈ relaxed_regs) then
+    if decide (is_Some racc)
+      then othrow
+            ("Register " ++ pretty reg ++ " unmapped on direct read")%string
+            $ TState.read_sreg_direct ts reg
+    else
+      valvs ← othrow
+              ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
+              $ TState.read_sreg_indirect ts reg;
+      mchoosel valvs
+  else
+    othrow
+      ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+      $ TState.read_reg ts reg.
+
+Definition run_reg_trans_read (reg : reg) (racc : reg_acc)
+      (trs : IIS.TransRes.t) :
+    Exec.t TState.t string (reg_type reg * view) :=
+  guard_or "Register read during the translation should be implicit"
+    (¬ (is_Some racc));;
+  root ← othrow "Could not find the translation root: error in translation assumptions"
+    (trs.(IIS.TransRes.root));
+  if decide (root.T1 = reg) is left eq then
+    mret (ctrans eq root.T2, 0%nat)
+  else
+    ts ← mGet;
+    (* We are only allowed to read registers that are never written during the translation *)
+    guard_or
+      ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
+      $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
+    othrow
+      ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+      $ TState.read_reg ts reg.
+
 (** Run a RegRead outcome.
     Returns the register value based on the type of register and the access type. *)
 Definition run_reg_read (reg : reg) (racc : reg_acc) :
     Exec.t (TState.t * IIS.t) string (reg_type reg) :=
-  ts ← mget fst;
   '(val, view) ←
-    (if decide (reg ∈ relaxed_regs) then
-      if decide (is_Some racc)
-        then othrow
-              ("Register " ++ pretty reg ++ " unmapped on direct read")%string
-              $ TState.read_sreg_direct ts reg
-      else
-        valvs ← othrow
-                ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
-                $ TState.read_sreg_indirect ts reg;
-        mchoosel valvs
+    (* Check if the register is read during the translation *)
+    iis ← mget snd;
+    if iis.(IIS.trs) is Some trs then
+      Exec.liftSt fst $ run_reg_trans_read reg racc trs
     else
-      othrow
-        ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
-        $ TState.read_reg ts reg);
+      run_reg_general_read reg racc;
   mset snd $ IIS.add view;;
   mret val.
 
@@ -1512,18 +1594,14 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
   if is_explicit macc then
-    tres_opt ← mget (IIS.trs ∘ PPState.iis);
-    trans_res ← othrow "Explicit access before translation" tres_opt;
-    let invalidation := trans_res.(IIS.TransRes.invalidation) in
     '(view, val) ←
       Exec.liftSt (PPState.state ×× PPState.mem)
-        $ read_mem_explicit loc vaddr invalidation macc init;
+        $ read_mem_explicit loc vaddr iis.(IIS.inv_time) macc init;
     mset PPState.iis $ IIS.add view;;
     mret val
   else if is_ttw macc then
     ts ← mget PPState.state;
-    tres_option ← mget (IIS.trs ∘ PPState.iis);
-    tres ← othrow "TTW read before translation start" tres_option;
+    tres ← othrow "TTW read before translation start" iis.(IIS.trs);
     '(view, val) ←
       read_pte vaddr (ts, tres)
       |> Exec.lift_res_set_full
@@ -1744,6 +1822,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
+
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
@@ -1751,17 +1830,29 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
-      (* update IIS with either a valid translation result or a fault *)
-      let valid_trs :=
-        map (λ '(path, t, ti),
-          IIS.TransRes.make (va_to_vpn va) t path ti) valid_entries in
-      let invalid_trs :=
-        map (λ '(path, t, ti),
-          IIS.TransRes.make (va_to_vpn va) t path ti) invalid_entries in
-      mchoosel (valid_trs ++ invalid_trs)
+      (* update IIS with either a valid translation result or an invalid result *)
+      valid_res ←
+        for (val_ttbr, path, t, ti) in valid_entries do
+          val_ttbr ← othrow
+            "TTBR value type does not match with the value from the translation"
+            (val_to_regval ttbr val_ttbr);
+          let root := (Some (existT ttbr val_ttbr)) in
+          let ti := if is_ifetch then None else ti in
+          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+        end;
+      invalid_res ←
+        for (val_ttbr, path, t, ti) in invalid_entries do
+          val_ttbr ← othrow
+            "TTBR value type does not match with the value from the translation"
+            (val_to_regval ttbr val_ttbr);
+          let root := (Some (existT ttbr val_ttbr)) in
+          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+        end;
+      mchoosel (valid_res ++ invalid_res)
     else
-      mret $ IIS.TransRes.make (va_to_vpn va) vpre_t [] None;
-  mset PPState.iis $ IIS.set_trs trans_res.
+      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
+  mset PPState.iis $ IIS.set_trs trans_res.1;;
+  mset PPState.iis $ IIS.set_inv_time trans_res.2.
 
 Definition read_fault_vpre (is_acq : bool)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
@@ -1789,7 +1880,7 @@ Definition run_trans_end (trans_end : trans_end) :
     let trans_time := trs.(IIS.TransRes.time) in
     let fault := trans_end.(AddressDescriptor_fault) in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-      mret ()
+      msetv (IIS.trs ∘ snd) None
     else
       is_ets3 ← mlift (ets3 ts);
       if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
@@ -1806,20 +1897,19 @@ Definition run_trans_end (trans_end : trans_end) :
         let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
         let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
         write_view ← write_fault_vpre is_rel trans_time;
-        mset snd $ IIS.add (view_if is_write write_view)
+        mset snd $ IIS.add (view_if is_write write_view);;
+        msetv (IIS.trs ∘ snd) None
   else
     mthrow "Translation ends with an empty translation".
 
+(* TODO: check translation fault using `fault` and handle other cases *)
 Definition run_take_exception (fault : exn) (vmax_t : view) :
     Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
-  if iis.(IIS.trs) is Some trans_res then
-    match trans_res.(IIS.TransRes.invalidation) with
-    | Some invalidation => run_cse invalidation
-    | None => mret ()
-    end
-  else
-    run_cse vmax_t.
+  match iis.(IIS.inv_time) with
+  | Some inv_time => run_cse inv_time
+  | None => run_cse vmax_t
+  end.
 
 (** Runs an outcome. *)
 Section RunOutcome.
@@ -1853,11 +1943,9 @@ Section RunOutcome.
       addr ← othrow "Address not supported" $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
       if is_explicit macc then
-        tres_opt ← mget (IIS.trs ∘ PPState.iis);
-        trans_res ← othrow "Explicit access before translation" tres_opt;
-        let invalidation := trans_res.(IIS.TransRes.invalidation) in
+        inv_time ← mget (IIS.inv_time ∘ PPState.iis);
         vpre_opt ← Exec.liftSt (PPState.state ×× PPState.mem) $
-                      write_mem_xcl tid addr viio invalidation macc val;
+                      write_mem_xcl tid addr viio inv_time macc val;
         mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
   | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
