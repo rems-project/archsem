@@ -14,15 +14,6 @@ type test_result =
   | ModelError   (** Model produced errors during execution *)
   | ParseError   (** Parser or configuration error *)
 
-(** {1 ANSI Colors} *)
-
-let c_reset = "\027[0m"
-let c_bold = "\027[1m"
-let c_red = "\027[31m"
-let c_green = "\027[32m"
-let c_yellow = "\027[33m"
-let c_cyan = "\027[36m"
-
 (** {1 Helpers} *)
 
 let rec string_of_gen = function
@@ -81,7 +72,7 @@ let run_executions model init fuel term outcomes =
     | _ -> None) results in
 
   List.iter (fun e ->
-    msg (Printf.sprintf "%s[Error]%s %s" c_red c_reset e)) errors;
+    msg (Printf.sprintf "%s[Error]%s %s" Ansi.red Ansi.reset e)) errors;
   if List.exists (function ArchModel.Res.Flagged _ -> true | _ -> false) results then
     msg "Flagged";
 
@@ -89,7 +80,7 @@ let run_executions model init fuel term outcomes =
     let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
     if not matched && final_states <> [] then
       msg (Printf.sprintf "%sObservable not found%s: %s"
-        c_red c_reset (cond_to_string cond));
+        Ansi.red Ansi.reset (cond_to_string cond));
     matched
   ) observable in
 
@@ -97,14 +88,14 @@ let run_executions model init fuel term outcomes =
     match List.find_opt (fun c -> check_outcome fs c) unobservable with
     | Some cond ->
       msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
-        c_red c_reset (i+1) (cond_to_string cond));
+        Ansi.red Ansi.reset (i+1) (cond_to_string cond));
       false
     | None -> true
   ) final_states) in
 
   if final_states = [] && observable <> [] then
     msg (Printf.sprintf "%sNo valid executions%s: all %d failed"
-      c_red c_reset (List.length results));
+      Ansi.red Ansi.reset (List.length results));
 
   let result =
     if errors <> [] then ModelError
@@ -113,22 +104,23 @@ let run_executions model init fuel term outcomes =
   in
   (result, List.rev !msgs)
 
-(** {1 Entry Point} *)
+(** {1 Result Formatting} *)
 
 let result_to_string = function
-  | Expected -> c_green ^ "EXPECTED" ^ c_reset
-  | Unexpected -> c_yellow ^ "UNEXPECTED" ^ c_reset
-  | ModelError -> c_red ^ "MODEL ERROR" ^ c_reset
-  | ParseError -> c_red ^ "PARSE ERROR" ^ c_reset
+  | Expected -> Ansi.green ^ "expected" ^ Ansi.reset
+  | Unexpected -> Ansi.yellow ^ "unexpected" ^ Ansi.reset
+  | ModelError -> Ansi.red ^ "model error" ^ Ansi.reset
+  | ParseError -> Ansi.red ^ "parse error" ^ Ansi.reset
 
 let run_litmus_test model filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
-    Printf.printf "  %s✗%s %s  %sfile not found%s\n" c_red c_reset name c_red c_reset;
+    Printf.printf "  %s✗%s %s  %sfile not found%s\n" Ansi.red Ansi.reset name Ansi.red Ansi.reset;
     ParseError
   ) else try
     let toml = Otoml.Parser.from_file filename in
-    let fuel = Otoml.find_opt toml Litmus_parser.get_int ["fuel"] |> Option.value ~default:1000 in
+    let fuel = Otoml.find_opt toml Litmus_parser.get_int ["fuel"]
+      |> Option.value ~default:1000 in
     let regs = Litmus_parser.parse_registers toml in
     let mem = Litmus_parser.parse_memory toml in
     let init = ArchState.make regs mem in
@@ -136,23 +128,23 @@ let run_litmus_test model filename =
     let outcomes = Litmus_parser.parse_outcomes toml in
     let result, msgs = run_executions model init fuel term outcomes in
     let icon, color = match result with
-      | Expected -> "✓", c_green
-      | Unexpected -> "✗", c_yellow
-      | _ -> "✗", c_red
+      | Expected -> "✓", Ansi.green
+      | Unexpected -> "✗", Ansi.yellow
+      | _ -> "✗", Ansi.red
     in
-    Printf.printf "  %s%s%s %s\n" color icon c_reset name;
+    Printf.printf "  %s%s%s %s\n" color icon Ansi.reset name;
     List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
     result
   with
   | Otoml.Parse_error (pos, msg) ->
-    Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" c_red c_reset name
-      c_red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
-      msg c_reset;
+    Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Ansi.red Ansi.reset name
+      Ansi.red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
+      msg Ansi.reset;
     ParseError
   | Failure msg ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" c_red c_reset name c_red msg c_reset;
+    Printf.printf "  %s✗%s %s  %s%s%s\n" Ansi.red Ansi.reset name Ansi.red msg Ansi.reset;
     ParseError
   | exn ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" c_red c_reset name
-      c_red (Printexc.to_string exn) c_reset;
+    Printf.printf "  %s✗%s %s  %s%s%s\n" Ansi.red Ansi.reset name
+      Ansi.red (Printexc.to_string exn) Ansi.reset;
     ParseError
