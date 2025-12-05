@@ -993,23 +993,26 @@ Module TLB.
       (time : nat)
       (va : prefix root_lvl)
       (upper : bool)
-      (val_ttbrs : list (bv 64)) : result string (VATLB.t * bool) :=
+      (val_ttbrs : list (bv 64))
+      (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
       let loc := Loc.from_addr_in entry_addr in
-      '(memval, _) ← othrow "Memory read failed"
-                 $ Memory.read_at loc init mem time;
-      if decide (is_table root_lvl memval) then
-        let asid := bv_extract 48 16 val_ttbr in
-        let ndctxt := NDCtxt.make upper va (Some asid) in
-        let ctxt := existT root_lvl ndctxt in
-        let entry : Entry.t (Ctxt.lvl ctxt) :=
-          Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
-        (* add the entry to vatlb only when it is not in the original vatlb *)
-        if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-          Ok (VATLB.insert ctxt entry vatlb, true)
+      if Memory.read_at loc init mem time is Some (memval, _) then
+        if decide (is_table root_lvl memval) then
+          let asid := bv_extract 48 16 val_ttbr in
+          let ndctxt := NDCtxt.make upper va (Some asid) in
+          let ctxt := existT root_lvl ndctxt in
+          let entry : Entry.t (Ctxt.lvl ctxt) :=
+            Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
+          (* add the entry to vatlb only when it is not in the original vatlb *)
+          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+            Ok (VATLB.insert ctxt entry vatlb, true)
+          else Ok (vatlb, is_changed)
         else Ok (vatlb, is_changed)
-      else Ok (vatlb, is_changed)
+      else
+        guard_or ("Memory read failed at " ++ (pretty entry_addr))%string (negb mem_strict);;
+        Ok (vatlb, is_changed)
     ) (vatlb, false) val_ttbrs.
 
   (** Extend one level down from a parent table entry [te].
@@ -1023,30 +1026,32 @@ Module TLB.
       (time : nat)
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
-      (index : bv 9) : result string (VATLB.t * bool) :=
+      (index : bv 9)
+      (mem_strict : bool) : result string (VATLB.t * bool) :=
     let plvl := Ctxt.lvl ctxt in
     if decide (¬is_table plvl (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       let loc := Loc.from_addr_in entry_addr in
-      '(next_pte, _) ← othrow "The location of the next level address should be read"
-                        $ Memory.read_at loc init mem time;
-      if decide (is_valid next_pte) then
-        match inspect $ child_lvl (Ctxt.lvl ctxt) with
-        | Some clvl eq:e =>
-          let va := next_va ctxt index (child_lvl_add_one _ _ e) in
-          let asid := if bool_decide (is_global clvl next_pte) then None
-                      else Ctxt.asid ctxt in
-          let ndctxt := NDCtxt.make (Ctxt.upper ctxt) va asid in
-          let ctxt := existT clvl ndctxt in
-          let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
-          (* add the entry to vatlb only when it is not in the original vatlb *)
-          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-            Ok (VATLB.insert ctxt entry vatlb, true)
-          else Ok (vatlb, false)
-        | None eq:_ => mthrow "An intermediate level should have a child level"
-        end
+      if (Memory.read_at loc init mem time) is Some (next_pte, _) then
+        if decide (is_valid next_pte) then
+          match inspect $ child_lvl (Ctxt.lvl ctxt) with
+          | Some clvl eq:e =>
+            let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+            let asid := if bool_decide (is_global clvl next_pte) then None
+                        else Ctxt.asid ctxt in
+            let ndctxt := NDCtxt.make (Ctxt.upper ctxt) va asid in
+            let ctxt := existT clvl ndctxt in
+            let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+            (* add the entry to vatlb only when it is not in the original vatlb *)
+            if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+              Ok (VATLB.insert ctxt entry vatlb, true)
+            else Ok (vatlb, false)
+          | None eq:_ => mthrow "An intermediate level should have a child level"
+          end
+        else Ok (vatlb, false)
       else
+        guard_or ("The location of the next level address should be read: " ++ (pretty loc))%string (negb mem_strict);;
         Ok (vatlb, false).
 
   (** Make [tlb] containing entries for [va] at [lvl].
@@ -1065,7 +1070,7 @@ Module TLB.
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) upper val_ttbrs
+        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) upper val_ttbrs true
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
@@ -1077,7 +1082,7 @@ Module TLB.
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
           foldlM (λ '(vatlb_prev, is_changed_prev) te,
             '(vatlb_lvl, is_changed_lvl) ←
-               va_fill_lvl vatlb_prev ts init mem time ctxt te index;
+              va_fill_lvl vatlb_prev ts init mem time ctxt te index true;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
           ) prev tes
         ) (tlb.(vatlb), false) val_ttbrs
@@ -1107,11 +1112,12 @@ Module TLB.
         (mem : Memory.t)
         (time : nat)
         (ttbr : reg)
-        (val_ttbrs : list (bv 64)) : result string (VATLB.t * bool) :=
+        (val_ttbrs : list (bv 64))
+        (mem_strict : bool) : result string (VATLB.t * bool) :=
     upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
     foldlM (λ '(vatlb_prev, is_changed_prev) index,
       '(vatlb_new, is_changed) ←
-        va_fill_root vatlb_prev ts init mem time index upper val_ttbrs;
+        va_fill_root vatlb_prev ts init mem time index upper val_ttbrs mem_strict;
       mret (vatlb_new, is_changed || is_changed_prev)
     ) (vatlb, false) (enum (bv 9)).
 
@@ -1119,10 +1125,11 @@ Module TLB.
         (init : Memory.initial)
         (mem : Memory.t)
         (time : nat)
-        (fe : FE.t) : result string (VATLB.t * bool) :=
+        (fe : FE.t)
+        (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb_prev, is_changed_prev) index,
       '(vatlb_new, is_changed_new) ←
-        va_fill_lvl vatlb_prev ts init mem time (FE.ctxt fe) (projT2 fe) index;
+        va_fill_lvl vatlb_prev ts init mem time (FE.ctxt fe) (projT2 fe) index mem_strict;
       mret (vatlb_new, is_changed_new || is_changed_prev)
     ) (vatlb, false) (enum (bv 9)).
 
@@ -1135,10 +1142,11 @@ Module TLB.
       (time : nat)
       (lvl : Level)
       (ttbr : reg)
-      (val_ttbrs : list (bv 64)) : result string (t * bool) :=
+      (val_ttbrs : list (bv 64))
+      (mem_strict : bool) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
-      | None => traverse_root tlb.(vatlb) ts init mem time ttbr val_ttbrs
+      | None => traverse_root tlb.(vatlb) ts init mem time ttbr val_ttbrs mem_strict
       | Some plvl =>
         let fes :=
           omap (λ fe,
@@ -1146,7 +1154,7 @@ Module TLB.
               then Some fe
               else None) (elements tlb.(vatlb)) in
         foldlM (λ '(vatlb, is_changed_prev) fe,
-          '(vatlb_new, is_changed) ← traverse_lvl vatlb ts init mem time fe;
+          '(vatlb_new, is_changed) ← traverse_lvl vatlb ts init mem time fe mem_strict;
           mret (vatlb_new, is_changed || is_changed_prev)
         ) (tlb.(vatlb), false) fes
       end;
@@ -1159,12 +1167,14 @@ Module TLB.
         (init : Memory.initial)
         (mem : Memory.t)
         (time : nat)
-        (ttbr : reg) : result string (t * bool) :=
+        (ttbr : reg)
+        (mem_strict : bool) : result string (t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
     let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
-      '(tlb_new, is_changed) ← traverse tlb_prev ts init mem time lvl ttbr val_ttbrs;
+      '(tlb_new, is_changed) ←
+          traverse tlb_prev ts init mem time lvl ttbr val_ttbrs mem_strict;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
@@ -1268,7 +1278,8 @@ Module TLB.
                        (tlb_prev : t)
                        (time_prev cnt : nat)
                        (ttbr : reg)
-                       (acc : list (t * nat)) :
+                       (acc : list (t * nat))
+                       (mem_strict : bool) :
                       result string (list (t * nat)) :=
     match cnt with
     | O => mret acc
@@ -1283,14 +1294,14 @@ Module TLB.
               then (tlbi_apply tlbi tlb_prev, true)
               else (tlb_prev, false)
             in
-            '(tlb, is_changed) ← update_all tlb_inv ts mem_init mem time_cur ttbr;
+            '(tlb, is_changed) ← update_all tlb_inv ts mem_init mem time_cur ttbr mem_strict;
             mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
       let acc :=
         if (is_changed : bool) then (tlb, time_cur) :: acc else acc in
       unique_snapshots_between
-        ts mem_init mem tlb time_cur ccnt ttbr acc
+        ts mem_init mem tlb time_cur ccnt ttbr acc mem_strict
     end.
 
   (** Get the TLB states for all possible vas up until the timestamp [time]
@@ -1301,9 +1312,10 @@ Module TLB.
                        (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (time : nat)
-                       (ttbr : reg) : result string (list (t * nat)) :=
-    '(tlb, _) ← update_all init ts mem_init mem 0 ttbr;
-    unique_snapshots_between ts mem_init mem tlb 0 time ttbr [(tlb, 0)].
+                       (ttbr : reg)
+                       (mem_strict : bool) : result string (list (t * nat)) :=
+    '(tlb, _) ← update_all init ts mem_init mem 0 ttbr mem_strict;
+    unique_snapshots_between ts mem_init mem tlb 0 time ttbr [(tlb, 0)] mem_strict.
 
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
@@ -1690,8 +1702,8 @@ Section BBM.
       ) (elements (tes × tes))
     ) ctxts.
 
-  Definition check_bbm_violation (ts : TState.t) (mem : Memory.t) :
-      result string bool :=
+  Definition check_bbm_violation (ts : TState.t)
+        (mem : Memory.t) (mem_strict : bool) : result string bool :=
     mmu_enabled ← is_mmu_enabled ts;
     if (mmu_enabled : bool) then
       let initmem := Memory.initial_from_memMap initmem in
@@ -1703,7 +1715,7 @@ Section BBM.
       foldlM (λ violated ttbr,
         if (violated : bool) then mret true (* early return *)
         else
-          snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr;
+          snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr mem_strict;
           mret $
             existsb (λ '(tlb, time),
               if decide (time ∉ ts_to_check) then false
@@ -2318,9 +2330,11 @@ Section ComputeProm.
                                 (ts : TState.t)
                                 (mem : Memory.t)
                                 (debug : bool)
+                                (mem_strict : bool)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
-    let exec := run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    let exec := run_to_termination_promise
+                  isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
     let errs := Exec.errors exec in
     guard_or (String.concat ", " errs.*2) (negb debug || is_emptyb errs);;
     let res_proms := Exec.results $ exec in
@@ -2329,7 +2343,7 @@ Section ComputeProm.
 
     bbm_res ←
       for st in res_proms.*1.*2 do
-        check_bbm_violation initmem (PPState.state st) (PPState.mem st)
+        check_bbm_violation initmem (PPState.state st) (PPState.mem st) mem_strict
       end;
     guard_or ("BBM check fails")%string (forallb (λ r, negb r) bbm_res);;
 
@@ -2406,20 +2420,20 @@ Definition VMPromising_cert' (isem : iMon ()) : PromisingModel :=
 
 (** Implement the Executable Promising Model *)
 
-Program Definition VMPromising_exe' (isem : iMon ())
+Program Definition VMPromising_exe' (isem : iMon ()) (debug : bool) (mem_strict : bool)
     : BasicExecutablePM :=
   {|pModel := VMPromising_cert' isem;
     enumerate_promises_and_terminal_states :=
       λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term isem fuel ts mem true
+          run_to_termination tid initmem term isem fuel ts mem debug mem_strict
   |}.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 
-Definition VMPromising_cert_c isem fuel :=
-  Promising_to_Modelc isem (VMPromising_exe' isem) fuel.
+Definition VMPromising_cert_c isem fuel debug mem_strict :=
+  Promising_to_Modelc isem (VMPromising_exe' isem debug mem_strict) fuel.
 
-Definition VMPromising_cert_c_pf isem fuel :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem) fuel.
+Definition VMPromising_cert_c_pf isem fuel debug mem_strict :=
+  Promising_to_Modelc_pf isem (VMPromising_exe' isem debug mem_strict) fuel.
