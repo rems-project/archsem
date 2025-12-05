@@ -1,0 +1,19 @@
+(rule
+ (alias runtest)
+ (deps (glob_files seq/*.toml))
+ (action (progn
+  (run ../bin/main.exe seq seq)
+  (run ../bin/main.exe ump seq)
+  (run ../bin/main.exe vmp seq))))
+
+(rule
+ (alias runtest)
+ (deps (glob_files ump/*.toml))
+ (action (progn
+  (run ../bin/main.exe ump ump)
+  (run ../bin/main.exe vmp ump))))
+
+(rule
+ (alias runtest)
+ (deps (glob_files vmp/*.toml))
+ (action (run ../bin/main.exe vmp vmp)))
