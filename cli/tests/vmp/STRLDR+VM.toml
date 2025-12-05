@@ -1,0 +1,77 @@
+# Tests basic load/store through virtual memory with 4-level page table setup
+# Based on the STRLDR test from VMPromisingTest.v
+
+arch="Arm"
+name="STRLDR+VM"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 1 - Store then Load through VA translation
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA base for data access
+R1 = 0x100             # Offset (VA + offset = 0x8000001100)
+R2 = 0x2a              # Value to store
+TTBR0_EL1 = 0x80000    # Page table base (physical address)
+TCR_EL1 = 0x0          # Translation control register
+SCTLR_EL1 = 0x1        # MMU enabled
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Instructions at PA 0x500 (VA 0x8000000500)
+[[memory]]
+base = 0x500
+size = 8
+data = [
+  0xf8206822, # STR X2, [X1, X0]: store X2 to [X0+X1]
+  0xf8606820] # LDR X0, [X1, X0]: load from [X0+X1] into X0
+
+# Backing memory for data at PA 0x1100
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+# L0 table base (must exist for reads)
+[[memory]]
+base = 0x80000
+size = 8
+data = 0
+
+# Page table hierarchy:
+# L0[1] -> L1 (for VA with upper bit pattern 0x8000...)
+[[memory]]
+base = 0x80008
+size = 8
+data = 0x81003 # PTE with OA = 0x81000, and 0x3 at the bottom to be valid
+
+# L1[0] -> L2
+[[memory]]
+base = 0x81000
+size = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+base = 0x82000
+size = 8
+data = 0x83003
+
+# L3[0]: map VA page 0x8000000000 -> PA page 0x0000 (executable)
+[[memory]]
+base = 0x83000
+size = 8
+data = 0x3 # PTE to page 0x0 with 0x3 to be valid. Code permission on by default
+
+# L3[1]: map VA page 0x8000001000 -> PA page 0x1000 (data, readable/writable)
+[[memory]]
+base = 0x83008
+size = 8
+data = 0x1043 # PTE to page 0x1000 with bit 6 on for Unpriv data, and 0x3 to be valid
+
+[[termCond]]
+_PC = 0x8000000508
+
+[[outcome]]
+observable.0.R0 = 0x2a

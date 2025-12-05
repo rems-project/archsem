@@ -1,0 +1,112 @@
+# Break-Before-Make test
+# Tests sequential page table modification without Break-Before-Make sequence
+# Based on the LDRPT test from VMPromisingTest.v
+
+arch="Arm"
+name="LDRPT+NoBBM"
+
+# Thread 1: Reads, modifies PTE, reads again
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA to load from
+R1 = 0x0               # Base offset
+R2 = 0x8000010008      # VA of L3[1] descriptor
+R3 = 0x2003  # New descriptor: VA -> PA 0x2000
+R4 = 0x8000001000      # VA to load from (second load)
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b01, "SP" = 0b1 }
+
+# Instructions:
+# LDR X0, [X1, X0] - first load: 0xf8606820
+# STR X3, [X1, X2] - modify PTE: 0xf8226823
+# LDR X4, [X1, X4] - second load: 0xf8646824
+[[memory]]
+base = 0x500
+size = 12
+data = [0xf8606820, 0xf8226823, 0xf8646824]
+
+# Data at PA 0x1000 (original mapping)
+[[memory]]
+base = 0x1000
+size = 8
+data = 0x2a
+
+# Data at PA 0x2000 (new mapping)
+[[memory]]
+base = 0x2000
+size = 8
+data = 0x42
+
+# L0 table base
+[[memory]]
+base = 0x80000
+size = 8
+data = 0
+
+# Page table hierarchy
+# L0[1] -> L1
+[[memory]]
+base = 0x80008
+size = 8
+data = 0x81003
+
+# L1[0] -> L2
+[[memory]]
+base = 0x81000
+size = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+base = 0x82000
+size = 8
+data = 0x83003
+
+# L3[0]: code page
+[[memory]]
+base = 0x83000
+size = 8
+# Bit 54 means No Unpriv exec
+# Aiming at page 0x0000
+# Bit 8+9 means ISH
+# 7 means no writes
+# Bit 0+1 means valid page entry
+data = 0x40000000000383
+
+# L3[1]: initially maps VA 0x8000001000 -> PA 0x1000
+[[memory]]
+base = 0x83008
+size = 8
+# Bit 54 means No Unpriv exec
+# Bit 53 means No Priv exec
+# Aiming at page 0x1000
+# Bit 8+9 means ISH
+# 7 means no writes
+# Bit 0+1 means valid page entry
+data = 0x60000000001383
+
+# L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
+[[memory]]
+base = 0x83080
+size = 8
+# Bit 54 means No Unpriv exec
+# Bit 53 means No Priv exec
+# Aiming at page 0x83000 (self)
+# Bit 8+9 means ISH
+# Bit 7 to 0 means writing allowed
+# Bit 0+1 means valid page entry
+data = 0x60000000083303
+
+[[termCond]]
+_PC = 0x800000050c
+
+# R0 should be 0x2a (from old mapping)
+# R4 could be 0x2a (cached) or 0x42 (new mapping) (without BBM checker)
+[[outcome]]
+observable.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x2a } }
+
+[[outcome]]
+observable.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x42 } }
