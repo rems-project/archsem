@@ -15,15 +15,6 @@ type test_result =
   | NoBehaviour   (** Model produces no behaviours (model bug) *)
   | ParseError   (** Parser or configuration error *)
 
-(** {1 ANSI Colors} *)
-
-let c_reset = "\027[0m"
-let c_bold = "\027[1m"
-let c_red = "\027[31m"
-let c_green = "\027[32m"
-let c_yellow = "\027[33m"
-let c_cyan = "\027[36m"
-
 (** {1 Helpers} *)
 
 let rec string_of_regval_gen = function
@@ -87,14 +78,14 @@ let run_executions model init fuel term outcomes =
       | _ -> None) results in
 
   List.iter (fun e ->
-    msg (Printf.sprintf "%s[Error]%s %s" c_red c_reset e)) errors;
+    msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
   if flags <> [] then msg "Flagged";
 
   let observable_ok = List.for_all (fun cond ->
     let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
     if not matched && final_states <> [] then
       msg (Printf.sprintf "%sObservable not found%s: %s"
-        c_red c_reset (cond_to_string cond));
+        Terminal.red Terminal.reset (cond_to_string cond));
     matched
   ) observable in
 
@@ -102,7 +93,7 @@ let run_executions model init fuel term outcomes =
     match List.find_opt (fun c -> check_outcome fs c) unobservable with
     | Some cond ->
       msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
-        c_red c_reset (i+1) (cond_to_string cond));
+        Terminal.red Terminal.reset (i+1) (cond_to_string cond));
       false
     | None -> true
   ) final_states) in
@@ -118,16 +109,16 @@ let run_executions model init fuel term outcomes =
 (** {1 Entry Point} *)
 
 let result_to_string = function
-  | Expected -> c_green ^ "EXPECTED" ^ c_reset
-  | Unexpected -> c_yellow ^ "UNEXPECTED" ^ c_reset
-  | ModelError -> c_red ^ "MODEL ERROR" ^ c_reset
-  | NoBehaviour -> c_red ^ "NO BEHAVIOUR" ^ c_reset
-  | ParseError -> c_red ^ "PARSE ERROR" ^ c_reset
+  | Expected -> Terminal.green ^ "EXPECTED" ^ Terminal.reset
+  | Unexpected -> Terminal.yellow ^ "UNEXPECTED" ^ Terminal.reset
+  | ModelError -> Terminal.red ^ "MODEL ERROR" ^ Terminal.reset
+  | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
+  | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
 let run_litmus_test model filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
-    Printf.printf "  %s✗%s %s  %sfile not found%s\n" c_red c_reset name c_red c_reset;
+    Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset name Terminal.red Terminal.reset;
     ParseError
   ) else try
     let toml = Otoml.Parser.from_file filename in
@@ -139,23 +130,23 @@ let run_litmus_test model filename =
     let outcomes = Litmus_parser.parse_outcomes toml in
     let result, msgs = run_executions model init fuel term outcomes in
     let icon, color = match result with
-      | Expected -> "✓", c_green
-      | Unexpected -> "✗", c_yellow
-      | _ -> "✗", c_red
+      | Expected -> Terminal.check, Terminal.green
+      | Unexpected -> Terminal.cross, Terminal.yellow
+      | _ -> Terminal.cross, Terminal.red
     in
-    Printf.printf "  %s%s%s %s\n" color icon c_reset name;
+    Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
     List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
     result
   with
   | Otoml.Parse_error (pos, msg) ->
-    Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" c_red c_reset name
-      c_red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
-      msg c_reset;
+    Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red Terminal.reset name
+      Terminal.red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
+      msg Terminal.reset;
     ParseError
   | Failure msg ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" c_red c_reset name c_red msg c_reset;
+    Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
     ParseError
   | exn ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" c_red c_reset name
-      c_red (Printexc.to_string exn) c_reset;
+    Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
+      Terminal.red (Printexc.to_string exn) Terminal.reset;
     ParseError
