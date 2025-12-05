@@ -1,0 +1,19 @@
+(rule
+ (alias runtest)
+ (deps %{bin:archsem} (glob_files seq/*.toml))
+ (action (progn
+  (run archsem seq seq)
+  (run archsem ump seq)
+  (run archsem vmp seq))))
+
+(rule
+ (alias runtest)
+ (deps %{bin:archsem} (glob_files ump/*.toml))
+ (action (progn
+  (run archsem ump ump)
+  (run archsem vmp ump))))
+
+(rule
+ (alias runtest)
+ (deps %{bin:archsem} (glob_files vmp/*.toml))
+ (action (run archsem vmp vmp)))

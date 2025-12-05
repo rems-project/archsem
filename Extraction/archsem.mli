@@ -92,7 +92,7 @@ module ArchState : sig
   val mem : t -> MemMap.t
 end
 
-type termCond = (Z.t -> bool) list
+type termCond = (RegMap.t -> bool) list
 
 type empty = |
 

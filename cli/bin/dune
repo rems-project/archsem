@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name archsem)
+ (package archsem)
+ (libraries archsem archsem_test otoml))

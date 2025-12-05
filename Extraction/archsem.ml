@@ -135,11 +135,11 @@ module ArchState = struct
   let mem (st : t) = st.memory
 end
 
-type termCond = (Z.t -> bool) list
+type termCond = (RegMap.t -> bool) list
 
 let termCond_to_coq (term : termCond) tid rm =
   let tc = List.nth term (Z.to_int tid) in
-  tc (RegMap.getZ Reg.pc rm)
+  tc rm
 
 type empty = |
 
@@ -173,7 +173,7 @@ let umProm_model fuel term initState =
 
 module BBM = VMPromising.BBM
 
-let vmProm_model ?(mem_param = BBM.Lax) fuel term initState =
+let vmProm_model ?(mem_param = BBM.Off) fuel term initState =
   VMPromising.coq_VMPromising_pf mem_param (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
     (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic
