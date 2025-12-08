@@ -5,7 +5,7 @@ all:
 	dune build
 
 test:
-	dune build @all
+	dune runtest
 
 TARBALL=ArchSem.tar.gz
 PREFIX=ArchSem
