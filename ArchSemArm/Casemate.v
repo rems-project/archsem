@@ -796,7 +796,7 @@ Module TLB.
           va : prefix lvl;
           asid : option (bv 16);
         }.
-    Arguments make {_} _ _.
+    Arguments make {_} _ _ _.
     Arguments is_upper {_}.
     Arguments va {_}.
     Arguments asid {_}.
@@ -864,6 +864,7 @@ Module TLB.
     Definition lvl (fe : t) : Level := Ctxt.lvl (ctxt fe).
     Definition va (fe : t) : prefix (lvl fe) := Ctxt.va (ctxt fe).
     Definition asid (fe : t) : option (bv 16) := Ctxt.asid (ctxt fe).
+    Definition is_upper (fe : t) : bool := Ctxt.is_upper (ctxt fe).
     Definition val_ttbr (fe : t) : val := Entry.val_ttbr (projT2 fe).
     Definition ptes (fe : t) := Entry.ptes (projT2 fe).
     Definition pte (fe : t) := Entry.pte (projT2 fe).
@@ -961,10 +962,11 @@ Module TLB.
   Proof. unfold_decide. Defined.
 
   Definition next_va {clvl : Level}
-    (ctxt : Ctxt.t)
+    (lvl : Level)
+    (va : prefix lvl)
     (index : bv 9)
-    (CHILD : (Ctxt.lvl ctxt) + 1 = clvl) : prefix clvl :=
-    bv_concat (level_length clvl) (Ctxt.va ctxt) index.
+    (CHILD : lvl + 1 = clvl) : prefix clvl :=
+    bv_concat (level_length clvl) va index.
 
   Definition is_upper_ttbr (ttbr : reg) : option bool :=
     if decide
@@ -1036,7 +1038,7 @@ Module TLB.
         if decide (is_valid next_pte) then
           match inspect $ child_lvl plvl with
           | Some clvl eq:e =>
-            let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+            let va := next_va plvl (Ctxt.va ctxt) index (child_lvl_add_one _ _ e) in
             let asid := if bool_decide (is_global clvl next_pte) then None
                         else Ctxt.asid ctxt in
             let ndctxt := NDCtxt.make (Ctxt.is_upper ctxt) va asid in
@@ -1613,129 +1615,295 @@ Module Casemate.
       Variant t :=
         | Unguarded
         | Dsb
-        | DsbTlbiAll
         | DsbTlbiIpa
         | DsbTlbi
-        | DsbTlbiDsb.
+        | DsbTlbiIpaDsb.
 
       #[global] Instance dec : EqDecision t.
       solve_decision.
       Defined.
+
+      Definition after_tlbi_ipa (p : t) : t :=
+        match p with
+        | Unguarded => Unguarded
+        | Dsb => DsbTlbiIpa
+        | DsbTlbiIpa => DsbTlbiIpa
+        | DsbTlbi => DsbTlbi
+        | DsbTlbiIpaDsb => DsbTlbiIpaDsb
+        end.
+
+      Definition after_tlbi (p : t) : t :=
+        match p with
+        | Unguarded => Unguarded
+        | Dsb => DsbTlbi
+        | DsbTlbiIpa => DsbTlbiIpa
+        | DsbTlbi => DsbTlbi
+        | DsbTlbiIpaDsb => DsbTlbi
+        end.
     End Phase.
 
     Inductive t :=
       | Valid
       | Invalid
-      | InvalidUnclean (phase : Phase.t) (owner : option nat)
-      | Unwritable.
+      | InvalidUnclean (phase : Phase.t) (tid : nat).
 
     #[global] Instance dec : EqDecision t.
     solve_decision.
     Defined.
+
+    Definition after_dsb (s : t) (tid : nat) : t :=
+      match s with
+      | Valid => Valid
+      | Invalid => Invalid
+      | InvalidUnclean p owner =>
+        if decide (tid = owner) then
+          match p with
+          | Phase.Unguarded => InvalidUnclean Phase.Dsb owner
+          | Phase.Dsb => InvalidUnclean Phase.Dsb owner
+          | Phase.DsbTlbiIpa => InvalidUnclean Phase.DsbTlbiIpaDsb owner
+          | Phase.DsbTlbi => Invalid
+          | Phase.DsbTlbiIpaDsb => InvalidUnclean Phase.DsbTlbiIpaDsb owner
+          end
+        else s
+      end.
+
+    Definition after_tlbi_ipa (s : t) (tid : nat) : t :=
+      match s with
+      | Valid => Valid
+      | Invalid => Invalid
+      | InvalidUnclean p owner =>
+        if decide (tid = owner) then
+          InvalidUnclean (Phase.after_tlbi_ipa p) owner
+        else s
+      end.
+
+    Definition after_tlbi (s : t) (tid : nat) : t :=
+      match s with
+      | Valid => Valid
+      | Invalid => Invalid
+      | InvalidUnclean p owner =>
+        if decide (tid = owner) then
+          InvalidUnclean (Phase.after_tlbi p) owner
+        else s
+      end.
   End State.
+
+  Module Path.
+    Record t :=
+      make {
+          root : val;
+          lvl : Level;
+          va : val; (* Using val instead of prefix to simplify calcuation *)
+        }.
+    Arguments root {_}.
+    Arguments lvl {_}.
+    Arguments va {_}.
+
+    #[global] Instance eq_dec : EqDecision t.
+    Proof. solve_decision. Defined.
+
+    #[global] Instance count : Countable t.
+    Proof.
+      eapply (inj_countable' (λ p, (p.(root), p.(lvl), p.(va)))
+                        (λ x, make x.1.1 x.1.2 x.2)).
+      abstract sauto.
+    Defined.
+  End Path.
 
   (* Per-location Descriptor *)
   Module Descriptor.
     Record t :=
       make {
-        root : {reg & reg_type reg}; (* Holds the ASID and the baddr of the PGT root *)
-        path : {lvl & prefix lvl}; (* Is used to apply TLBI *)
+        (* The path to this PTE from the root of the page table *)
+        paths : list Path.t;
         pte : val;
         state: State.t
       }.
     Arguments t : clear implicits.
 
-    Definition lvl (d : t) : Level := projT1 d.(path).
-    Definition va (d : t) : prefix (lvl d) := projT2 d.(path).
-
     #[global] Instance eq_dec : EqDecision t.
     Proof. solve_decision. Defined.
 
-    Definition init {lvl : Level}
-                (ttbr : reg) (root : reg_type ttbr)
-                (va : prefix lvl) (pte : val) : t :=
+    Definition init (paths : list Path.t) (pte : val) (tid : nat) : t :=
       if decide (is_valid pte) then
-        make (existT ttbr root) (existT lvl va) pte State.Valid
+        make paths pte State.Valid
       else
-        make (existT ttbr root) (existT lvl va) pte State.Invalid.
+        let inv_state := (State.InvalidUnclean State.Phase.Unguarded tid) in
+        make paths pte inv_state.
+
+    Definition merge_desc (d1 : t) (d2 : t) : option t :=
+      if decide (d1.(pte) =? d2.(pte)) is left eq then
+        if decide ((d1.(pte) =? d2.(pte)) && (d1.(state) =? d2.(state))) then
+          Some (make (d1.(paths) ++ d2.(paths)) d1.(pte) d1.(state))
+        else None
+      else None.
+
+    Definition set_state (s : State.t) (d : t) : t :=
+      make d.(paths) d.(pte) s.
+
+    Definition affects_asid (asid : bv 16) (d : t) : Prop :=
+      ∃ p ∈ d.(paths), asid = bv_extract 48 16 p.(Path.root).
+    Instance Decision_affects_asid (asid : bv 16) (d : t) : Decision (affects_asid asid d).
+    Proof. unfold_decide. Defined.
+
+    Definition affects_va (va : bv 36) (last : bool) (d : t) : Prop :=
+      ∃ p ∈ d.(paths),
+        (match_prefix_at p.(Path.lvl) p.(Path.va) va)
+        ∧ (if last then is_final p.(Path.lvl) d.(pte) else True).
+    Instance Decision_affects_va (va : bv 36) (last : bool) (d : t) : Decision (affects_va va last d).
+    Proof. unfold_decide. Defined.
+
+    Definition affects (tlbi : TLBI.t) (d : t) : Prop :=
+      match tlbi with
+      | TLBI.All _ => True
+      | TLBI.Va _ asid va last => affects_asid asid d ∧ affects_va va last d
+      | TLBI.Asid _ asid => affects_asid asid d
+      | TLBI.Vaa _ va last => affects_va va last d
+      end.
+    #[global] Instance Decision_affects (tlbi : TLBI.t) (d : t) : Decision (affects tlbi d).
+    Proof. unfold_decide. Defined.
   End Descriptor.
 
   Definition t := gmap Loc.t Descriptor.t.
   #[export] Typeclasses Transparent t.
 
-  (** Check if a location is reachable from some TLB entry at a given TLB *)
-  Definition reachable_from (tlb : TLB.t) (loc : Loc.t) : option TLB.FE.t :=
-    fold_left (λ res fent,
-      if decide (is_Some res) then res
-      else
-        let lvl := TLB.FE.lvl fent in
-        let val_ttbr := TLB.FE.val_ttbr fent in
-        fold_left (λ res index,
-          if decide (is_Some res) then res
-          else
-            if lvl =? leaf_lvl then res
-            else
-              let val := if lvl =? root_lvl then val_ttbr else TLB.FE.pte fent in
-              let entry_addr := next_entry_addr val index in
-              let entry_loc := Loc.from_addr_in entry_addr in
-              if entry_loc =? loc then Some fent
-              else None
-        ) (enum (bv 9)) res
-    ) (elements tlb.(TLB.vatlb)) None.
+  (** Reachability Checks:
+      Check if a PTE that is not enlisted in Casemate
+      can be reachable from the existing page table. **)
+
+  Definition reachable_index (loc : Loc.t) (lvl : Level) (val : val) : option (bv 9) :=
+    if lvl =? leaf_lvl then None
+    else
+      fold_left (λ res index,
+        if decide (is_Some res) then res
+        else
+          let entry_addr := next_entry_addr val index in
+          let entry_loc := Loc.from_addr_in entry_addr in
+          if decide (entry_loc =? loc) then Some index
+          else None
+      ) (enum (bv 9)) None.
+
+  (* Check if a location is reachable from the TLB as a page table entry;
+     therefore the value at the location should be considered as a pte. *)
+
+  Definition reachable_from_root (loc : Loc.t) (data : val) (tid : nat)
+        (is_upper : bool) (val_ttbr : val) : option Descriptor.t :=
+    if reachable_index loc root_lvl val_ttbr is Some index then
+      let va := prefix_to_va is_upper index in
+      let path := Path.make val_ttbr root_lvl va in
+      Some (Descriptor.init [path] data tid)
+    else None.
+
+  Definition reachable_from_lvl (loc : Loc.t) (data : val) (tid : nat)
+        (is_upper : bool) (val_ttbr : val) (lvl : Level) (va : prefix lvl) (pte : val) :
+        option Descriptor.t :=
+    match inspect $ child_lvl lvl with
+    | Some clvl eq:e =>
+      if reachable_index loc lvl pte is Some index then
+        let next_va := TLB.next_va lvl va index (child_lvl_add_one _ _ e) in
+        let path := Path.make val_ttbr clvl (prefix_to_va is_upper next_va) in
+        Some (Descriptor.init [path] data tid)
+      else None
+    | None eq:_ => None
+    end.
+
+  Definition reachable_from_tlb (loc : Loc.t) (data : val)
+        (tlb : TLB.t) (is_upper : bool) (tid : nat) : option Descriptor.t :=
+    let val_ttbrs := remove_dups $
+      map (TLB.FE.val_ttbr) (elements tlb.(TLB.vatlb)) in
+    let descrs_root :=
+      omap (reachable_from_root loc data tid is_upper) val_ttbrs in
+    let descrs_lvl :=
+      omap (λ fe,
+        reachable_from_lvl loc data tid
+          (TLB.FE.is_upper fe)
+          (TLB.FE.val_ttbr fe)
+          (TLB.FE.lvl fe) (TLB.FE.va fe) (TLB.FE.pte fe)
+      ) (elements tlb.(TLB.vatlb)) in
+    let descrs := descrs_root ++ descrs_lvl in
+    if is_emptyb descrs then
+      None
+    else
+      fold_left (λ acc desc,
+        if acc is Some d then Descriptor.merge_desc d desc
+        else Some desc
+      ) descrs None.
 
   Definition init (ts : TState.t)
               (initmem : Memory.initial)
               (mem : Memory.t)
-              (ttbrs : list reg) : result string t :=
+              (ttbrs : list reg) (tid : nat) : result string t :=
     foldlM (λ map ttbr,
-      snapshots ← TLB.unique_snapshots_until ts initmem mem 0 ttbr;
-      '(tlb, _) ← othrow "No snapshots found" (List.hd_error snapshots);
+      let vmax_t := length mem in
+      snapshots ← TLB.unique_snapshots_until ts initmem mem vmax_t ttbr;
+      '(tlb, _) ← othrow "Casemate: No snapshot found" (List.hd_error snapshots);
+      is_upper ← othrow "The register is not TTBR" (TLB.is_upper_ttbr ttbr);
       foldlM (λ map loc,
-        val ←
-          if reachable_from tlb loc is Some fent then
-            root ← othrow
-              "TTBR value type does not match with the value from the translation"
-              (val_to_regval ttbr (TLB.FE.val_ttbr fent));
-            let desc := Descriptor.init ttbr root (TLB.FE.va fent) (TLB.FE.pte fent) in
-            mret (Some desc)
-          else mret None;
-        mret (partial_alter (λ _, val) loc map)
+        data ← othrow "Casemate: No value found" (initmem !! loc);
+        let desc := reachable_from_tlb loc data tlb is_upper tid in
+        mret (partial_alter (λ _, desc) loc map)
       ) map (elements (dom initmem))
     ) ∅ ttbrs.
 
-  Definition path_overlap_with (loc : Loc.t) (cm : t) : list Loc.t :=
+  Definition step_write_valid (loc : Loc.t) (data : val) (tid : nat)
+       (tlb : TLB.t) (ttbr : reg) (time : nat) (cm : t) : result string t :=
+    is_upper ← othrow "The register is not TTBR" (TLB.is_upper_ttbr ttbr);
     if cm !! loc is Some desc then
-      map_fold (λ oloc odesc acc,
-        if oloc =? loc then acc
-        else
-          let va1 := Descriptor.va desc in
-          let lvl1 := Descriptor.lvl desc in
-          let va2 := Descriptor.va odesc in
-          let lvl2 := Descriptor.lvl odesc in
-          if decide (match_prefix_at lvl1 va1 va2
-            ∨ match_prefix_at lvl2 va2 va1) then
-            acc ++ [oloc]
-          else acc
-      ) [] cm
-    else [].
+      match (Descriptor.state desc) with
+      | State.Invalid =>
+        mret (partial_alter (λ _, Some desc) loc cm)
+      | State.Valid =>
+        mthrow "Casemate: Valid write on Valid state"
+      | State.InvalidUnclean phase tid =>
+        mthrow "Casemate: Valid write on InvalidUnclean state"
+      end
+    else
+      if reachable_from_tlb loc data tlb is_upper tid is Some desc then
+        mret (partial_alter (λ _, Some desc) loc cm)
+      else mret cm.
 
-  (** A race condition is defined here as a thread accessing a memory location
-    without having performed the necessary synchronization barrier to
-    account for a prior write to that location. *)
-  Definition is_racy (loc : Loc.t) (vpre : view) (mem : Memory.t) (ts : TState.t) : Prop :=
-    let evs := PromMemory.cut_after_with_timestamps vpre mem in
-    ∃ ev ∈ evs.*1,
-      if ev is Ev.Msg msg
-      then Msg.loc msg = loc ∧ Msg.val msg ≠ 0%bv
-      else False.
-  Instance Decision_is_racy (loc : Loc.t) (vpre : view) (mem : Memory.t) (ts : TState.t) :
-   Decision (is_racy loc vpre mem ts).
-  Proof. unfold_decide. Defined.
+  Definition step_write_invalid (loc : Loc.t) (data : val) (tid : nat)
+       (tlb : TLB.t) (ttbr : reg) (time : nat)
+       (cm : t) : result string t :=
+    is_upper ← othrow "The register is not TTBR" (TLB.is_upper_ttbr ttbr);
+    if cm !! loc is Some desc then
+      match (Descriptor.state desc) with
+      | State.Invalid =>
+        mret (partial_alter (λ _, Some desc) loc cm)
+      | State.Valid =>
+        mthrow "Casemate: Valid write on Valid state"
+      | State.InvalidUnclean phase tid =>
+        mthrow "Casemate: Valid write on InvalidUnclean state"
+      end
+    else
+      if reachable_from_tlb loc data tlb is_upper tid is Some desc then
+        mret (partial_alter (λ _, Some desc) loc cm)
+      else mret cm.
 
-  Definition is_racy_in_pgt (loc : Loc.t) (vpre : view) (mem : Memory.t) (ts : TState.t) (cm : t) : Prop :=
-    let locs := path_overlap_with loc cm in
-    is_racy loc vpre mem ts
-      ∨ (∀ loc' ∈ locs, is_racy loc' vpre mem ts).
+  Definition step_write (loc : Loc.t) (data : val) (tid : nat)
+      (tlb : TLB.t) (ttbr : reg) (time : nat) (cm : t) : result string t :=
+    if decide (is_valid data) then
+      step_write_valid loc data tid tlb ttbr time cm
+    else step_write_invalid loc data tid tlb ttbr time cm.
+
+  Definition step_dsb (tid : nat) (cm : t) : result string t :=
+    foldlM (λ map loc,
+      desc ← othrow "Casemate: No value found" (map !! loc);
+      let new_state := State.after_dsb (Descriptor.state desc) tid in
+      let new_desc := Descriptor.set_state new_state desc in
+      mret $ partial_alter (λ _, Some new_desc) loc map
+    ) cm (elements (dom cm)).
+
+  Definition step_tlbi (tlbi : TLBI.t) (cm : t) : result string t :=
+    foldlM (λ map loc,
+      desc ← othrow "Casemate: No value found" (map !! loc);
+      if decide (Descriptor.affects tlbi desc) then
+        let tid := TLBI.tid tlbi in
+        let new_state := State.after_tlbi (Descriptor.state desc) tid in
+        let new_desc := Descriptor.set_state new_state desc in
+        mret $ partial_alter (λ _, Some new_desc) loc map
+      else mret map
+    ) cm (elements (dom cm)).
 End Casemate.
 
 Import UMPromising(view_if, read_fwd_view).
