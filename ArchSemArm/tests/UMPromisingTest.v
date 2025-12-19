@@ -38,7 +38,7 @@
 (******************************************************************************)
 
 From ASCommon Require Import Options.
-From ASCommon Require Import Common CResult CList.
+From ASCommon Require Import Common CResult CList Exec.
 
 From ArchSemArm Require Import ArmInst UMPromising.
 
@@ -281,7 +281,7 @@ Module MP.
   Definition test_results_pf :=
     UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
   Proof.
     vm_compute (elements _).
@@ -366,7 +366,7 @@ Module MPDMBS.
     UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
   Proof.
     vm_compute (elements _).
@@ -439,6 +439,16 @@ Module LB.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
 End LB.
 
 Module LBDMBS.
@@ -503,6 +513,17 @@ Module LBDMBS.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  (* The (1, 1) result is now impossible due the barriers. *)
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
     [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
   Proof.
     vm_compute (elements _).

@@ -2044,6 +2044,7 @@ Section ComputeProm.
       if term (TState.reg_map ts) then
         mret true
       else
+        msetv (PPState.iis ∘ snd) IIS.init;;
         run_to_termination_promise isem fuel base
     end.
 
