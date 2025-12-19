@@ -253,3 +253,7 @@ Fixpoint vmapM {A B} `{MBind M, MRet M} (f : A → M B) {n} (v : vec A n) :
       ntl ← vmapM f tl;
       mret (nhd ::: ntl)
   end.
+
+(** * venumerate *)
+Definition venumerate {A n} (v : vec A n) : vec ((fin n) * A) n :=
+  fun_to_vec (λ i, (i, v !!! i)).
