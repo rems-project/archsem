@@ -178,6 +178,11 @@ Proof. tcclean. apply Nat2N.inj_mod. Qed.
 
 
 
+(** * fin utils *)
+
+Definition fin0_magic {A} : fin 0 → A :=
+  λ 'f, match f with end.
+
 
 (** * FinUnfold
 
