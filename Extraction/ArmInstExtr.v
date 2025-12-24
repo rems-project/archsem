@@ -50,5 +50,8 @@ Extract Inductive ArchSem.Interface.reg_gen_val =>
    when dune does the extraction *)
 Set Extraction Output Directory ".".
 
+(* Definition umProm_cert_c := UMPromising_cert_c. *)
+
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
-Separate Extraction sequential_modelc sail_tiny_arm_sem Arm UMPromising_pf.
+Separate Extraction Arm sail_tiny_arm_sem
+  sequential_modelc UMPromising_cert_c VMPromising_cert_c.

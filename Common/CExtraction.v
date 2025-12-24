@@ -38,10 +38,11 @@
 (******************************************************************************)
 
 From Stdlib Require Import ZArith.
+From Stdlib Require Import Vector.
 From Stdlib Require Import Extraction.
 
 Require Import Options.
-Require Import Common.
+Require Import Common HVec.
 
 
 
@@ -63,7 +64,7 @@ Extract Inlined Constant Decision => "bool".
 
 Extract Inductive fin => "ZO.t"
   [ "ZO.zero" "ZO.succ" ]
-  "(fun _fO _fS _n -> garbage___garbage)".
+  "Support.fin_case".
 
 Extraction Implicit Fin.F1 [n].
 Extraction Implicit Fin.FS [n].
@@ -81,11 +82,16 @@ Extract Inlined Constant fin0_magic => "Support.fin0_magic".
 Extracted as lists for now *)
 
 Extract Inductive vec => list [ "[]" "( :: )" ].
+Extraction Implicit vnil [A].
 Extraction Implicit vcons [A n].
 Extraction Implicit vmap [A B n].
 Extract Inlined Constant vmap => "List.map".
 Extract Inlined Constant list_to_vec  => "(fun x -> x)".
 
+Extraction Implicit Vector.last [A n].
+Extract Inlined Constant Vector.last => "Support.list_last".
+Extraction Implicit Vector.append [A n p].
+Extract Inlined Constant Vector.append => "List.append".
 
 Extraction Implicit vector_lookup_total [A m].
 Extract Inlined Constant vector_lookup_total => "Support.list_get".
@@ -98,6 +104,23 @@ Extract Inlined Constant vec_to_list => "(fun x -> x)".
 
 Extraction Implicit cprodn [A n].
 Extraction Implicit vmapM [A B n].
+
+Extract Inlined Constant vec_eqdep_dec => "Support.vec_eqdep_dec".
+
+Extraction Implicit Vector.rect2 [A B n].
+Extract Constant Vector.rect2 =>
+  "(fun base step v1 v2 ->
+    let rec aux l1 l2 = match l1, l2 with
+      | [], [] -> (Z.zero, base)
+      | x :: xs, y :: ys ->
+          let (n, res) = aux xs ys in
+          (Z.succ n, step n xs ys res x y)
+      | _, _ -> failwith ""Vector.rect2: vector length mismatch""
+    in snd (aux v1 v2))".
+
+(** * HVec *)
+Extraction Implicit hget [n].
+Extraction Implicit hset [n].
 
 (** * Result *)
 
