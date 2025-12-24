@@ -154,6 +154,8 @@ module ArchModel = struct
 
   type 'a t = (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
 
+  type 'a vmp_t = (* fuel *) int -> (* debug *) bool -> (* mem_strict *) bool -> (* bbm_check *) bool -> termCond -> ArchState.t -> 'a Res.t list
+
 end
 
 
@@ -169,4 +171,9 @@ let seq_model fuel term initState =
 let umProm_model fuel term initState =
   UMPromising.coq_UMPromising_cert_c (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
     (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
+  |> Obj.magic
+
+let vmProm_model fuel debug mem_strict bbm_check term initState =
+  VMPromising.coq_VMPromising_cert_c (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
+    debug mem_strict bbm_check (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic
