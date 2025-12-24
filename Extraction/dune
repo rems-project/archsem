@@ -21,6 +21,7 @@
                      Qreduction ConstructiveCauchyRealsMult String1 System
                      BinaryString Operators_mwords GenPromising
                      TermModels vector0 VectorDef Vector UMPromising
+                     VMPromising GRel list_misc HVec
                      fin_sets list_basics)
 )
 
