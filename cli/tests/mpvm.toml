@@ -1,0 +1,121 @@
+arch="Arm"
+name="MP"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 1
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000
+R1 = 0x100
+R2 = 0x2a
+R3 = 0x8000001000
+R4 = 0x200
+R5 = 0x1
+SCTLR_EL1 = 0x1
+TCR_EL1 = 0x0
+TTBR0_EL1 = 0x80000
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 2
+[[registers]]
+_PC = 0x8000000600
+R0 = 0x8000001000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x8000001000
+R4 = 0x200
+R5 = 0x0
+SCTLR_EL1 = 0x1
+TCR_EL1 = 0x0
+TTBR0_EL1 = 0x80000
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 1 Instructions
+[[memory]]
+# 0x500: STR X2, [X1, X0]
+# 0x504: STR X5, [X4, X3]
+base = 0x500
+size = 4
+data = [0xf8206822, 0xf8236885]
+
+# Thread 2 Instructions
+[[memory]]
+# 0x600: LDR X5, [X4, X3]
+# 0x604: LDR X2, [X1, X0]
+base = 0x600
+size = 4
+data = [0xf8636885, 0xf8606822]
+
+# Backing memory
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[memory]]
+base = 0x1200
+size = 8
+data = 0
+
+# Page Tables
+[[memory]]
+# L0[1] -> L1
+base = 0x80008
+size = 8
+data = 0x81803
+
+[[memory]]
+# L1[0] -> L2
+base = 0x81000
+size = 8
+data = 0x82803
+
+[[memory]]
+# L2[0] -> L3
+base = 0x82000
+size = 8
+data = 0x83803
+
+[[memory]]
+# L3[0] -> PA 0x0000 (executable)
+base = 0x83000
+size = 8
+data = 0x403
+
+[[memory]]
+# L3[1] -> PA 0x1000 (data)
+base = 0x83008
+size = 8
+data = 0x1443
+
+[[termCond]]
+_PC = 0x8000000508
+
+[[termCond]]
+_PC = 0x8000000608
+
+# Expected: (R5, R2) at Thread 2
+# (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0), (0x1, 0x0)
+[[expected]]
+[expected.1]
+R5 = 0x0
+R2 = 0x2a
+
+[[expected]]
+[expected.1]
+R5 = 0x1
+R2 = 0x2a
+
+[[expected]]
+[expected.1]
+R5 = 0x0
+R2 = 0x0
+
+[[expected]]
+[expected.1]
+R5 = 0x1
+R2 = 0x0

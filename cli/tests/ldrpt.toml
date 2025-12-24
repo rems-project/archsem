@@ -1,0 +1,85 @@
+arch="Arm"
+name="LDRPT"
+
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000
+R1 = 0x0
+R2 = 0x8000010008
+R3 = 0x2003
+R4 = 0x8000001000
+SCTLR_EL1 = 0x1
+TCR_EL1 = 0x0
+TTBR0_EL1 = 0x80000
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b01, "SP" = 0b01 }
+
+[[memory]]
+# Instructions
+# 0x500: LDR X0, [X1, X0]
+# 0x504: STR X3, [X1, X2]
+# 0x508: LDR X4, [X1, X4]
+base = 0x500
+size = 4
+data = [0xf8606820, 0xf8226823, 0xf8646824]
+
+[[memory]]
+# Data
+base = 0x1000
+size = 8
+data = 0x2a
+
+[[memory]]
+base = 0x2000
+size = 8
+data = 0x42
+
+[[memory]]
+# Page Tables
+# L0[1] -> L1
+base = 0x80008
+size = 8
+data = 0x81003
+
+[[memory]]
+# L1[0] -> L2
+base = 0x81000
+size = 8
+data = 0x82003
+
+[[memory]]
+# L2[0] -> L3
+base = 0x82000
+size = 8
+data = 0x83003
+
+[[memory]]
+# L3[0] -> PA 0x0000 (code page for PC)
+base = 0x83000
+size = 8
+data = 0x40000000000783
+
+[[memory]]
+# L3[1] -> PA 0x1000 (first data page)
+base = 0x83008
+size = 8
+data = 0x60000000001783
+
+[[memory]]
+# L3[16] -> PA 0x83000 (VA alias to edit L3)
+base = 0x83080
+size = 8
+data = 0x60000000083703
+
+[[termCond]]
+_PC = 0x800000050c
+
+[[expected]]
+[expected.0]
+R0 = 0x2a
+R4 = 0x2a
+
+[[expected]]
+[expected.0]
+R0 = 0x2a
+R4 = 0x42
