@@ -111,3 +111,5 @@ end
 val seq_model : empty ArchModel.t
 
 val umProm_model : empty ArchModel.t
+
+val vmProm_model : empty ArchModel.t

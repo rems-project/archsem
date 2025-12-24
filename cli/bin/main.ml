@@ -11,7 +11,8 @@ let () =
       match model_str with
       | "seq" -> seq_model
       | "ump" -> umProm_model
-      | _ -> failwith ("Unknown model: " ^ model_str ^ ". Supported: seq, ump")
+      | "vmp" -> vmProm_model
+      | _ -> failwith ("Unknown model: " ^ model_str ^ ". Supported: seq, ump, vmp")
     in
 
     let success = Archsem_test.Test_runner.process_file model filename in
