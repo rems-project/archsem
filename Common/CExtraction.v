@@ -116,6 +116,14 @@ Extract Constant Vector.rect2 =>
       | _, _ -> failwith ""Vector.rect2: vector length mismatch""
     in snd (aux v1 v2))".
 
+Extract Constant CVec.vec_eqdep_dec =>
+  "(fun eq_dec _ _ l1 l2 ->
+      let rec aux l1 l2 = match l1, l2 with
+      | [], [] -> true
+      | x::xs, y::ys -> eq_dec x y && aux xs ys
+      | _, _ -> false
+      in aux l1 l2)".
+
 (** * HVec *)
 Extraction Implicit hget [n].
 Extraction Implicit hset [n].

@@ -173,5 +173,5 @@ let umProm_model fuel term initState =
 
 let vmProm_model fuel term initState =
   VMPromising.coq_VMPromising_cert_c (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
-    (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
+    true false (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic
