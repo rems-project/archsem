@@ -542,24 +542,34 @@ Module BBMFailure.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
-  (* Page Table *)
-  Definition pgt : list (bv addr_size * bv 64) :=
-    [(0x80008, 0x81803);
-     (0x81000, 0x82003);
-     (0x82000, 0x83003);
-     (0x83000, 0x40000000000783);
-     (0x83008, 0x60000000001783);
-     (0x83080, 0x60000000083703)].
-
-  Definition init_mem : memoryMap :=
+  Definition init_mem :=
     ∅
-    (* Instructions *)
-    |> mem_insert 0x500 4 0xf8606820  (* LDR X0, [X1, X0] - first load *)
-    |> mem_insert 0x504 4 0xf8226823  (* STR X3, [X1, X2] - modify page table *)
-    |> mem_insert 0x508 4 0xf8646824  (* LDR X4, [X1, X4] - second load *)
-    (* Data *)
+    (* Instructions
+      LDR X0, [X1, X0] - first load
+      STR X3, [X1, X2] - modify page table
+      LDR X4, [X1, X4] - second load *)
+    |> mem_insert 0x500 4 0xf8606820
+    |> mem_insert 0x504 4 0xf8226823
+    |> mem_insert 0x508 4 0xf8646824
+    (* Data at two different physical locations
+        Original PA - value 0x2a
+        New PA - value 0x42 *)
     |> mem_insert 0x1000 8 0x2a
-    |> mem_insert 0x2000 8 0x42.
+    |> mem_insert 0x2000 8 0x42
+    (* Page tables
+        L0[1] -> L1
+        L1[0] -> L2
+        L2[0] -> L3
+        L3 entries:
+          - L3[0]  -> PA 0x0000 (code page for PC)
+          - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+          - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000) *)
+    |> mem_insert 0x80008 8 0x81003
+    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x82000 8 0x83003
+    |> mem_insert 0x83000 8 0x40000000000783
+    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83080 8 0x60000000083703.
 
   Definition n_threads := 1%nat.
 
@@ -571,7 +581,7 @@ Module BBMFailure.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_vmem init_mem pgt mem_strict;
+    {|archState.memory := init_mem;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -622,27 +632,26 @@ Module BBMSuccess.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
-  (* Page Table *)
-  Definition pgt : list (bv addr_size * bv 64) :=
-    [(0x80008, 0x81803);
-     (0x81000, 0x82003);
-     (0x82000, 0x83003);
-     (0x83000, 0x400000000000783);
-     (0x83008, 0x60000000001783);
-     (0x83080, 0x60000000083703)].
-
-  Definition init_mem : memoryMap :=
+  (* T1 Instructions *)
+  Definition init_mem :=
     ∅
-    (* T1 Instructions *)
-    |> mem_insert 0x500 4 0xf8226823  (* STR X3, [X1, X2] - invalidate the PTE *)
-    |> mem_insert 0x504 4 0xd5033a9f  (* DSB ISHST *)
-    |> mem_insert 0x508 4 0xd5088320  (* TLBI by VA - TLB invalidate by 0x8000001000 *)
-    |> mem_insert 0x50C 4 0xd5033b9f  (* DSB ISH *)
+    (* Instructions T1 *)
+    |> mem_insert 0x500 4 0xf8226823 (* STR X3, [X1, X2] - invalidate the PTE *)
+    |> mem_insert 0x504 4 0xd5033a9f (* DSB ISHST *)
+    |> mem_insert 0x508 4 0xd5088320 (* TLBI VAE1IS, X0 *)
+    |> mem_insert 0x50C 4 0xd5033b9f (* DSB ISH *)
     |> mem_insert 0x510 4 0xd5033fdf (* ISB *)
-    (* T2 Instructions *)
+    (* Instructions T2 *)
     |> mem_insert 0x600 4 0xf8606820 (* LDR X0, [X1, X0] - read 0x8000001000 *)
     (* Data *)
-    |> mem_insert 0x1000 8 0x2a.
+    |> mem_insert 0x1000 8 0x2a
+    (* Page Tables *)
+    |> mem_insert 0x80008 8 0x81803
+    |> mem_insert 0x81000 8 0x82003
+    |> mem_insert 0x82000 8 0x83003
+    |> mem_insert 0x83000 8 0x40000000000783
+    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83080 8 0x60000000083703.
 
   Definition n_threads := 2%nat.
 
@@ -667,7 +676,7 @@ Module BBMSuccess.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_vmem init_mem pgt mem_strict;
+    {|archState.memory := init_mem;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 

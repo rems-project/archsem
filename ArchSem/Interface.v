@@ -40,6 +40,17 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common FMon.
 
+(** * Generic register management
+
+    This type allows to parse and print register states in a generic manner *)
+
+Inductive reg_gen_val :=
+| RVNumber (z : Z)
+| RVString (s : string)
+| RVArray (l : list reg_gen_val)
+| RVStruct (l : list (string * reg_gen_val)).
+
+
 (** * The architecture requirements
 
 The SailStdpp library already defines the architecure requirements, however this
@@ -56,6 +67,8 @@ Module Type Arch.
   #[export] Existing Instance reg_countable.
   Parameter pretty_reg : Pretty reg.
   #[export] Existing Instance pretty_reg.
+  Parameter reg_of_string : string → option reg.
+
 
   (** Register value type are dependent on the register, therefore we need all
       the dependent type manipulation typeclasses *)
@@ -72,6 +85,9 @@ Module Type Arch.
   #[export] Existing Instance ctrans_reg_type_simpl.
   Parameter reg_type_eq_dep_dec : EqDepDecision reg_type.
   #[export] Existing Instance reg_type_eq_dep_dec.
+  Parameter reg_type_of_gen : ∀ r : reg, reg_gen_val → result string (reg_type r).
+  Parameter reg_type_to_gen : ∀ r : reg, reg_type r → reg_gen_val.
+
 
 
   (** Register access kind (architecture specific) *)

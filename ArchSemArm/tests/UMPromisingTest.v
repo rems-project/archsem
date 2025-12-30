@@ -38,7 +38,7 @@
 (******************************************************************************)
 
 From ASCommon Require Import Options.
-From ASCommon Require Import Common CResult CList.
+From ASCommon Require Import Common CResult CList Exec.
 
 From ArchSemArm Require Import ArmInst UMPromising.
 
@@ -281,7 +281,7 @@ Module MP.
   Definition test_results_pf :=
     UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
   Proof.
     vm_compute (elements _).
@@ -366,10 +366,167 @@ Module MPDMBS.
     UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
+  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End MPDMBS.
+
+
+Module LB.
+  (*
+     Thread 1 (X1=x, X2=#1, X3=y): LDR X0, [X1, X4]; STR X2, [X3, X4]
+     Thread 2 (X1=y, X2=#1, X3=x): LDR X0, [X1, X4]; STR X2, [X3, X4]
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x1000
+    |> reg_insert R2 0x1
+    |> reg_insert R3 0x2000
+    |> reg_insert R4 0x0
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x600
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x2000
+    |> reg_insert R2 0x1
+    |> reg_insert R3 0x1000
+    |> reg_insert R4 0x0
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 4 0xf8646820  (* LDR X0, [X1, X4] *)
+    |> mem_insert 0x504 4 0xf8246862  (* STR X2, [X3, X4] *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 4 0xf8646820  (* LDR X0, [X1, X4] *)
+    |> mem_insert 0x604 4 0xf8246862  (* STR X2, [X3, X4] *)
+    (* Backing memory *)
+    |> mem_insert 0x1000 8 0x00
+    |> mem_insert 0x2000 8 0x00.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x508 : bv 64); Some (0x608 : bv 64)].
+
+  (* Each thread’s PC must reach the end of its instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 8%nat.
+
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End LB.
+
+Module LBDMBS.
+  (*
+     Thread 1 (X1=x, X2=#1, X3=y): LDR X0, [X1, X4]; DMB SY; STR X2, [X3, X4]
+     Thread 2 (X1=y, X2=#1, X3=x): LDR X0, [X1, X4]; DMB SY; STR X2, [X3, X4]
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x1000
+    |> reg_insert R2 0x1
+    |> reg_insert R3 0x2000
+    |> reg_insert R4 0x0
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x600
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x2000
+    |> reg_insert R2 0x1
+    |> reg_insert R3 0x1000
+    |> reg_insert R4 0x0
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 4 0xf8646820  (* LDR X0, [X1, X4] *)
+    |> mem_insert 0x504 4 0xd5033fbf  (* DMB SY *)
+    |> mem_insert 0x508 4 0xf8246862  (* STR X2, [X3, X4] *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 4 0xf8646820  (* LDR X0, [X1, X4] *)
+    |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
+    |> mem_insert 0x608 4 0xf8246862  (* STR X2, [X3, X4] *)
+    (* Backing memory *)
+    |> mem_insert 0x1000 8 0x00
+    |> mem_insert 0x2000 8 0x00.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x50c : bv 64); Some (0x60c : bv 64)].
+
+  (* Each thread’s PC must reach the end of its instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 8%nat.
+
+  Definition test_results :=
+    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+
+  (* The (1, 1) result is now impossible due the barriers. *)
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+
+  (* The (1, 1) result is now impossible due the barriers. *)
+  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End LBDMBS.
