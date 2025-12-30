@@ -90,6 +90,30 @@ Definition table_desc (next_pa : Z) : Z :=
 Definition page_desc (out_pa : Z) : Z :=
   Z.lor (Z.lor (Z.land out_pa (Z.lnot 0xFFF%Z)) 0x400%Z) 0x3%Z.  (* Valid=1, Page=1, AF=1 *)
 
+Definition init_empty_table (mem : memoryMap) (baddr : bv addr_size) : memoryMap :=
+  let reserved_addrs := dom mem in
+  foldl (λ mem index,
+    let addr := baddr `+Z` (index * 8) in
+    if decide (addr ∈ reserved_addrs)
+    then mem
+    else mem_insert addr 8 0 mem) mem (seqZ 0 512).
+
+Definition clear_offset (addr : bv addr_size) : bv addr_size :=
+  let ones : bv 9 := (-1)%bv in
+  bv_and addr (bv_not (bv_zero_extend addr_size ones)).
+
+Definition init_vmem (mem : memoryMap)
+      (pgt : list (bv addr_size * bv 64))
+      (mem_strict : bool) : memoryMap :=
+  let mem :=
+    foldl (λ mem '(addr, val), mem_insert addr 8 val mem) mem pgt in
+
+  (* WARNING: initialising 512 entries make tests slow *)
+  if mem_strict then
+    let baddrs := remove_dups $ map clear_offset pgt.*1 in
+    foldl init_empty_table mem baddrs
+  else mem.
+
 (** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
 Definition arm_sem := sail_tiny_arm_sem true.
 
@@ -154,17 +178,16 @@ Module EOR.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
+  (* Page table: VA 0x8000000500 to PA 0x500 *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81803); (* L0[1] -> L1 *)
+     (0x81000, 0x82803); (* L1[0] -> L2 *)
+     (0x82000, 0x83803); (* L2[0] -> L3 *)
+     (0x83000, 0x403)]. (* L3[0] -> PA 0x0000 (code page for PC) *)
+
   Definition init_mem : memoryMap :=
     ∅
-    |> mem_insert 0x500 4 0xca020020 (* EOR X0, X1, X2 *)
-    (* L0[1] -> L1  (for VA_PC path: L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81803
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82803
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83803
-    (* L3[0] : map VA_PC page -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x403.
+    |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
 
   Definition n_threads := 1%nat.
 
@@ -176,7 +199,7 @@ Module EOR.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_vmem init_mem pgt mem_strict;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -214,20 +237,19 @@ Module LDR.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
-  Definition init_mem : memoryMap:=
+  (* Page Table *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81803);
+     (0x81000, 0x82803);
+     (0x82000, 0x83803);
+     (0x83000, 0x403); (* PA page 0x0000 (executable, readable) *)
+     (0x83008, 0x60000000001443) (* PA page 0x1000 (data, readable, non-executable) *)
+    ].
+
+  Definition init_mem : memoryMap :=
     ∅
     |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
-    |> mem_insert 0x1000 8 0x2a (* data to be read *)
-    (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81803
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82803
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83803
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
-    |> mem_insert 0x83000 8 0x403
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
-    |> mem_insert 0x83008 8 0x60000000001443.
+    |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
   Definition n_threads := 1%nat.
 
@@ -239,7 +261,7 @@ Module LDR.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_vmem init_mem pgt mem_strict;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -275,21 +297,20 @@ Module STRLDR.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
-  Definition init_mem : memoryMap:=
+  (* Page Table *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81803);
+     (0x81000, 0x82803);
+     (0x82000, 0x83803);
+     (0x83000, 0x403); (* PA page 0x0000 (executable, readable) *)
+     (0x83008, 0x60000000001443) (* PA page 0x1000 (data, readable, non-executable) *)
+    ].
+
+  Definition init_mem : memoryMap :=
     ∅
     |> mem_insert 0x500 4 0xf8206822 (* STR X2, [X1, X0] *)
     |> mem_insert 0x504 4 0xf8606820 (* LDR X0, [X1, X0] *)
-    |> mem_insert 0x1100 8 0x0 (* Memory need to exists to be written to *)
-    (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81803
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82803
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83803
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable, readable) *)
-    |> mem_insert 0x83000 8 0x403
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data, readable, non-executable) *)
-    |> mem_insert 0x83008 8 0x60000000001443.
+    |> mem_insert 0x1100 8 0x0. (* Data to be read *)
 
   Definition n_threads := 1%nat.
 
@@ -301,7 +322,7 @@ Module STRLDR.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_vmem init_mem pgt mem_strict;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -326,10 +347,6 @@ Module MP.
   (* A classic MP litmus test with address translation
      Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
-
-     VAs map to PAs:
-     - Instructions: 0x8000000500 -> 0x500, 0x8000000600 -> 0x600
-     - Data: 0x8000001100 -> 0x1100, 0x8000001200 -> 0x1200
 
      Expected outcome of (R5, R2) at Thread 2:
       (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0), (0x1, 0x0)
@@ -365,27 +382,25 @@ Module MP.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
+  (* Page Table *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81803);
+     (0x81000, 0x82803);
+     (0x82000, 0x83803);
+     (0x83000, 0x403); (* PA page 0x0000 (executable, readable) *)
+     (0x83008, 0x60000000001443) (* PA page 0x1000 (data, readable, non-executable) *)].
+
   Definition init_mem : memoryMap :=
     ∅
-    (* Thread 1 @ PA 0x500 *)
+    (* T1 Instructions *)
     |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
-    |> mem_insert 0x504 4 0xf8236885  (* STR X5, [X4, X3] *)
-    (* Thread 2 @ PA 0x600 *)
-    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
-    |> mem_insert 0x604 4 0xf8606822  (* LDR X2, [X1, X0] *)
-    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x504 4 0xf8236885 (* STR X5, [X4, X3] *)
+    (* T2 Instructions *)
+    |> mem_insert 0x600 4 0xf8636885 (* LDR X5, [X4, X3] *)
+    |> mem_insert 0x604 4 0xf8606822 (* LDR X2, [X1, X0] *)
+    (* Data *)
     |> mem_insert 0x1100 8 0x0
-    |> mem_insert 0x1200 8 0x0
-    (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81803
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82803
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83803
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x403
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x1443.
+    |> mem_insert 0x1200 8 0x0.
 
   Definition n_threads := 2%nat.
 
@@ -401,7 +416,7 @@ Module MP.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_vmem init_mem pgt mem_strict;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -417,13 +432,9 @@ Module MP.
 End MP.
 
 Module MPDMBS.
-  (* A classic MP litmus test with address translation
+  (* A classic MPDMBS litmus test with address translation
      Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
      Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
-
-     VAs map to PAs:
-     - Instructions: 0x8000000500 -> 0x500, 0x8000000600 -> 0x600
-     - Data: 0x8000001100 -> 0x1100, 0x8000001200 -> 0x1200
 
      Expected outcome of (R5, R2) at Thread 2:
       (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0) *)
@@ -458,29 +469,27 @@ Module MPDMBS.
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
+  (* Page Table *)
+  Definition pgt : list (bv addr_size * bv 64) :=
+    [(0x80008, 0x81803);
+     (0x81000, 0x82803);
+     (0x82000, 0x83803);
+     (0x83000, 0x403);
+     (0x83008, 0x60000000001443)].
+
   Definition init_mem : memoryMap :=
     ∅
-    (* Thread 1 @ PA 0x500 *)
+    (* T1 Instructions *)
     |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
     |> mem_insert 0x504 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x508 4 0xf8236885  (* STR X5, [X4, X3] *)
-    (* Thread 2 @ PA 0x600 *)
+    |> mem_insert 0x508 4 0xf8236885 (* STR X5, [X4, X3] *)
+    (* T2 Instructions *)
     |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
     |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x608 4 0xf8606822  (* LDR X2, [X1, X0] *)
-    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x608 4 0xf8606822 (* LDR X2, [X1, X0] *)
+    (* Data *)
     |> mem_insert 0x1100 8 0x0
-    |> mem_insert 0x1200 8 0x0
-    (* L0[1] -> L1  (for VA with L0 index = 1) *)
-    |> mem_insert 0x80008 8 0x81003
-    (* L1[0] -> L2 *)
-    |> mem_insert 0x81000 8 0x82003
-    (* L2[0] -> L3 *)
-    |> mem_insert 0x82000 8 0x83003
-    (* L3[0] : map VA page 0x8000000000 -> PA page 0x0000 (executable) *)
-    |> mem_insert 0x83000 8 0x403
-    (* L3[1] : map VA page 0x8000001000 -> PA page 0x1000 (data) *)
-    |> mem_insert 0x83008 8 0x60000000001443.
+    |> mem_insert 0x1200 8 0x0.
 
   Definition n_threads := 2%nat.
 
@@ -495,10 +504,9 @@ Module MPDMBS.
   Definition mem_strict := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_vmem init_mem pgt mem_strict;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
-
 
   Definition test_results :=
     VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
