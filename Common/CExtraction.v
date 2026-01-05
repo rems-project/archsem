@@ -93,6 +93,12 @@ Extract Inlined Constant vector_lookup_total => "Support.list_get".
 Extraction Implicit vinsert [A n].
 Extract Inlined Constant vinsert => "Support.list_set".
 
+Extraction Implicit vec_to_list [A n].
+Extract Inlined Constant vec_to_list => "(fun x -> x)".
+
+Extraction Implicit cprodn [A n].
+Extraction Implicit vmapM [A B n].
+
 (** * Result *)
 
 (* Extract Inductive result => result [ "Ok" "Error"]. *)
