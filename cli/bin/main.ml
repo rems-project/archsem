@@ -20,5 +20,5 @@ let () =
       | _ -> failwith ("Unknown model: " ^ model_str ^ ". Supported: seq, ump, vmp")
     in
 
-    let success = Archsem_test.Litmus_runner.run_litmus_test model filename in
+    let success = Archsem_test.Litmus_runner.run_litmus_test model_str model filename in
     if success then exit 0 else exit 1

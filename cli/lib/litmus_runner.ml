@@ -1,5 +1,12 @@
 open Archsem
-(* open Archsem.Semantics - REMOVED: Unbound module *)
+
+(* ANSI color codes for terminal output *)
+let c_reset = "\027[0m"
+let c_bold = "\027[1m"
+let c_red = "\027[31m"
+let c_green = "\027[32m"
+let c_yellow = "\027[33m"
+let c_cyan = "\027[36m"
 
 (* Helper function to print a register value properly *)
 let string_of_gen = function
@@ -53,10 +60,10 @@ let print_forbidden_violation (i : int) (arch_state : ArchState.t)
 
 (** Runs model executions and checks coverage (allowed) and forbidden constraints.
     Returns true if all allowed outcomes are covered and no forbidden outcomes are observed. *)
-let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
+let run_executions model_name model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
     (outcomes : Litmus_parser.outcome list) : bool =
-  Printf.printf "Running test with fuel %d...\n%!" fuel;
+  Printf.printf "Running test with model %s%s%s and fuel %d...\n" (c_bold ^ c_cyan) model_name c_reset fuel;
   let results = model fuel termCond arch_state in
 
   let allowed_outcomes = List.filter_map
@@ -146,7 +153,7 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
 
 (** Main entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)
-let run_litmus_test model filename =
+let run_litmus_test model_name model filename =
   if not (Sys.file_exists filename) then (
     Printf.eprintf "File not found: %s\n" filename;
     false
@@ -166,9 +173,9 @@ let run_litmus_test model filename =
     let outcome = Litmus_parser.parse_outcomes toml in
 
     Printf.printf "\nSuccessfully parsed %s\n" filename;
-    let passed = run_executions model arch_state num_threads fuel termConds outcome in
-    if passed then Printf.printf "\nRESULT: PASS\n"
-    else Printf.printf "\nRESULT: FAIL\n";
+    let passed = run_executions model_name model arch_state num_threads fuel termConds outcome in
+    if passed then Printf.printf "\nRESULT: %sPASS%s\n" c_green c_reset
+    else Printf.printf "\nRESULT: %sFAIL%s\n" c_red c_reset;
     passed
 
   with
