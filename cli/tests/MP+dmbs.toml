@@ -1,5 +1,5 @@
 arch="Arm"
-name="MPDMBS"
+name="MP+dmbs"
 
 [config]
 FEAT_ETS2 = true
