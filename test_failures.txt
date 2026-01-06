@@ -1,0 +1,94 @@
+# VMSA Litmus Test Failures (2026-01-07)
+# Total: 267 tests
+
+## PASSING TESTS (2)
+- data/HAND/MP+pos.litmus.toml
+- pgtable/HAND/Load.litmus.toml
+
+## FAILURE CATEGORIES
+
+### 1. Next Level Address Errors (180 tests)
+# Page table walk finds unexpected address - likely identity mapping or L0 issue
+exn/HAND/DABT/MP+dmb+addr-dabt.litmus.toml
+exn/HAND/DABT/MP+dmb+dabt.litmus.toml
+exn/HAND/BASIC/MP+dmb+eret.litmus.toml
+exn/HAND/BASIC/MP+dmb+svc.litmus.toml
+exn/HAND/BASIC/MP+dmb+svc-eret.litmus.toml
+pgtable/HAND/CoWinvT+po.litmus.toml
+pgtable/HAND/MP.TTf.inv+dsb+dsb-isb.litmus.toml
+pgtable/HAND/CoTTf.inv+ctrl-isb.litmus.toml
+pgtable/HAND/WRC.TRTf.inv+addrs.litmus.toml
+pgtable/HAND/MP.RT.inv+dmb+ctrl-trfi.litmus.toml
+pgtable/HAND/CoWTf.inv+dmb.litmus.toml
+pgtable/HAND/SB.TfTf.inv+dmb-ctrl-isbs.litmus.toml
+pgtable/HAND/WRC.TfRT+po+dsb-isb.litmus.toml
+pgtable/HAND/MP.BBM1+dsb-tlbiis-dsb-dsb+dsb-isb.litmus.toml
+pgtable/HAND/WDS+dsb-tlbiipa-dsb-po-eret.litmus.toml
+pgtable/HAND/CoTfW.inv+dsb.litmus.toml
+pgtable/HAND/MP.RT.inv+dmb+addr-trfi.litmus.toml
+pgtable/HAND/PPODA.RT.inv.litmus.toml
+pgtable/HAND/CoTfT+po.litmus.toml
+pgtable/HAND/MP.RT.EL2+dsb-tlbiipais-dsb-tlbiis-dsb+dsb-isb.litmus.toml
+# ... and 160 more tests with same error
+
+### 2. Unsupported Encoding (12 tests)
+# Instructions not in model (SVC, ERET, CAS, IPI)
+exn/HAND/BASIC/MP+svc+dmb.litmus.toml
+exn/HAND/BASIC/LB+svcs.litmus.toml
+exn/HAND/BASIC/MP+svc-eret+dmb.litmus.toml
+exn/HAND/BASIC/MP+eret+dmb.litmus.toml
+exn/HAND/BASIC/LB+ctrl-svcs.litmus.toml
+exn/HAND/IPI/gcipi1.litmus.toml
+exn/HAND/IPI/gcipi2.litmus.toml
+exn/HAND/IPI/gcipi3.litmus.toml
+pgtable/HAND/SwitchTable.same-asid+eret.litmus.toml
+pgtable/HAND/SwitchTable.different-asid+eret.litmus.toml
+pgtable/HAND/PPOCA.alias.litmus.toml
+data/HAND/PPOCA.litmus.toml
+
+### 3. Root PTE Missing (11 tests)
+# PKVM tests need different page table structure
+pgtable/HAND_PKVM/pKVM.create_hyp_mappings.inv.l2.litmus.toml
+pgtable/HAND_PKVM/pKVM.create_hyp_mappings.inv.l3.litmus.toml
+pgtable/HAND/Break2.news1.litmus.toml
+pgtable/HAND/Break2.news2.litmus.toml
+pgtable/HAND/ROT.inv+dmb.litmus.toml
+pgtable/HAND/ROT.inv+dsb.litmus.toml
+pgtable/HAND/ROT+dsb-tlbivmallis-dsb.litmus.toml
+pgtable/HAND/ROT.invs1+dmb2.litmus.toml
+pgtable/HAND/ROT.invs1+dsb2.litmus.toml
+pgtable/HAND/RMD+dmb.litmus.toml
+pgtable/HAND/RMD+dsb.litmus.toml
+
+### 4. ESR_EL1 Unmapped (4 tests)
+# Translation fault during execution
+pgtable/HAND/RWC.RTfR.inv+addr+dmb.litmus.toml
+pgtable/HAND/LB.TT.inv+pos.litmus.toml
+pgtable/HAND/LB.TT.inv+addrs.litmus.toml
+pgtable/HAND/LB.TfTf.inv+pos.litmus.toml
+
+### 5. Unmapped Memory (4 tests)
+# Memory access to unpopulated addresses
+pgtable/HAND/PPOAA.alias.litmus.toml
+pgtable/HAND/CoTWinv.litmus.toml
+pgtable/HAND/LB+data-trfis.litmus.toml
+pgtable/HAND/LB+ctrl-trfis.litmus.toml
+
+### 6. Timeout/Other (~48 tests)
+# Tests timeout or produce no result
+pgtable/HAND_PKVM/pKVM.vcpu_run.update_vmid.litmus.toml
+pgtable/HAND_PKVM/pKVM.host_handle_trap_twice.stage2_idmap.l3.litmus.toml
+pgtable/HAND_PKVM/pKVM.vcpu_run.litmus.toml
+pgtable/HAND/WRC.RRTf.inv+pos.litmus.toml
+pgtable/HAND/WRC.TfRR+pos.litmus.toml
+pgtable/HAND/CoTfRpte+dsb.litmus.toml
+pgtable/HAND/CoTfRpte+dsb-isb.litmus.toml
+pgtable/HAND/WRC.RRTf.inv+dsbs.litmus.toml
+pgtable/HAND/WRC.TfRR+dmbs.litmus.toml
+pgtable/HAND/WRC.RRTf.inv+addrs.litmus.toml
+# ... and more
+
+## NOTES
+- Main issue: 180 tests fail with "next level address should be read"
+  This suggests page table walk is failing to find valid descriptors
+  at intermediate levels for identity-mapped addresses (0x1000, 0x2000, etc.)
