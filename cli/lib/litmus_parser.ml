@@ -9,6 +9,13 @@ let get_list = function
   | Otoml.TomlTableArray l -> l
   | _ -> failwith "Expected a list"
 
+let parse_reg_key k =
+  match Reg.of_string k with
+  | Some r -> Some r
+  | None ->
+    if k = "PSTATE" then Some Reg.pstate
+    else None
+
 let parse_reg_value v =
   match v with
   | Otoml.TomlInteger i -> RegVal.Number (Z.of_int i)
@@ -23,19 +30,33 @@ let parse_reg_value v =
     RegVal.Struct fields
   | _ -> failwith "Unsupported register value type"
 
-let parse_reg_key k =
-  match Reg.of_string k with
-  | Some r -> Some r
-  | None ->
-    if k = "PSTATE" then Some Reg.pstate
-    else None
+(* Constraints *)
+type requirement =
+  | Eq of RegVal.gen
+  | Neq of RegVal.gen
 
-let parse_register (k : string) (v : Otoml.t) : (Reg.t * RegVal.gen) option =
+let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
   match parse_reg_key k with
-  | Some reg -> Some (reg, parse_reg_value v)
+  | Some reg ->
+    let req = match v with
+      (* For outcomes: requires explicit { op = "eq"/"ne", val = ... } *)
+      (* For init: if op/val not present, treat as struct value *)
+      | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
+        (match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
+         | Some (Otoml.TomlString "eq"), Some v -> Eq (parse_reg_value v)
+         | Some (Otoml.TomlString "ne"), Some v -> Neq (parse_reg_value v)
+         | Some (Otoml.TomlString op), _ -> failwith ("Unknown operator: " ^ op)
+         (* No op/val keys - treat as struct value (e.g., PSTATE = { EL = 0, SP = 0 }) *)
+         | _ -> Eq (parse_reg_value v))
+      (* Simple values: treat as equality requirement *)
+      | Otoml.TomlInteger _ | Otoml.TomlString _ -> Eq (parse_reg_value v)
+      (* Unsupported types *)
+      | _ -> failwith ("Unsupported value type for register " ^ k)
+    in
+    Some (reg, req)
   | None -> None
 
-let parse_register_tables (register_tables : Otoml.t list) : ((Reg.t * RegVal.gen) list) list =
+let parse_register_tables (register_tables : Otoml.t list) : ((Reg.t * requirement) list) list =
   List.map (fun table ->
     match table with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
@@ -54,7 +75,9 @@ let parse_registers (toml : Otoml.t) : RegMap.t list =
   let regvals = parse_register_tables register_tables in
   List.map (fun table ->
     List.fold_left (fun regmap (reg, rv) ->
-      RegMap.insert (RegVal.of_gen reg rv |> Result.get_ok) regmap
+      match rv with
+      | Eq v -> RegMap.insert (RegVal.of_gen reg v |> Result.get_ok) regmap
+      | Neq _ -> failwith "Neq not supported in init"
     ) RegMap.empty table
   ) regvals
 
@@ -91,67 +114,66 @@ let parse_termCond (num_threads : int) (toml : Otoml.t) : termCond =
   let term_tables = Otoml.find toml get_list ["termCond"] in
   let terms = parse_register_tables term_tables in
   if num_threads != List.length terms then
-    (* Return non-terminating termCond *)
     failwith "TermCond table does not match number of threads"
   else
-    (* Current extraction of termCond only supports a single register check on PC *)
+    (* Build a checker function for each thread based on ALL register conditions *)
     List.map (fun table ->
-      match List.find_opt (fun (r, _) -> r = Reg.pc) table with
-      | Some (_, RegVal.Number n) -> (fun pc -> Z.equal pc n)
-      | _ -> failwith "TermCond table does not contain a single register check on PC"
+      (* Generate a function that checks all conditions in the table *)
+      (fun rm ->
+        List.for_all (fun (reg, req) ->
+          let reg_val = RegMap.get_opt reg rm in
+          match reg_val, req with
+          | Some rv, Eq expected ->
+            RegVal.to_gen rv = expected
+          | Some rv, Neq expected ->
+            RegVal.to_gen rv <> expected
+          | None, _ ->
+            (* Register not found - condition fails *)
+            false
+        ) table)
     ) terms
 
-let parse_outcomes (toml : Otoml.t) : string * (int * (Reg.t * RegVal.gen) list) list list =
-  let outcomes = Otoml.find toml get_list ["outcome"] in
+type cond = (int * (Reg.t * requirement) list) list
 
-  let kind = ref "allowed" in
+type outcome =
+  | Allowed of cond
+  | Enforced of cond
 
-  let checks = List.map (fun node ->
+let parse_cond (toml : Otoml.t) : cond =
+  match toml with
+    | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
+      List.filter_map (fun (tid_s, regs_toml) ->
+        try
+          let tid = int_of_string tid_s in
+          let reg_conds =
+            match regs_toml with
+            | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
+              List.filter_map (
+                fun (rk, rv) -> parse_register rk rv
+              ) pairs
+            | _ -> failwith "Unsupported register value type"
+          in
+          Some (tid, reg_conds)
+        with Failure _ -> failwith ("Invalid thread ID (expected integer): " ^ tid_s)
+      ) pairs
+    | _ -> failwith "Unsupported register value type"
+
+let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
+  let has_allowed = List.exists (fun (k, _) -> k = "allowed") pairs in
+  let has_enforced = List.exists (fun (k, _) -> k = "enforced") pairs in
+  if has_allowed && has_enforced then
+    failwith "Outcome block cannot contain both 'allowed' and 'enforced'";
+  match List.find_opt (fun (k, _) -> k = "allowed" || k = "enforced") pairs with
+  | Some (k, v) ->
+    let cond = parse_cond v in
+    if k = "allowed" then Allowed cond else Enforced cond
+  | None -> failwith "Outcome block must contain 'allowed' or 'enforced'"
+
+let parse_outcomes (toml : Otoml.t) : outcome list =
+  let outcome_tables = Otoml.find toml get_list ["outcome"] in
+  List.filter_map (fun node ->
     match node with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
-      List.filter_map (fun (k, v) ->
-        let current_kind, explicit_tid =
-          if k = "allowed" then ("allowed", None)
-          else if k = "enforced" then ("enforced", None)
-          else if k = "expected" then ("allowed", None)
-          else if String.length k > 8 && String.sub k 0 8 = "allowed." then
-              ("allowed", Some (String.sub k 8 (String.length k - 8)))
-          else if String.length k > 9 && String.sub k 0 9 = "enforced." then
-              ("enforced", Some (String.sub k 9 (String.length k - 9)))
-          else ("unknown", None)
-        in
-
-        if current_kind <> "unknown" then (
-          kind := current_kind;
-          match explicit_tid with
-          | Some tid_s ->
-              (* v is the registers table for this tid *)
-              (try
-                  let tid = int_of_string tid_s in
-                  match v with
-                  | Otoml.TomlTable reg_pairs | Otoml.TomlInlineTable reg_pairs ->
-                      let regs = List.filter_map (fun (rk, rv) -> parse_register rk rv) reg_pairs in
-                      Some [(tid, regs)]
-                  | _ -> None
-              with _ -> None)
-          | None ->
-              (* v is table of threads: tid -> regs *)
-              match v with
-              | Otoml.TomlTable threads | Otoml.TomlInlineTable threads ->
-                  let thread_checks = List.filter_map (fun (tid_s, regs_toml) ->
-                      try
-                          let tid = int_of_string tid_s in
-                          match regs_toml with
-                          | Otoml.TomlTable reg_pairs | Otoml.TomlInlineTable reg_pairs ->
-                              let regs = List.filter_map (fun (rk, rv) -> parse_register rk rv) reg_pairs in
-                              Some (tid, regs)
-                          | _ -> None
-                      with Failure _ -> None
-                  ) threads in
-                  Some thread_checks
-              | _ -> None
-           ) else None
-       ) pairs |> List.flatten
-    | _ -> []
-  ) outcomes in
-  (!kind, checks)
+      Some (parse_outcome pairs)
+    | _ -> None
+  ) outcome_tables

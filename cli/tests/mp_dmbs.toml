@@ -58,11 +58,11 @@ _PC = 0x50C
 _PC = 0x60C
 
 [[outcome]]
-allowed.1 = { R5 = 0x0, R2 = 0x2a }
+allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
 
 [[outcome]]
-allowed.1 = { R5 = 0x0, R2 = 0x0 }
+allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
-allowed.1 = { R5 = 0x1, R2 = 0x2a }
+allowed.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
 

@@ -21,4 +21,4 @@ data = 0xca020020
 _PC = 0x504
 
 [[outcome]]
-allowed.0 = { R0 = 0x110 }
+allowed.0 = { R0 = { op = "eq", val = 0x110 } }
