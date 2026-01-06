@@ -1,4 +1,4 @@
 (library
  (name archsem_test)
- (modules toml_parser test_runner)
+ (modules litmus_parser litmus_runner)
  (libraries archsem otoml str))

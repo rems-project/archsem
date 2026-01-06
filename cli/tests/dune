@@ -1,0 +1,11 @@
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} seq %{dep:eor.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} ump %{dep:mp.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} ump %{dep:mp_dmbs.toml})))

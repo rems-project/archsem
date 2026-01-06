@@ -20,6 +20,5 @@ data = 0xca020020
 [[termCond]]
 _PC = 0x504
 
-[[expected]]
-[expected.0]
-R0 = 0x110
+[[outcome]]
+allowed.0 = { R0 = 0x110 }

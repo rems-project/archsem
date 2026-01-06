@@ -31,13 +31,13 @@ PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 # Thread 1 Instructions
 [[memory]]
 base = 0x500
-size = 4
+size = 8
 data = [0xf8206822, 0xf8236885]
 
 # Thread 2 Instructions
 [[memory]]
 base = 0x600
-size = 4
+size = 8
 data = [0xf8636885, 0xf8606822]
 
 # Shared Data
@@ -57,22 +57,14 @@ _PC = 0x508
 [[termCond]]
 _PC = 0x608
 
-[[expected]]
-[expected.1]
-R5 = 0x0
-R2 = 0x2a
+[[outcome]]
+allowed.1 = { R5 = 0x0, R2 = 0x2a }
 
-[[expected]]
-[expected.1]
-R5 = 0x0
-R2 = 0x0
+[[outcome]]
+allowed.1 = { R5 = 0x0, R2 = 0x0 }
 
-[[expected]]
-[expected.1]
-R5 = 0x1
-R2 = 0x0
+[[outcome]]
+allowed.1 = { R5 = 0x1, R2 = 0x0 }
 
-[[expected]]
-[expected.1]
-R5 = 0x1
-R2 = 0x2a
+[[outcome]]
+allowed.1 = { R5 = 0x1, R2 = 0x2a }
