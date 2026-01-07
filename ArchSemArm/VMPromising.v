@@ -2328,6 +2328,7 @@ Section ComputeProm.
                                 (mem : Memory.t)
                                 (debug : bool)
                                 (mem_strict : bool)
+                                (bbm_check : bool)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
     let exec := run_to_termination_promise
@@ -2339,9 +2340,11 @@ Section ComputeProm.
       (∀ r ∈ res_proms, r.2 = true);;
 
     bbm_res ←
-      for st in res_proms.*1.*2 do
-        check_bbm_violation initmem (PPState.state st) (PPState.mem st) mem_strict
-      end;
+      if bbm_check then
+        for st in res_proms.*1.*2 do
+          check_bbm_violation initmem (PPState.state st) (PPState.mem st) mem_strict
+        end
+      else mret [];
     guard_or ("BBM check fails")%string (forallb (λ r, negb r) bbm_res);;
 
     let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
@@ -2417,20 +2420,20 @@ Definition VMPromising_cert' (isem : iMon ()) : PromisingModel :=
 
 (** Implement the Executable Promising Model *)
 
-Program Definition VMPromising_exe' (isem : iMon ()) (debug : bool) (mem_strict : bool)
+Program Definition VMPromising_exe' (isem : iMon ()) (debug : bool) (mem_strict : bool) (bbm_check : bool)
     : BasicExecutablePM :=
   {|pModel := VMPromising_cert' isem;
     enumerate_promises_and_terminal_states :=
       λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term isem fuel ts mem debug mem_strict
+          run_to_termination tid initmem term isem fuel ts mem debug mem_strict bbm_check
   |}.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 
-Definition VMPromising_cert_c isem fuel debug mem_strict :=
-  Promising_to_Modelc isem (VMPromising_exe' isem debug mem_strict) fuel.
+Definition VMPromising_cert_c isem fuel debug mem_strict bbm_check :=
+  Promising_to_Modelc isem (VMPromising_exe' isem debug mem_strict bbm_check) fuel.
 
-Definition VMPromising_cert_c_pf isem fuel debug mem_strict :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem debug mem_strict) fuel.
+Definition VMPromising_cert_c_pf isem fuel debug mem_strict bbm_check :=
+  Promising_to_Modelc_pf isem (VMPromising_exe' isem debug mem_strict bbm_check) fuel.
