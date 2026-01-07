@@ -1,0 +1,121 @@
+# VMP (VM Promising) two-thread MP test with virtual memory
+# Based on the MP test from VMPromisingTest.v
+
+arch="Arm"
+name="VMP+2thread"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 0: Writer - STR X2, [X1, X0]; STR X5, [X4, X3]
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA base
+R1 = 0x100             # Offset -> VA 0x8000001100
+R2 = 0x2a              # Data value
+R3 = 0x8000001000      # VA base
+R4 = 0x200             # Offset -> VA 0x8000001200
+R5 = 0x1               # Flag value
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Thread 1: Reader - LDR X5, [X4, X3]; LDR X2, [X1, X0]
+[[registers]]
+_PC = 0x8000000600
+R0 = 0x8000001000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x8000001000
+R4 = 0x200
+R5 = 0x0
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Thread 0 instructions at PA 0x500
+# STR X2, [X1, X0]: 0xf8206822
+# STR X5, [X4, X3]: 0xf8236885
+[[memory]]
+base = 0x500
+size = 8
+data = [0xf8206822, 0xf8236885]
+
+# Thread 1 instructions at PA 0x600
+# LDR X5, [X4, X3]: 0xf8636885
+# LDR X2, [X1, X0]: 0xf8606822
+[[memory]]
+base = 0x600
+size = 8
+data = [0xf8636885, 0xf8606822]
+
+# Backing memory for shared data
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[memory]]
+base = 0x1200
+size = 8
+data = 0
+
+# L0 table base
+[[memory]]
+base = 0x80000
+size = 8
+data = 0
+
+# Page table hierarchy
+# L0[1] -> L1
+[[memory]]
+base = 0x80008
+size = 8
+data = 0x81803
+
+# L1[0] -> L2
+[[memory]]
+base = 0x81000
+size = 8
+data = 0x82803
+
+# L2[0] -> L3
+[[memory]]
+base = 0x82000
+size = 8
+data = 0x83803
+
+# L3[0]: code page (executable)
+[[memory]]
+base = 0x83000
+size = 8
+data = 0x403
+
+# L3[1]: data page (readable/writable)
+[[memory]]
+base = 0x83008
+size = 8
+data = 0x1443
+
+[[termCond]]
+_PC = 0x8000000508
+
+[[termCond]]
+_PC = 0x8000000608
+
+# All 4 outcomes allowed for MP without barriers
+[[outcome]]
+allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
+
+[[outcome]]
+allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
+
+[[outcome]]
+allowed.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
+
+[[outcome]]
+allowed.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }

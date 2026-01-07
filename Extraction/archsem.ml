@@ -135,11 +135,11 @@ module ArchState = struct
   let mem (st : t) = st.memory
 end
 
-type termCond = (Z.t -> bool) list
+type termCond = (RegMap.t -> bool) list
 
 let termCond_to_coq (term : termCond) tid rm =
   let tc = List.nth term (Z.to_int tid) in
-  tc (RegMap.getZ Reg.pc rm)
+  tc rm
 
 type empty = |
 

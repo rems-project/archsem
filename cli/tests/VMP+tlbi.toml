@@ -1,0 +1,88 @@
+# VMP (VM Promising) TLBI test
+# Tests TLB invalidation behavior with page table modification
+# Based on the BBMSuccess test from VMPromisingTest.v
+
+arch="Arm"
+name="VMP+tlbi"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 1: Invalidates PTE and performs TLBI
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA for TLBI target
+R1 = 0x0               # Base offset
+R2 = 0x8000010008      # VA of L3[1] descriptor (page table VA alias)
+R3 = 0x0               # Invalid entry (break)
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b01, "SP" = 0b1 }
+
+# Instructions:
+# STR X3, [X1, X2]  - invalidate PTE: 0xf8226823
+# DSB ISHST         - store barrier: 0xd5033a9f
+# TLBI VAE1IS, X0   - TLB invalidate: 0xd5088320
+# DSB ISH           - full barrier: 0xd5033b9f
+# ISB               - instruction sync: 0xd5033fdf
+[[memory]]
+base = 0x500
+size = 20
+data = [0xf8226823, 0xd5033a9f, 0xd5088320, 0xd5033b9f, 0xd5033fdf]
+
+# Data at PA 0x1000
+[[memory]]
+base = 0x1000
+size = 8
+data = 0x2a
+
+# L0 table base
+[[memory]]
+base = 0x80000
+size = 8
+data = 0
+
+# Page table hierarchy
+# L0[1] -> L1
+[[memory]]
+base = 0x80008
+size = 8
+data = 0x81803
+
+# L1[0] -> L2
+[[memory]]
+base = 0x81000
+size = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+base = 0x82000
+size = 8
+data = 0x83003
+
+# L3[0]: code page (executable)
+[[memory]]
+base = 0x83000
+size = 8
+data = 0x40000000000783
+
+# L3[1]: data page (readable/writable)
+[[memory]]
+base = 0x83008
+size = 8
+data = 0x60000000001783
+
+# L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
+[[memory]]
+base = 0x83080
+size = 8
+data = 0x60000000083703
+
+[[termCond]]
+_PC = 0x8000000514
+
+[[outcome]]
+allowed.0 = { R3 = { op = "eq", val = 0x0 } }
