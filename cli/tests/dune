@@ -9,3 +9,19 @@
 (rule
  (alias runtest)
  (action (run %{exe:../bin/main.exe} ump %{dep:MP+dmbs.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} vmp %{dep:VMP+simple.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} vmp %{dep:VMP+tlbi.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} vmp %{dep:VMP+BBM.toml})))
+
+(rule
+ (alias runtest)
+ (action (run %{exe:../bin/main.exe} vmp %{dep:VMP+2thread.toml})))
