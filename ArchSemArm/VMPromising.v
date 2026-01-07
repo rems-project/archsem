@@ -987,7 +987,7 @@ Module TLB.
       (ttbr : reg)
       (val_ttbrs : list (bv 64))
       (mem_strict : bool) : result string (VATLB.t * bool) :=
-    is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+    is_upper ← othrow "[Translation] Register is not TTBR" (is_upper_ttbr ttbr);
     foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
       let loc := Loc.from_addr_in entry_addr in
@@ -1004,7 +1004,7 @@ Module TLB.
           else Ok (vatlb, is_changed)
         else Ok (vatlb, is_changed)
       else
-        guard_or ("Memory read failed at " ++ (pretty entry_addr))%string (negb mem_strict);;
+        guard_or ("[Memory] Read failed at " ++ (pretty entry_addr))%string (negb mem_strict);;
         Ok (vatlb, is_changed)
     ) (vatlb, false) val_ttbrs.
 
@@ -1041,12 +1041,12 @@ Module TLB.
             if decide (entry ∉ (VATLB.get ctxt vatlb)) then
               Ok (VATLB.insert ctxt entry vatlb, true)
             else Ok (vatlb, false)
-          | None eq:_ => mthrow "An intermediate level should have a child level"
+          | None eq:_ => mthrow "[Translation] Intermediate level should have a child level"
           end
         else
           Ok (vatlb, false)
       else
-        guard_or ("The location of the next level address should be read: " ++ (pretty loc))%string (negb mem_strict);;
+        guard_or ("[Memory] Next level PTE read failed at " ++ (pretty loc))%string (negb mem_strict);;
         Ok (vatlb, false).
 
   (** Make [tlb] containing entries for [va] at [lvl].
@@ -1068,7 +1068,7 @@ Module TLB.
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
-        is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+        is_upper ← othrow "[Translation] Register is not TTBR" (is_upper_ttbr ttbr);
         foldlM (λ prev val_ttbr,
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make is_upper pva (Some asid) in
@@ -1093,7 +1093,7 @@ Module TLB.
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
+    sregs ← othrow "[Translation] TTBR not in initial state"
               $ TState.read_sreg_at ts ttbr time;
     let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
@@ -1166,7 +1166,7 @@ Module TLB.
         (time : nat)
         (ttbr : reg)
         (mem_strict : bool) : result string (t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
+    sregs ← othrow "[Translation] TTBR not in initial state"
               $ TState.read_sreg_at ts ttbr time;
     let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
@@ -1380,7 +1380,7 @@ Module TLB.
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
             result string (list (val * list val * (option nat))) :=
-    is_upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
+    is_upper ← othrow ("[Translation] VA not in 48-bit range: " ++ (pretty va))%string
                 (is_upper_va va);
     let ndctxt_asid := NDCtxt.make is_upper (level_prefix va lvl) (Some asid) in
     let ndctxt_global := NDCtxt.make is_upper (level_prefix va lvl) None in
@@ -1420,7 +1420,7 @@ Module TLB.
                 (ttbr : reg) :
         result string (list (val * list val * (option nat))) :=
     if parent_lvl lvl is Some parent_lvl then
-      is_upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
+      is_upper ← othrow ("[Translation] VA not in valid range: " ++ (pretty va))%string
                 (is_upper_va va);
       let ndctxt := NDCtxt.make is_upper (level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
@@ -1438,15 +1438,15 @@ Module TLB.
               let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
               mret $ Some (Entry.val_ttbr te, vals, ti)
           else
-            mthrow "The PTE is missing"
+            mthrow "[Translation] PTE is missing"
         end;
       mret $ omap id invalid_ptes
     else
-      sregs ← othrow "TTBR should exist in initial state"
+      sregs ← othrow "[Translation] TTBR not in initial state"
                 $ TState.read_sreg_at ts ttbr trans_time;
       invalid_ptes ←
         for sreg in sregs do
-          val_ttbr ← othrow "TTBR should be a 64 bit value"
+          val_ttbr ← othrow "[Translation] TTBR should be 64-bit value"
                   $ regval_to_val ttbr sreg.1;
           let entry_addr :=
               next_entry_addr (val_to_address val_ttbr) (level_index va lvl) in
@@ -1455,7 +1455,7 @@ Module TLB.
             if decide (is_valid memval) then mret None
             else
               mret $ Some (val_ttbr, [memval], None)
-          else mthrow "The root PTE is missing"
+          else mthrow "[Translation] Root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
 
@@ -1573,7 +1573,7 @@ Module IIS.
       if remain is h :: tl then
         msetv remaining tl;;
         mret h
-      else mthrow "Couldn't pop the next PTE: error in translation assumptions".
+      else mthrow "[Translation] Could not pop next PTE: invalid translation state".
   End TransRes.
 
   Record t :=
@@ -1603,9 +1603,9 @@ Section BBM.
   Context (initmem : memoryMap).
 
   Definition is_mmu_enabled (ts : TState.t) : result string bool :=
-    '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $
+    '(sctlr, _) ← othrow "[Translation] SCTLR_EL1 not set" $
                     TState.read_reg ts SCTLR_EL1;
-    val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $
+    val_sctlr ← othrow "[Translation] SCTLR_EL1 should be 64 bits" $
                   regval_to_val SCTLR_EL1 sctlr;
     Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
 
@@ -1733,7 +1733,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
     (invalidation_time : option nat) (macc : mem_acc)
     (init : Memory.initial) :
   Exec.t (TState.t * Memory.t) string (view * val) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "[Unsupported] Atomic RMW" (¬ (is_atomic_rmw macc));;
   ts ← mget fst;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
@@ -1744,7 +1744,7 @@ Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
      is equivalent to reading at vpre and discarding incoherent options *)
   let vread := vpre ⊔ (TState.coh ts !!! loc) in
   mem ← mget snd;
-  reads ← othrow ("Reading from unmapped memory " ++ (pretty loc))%string
+  reads ← othrow ("[Memory] Reading from unmapped location: " ++ (pretty loc))%string
             $ Memory.read loc vread init mem;
   '(res, time) ← mchoosel reads;
   let read_view :=
@@ -1780,24 +1780,24 @@ Definition run_reg_general_read (reg : reg) (racc : reg_acc) :
   if decide (reg ∈ relaxed_regs) then
     if decide (is_Some racc)
       then othrow
-            ("Register " ++ pretty reg ++ " unmapped on direct read")%string
+            ("[Register] " ++ pretty reg ++ " unmapped on direct read")%string
             $ TState.read_sreg_direct ts reg
     else
       valvs ← othrow
-              ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
+              ("[Register] " ++ pretty reg ++ " unmapped on indirect read")%string
               $ TState.read_sreg_indirect ts reg;
       mchoosel valvs
   else
     othrow
-      ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+      ("[Register] " ++ pretty reg ++ " unmapped; cannot read")%string
       $ TState.read_reg ts reg.
 
 Definition run_reg_trans_read (reg : reg) (racc : reg_acc)
       (trs : IIS.TransRes.t) :
     Exec.t TState.t string (reg_type reg * view) :=
-  guard_or "Register read during the translation should be implicit"
+  guard_or "[Unsupported] Non-implicit register read during translation"
     (¬ (is_Some racc));;
-  root ← othrow "Could not find the translation root: error in translation assumptions"
+  root ← othrow "[Translation] Could not find translation root"
     (trs.(IIS.TransRes.root));
   if decide (root.T1 = reg) is left eq then
     mret (ctrans eq root.T2, 0%nat)
@@ -1846,7 +1846,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
       else mret vreg);
   if decide (reg ∈ relaxed_regs) then
     '(val, view) ← othrow
-                  ("Register " ++ pretty reg ++ " unmapped on direct read")%string
+                  ("[Register] " ++ pretty reg ++ " unmapped on direct read")%string
                   $ TState.read_sreg_direct ts reg;
     let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
     let vpost := vreg' ⊔ vpre in
@@ -1855,7 +1855,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     mset PPState.iis $ IIS.add vpost
   else
     nts ← othrow
-            ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+            ("[Register] " ++ pretty reg ++ " unmapped; cannot write")%string
             $ TState.set_reg reg (val, vreg') ts;
     msetv PPState.state nts.
 
@@ -1863,7 +1863,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Returns the new thread state, the vpost of the read and the read value. *)
 Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  loc ← othrow "Address not supported" $ Loc.from_addr addr;
+  loc ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty addr))%string $ Loc.from_addr addr;
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
   if is_explicit macc then
@@ -1874,7 +1874,7 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
     mret val
   else if is_ttw macc then
     ts ← mget PPState.state;
-    tres ← othrow "TTW read before translation start" iis.(IIS.trs);
+    tres ← othrow "[Translation] Table walk read before translation start" iis.(IIS.trs);
     '(view, val) ←
       read_pte vaddr (ts, tres)
       |> Exec.lift_res_set_full
@@ -1884,19 +1884,19 @@ Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial
             |> set PPState.iis (IIS.set_trs tres));
     mset PPState.iis $ IIS.add view;;
     mret val
-  else mthrow "Unsupported 8 bytes access".
+  else mthrow "[Memory] Unsupported 8-byte access type".
 
 Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
     Exec.t Memory.t string (bv 32) :=
   if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
     let bit2 := bv_get_bit 2 addr in
-    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
+    loc ← othrow "[Address] Unaligned address" $ Loc.from_addr aligned_addr;
     mem ← mGet;
-    block ← othrow ("Modified instruction memory at " ++ (pretty loc))%string
+    block ← othrow ("[Memory] Instruction memory modified at " ++ (pretty loc))%string
                             (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-  else mthrow "Non-ifetch 4 bytes access".
+  else mthrow "[Memory] Non-ifetch 4-byte access not supported".
 
 
 (** Performs a memory write for a thread tid at a location loc with view
@@ -1943,7 +1943,7 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     (invalidation_time : option nat) (macc : mem_acc) (data : val) :
   Exec.t (TState.t * Memory.t) string (option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "[Unsupported] Atomic RMW" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     '(time, vpre_opt) ← write_mem tid loc viio invalidation_time macc data;
@@ -1994,7 +1994,7 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
           mset snd $ IIS.add vpost
       end
   | Barrier_DSB dsb => (* dsb *)
-      guard_or "Non-shareable barrier are not supported"
+      guard_or "[Unsupported] Non-shareable barriers"
        (dsb.(DxB_domain) ≠ MBReqDomain_Nonshareable);;
        match dsb.(DxB_types) with
       | MBReqTypes_All (* dsb sy *) =>
@@ -2015,16 +2015,16 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
           mset snd $ IIS.add vpost
       end
   | Barrier_ISB () => run_cse vmax_t
-  | _ => mthrow "Unsupported barrier"
+  | _ => mthrow "[Unsupported] Barrier type"
   end.
 
 Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string () :=
   guard_or
-    "Non-shareable TLBIs are not supported"
+    "[Unsupported] Non-shareable TLBIs"
     (tlbi.(TLBIInfo_shareability) ≠ Shareability_NSH);;
   guard_or
-    "TLBIs in other regimes than EL10 are unsupported"
+    "[Unsupported] Non-EL10 regime TLBIs"
     (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) = Regime_EL10);;
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
@@ -2039,7 +2039,7 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
     | TLBIOp_VAA => mret $ TLBI.Vaa tid va last
     | TLBIOp_VA => mret $ TLBI.Va tid asid va last
-    | _ => mthrow "Unsupported kind of TLBI"
+    | _ => mthrow "[Unsupported] TLBI operation"
     end;
   mem ← mget PPState.mem;
   time ← (if Memory.fulfill tlbiev (TState.prom ts) mem is Some t
@@ -2068,15 +2068,15 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
 
 Definition ets2 (ts : TState.t) : result string bool :=
   let mmfr1 : reg := ID_AA64MMFR1_EL1 in
-  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
-  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  '(regval, _) ← othrow "[Translation] ID_AA64MMFR1_EL1 register not set" (TState.read_reg ts mmfr1);
+  val ← othrow "[Translation] ID_AA64MMFR1_EL1 should be 64 bits" (regval_to_val mmfr1 regval);
   let ets_bits := bv_extract 36 4 val in
   mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
 
 Definition ets3 (ts : TState.t) : result string bool :=
   let mmfr1 : reg := ID_AA64MMFR1_EL1 in
-  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
-  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  '(regval, _) ← othrow "[Translation] ID_AA64MMFR1_EL1 register not set" (TState.read_reg ts mmfr1);
+  val ← othrow "[Translation] ID_AA64MMFR1_EL1 should be 64 bits" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).
 
 Definition run_trans_start (trans_start : TranslationStartInfo)
@@ -2174,7 +2174,7 @@ Definition run_trans_end (trans_end : trans_end) :
         mset snd $ IIS.add (view_if is_write write_view);;
         msetv (IIS.trs ∘ snd) None
   else
-    mthrow "Translation ends with an empty translation".
+    mthrow "[Translation] Empty translation result".
 
 (* TODO: check translation fault using `fault` and handle other cases *)
 Definition run_take_exception (fault : exn) (vmax_t : view) :
@@ -2198,31 +2198,31 @@ Section RunOutcome.
       run_reg_write reg racc val;;
       mret ((), None)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       val ← run_mem_read addr macc initmem;
       mret (Ok (val, 0%bv), None)
   | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ run_mem_read4 addr macc initmem;
       mret (Ok (opcode, 0%bv), None)
-  | MemRead _ => mthrow "Memory read of size other than 8 or 4, or with tags"
+  | MemRead _ => mthrow "[Memory] Read size must be 4 or 8 bytes, no tags"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vspec vaddr;;
       mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space 8 0) val _ =>
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← othrow "Address not supported" $ Loc.from_addr addr;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
+      addr ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty addr))%string $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
       if is_explicit macc then
         inv_time ← mget (IIS.inv_time ∘ PPState.iis);
         vpre_opt ← Exec.liftSt (PPState.state ×× PPState.mem) $
                       write_mem_xcl tid addr viio inv_time macc val;
         mret (Ok (), vpre_opt)
-      else mthrow "Unsupported non-explicit write"
-  | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
+      else mthrow "[Memory] Non-explicit write not supported"
+  | MemWrite _ _ _ => mthrow "[Memory] Write size must be 8 bytes, no tags"
   | Barrier barrier =>
       mem ← mget PPState.mem;
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier (length mem);;
@@ -2242,12 +2242,12 @@ Section RunOutcome.
   | TranslationEnd trans_end =>
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_trans_end trans_end;;
       mret ((), None)
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
+  | GenericFail s => mthrow ("[Instruction] Failure: " ++ s)%string
   | TakeException fault =>
       mem ← mget PPState.mem;
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_take_exception fault (length mem);;
       mret ((), None)
-  | _ => mthrow "Unsupported outcome".
+  | _ => mthrow "[Unsupported] Outcome type".
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
@@ -2336,7 +2336,7 @@ Section ComputeProm.
     let errs := Exec.errors exec in
     guard_or (String.concat ", " errs.*2) (negb debug || is_emptyb errs);;
     let res_proms := Exec.results $ exec in
-    guard_or ("Out of fuel when searching for new promises")%string
+    guard_or ("[Runtime:Fuel] Out of fuel searching for promises")%string
       (∀ r ∈ res_proms, r.2 = true);;
 
     bbm_res ←
@@ -2345,7 +2345,7 @@ Section ComputeProm.
           check_bbm_violation initmem (PPState.state st) (PPState.mem st) mem_strict
         end
       else mret [];
-    guard_or ("BBM check fails")%string (forallb (λ r, negb r) bbm_res);;
+    guard_or ("[BBM] Break-Before-Make violation detected")%string (forallb (λ r, negb r) bbm_res);;
 
     let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
     let tstates :=

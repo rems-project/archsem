@@ -761,7 +761,7 @@ Module BBMFailure.
 
   (* BBM failure: two different OAs have different memory contents *)
   Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
-      [Error "BBM check fails"].
+      [Error "[BBM] Break-Before-Make violation detected"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.

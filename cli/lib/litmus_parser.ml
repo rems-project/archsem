@@ -2,12 +2,12 @@ open Archsem
 
 let get_int = function
   | Otoml.TomlInteger i -> i
-  | _ -> failwith "Expected an integer"
+  | _ -> failwith "[Parser] Expected an integer"
 
 let get_list = function
   | Otoml.TomlArray l -> l
   | Otoml.TomlTableArray l -> l
-  | _ -> failwith "Expected a list"
+  | _ -> failwith "[Parser] Expected a list"
 
 (** Parses a register name string (e.g., "X0", "PSTATE") into a Reg.t *)
 let parse_reg_key k =
@@ -27,10 +27,10 @@ let parse_reg_value v =
       match v with
       | Otoml.TomlInteger i -> (k, RegVal.Number (Z.of_int i))
       | Otoml.TomlString s -> (k, RegVal.String s)
-      | _ -> failwith ("Unsupported struct field type in register value: " ^ k)
+      | _ -> failwith ("[Parser] Unsupported struct field type: " ^ k)
     ) t in
     RegVal.Struct fields
-  | _ -> failwith "Unsupported register value type"
+  | _ -> failwith "[Parser] Unsupported register value type"
 
 (* Constraints *)
 type requirement =
@@ -48,13 +48,13 @@ let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
         (match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
          | Some (Otoml.TomlString "eq"), Some v -> Eq (parse_reg_value v)
          | Some (Otoml.TomlString "ne"), Some v -> Neq (parse_reg_value v)
-         | Some (Otoml.TomlString op), _ -> failwith ("Unknown operator: " ^ op)
+         | Some (Otoml.TomlString op), _ -> failwith ("[Parser] Unknown operator: " ^ op)
          (* No op/val keys - treat as struct value (e.g., PSTATE = { EL = 0, SP = 0 }) *)
          | _ -> Eq (parse_reg_value v))
       (* Simple values: treat as equality requirement *)
       | Otoml.TomlInteger _ | Otoml.TomlString _ -> Eq (parse_reg_value v)
       (* Unsupported types *)
-      | _ -> failwith ("Unsupported value type for register " ^ k)
+      | _ -> failwith ("[Parser] Unsupported value type for register: " ^ k)
     in
     Some (reg, req)
   | None -> None
@@ -82,7 +82,7 @@ let parse_registers (toml : Otoml.t) : RegMap.t list =
     List.fold_left (fun regmap (reg, rv) ->
       match rv with
       | Eq v -> RegMap.insert (RegVal.of_gen reg v |> Result.get_ok) regmap
-      | Neq _ -> failwith "Neq not supported in init"
+      | Neq _ -> failwith "[Config] Neq not supported in init"
     ) RegMap.empty table
   ) regvals
 
@@ -107,7 +107,7 @@ let parse_memory (toml : Otoml.t) : MemMap.t =
         ) (base, memmap) data_list |> snd
       | Otoml.TomlInteger val_int ->
         MemMap.inserti base size val_int memmap
-      | _ -> failwith "Unsupported data format in memory section")
+      | _ -> failwith "[Parser] Unsupported data format in memory section")
     | _ -> memmap
   ) MemMap.empty memory_tables
 
@@ -122,7 +122,7 @@ let parse_termCond (num_threads : int) (toml : Otoml.t) : termCond =
   let term_tables = Otoml.find toml get_list ["termCond"] in
   let terms = parse_register_tables term_tables in
   if num_threads != List.length terms then
-    failwith "TermCond table does not match number of threads"
+    failwith "[Config] TermCond table does not match number of threads"
   else
     (* Build a checker function for each thread based on ALL register conditions *)
     List.map (fun table ->
@@ -160,24 +160,24 @@ let parse_cond (toml : Otoml.t) : cond =
               List.filter_map (
                 fun (rk, rv) -> parse_register rk rv
               ) pairs
-            | _ -> failwith "Unsupported register value type"
+            | _ -> failwith "[Parser] Unsupported register value type"
           in
           Some (tid, reg_conds)
-        with Failure _ -> failwith ("Invalid thread ID (expected integer): " ^ tid_s)
+        with Failure _ -> failwith ("[Parser] Invalid thread ID (expected integer): " ^ tid_s)
       ) pairs
-    | _ -> failwith "Unsupported register value type"
+    | _ -> failwith "[Parser] Unsupported register value type"
 
 (** Parses a single [[outcome]] block into Allowed or Forbidden *)
 let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
   let has_allowed = List.exists (fun (k, _) -> k = "allowed") pairs in
   let has_forbidden = List.exists (fun (k, _) -> k = "forbidden") pairs in
   if has_allowed && has_forbidden then
-    failwith "Outcome block cannot contain both 'allowed' and 'forbidden'";
+    failwith "[Config] Outcome cannot contain both 'allowed' and 'forbidden'";
   match List.find_opt (fun (k, _) -> k = "allowed" || k = "forbidden") pairs with
   | Some (k, v) ->
     let cond = parse_cond v in
     if k = "allowed" then Allowed cond else Forbidden cond
-  | None -> failwith "Outcome block must contain 'allowed' or 'forbidden'"
+  | None -> failwith "[Config] Outcome must contain 'allowed' or 'forbidden'"
 
 (** Parses all [[outcome]] blocks from the TOML file *)
 let parse_outcomes (toml : Otoml.t) : outcome list =
