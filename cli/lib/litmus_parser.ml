@@ -9,6 +9,7 @@ let get_list = function
   | Otoml.TomlTableArray l -> l
   | _ -> failwith "Expected a list"
 
+(** Parses a register name string (e.g., "X0", "PSTATE") into a Reg.t *)
 let parse_reg_key k =
   match Reg.of_string k with
   | Some r -> Some r
@@ -16,6 +17,7 @@ let parse_reg_key k =
     if k = "PSTATE" then Some Reg.pstate
     else None
 
+(** Parses a TOML value into RegVal.gen (handles integers, strings, structs) *)
 let parse_reg_value v =
   match v with
   | Otoml.TomlInteger i -> RegVal.Number (Z.of_int i)
@@ -35,6 +37,7 @@ type requirement =
   | Eq of RegVal.gen
   | Neq of RegVal.gen
 
+(** Parses a register key-value pair into (Reg.t, requirement) with eq/ne support *)
 let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
   match parse_reg_key k with
   | Some reg ->
@@ -56,6 +59,7 @@ let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
     Some (reg, req)
   | None -> None
 
+(** Parses [[registers]] or [[termCond]] table arrays into register requirement lists *)
 let parse_register_tables (register_tables : Otoml.t list) : ((Reg.t * requirement) list) list =
   List.map (fun table ->
     match table with
@@ -70,6 +74,7 @@ let parse_register_tables (register_tables : Otoml.t list) : ((Reg.t * requireme
     | _ -> []
   ) register_tables
 
+(** Parses [[registers]] section into initial register maps (one per thread) *)
 let parse_registers (toml : Otoml.t) : RegMap.t list =
   let register_tables = Otoml.find toml get_list ["registers"] in
   let regvals = parse_register_tables register_tables in
@@ -81,6 +86,7 @@ let parse_registers (toml : Otoml.t) : RegMap.t list =
     ) RegMap.empty table
   ) regvals
 
+(** Parses [[memory]] section into initial memory map *)
 let parse_memory (toml : Otoml.t) : MemMap.t =
   let memory_tables = Otoml.find toml get_list ["memory"] in
   List.fold_left (fun memmap table ->
@@ -105,11 +111,13 @@ let parse_memory (toml : Otoml.t) : MemMap.t =
     | _ -> memmap
   ) MemMap.empty memory_tables
 
+(** Parses initial architecture state from [[registers]] and [[memory]] *)
 let parse_state (toml : Otoml.t) : ArchState.t =
   let reg_maps = parse_registers toml in
   let mem_map = parse_memory toml in
   ArchState.make reg_maps mem_map
 
+(** Parses [[termCond]] section into termination condition checkers *)
 let parse_termCond (num_threads : int) (toml : Otoml.t) : termCond =
   let term_tables = Otoml.find toml get_list ["termCond"] in
   let terms = parse_register_tables term_tables in
@@ -139,6 +147,7 @@ type outcome =
   | Allowed of cond
   | Enforced of cond
 
+(** Parses a condition block (thread ID -> register requirements) *)
 let parse_cond (toml : Otoml.t) : cond =
   match toml with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
@@ -158,6 +167,7 @@ let parse_cond (toml : Otoml.t) : cond =
       ) pairs
     | _ -> failwith "Unsupported register value type"
 
+(** Parses a single [[outcome]] block into Allowed or Enforced *)
 let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
   let has_allowed = List.exists (fun (k, _) -> k = "allowed") pairs in
   let has_enforced = List.exists (fun (k, _) -> k = "enforced") pairs in
@@ -169,6 +179,7 @@ let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
     if k = "allowed" then Allowed cond else Enforced cond
   | None -> failwith "Outcome block must contain 'allowed' or 'enforced'"
 
+(** Parses all [[outcome]] blocks from the TOML file *)
 let parse_outcomes (toml : Otoml.t) : outcome list =
   let outcome_tables = Otoml.find toml get_list ["outcome"] in
   List.filter_map (fun node ->

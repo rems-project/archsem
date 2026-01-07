@@ -32,10 +32,6 @@ let check_outcome (fs : ArchState.t) (outcome : Litmus_parser.cond) : bool =
     ) expected_regs
   ) outcome
 
-let get_reg_val_number = function
-  | RegVal.Number z -> z
-  | _ -> Z.zero
-
 let print_failed_outcome (i : int) (arch_state : ArchState.t)
     (enforced_outcomes : Litmus_parser.cond list) =
   Printf.printf "SAFETY VIOLATION: Execution %d does not match any enforced outcome\n" (i + 1);
@@ -66,6 +62,8 @@ let print_failed_outcome (i : int) (arch_state : ArchState.t)
     ) outcome
   ) enforced_outcomes
 
+(** Runs model executions and checks coverage (allowed) and safety (enforced) constraints.
+    Returns true if all allowed outcomes are covered and all executions match enforced outcomes. *)
 let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
     (outcomes : Litmus_parser.outcome list) : bool =
@@ -122,6 +120,8 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
 
   passed_coverage && passed_safety
 
+(** Main entry point: parses a TOML litmus test file and runs it with the given model.
+    Returns true if the test passes (coverage + safety checks). *)
 let run_litmus_test model filename =
   if not (Sys.file_exists filename) then (
     Printf.eprintf "File not found: %s\n" filename;
