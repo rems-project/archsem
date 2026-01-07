@@ -117,6 +117,7 @@ Module EORMMUOFF.
   Definition fuel := 2%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -124,7 +125,7 @@ Module EORMMUOFF.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -132,7 +133,7 @@ Module EORMMUOFF.
   Qed.
 
   Definition test_results_pf :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -174,6 +175,7 @@ Module EOR.
   Definition fuel := 2%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -181,7 +183,7 @@ Module EOR.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -189,7 +191,7 @@ Module EOR.
   Qed.
 
   Definition test_results_pf :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
@@ -237,6 +239,7 @@ Module LDR.
   Definition fuel := 2%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -244,7 +247,7 @@ Module LDR.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -252,7 +255,7 @@ Module LDR.
   Qed.
 
   Definition test_results_pf :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -299,6 +302,7 @@ Module STRLDR.
   Definition fuel := 4%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -306,7 +310,7 @@ Module STRLDR.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -314,13 +318,88 @@ Module STRLDR.
   Qed.
 
   Definition test_results_pf :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
     set_solver.
   Qed.
 End STRLDR.
+
+(* Sequential page table modification in single thread *)
+Module CORPTE.
+  (* Single thread that:
+     1. Loads from VA 0x8000001000 (gets 0x2a from PA 0x1000)
+     2. Modifies L3[1] to remap VA 0x8000001000 -> PA 0x2000
+     3. Loads from VA 0x8000001000 again (gets 0x42 from PA 0x2000)
+  *)
+
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xf8606820  (* LDR X0, [X1, X0] - first load *)
+    |> mem_insert 0x504 4 0xf8226823  (* STR X3, [X1, X2] - modify page table *)
+    |> mem_insert 0x508 4 0xf8646824  (* LDR X4, [X1, X4] - second load *)
+    (* Data at two different physical locations *)
+    |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
+    |> mem_insert 0x2000 8 0x42       (* New PA - value 0x42 *)
+    (* Page tables *)
+    (* L0[1] -> L1 *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3 entries:
+       - L3[0]  -> PA 0x0000 (code page for PC)
+       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+       - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
+    *)
+    |> mem_insert 0x83000 8 0x40000000000783
+    (* L3[1] : initially map VA page 0x8000001000 -> PA page 0x1000 (data) *)
+    |> mem_insert 0x83008 8 0x60000000001783
+    (* L3[16] : identity map VA page 0x8000010000 -> PA page 0x83000 (page tables) *)
+    |> mem_insert 0x83080 8 0x60000000083703.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 5%nat.
+  Definition debug := true.
+  Definition mem_strict := false.
+  Definition bbm_check := false.
+
+  Definition test_results :=
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
+
+  (* R0 should be 0x2a (from old mapping), R4 should be 0x42 (from new mapping) *)
+  Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
+      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End CORPTE.
 
 Module MP.
   (* A classic MP litmus test with address translation
@@ -399,6 +478,7 @@ Module MP.
   Definition fuel := 8%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -406,7 +486,7 @@ Module MP.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -493,6 +573,7 @@ Module MPDMBS.
   Definition fuel := 8%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := false.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -501,7 +582,7 @@ Module MPDMBS.
 
 
   Definition test_results :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1; 0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
@@ -590,6 +671,7 @@ Module BBMSuccess.
   Definition fuel := 8%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := true.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -597,7 +679,7 @@ Module BBMSuccess.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   (* BBM check success *)
   Goal elements (regs_extract [(1%fin, R0)] <$> test_results) ≡ₚ
@@ -667,6 +749,7 @@ Module BBMFailure.
   Definition fuel := 5%nat.
   Definition debug := true.
   Definition mem_strict := false.
+  Definition bbm_check := true.
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -674,7 +757,7 @@ Module BBMFailure.
       archState.address_space := PAS_NonSecure |}.
 
   Definition test_results :=
-    VMPromising_cert_c_pf arm_sem fuel debug mem_strict n_threads termCond initState.
+    VMPromising_cert_c_pf arm_sem fuel debug mem_strict bbm_check n_threads termCond initState.
 
   (* BBM failure: two different OAs have different memory contents *)
   Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
