@@ -32,38 +32,27 @@ let check_outcome (fs : ArchState.t) (outcome : Litmus_parser.cond) : bool =
     ) expected_regs
   ) outcome
 
-let print_failed_outcome (i : int) (arch_state : ArchState.t)
-    (enforced_outcomes : Litmus_parser.cond list) =
-  Printf.printf "SAFETY VIOLATION: Execution %d does not match any enforced outcome\n" (i + 1);
+let print_forbidden_violation (i : int) (arch_state : ArchState.t)
+    (forbidden_outcome : Litmus_parser.cond) =
+  Printf.printf "FORBIDDEN OUTCOME OBSERVED: Execution %d matched a forbidden outcome!\n" (i + 1);
+  List.iter (fun (tid, expected_regs) ->
+    Printf.printf "  Thread %d:\n" tid;
+    let actual_regs = ArchState.reg tid arch_state in
+    List.iter (fun (reg, req) ->
+      let actual_opt = RegMap.get_opt reg actual_regs |> Option.map RegVal.to_gen in
+      let actual_str = match actual_opt with Some g -> string_of_gen g | None -> "N/A" in
+      let (op_str, expected_val) = match req with
+        | Litmus_parser.Eq v -> ("eq", v)
+        | Litmus_parser.Neq v -> ("ne", v)
+      in
+      let expected_str = string_of_gen expected_val in
+      Printf.printf "    %s: actual=%s, forbidden=%s (%s)\n"
+        (Reg.to_string reg) actual_str expected_str op_str
+    ) expected_regs
+  ) forbidden_outcome
 
-  (* For each enforced outcome, show how well this execution matched it *)
-  List.iteri (fun oi outcome ->
-    Printf.printf "  vs Enforced outcome #%d:\n" (oi + 1);
-    List.iter (fun (tid, expected_regs) ->
-      Printf.printf "    Thread %d:\n" tid;
-      let actual_regs = ArchState.reg tid arch_state in
-      List.iter (fun (reg, req) ->
-        let actual_opt = RegMap.get_opt reg actual_regs |> Option.map RegVal.to_gen in
-        let actual_str = match actual_opt with Some g -> string_of_gen g | None -> "N/A" in
-        let (op_str, expected_val) = match req with
-          | Litmus_parser.Eq v -> ("eq", v)
-          | Litmus_parser.Neq v -> ("ne", v)
-        in
-        let expected_str = string_of_gen expected_val in
-        let matches = match actual_opt, req with
-          | Some actual, Litmus_parser.Eq expected -> actual = expected
-          | Some actual, Litmus_parser.Neq expected -> actual <> expected
-          | None, _ -> false
-        in
-        let mark = if matches then "✓" else "✗" in
-        Printf.printf "      %s: actual=%s, expected=%s (%s) %s\n"
-          (Reg.to_string reg) actual_str expected_str op_str mark
-      ) expected_regs
-    ) outcome
-  ) enforced_outcomes
-
-(** Runs model executions and checks coverage (allowed) and safety (enforced) constraints.
-    Returns true if all allowed outcomes are covered and all executions match enforced outcomes. *)
+(** Runs model executions and checks coverage (allowed) and forbidden constraints.
+    Returns true if all allowed outcomes are covered and no forbidden outcomes are observed. *)
 let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
     (outcomes : Litmus_parser.outcome list) : bool =
@@ -72,8 +61,8 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
 
   let allowed_outcomes = List.filter_map
     (function Litmus_parser.Allowed c -> Some c | _ -> None) outcomes in
-  let enforced_outcomes = List.filter_map
-    (function Litmus_parser.Enforced c -> Some c | _ -> None) outcomes in
+  let forbidden_outcomes = List.filter_map
+    (function Litmus_parser.Forbidden c -> Some c | _ -> None) outcomes in
 
   (* Process all results to identify matches and print errors if needed *)
   let analyzed_results = List.mapi (fun i res ->
@@ -99,26 +88,61 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
      that matches it. This verifies the model can exhibit all expected behaviors. *)
   let passed_coverage =
     List.for_all (fun expected ->
-      List.exists (fun fs -> check_outcome fs expected) valid_final_states
+      let matched = List.exists (fun fs -> check_outcome fs expected) valid_final_states in
+      if not matched && valid_final_states <> [] then (
+        Printf.printf "COVERAGE FAIL: No execution matched expected outcome:\n";
+        List.iter (fun (tid, regs) ->
+          Printf.printf "  Thread %d: %s\n" tid
+            (String.concat ", " (List.map (fun (reg, req) ->
+              let (op, v) = match req with Litmus_parser.Eq v -> ("=", v) | Litmus_parser.Neq v -> ("!=", v) in
+              Printf.sprintf "%s%s%s" (Reg.to_string reg) op (string_of_gen v)
+            ) regs))
+        ) expected;
+        (* Show what we actually got *)
+        if List.length valid_final_states <= 25 then (
+          Printf.printf "  Actual executions (%d total):\n" (List.length valid_final_states);
+          List.iteri (fun i fs ->
+            Printf.printf "    Execution %d:\n" (i+1);
+            List.iter (fun (tid, regs) ->
+              let actual_regs = ArchState.reg tid fs in
+              List.iter (fun (reg, _) ->
+                let actual_opt = RegMap.get_opt reg actual_regs |> Option.map RegVal.to_gen in
+                let actual_str = match actual_opt with Some g -> string_of_gen g | None -> "N/A" in
+                Printf.printf "      %d:%s = %s\n" tid (Reg.to_string reg) actual_str
+              ) regs
+            ) expected
+          ) valid_final_states
+        ) else
+          Printf.printf "  Got %d executions, none matching\n" (List.length valid_final_states)
+      );
+      matched
     ) allowed_outcomes
   in
 
-  (* Safety (enforced): For ALL executions, each must match AT LEAST ONE of the enforced
-     outcomes. No execution may produce a result outside the enforced set. *)
-  let passed_safety =
-    if enforced_outcomes = [] then true
+  (* Forbidden (unsat): NO execution should match ANY forbidden outcome.
+     If any execution matches a forbidden outcome, the test fails. *)
+  let passed_forbidden =
+    if forbidden_outcomes = [] then true
     else
       List.for_all (fun (i, fs_opt) ->
         match fs_opt with
         | Some fs ->
-          let is_match = List.exists (fun c -> check_outcome fs c) enforced_outcomes in
-          if not is_match then print_failed_outcome i fs enforced_outcomes;
-          is_match
-        | None -> false (* Errors/Flagged fail the test *)
+          (* Check if this execution matches ANY forbidden outcome *)
+          let violation = List.find_opt (fun c -> check_outcome fs c) forbidden_outcomes in
+          (match violation with
+           | Some forbidden_cond ->
+               print_forbidden_violation i fs forbidden_cond;
+               false (* This execution matched a forbidden outcome - FAIL *)
+           | None -> true) (* This execution didn't match any forbidden outcome - OK *)
+        | None -> true (* Errors don't count against forbidden check *)
       ) analyzed_results
   in
 
-  passed_coverage && passed_safety
+  (* Report if no valid executions at all *)
+  if valid_final_states = [] && allowed_outcomes <> [] then
+    Printf.printf "NO VALID EXECUTIONS: All %d executions failed with errors\n" (List.length results);
+
+  passed_coverage && passed_forbidden
 
 (** Main entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)

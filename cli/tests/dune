@@ -12,6 +12,10 @@
 
 (rule
  (alias runtest)
+ (action (run %{exe:../bin/main.exe} ump %{dep:MP+dmbs-forbidden.toml})))
+
+(rule
+ (alias runtest)
  (action (run %{exe:../bin/main.exe} vmp %{dep:VMP+simple.toml})))
 
 (rule

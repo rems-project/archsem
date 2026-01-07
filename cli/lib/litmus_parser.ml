@@ -145,7 +145,7 @@ type cond = (int * (Reg.t * requirement) list) list
 
 type outcome =
   | Allowed of cond
-  | Enforced of cond
+  | Forbidden of cond
 
 (** Parses a condition block (thread ID -> register requirements) *)
 let parse_cond (toml : Otoml.t) : cond =
@@ -167,17 +167,17 @@ let parse_cond (toml : Otoml.t) : cond =
       ) pairs
     | _ -> failwith "Unsupported register value type"
 
-(** Parses a single [[outcome]] block into Allowed or Enforced *)
+(** Parses a single [[outcome]] block into Allowed or Forbidden *)
 let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
   let has_allowed = List.exists (fun (k, _) -> k = "allowed") pairs in
-  let has_enforced = List.exists (fun (k, _) -> k = "enforced") pairs in
-  if has_allowed && has_enforced then
-    failwith "Outcome block cannot contain both 'allowed' and 'enforced'";
-  match List.find_opt (fun (k, _) -> k = "allowed" || k = "enforced") pairs with
+  let has_forbidden = List.exists (fun (k, _) -> k = "forbidden") pairs in
+  if has_allowed && has_forbidden then
+    failwith "Outcome block cannot contain both 'allowed' and 'forbidden'";
+  match List.find_opt (fun (k, _) -> k = "allowed" || k = "forbidden") pairs with
   | Some (k, v) ->
     let cond = parse_cond v in
-    if k = "allowed" then Allowed cond else Enforced cond
-  | None -> failwith "Outcome block must contain 'allowed' or 'enforced'"
+    if k = "allowed" then Allowed cond else Forbidden cond
+  | None -> failwith "Outcome block must contain 'allowed' or 'forbidden'"
 
 (** Parses all [[outcome]] blocks from the TOML file *)
 let parse_outcomes (toml : Otoml.t) : outcome list =

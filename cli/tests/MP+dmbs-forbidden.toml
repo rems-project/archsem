@@ -1,0 +1,64 @@
+arch="Arm"
+name="MP+dmbs-forbidden"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 0: W data=0x2a; DMB; W flag=1
+[[registers]]
+_PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x2a
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x1
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 1: R flag; DMB; R data
+[[registers]]
+_PC = 0x600
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 0 Instructions: STR X2,[X0,X1]; DMB SY; STR X5,[X3,X4]
+[[memory]]
+base = 0x500
+size = 12
+data = [0xf8206822, 0xd5033fbf, 0xf8236885]
+
+# Thread 1 Instructions: LDR X5,[X3,X4]; DMB SY; LDR X2,[X0,X1]
+[[memory]]
+base = 0x600
+size = 12
+data = [0xf8636885, 0xd5033fbf, 0xf8606822]
+
+# Shared Data
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[memory]]
+base = 0x1200
+size = 8
+data = 0
+
+[[termCond]]
+_PC = 0x50C
+
+[[termCond]]
+_PC = 0x60C
+
+# This outcome is FORBIDDEN by the DMB barriers:
+# If Thread 1 sees flag=1, then it must see data=0x2a (not 0)
+# The DMB SY barriers enforce ordering between the writes and reads
+[[outcome]]
+forbidden.1 = { R5 = 0x1, R2 = 0x0 }
