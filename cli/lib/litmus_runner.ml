@@ -1,5 +1,12 @@
 open Archsem
-(* open Archsem.Semantics - REMOVED: Unbound module *)
+
+(* ANSI color codes for terminal output *)
+let c_reset = "\027[0m"
+let c_bold = "\027[1m"
+let c_red = "\027[31m"
+let c_green = "\027[32m"
+let c_yellow = "\027[33m"
+let c_cyan = "\027[36m"
 
 (* Helper function to print a register value properly *)
 let string_of_gen = function
@@ -53,16 +60,25 @@ let print_forbidden_violation (i : int) (arch_state : ArchState.t)
 
 (** Runs model executions and checks coverage (allowed) and forbidden constraints.
     Returns true if all allowed outcomes are covered and no forbidden outcomes are observed. *)
-let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
+let run_executions model_name model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
     (outcomes : Litmus_parser.outcome list) : bool =
-  Printf.printf "Running test with fuel %d...\n%!" fuel;
+  Printf.printf "Running test with model %s%s%s and fuel %d...\n" (c_bold ^ c_cyan) model_name c_reset fuel;
   let results = model fuel termCond arch_state in
 
   let allowed_outcomes = List.filter_map
     (function Litmus_parser.Allowed c -> Some c | _ -> None) outcomes in
   let forbidden_outcomes = List.filter_map
     (function Litmus_parser.Forbidden c -> Some c | _ -> None) outcomes in
+
+  (* Pretty-print error with model context - errors now have [Category] prefix from Coq *)
+  let format_error model err =
+    (* Errors from Coq now follow format: "[Category] description" *)
+    if String.length err > 0 && err.[0] = '[' then
+      Printf.sprintf "%s[%s]%s %s" c_yellow model c_reset err
+    else
+      Printf.sprintf "%s[%s:Error]%s %s" c_yellow model c_reset err
+  in
 
   (* Process all results to identify matches and print errors if needed *)
   let analyzed_results = List.mapi (fun i res ->
@@ -72,10 +88,10 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
           But validation logic is separate below. *)
       (i, Some fs)
     | ArchModel.Res.Error e ->
-      Printf.printf "  Error: %s\n" e;
+      Printf.printf "  %s\n" (format_error model_name e);
       (i, None)
     | ArchModel.Res.Flagged _ ->
-      Printf.printf "  Flagged\n";
+      Printf.printf "  %s[%s:Flagged]%s execution flagged\n" c_yellow model_name c_reset;
       (i, None)
   ) results in
 
@@ -146,9 +162,9 @@ let run_executions model (arch_state : ArchState.t) (_num_threads : int) (fuel :
 
 (** Main entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)
-let run_litmus_test model filename =
+let run_litmus_test model_name model filename =
   if not (Sys.file_exists filename) then (
-    Printf.eprintf "File not found: %s\n" filename;
+    Printf.eprintf "[File] Not found: %s\n" filename;
     false
   ) else
     try
@@ -166,19 +182,19 @@ let run_litmus_test model filename =
     let outcome = Litmus_parser.parse_outcomes toml in
 
     Printf.printf "\nSuccessfully parsed %s\n" filename;
-    let passed = run_executions model arch_state num_threads fuel termConds outcome in
-    if passed then Printf.printf "\nRESULT: PASS\n"
-    else Printf.printf "\nRESULT: FAIL\n";
+    let passed = run_executions model_name model arch_state num_threads fuel termConds outcome in
+    if passed then Printf.printf "RESULT: %sPASS%s\n" c_green c_reset
+    else Printf.printf "RESULT: %sFAIL%s\n" c_red c_reset;
     passed
 
   with
   | Otoml.Parse_error (pos, msg) ->
       let loc = match pos with Some (l, c) -> Printf.sprintf "%d:%d" l c | None -> "unknown" in
-      Printf.eprintf "TOML Parse Error at %s: %s\n" loc msg;
+      Printf.eprintf "[Parser] TOML parse error at %s: %s\n" loc msg;
       false
   | Failure msg ->
-      Printf.eprintf "Error in %s: %s\n" filename msg;
+      Printf.eprintf "[Error] %s: %s\n" filename msg;
       false
   | exn ->
-      Printf.eprintf "Unexpected error in %s: %s\n" filename (Printexc.to_string exn);
+      Printf.eprintf "[Error] Unexpected in %s: %s\n" filename (Printexc.to_string exn);
       false

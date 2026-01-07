@@ -411,14 +411,14 @@ Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
 Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
            (init : Memory.initial) (mem : Memory.t) :
     Exec.t TState.t string (view * val) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "[Unsupported] Atomic RMW" (¬ (is_atomic_rmw macc));;
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
   let vread := vpre ⊔ (ts.(TState.coh) !!! loc) in
-  reads ← othrow "Reading from unmapped memory" $
+  reads ← othrow ("[Memory] Reading from unmapped location: " ++ (pretty loc))%string $
             Memory.read loc vread init mem;
   '(res, time) ← mchoosel reads;
   let read_view :=
@@ -440,11 +440,11 @@ Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
   if is_ifetch macc then
     let aligned_addr := bv_unset_bit 2 addr in
     let bit2 := bv_get_bit 2 addr in
-    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
+    loc ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty aligned_addr))%string $ Loc.from_addr aligned_addr;
     mem ← mGet;
-    block ← othrow "Modified instruction memory" (Memory.read_initial loc init mem);
+    block ← othrow ("[Memory] Instruction memory modified at: " ++ (pretty loc))%string (Memory.read_initial loc init mem);
     mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-  else mthrow "Non-ifetch 4 bytes access".
+  else mthrow ("[Memory] Non-ifetch 4-byte access at: " ++ (pretty addr))%string.
 
 (** Performs a memory write for a thread tid at a location loc with view
     vaddr and vdata. Return the new state.
@@ -485,7 +485,7 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t)
            (vdata : view) (macc : mem_acc)
            (mem : Memory.t) (data : val)
   : Exec.t TState.t string (Memory.t * option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  guard_or "[Unsupported] Atomic RMW" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
   if xcl then
     '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
@@ -532,7 +532,7 @@ Section RunOutcome.
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
   | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc = None);;
+      guard_or "[Unsupported] Non-trivial register access types" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
       vreg' ←
         (if reg =? pc_reg
@@ -541,22 +541,22 @@ Section RunOutcome.
            mret 0%nat
          else mret vreg);
       ts ← mget PPState.state;
-      nts ← othrow "Register isn't mapped, can't write" $
+      nts ← othrow ("[Register] Cannot write to unmapped register: " ++ (pretty reg))%string $
         TState.set_reg reg (val, vreg') ts;
       msetv PPState.state nts;;
       mret ((), None)
   | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc = None);;
+      guard_or "[Unsupported] Non-trivial register access types" (racc = None);;
       ts ← mget PPState.state;
-      '(val, view) ← othrow "Register isn't mapped can't read" $
+      '(val, view) ← othrow ("[Register] Cannot read from unmapped register: " ++ (pretty reg))%string $
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret (val, None)
   | MemRead (MemReq.make macc addr addr_space 8 0) =>
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      loc ← othrow "PA not supported" $ Loc.from_addr addr;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
+      loc ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty addr))%string $ Loc.from_addr addr;
       if is_ifetch macc then
-        mthrow "TODO ifetch"
+        mthrow "[Unsupported] ifetch for 8-byte reads"
       else if is_explicit macc then
         let initmem := Memory.initial_from_memMap initmem in
         vaddr ← mget (IIS.strict ∘ PPState.iis);
@@ -565,20 +565,20 @@ Section RunOutcome.
           PPState.state (read_mem loc vaddr macc initmem mem);
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0), None)
-      else mthrow "Read is not explicit or ifetch"
+      else mthrow "[Memory] Read must be explicit or ifetch"
   | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
       opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
       mret (Ok (opcode, 0%bv), None)
-  | MemRead _ => mthrow "Memory read of size other than 8 and 4"
+  | MemRead _ => mthrow "[Memory] Read size must be 4 or 8 bytes"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vcap vaddr;;
       mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← othrow "PA not supported" $ Loc.from_addr addr;
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
+      addr ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty addr))%string $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
@@ -586,7 +586,7 @@ Section RunOutcome.
                 $ write_mem_xcl tid addr vdata macc mem val;
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
-      else mthrow "Unsupported non-explicit write"
+      else mthrow "[Memory] Non-explicit write not supported"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
       match dmb.(DxB_types) with
@@ -602,8 +602,8 @@ Section RunOutcome.
       ts ← mget PPState.state;
     mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
     mret ((), None)
-  | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
-  | _ => mthrow "Unsupported outcome".
+  | GenericFail s => mthrow ("[Instruction] Failure: " ++ s)%string
+  | _ => mthrow "[Unsupported] Outcome type".
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
@@ -686,7 +686,7 @@ Section ComputeProm.
     let base := List.length mem in
     let res_proms := Exec.results $
       run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Out of fuel when searching for new promises")%string
+    guard_or ("[Runtime:Fuel] Out of fuel searching for promises")%string
       (∀ r ∈ res_proms, r.2 = true);;
     let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
     let tstates :=
