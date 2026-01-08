@@ -1,4 +1,11 @@
 (executable
+ (name convert_isla)
+ (public_name archsem-convert)
+ (package coq-archsem)
+ (modules convert_isla)
+ (libraries convert_isla_lib otoml unix str zarith))
+
+(executable
  (name main)
  (public_name archsem_cli)
  (package coq-archsem)

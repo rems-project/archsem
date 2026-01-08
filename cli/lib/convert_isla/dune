@@ -1,0 +1,9 @@
+(library
+ (name convert_isla_lib)
+ (modules ast parser lexer symbols allocator assembler evaluator converter)
+ (libraries zarith otoml str))
+
+(menhir
+ (modules parser))
+
+(ocamllex lexer)

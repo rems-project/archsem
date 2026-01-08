@@ -124,7 +124,7 @@ module ArchState = struct
   type t = AS.t
 
   let make regs memory : t =
-    {regs; memory; address_space = System_types.PAS_NonSecure}
+    {regs; memory = memory; final_memory = None; address_space = System_types.PAS_NonSecure}
 
   let regs (st : t) = st.regs
 
@@ -133,6 +133,20 @@ module ArchState = struct
   let num_thread st = List.length (regs st)
 
   let mem (st : t) = st.memory
+
+  (* Read from final memory state if present, otherwise use initial memory *)
+  let mem_read (addr : Z.t) (size : int) (st : t) : RegVal.gen option =
+    let memory_to_read = match st.final_memory with
+      | Some fm -> fm
+      | None -> st.memory
+    in
+    match TM.mem_read (Z.of_int size) addr memory_to_read with
+    | Some bytes ->
+        let value = List.fold_left (fun acc b ->
+          Z.logor (Z.shift_left acc 8) b
+        ) Z.zero bytes in
+        Some (RegVal.Number value)
+    | None -> None
 end
 
 type termCond = (RegMap.t -> bool) list

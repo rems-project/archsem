@@ -7,9 +7,9 @@ let () =
     let model_str = Sys.argv.(1) in
     let filename = Sys.argv.(2) in
 
-    (* Wrap vmp model with default parameters: debug=false, mem_strict=false, bbm_check=true *)
+    (* Wrap vmp model with default parameters: debug=false, mem_strict=false, bbm_check=false *)
     let vmp_model fuel term state =
-      vmProm_model fuel false false true term state
+      vmProm_model fuel false false false term state
     in
 
     let model =
