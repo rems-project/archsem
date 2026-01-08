@@ -298,7 +298,8 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           This is a lossy conversion *)
       Definition to_archState (ps: t) : archState n :=
         {|archState.regs := vmap (prom.(tState_regs)) ps.(tstates);
-          archState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events);
+          archState.memory := ps.(initmem);
+          archState.final_memory := Some (prom.(memory_snapshot) ps.(initmem) ps.(events));
           archState.address_space := prom.(address_space) |}.
     End PSProm.
 

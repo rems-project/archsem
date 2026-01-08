@@ -21,6 +21,15 @@ let rec eval e =
     let mask = Z.sub (Z.shift_left Z.one (hi - lo + 1)) Z.one in
     Z.logand (Z.shift_right v lo) mask
   | ECall("extz", args) -> snd(List.nth args 0) |> eval
+  (* [desc3] constructs a Level 3 page descriptor with access flags 0x743
+     For VA symbols, we need to resolve to the PA they map to *)
+  | ECall("desc3", args) ->
+    let pa_expr = snd(List.nth args 0) in
+    let pa = match pa_expr with
+      | EVar v -> Symbols.get_pa_for_va v  (* Resolve VA->PA mapping *)
+      | _ -> eval pa_expr
+    in
+    Z.logor pa (Z.of_int 0x743)
   (* [mkdescN] constructs a valid page descriptor value (setting valid bit 0x1 | table bit 0x2) *)
   | ECall(name, args) when String.length name >= 6 && String.sub name 0 6 = "mkdesc" ->
     let v = eval(snd(List.nth args 0)) in Z.logor v (Z.of_int 3)

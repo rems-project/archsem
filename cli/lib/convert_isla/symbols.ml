@@ -130,3 +130,10 @@ let update_va_mapping_pa name pa_name =
   va_mappings := List.map (fun (n, va, pa_opt) ->
     if n = name then (n, va, Some pa_name) else (n, va, pa_opt)
   ) !va_mappings
+
+(* [get_pa_for_va name] retrieves the PA symbol that a VA symbol maps to.
+   Returns the PA address if found, otherwise allocates a new PA. *)
+let get_pa_for_va name =
+  match List.find_opt (fun (n, _, _) -> n = name) !va_mappings with
+  | Some (_, _, Some pa_name) -> get_symbol_addr pa_name
+  | _ -> get_symbol_addr name  (* Fall back to creating PA if no mapping *)

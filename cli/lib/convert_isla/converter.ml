@@ -128,13 +128,17 @@ let rec process_dsl state stmts =
         Hashtbl.add Symbols.symbols name t;
         let sub_state = { state with root_table = ref t } in
         process_dsl sub_state body
-    | Mapping { va; target; level; variant = _; alias } ->
-        let va_val =
-          if String.contains va '(' then Evaluator.eval (Evaluator.parse_string va)
-          else Symbols.get_virt_symbol va
-        in
-        (match target with TPA pa -> Symbols.update_va_mapping_pa va pa | _ -> ());
-        install_mapping state !(state.root_table) 0 va_val target level alias (Some va)
+    | Mapping { va; target; level; variant; alias } ->
+        (* Skip ?-> (variant) mappings - the code will do PTE updates at runtime *)
+        if variant then ()
+        else begin
+          let va_val =
+            if String.contains va '(' then Evaluator.eval (Evaluator.parse_string va)
+            else Symbols.get_virt_symbol va
+          in
+          (match target with TPA pa -> Symbols.update_va_mapping_pa va pa | _ -> ());
+          install_mapping state !(state.root_table) 0 va_val target level alias (Some va)
+        end
     | MemInit(pa, v) ->
         let update = { addr = Symbols.get_symbol_addr pa; data = Z.of_string v; size = 8; comment = "Initial Data" } in
         state.pt_updates <- update :: state.pt_updates
@@ -276,39 +280,90 @@ let emit_registers out thread va root_table =
 let emit_term_cond out tid va size =
   Printf.fprintf out "[[termCond]] # %s\n_PC = 0x%s\n\n" tid (Z.format "%x" (Z.add va size))
 
-(** Emit outcome assertions *)
+(** Emit outcome assertions **)
 let emit_outcomes out toml =
   match Otoml.find_opt toml (fun x -> x) ["final"] with
   | Some (Otoml.TomlTable t) ->
-    let expect = match List.assoc_opt "expect" t with Some (Otoml.TomlString s) -> s | _ -> "unsat" in
+    let expect = match List.assoc_opt "expect" t with Some (Otoml.TomlString s) -> s | _ -> "sat" in
     let prefix = if expect = "sat" then "allowed" else "forbidden" in
     (match List.assoc_opt "assertion" t with
       | Some (Otoml.TomlString s) ->
-        let s = Str.global_replace (Str.regexp " ") "" s in
-        let alternatives = if String.contains s '|' then Str.split (Str.regexp "|") s else [s] in
-        List.iter (fun alt ->
-          let asserts = String.split_on_char '&' alt in
-          Printf.fprintf out "[[outcome]]\n";
-          let grouped = Hashtbl.create 5 in
-          List.iter (fun assertion ->
-            match String.split_on_char '=' assertion with
-            | [lhs; rhs] ->
-                (match String.split_on_char ':' lhs with
-                | [tid_s; reg_s] ->
-                    let reg_s = Str.global_replace (Str.regexp "^X") "R" (String.trim reg_s) in
-                    let existing = try Hashtbl.find grouped tid_s with Not_found -> [] in
-                    Hashtbl.replace grouped tid_s ((reg_s, rhs) :: existing)
-                | _ -> ())
-            | _ -> ()
-          ) asserts;
-          Hashtbl.iter (fun tid regs ->
-            let content = String.concat ", " (List.map (fun (r, v) -> Printf.sprintf "%s = %s" r v) (List.rev regs)) in
-            Printf.fprintf out "%s.%s = { %s }\n" prefix tid content
-          ) grouped;
-          Printf.fprintf out "\n"
-        ) alternatives
-      | _ -> ())
-  | _ -> ()
+        let s_clean = Str.global_replace (Str.regexp " ") "" s in
+        (* Handle trivial assertions - "true" or empty *)
+        if s_clean = "true" || s_clean = "" then
+          Printf.fprintf out "# No outcome assertion (trivial test)\n\n"
+        else (
+          let alternatives = if String.contains s_clean '|' then Str.split (Str.regexp "|") s_clean else [s_clean] in
+          List.iter (fun alt ->
+            let asserts = String.split_on_char '&' alt in
+            Printf.fprintf out "[[outcome]]\n";
+            let grouped = Hashtbl.create 5 in
+            let mem_asserts = ref [] in
+            List.iter (fun assertion ->
+              match String.split_on_char '=' assertion with
+              | [lhs; rhs] ->
+                  (* Check if this is a memory assertion: *x=value *)
+                  if String.length lhs > 0 && lhs.[0] = '*' then (
+                    let symbol = String.sub lhs 1 (String.length lhs - 1) in
+                    mem_asserts := (symbol, rhs) :: !mem_asserts
+                  ) else (
+                    (* Register assertion (tid:reg=value) *)
+                    match String.split_on_char ':' lhs with
+                    | [tid_s; reg_s] ->
+                        let reg_s = Str.global_replace (Str.regexp "^X") "R" (String.trim reg_s) in
+                        let existing = try Hashtbl.find grouped tid_s with Not_found -> [] in
+                        Hashtbl.replace grouped tid_s ((reg_s, rhs) :: existing)
+                    | _ -> ()
+                  )
+              | _ -> ()
+            ) asserts;
+            (* Build reg assertions string *)
+            let reg_parts = ref [] in
+            Hashtbl.iter (fun tid regs ->
+              let content = String.concat ", " (List.map (fun (r, v) -> Printf.sprintf "%s = %s" r v) (List.rev regs)) in
+              reg_parts := Printf.sprintf "\"%s\" = { %s }" tid content :: !reg_parts
+            ) grouped;
+            let reg_str = if !reg_parts = [] then "" else String.concat ", " (List.rev !reg_parts) in
+            (* Build mem assertions string *)
+            let mem_parts = List.filter_map (fun (symbol, value) ->
+              (* Try to resolve symbol: first check if it's a direct PA symbol,
+                 then check if it's a VA symbol with a PA mapping *)
+              let addr_opt =
+                match Hashtbl.find_opt Symbols.symbols symbol with
+                | Some addr -> Some addr  (* Direct symbol *)
+                | None ->
+                    (* Check if symbol is in VA mappings *)
+                    List.find_map (fun (name, _va, pa_name_opt) ->
+                      if name = symbol then
+                        match pa_name_opt with
+                        | Some pa_name -> Hashtbl.find_opt Symbols.symbols pa_name
+                        | None -> None
+                      else None
+                    ) !Symbols.va_mappings
+              in
+              match addr_opt with
+              | Some addr ->
+                  (* Convert value to little-endian 8-byte format *)
+                  let int_val = int_of_string value in
+                  let le_val = Z.shift_left (Z.of_int int_val) 56 in  (* Shift to MSB position for LE read *)
+                  Some (Printf.sprintf "{ addr = 0x%s, value = 0x%s, size = 8 }"
+                    (Z.format "%x" addr) (Z.format "%x" le_val))
+              | None ->
+                  Printf.fprintf out "# Warning: symbol '%s' not resolved, skipping memory assertion\n" symbol;
+                  None
+            ) !mem_asserts in
+            let mem_str = if mem_parts = [] then "" else "[" ^ String.concat ", " mem_parts ^ "]" in
+            (* Emit combined format *)
+            (match (reg_str, mem_str) with
+            | ("", "") -> Printf.fprintf out "%s = {}\n" prefix
+            | (r, "") -> Printf.fprintf out "%s = { regs = { %s } }\n" prefix r
+            | ("", m) -> Printf.fprintf out "%s = { mem = %s }\n" prefix m
+            | (r, m) -> Printf.fprintf out "%s = { regs = { %s }, mem = %s }\n" prefix r m);
+            Printf.fprintf out "\n"
+          ) alternatives
+        )
+      | _ -> Printf.fprintf out "# No outcome assertion\n\n")
+  | _ -> Printf.fprintf out "# No outcome assertion\n\n"
 
 (** =============================================================================
     MAIN ENTRY POINT
@@ -367,10 +422,36 @@ let process_toml filename out_channel =
 
     process_dsl state pt_stmts;
 
-    (* Identity mappings for allocated PT memory *)
-    List.iter (fun (start_addr, end_addr) ->
-      install_identity_range state start_addr end_addr
-    ) !Allocator.used_regions;
+    (* Zero-init PA symbols that are mapping targets but not explicitly initialized *)
+    List.iter (fun (_, _, pa_opt) ->
+      match pa_opt with
+      | Some pa_name ->
+          let pa_addr = Symbols.get_symbol_addr pa_name in
+          (* Check if this PA was already initialized via MemInit *)
+          let already_init = List.exists (fun u ->
+            u.comment = "Initial Data" && Z.equal u.addr pa_addr
+          ) state.pt_updates in
+          if not already_init then begin
+            let update = { addr = pa_addr; data = Z.zero; size = 8; comment = "Initial Data" } in
+            state.pt_updates <- update :: state.pt_updates
+          end
+      | None -> ()
+    ) !Symbols.va_mappings;
+
+    (* Identity mappings for allocated PT memory - fixpoint loop because
+       installing identity mappings may allocate new tables that also need mappings *)
+    let rec install_identity_fixpoint seen_regions =
+      let current_regions = !Allocator.used_regions in
+      let new_regions = List.filter (fun r -> not (List.mem r seen_regions)) current_regions in
+      if new_regions = [] then ()
+      else begin
+        List.iter (fun (start_addr, end_addr) ->
+          install_identity_range state start_addr end_addr
+        ) new_regions;
+        install_identity_fixpoint current_regions
+      end
+    in
+    install_identity_fixpoint [];
 
     (* Identity mappings for PA symbols (data addresses) *)
     Hashtbl.iter (fun name addr ->
@@ -383,7 +464,10 @@ let process_toml filename out_channel =
       let page_va = Z.logand va page_mask in
       let page_pa = Z.logand t.code_pa page_mask in
       let desc = Z.logor page_pa (Z.of_int page_descriptor) in
-      install_mapping state !(state.root_table) 0 page_va (TRaw desc) None None None
+      install_mapping state !(state.root_table) 0 page_va (TRaw desc) None None None;
+      (* Also install identity mapping for code PA so table walks can access it *)
+      if not (Z.equal page_va page_pa) then
+        install_identity_mapping state page_pa
     ) threads thread_vas;
 
     (* Identity mappings for sections *)

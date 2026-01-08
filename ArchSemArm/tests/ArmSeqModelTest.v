@@ -88,7 +88,7 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
 Definition initState :=
-  {|archState.memory := init_mem;
+  {|archState.memory := init_mem; archState.final_memory := None;
     archState.regs := [# init_reg];
     archState.address_space := PAS_NonSecure |}.
 Definition test_results :=
@@ -119,7 +119,7 @@ Definition termCond : terminationCondition 1 :=
   (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
 Definition initState :=
-  {|archState.memory := init_mem;
+  {|archState.memory := init_mem; archState.final_memory := None;
     archState.regs := [# init_reg];
     archState.address_space := PAS_NonSecure |}.
 Definition test_results :=
@@ -151,7 +151,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
   Definition test_results :=

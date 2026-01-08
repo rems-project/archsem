@@ -95,11 +95,16 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
   Definition mem_insert_bv (addr : address) {m : N} (val : bv m) : memoryMap → memoryMap :=
     mem_insert_bytes addr (bv_to_bytes 8 val).
 
-  (** Write a bitvector to memory (little-endian). *)
+  (** Write a bitvector to memory (little-endian). **)
   Definition mem_insert (addr : address) (n : N) (val : bv (8 * n)) : memoryMap → memoryMap :=
     mem_insert_bytes addr (bv_to_bytes 8 val).
 
-  (** Remove all bytes in the range provided from the memory map *)
+  (** Read bytes from memory (returns None if any byte is missing) **)
+  Definition mem_read (size : Z) (addr : address) (mem : memoryMap) : option (list (bv 8)) :=
+    let n := Z.to_N size in
+    mem_lookup_bytes addr n mem.
+
+  (** Remove all bytes in the range provided from the memory map **)
   Definition mem_delete (addr : address) (n : N) : memoryMap → memoryMap :=
     fold_left (λ mm i, delete (addr_addN addr i) mm) (seqN 0 n).
 
@@ -143,6 +148,7 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
     Record t {n : nat} :=
       Make {
           memory : memoryMap;
+          final_memory : option memoryMap;
           address_space : addr_space;
           regs: vec registerMap n;
         }.

@@ -141,19 +141,27 @@ let parse_termCond (num_threads : int) (toml : Otoml.t) : termCond =
         ) table)
     ) terms
 
-type cond = (int * (Reg.t * requirement) list) list
+(* A single thread's register requirements *)
+type reg_cond = (Reg.t * requirement) list
+
+(* Single register assertion for one thread *)
+type reg_assertion = int * reg_cond
+
+(* Single memory assertion *)
+type mem_assertion = Z.t * int * requirement
 
 type outcome =
-  | Allowed of cond
-  | Forbidden of cond
+  | Allowed of reg_assertion list * mem_assertion list
+  | Forbidden of reg_assertion list * mem_assertion list
 
 (** Parses a condition block (thread ID -> register requirements) *)
-let parse_cond (toml : Otoml.t) : cond =
+let parse_cond (toml : Otoml.t) : reg_assertion list =
   match toml with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
       List.filter_map (fun (tid_s, regs_toml) ->
-        try
-          let tid = int_of_string tid_s in
+        (* Skip non-numeric keys like "mem" from "forbidden.mem" *)
+        match int_of_string_opt tid_s with
+        | Some tid ->
           let reg_conds =
             match regs_toml with
             | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
@@ -163,9 +171,39 @@ let parse_cond (toml : Otoml.t) : cond =
             | _ -> failwith "[Parser] Unsupported register value type"
           in
           Some (tid, reg_conds)
-        with Failure _ -> failwith ("[Parser] Invalid thread ID (expected integer): " ^ tid_s)
+        | None -> None  (* Skip non-integer keys *)
       ) pairs
     | _ -> failwith "[Parser] Unsupported register value type"
+
+
+(** Parses a single memory assertion block into (addr, size, requirement) *)
+let parse_single_mem_assertion (t : (string * Otoml.t) list) : mem_assertion option =
+  match List.assoc_opt "addr" t, List.assoc_opt "value" t, List.assoc_opt "size" t with
+  | Some (Otoml.TomlInteger addr), Some (Otoml.TomlInteger value), Some (Otoml.TomlInteger size) ->
+      Some (Z.of_int addr, size, Eq (Number (Z.of_int value)))
+  | Some (Otoml.TomlString addr_hex), Some (Otoml.TomlInteger value), Some (Otoml.TomlInteger size) ->
+      (* Handle hex string addresses like "0x21000" *)
+      let addr = Z.of_string addr_hex in
+      Some (addr, size, Eq (Number (Z.of_int value)))
+  (* Support op = "ne" for inequality assertions *)
+  | Some addr_toml, Some value_toml, Some (Otoml.TomlInteger size) ->
+      let addr = match addr_toml with
+        | Otoml.TomlInteger i -> Z.of_int i
+        | Otoml.TomlString s -> Z.of_string s
+        | _ -> failwith "[Parser] Invalid addr type in memory assertion"
+      in
+      let (value, req_type) = match List.assoc_opt "op" t with
+        | Some (Otoml.TomlString "ne") ->
+            (match value_toml with
+             | Otoml.TomlInteger v -> (Z.of_int v, fun v -> Neq v)
+             | _ -> failwith "[Parser] Invalid value type")
+        | _ ->
+            (match value_toml with
+             | Otoml.TomlInteger v -> (Z.of_int v, fun v -> Eq v)
+             | _ -> failwith "[Parser] Invalid value type")
+      in
+      Some (addr, size, req_type (Number value))
+  | _ -> None
 
 (** Parses a single [[outcome]] block into Allowed or Forbidden *)
 let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
@@ -175,16 +213,45 @@ let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
     failwith "[Config] Outcome cannot contain both 'allowed' and 'forbidden'";
   match List.find_opt (fun (k, _) -> k = "allowed" || k = "forbidden") pairs with
   | Some (k, v) ->
-    let cond = parse_cond v in
-    if k = "allowed" then Allowed cond else Forbidden cond
+    (* Parse register assertions: look for "regs" key, or fall back to parsing directly *)
+    let reg_assertions =
+      match v with
+      | Otoml.TomlTable t | Otoml.TomlInlineTable t ->
+          (match List.assoc_opt "regs" t with
+           | Some reg_toml -> parse_cond reg_toml  (* New format: allowed.regs = {...} *)
+           | None -> parse_cond v)  (* Old format: allowed.0 = {...} directly *)
+      | _ -> parse_cond v
+    in
+    (* Parse memory assertions: look for "mem" key under allowed/forbidden *)
+    let mem_assertions =
+      match v with
+      | Otoml.TomlTable t | Otoml.TomlInlineTable t ->
+          (match List.assoc_opt "mem" t with
+           | Some (Otoml.TomlArray arr) ->
+               (* Array of memory assertions: [{ addr = ..., value = ..., size = ... }, ...] *)
+               List.filter_map (fun item ->
+                 match item with
+                 | Otoml.TomlTable t | Otoml.TomlInlineTable t -> parse_single_mem_assertion t
+                 | _ -> None
+               ) arr
+           | Some (Otoml.TomlTable t) | Some (Otoml.TomlInlineTable t) ->
+               (* Single memory assertion: { addr = ..., value = ..., size = ... } *)
+               (match parse_single_mem_assertion t with Some a -> [a] | None -> [])
+           | _ -> [])
+      | _ -> []
+    in
+    if k = "allowed" then Allowed (reg_assertions, mem_assertions) else Forbidden (reg_assertions, mem_assertions)
   | None -> failwith "[Config] Outcome must contain 'allowed' or 'forbidden'"
 
 (** Parses all [[outcome]] blocks from the TOML file *)
 let parse_outcomes (toml : Otoml.t) : outcome list =
-  let outcome_tables = Otoml.find toml get_list ["outcome"] in
-  List.filter_map (fun node ->
-    match node with
-    | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
-      Some (parse_outcome pairs)
-    | _ -> None
-  ) outcome_tables
+  match Otoml.find_opt toml get_list ["outcome"] with
+  | Some outcome_tables ->
+    List.filter_map (fun node ->
+      match node with
+      | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
+        Some (parse_outcome pairs)
+      | _ -> None
+    ) outcome_tables
+  | None -> []  (* No outcomes defined - trivial test *)
+
