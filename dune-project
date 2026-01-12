@@ -57,4 +57,13 @@
  )
 )
 
+(package
+ (name coq-archsem-x86)
+ (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, x86 instantiation")
+ (depends
+   coq-archsem
+   (coq-sail-tiny-x86 :dev) ; See coq-archsem-x86.opam.template for the commit number
+ )
+)
+
 (generate_opam_files)

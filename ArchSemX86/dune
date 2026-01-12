@@ -1,0 +1,18 @@
+(coq.theory
+ (name ArchSemX86)
+ (package coq-archsem-x86)
+ (modules
+   X86Inst
+ )
+ (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem SailTinyX86)
+ (coqdoc_flags :standard --utf8
+               --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
+               --external ../../Common/ASCommon.html ASCommon
+               --external ../../ArchSem/ArchSem.html ArchSem
+               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
+ )
+)
+
+(alias (name x86) (deps (alias all)))
+(alias (name coq) (deps (alias all)))
+(alias (name default) (deps (alias all)))

@@ -1,0 +1,11 @@
+(coq.theory
+ (name ArchSemX86.tests)
+ (modules X86SeqModelTest)
+ (theories ArchSemX86)
+)
+; Do not build this folder by default but do it when running @runtest
+(alias (name default))
+(alias
+ (name runtest)
+ (deps (alias all))
+)
