@@ -69,11 +69,16 @@ let print_forbidden_violation (i : int) (arch_state : ArchState.t)
     ) expected_regs
   ) forbidden_outcome
 
-(** Runs model executions and checks coverage (allowed) and forbidden constraints.
-    Returns true if all allowed outcomes are covered and no forbidden outcomes are observed. *)
+(** Result of running executions *)
+type test_result =
+  | Equal     (* Results match expected outcomes *)
+  | Different (* Results differ from expected outcomes *)
+  | Error     (* Model failed with errors *)
+
+(** Runs model executions and checks coverage (allowed) and forbidden constraints. *)
 let run_executions model_name model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
-    (outcomes : Litmus_parser.outcome list) : bool =
+    (outcomes : Litmus_parser.outcome list) : test_result =
   Printf.printf "Running test with model %s%s%s and fuel %d...\n" (c_bold ^ c_cyan) model_name c_reset fuel;
   let results = model fuel termCond arch_state in
 
@@ -117,7 +122,7 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
   let passed_coverage =
     List.for_all (fun (reg_assertion, mem_assertions) ->
       let matched = List.exists (fun fs -> check_outcome fs reg_assertion mem_assertions) valid_final_states in
-      if not matched && valid_final_states <> [] then (
+      if not matched then (
         Printf.printf "COVERAGE FAIL: No execution matched expected outcome:\n";
         List.iter (fun (tid, regs) ->
           Printf.printf "  Thread %d: %s\n" tid
@@ -166,14 +171,16 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
       ) analyzed_results
   in
 
-  (* Report if no valid executions at all *)
+  (* Report if no valid executions at all - this is an ERROR *)
   let has_errors = valid_final_states = [] && results <> [] in
   if has_errors then (
     Printf.printf "%sNO VALID EXECUTIONS:%s All %d executions failed with errors\n"
       (c_bold ^ c_red) c_reset (List.length results);
-    false  (* Test fails if all executions error *)
-  ) else
-    passed_coverage && passed_forbidden
+    Error
+  ) else if passed_coverage && passed_forbidden then
+    Equal  (* Results match expectations *)
+  else
+    Different  (* Results differ from expectations *)
 
 (** Main entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)
@@ -197,10 +204,12 @@ let run_litmus_test model_name model filename =
     let outcome = Litmus_parser.parse_outcomes toml in
 
     Printf.printf "\nSuccessfully parsed %s\n" filename;
-    let passed = run_executions model_name model arch_state num_threads fuel termConds outcome in
-    if passed then Printf.printf "RESULT: %sPASS%s\n" c_green c_reset
-    else Printf.printf "RESULT: %sFAIL%s\n" c_red c_reset;
-    passed
+    let result = run_executions model_name model arch_state num_threads fuel termConds outcome in
+    (match result with
+    | Equal -> Printf.printf "RESULT: %sEQUAL%s\n" c_green c_reset
+    | Different -> Printf.printf "RESULT: %sDIFFERENT%s\n" c_yellow c_reset
+    | Error -> Printf.printf "RESULT: %sERROR%s\n" c_red c_reset);
+    result = Equal
 
   with
   | Otoml.Parse_error (pos, msg) ->

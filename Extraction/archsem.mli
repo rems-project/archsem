@@ -119,3 +119,21 @@ val seq_model : empty ArchModel.t
 val umProm_model : empty ArchModel.t
 
 val vmProm_model : empty ArchModel.vmp_t
+
+val umProm_model_pf : empty ArchModel.t
+
+val vmp_model_pf : empty ArchModel.vmp_t
+
+(** Debug tracing control for VMPromising model *)
+module Debug : sig
+  (** Enable or disable debug trace output to stderr.
+      When enabled, prints information about:
+      - Number of TLB snapshots computed per translation
+      - Number of valid translation entries found
+      - Number of invalid (fault) translation entries found
+      - Virtual address being translated *)
+  val set_trace_enabled : bool -> unit
+
+  (** Check if debug tracing is currently enabled *)
+  val is_trace_enabled : unit -> bool
+end
