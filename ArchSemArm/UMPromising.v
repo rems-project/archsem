@@ -566,11 +566,25 @@ Section RunOutcome.
         mset PPState.iis $ IIS.add view;;
         mret (Ok (val, bv_0 0), None)
       else mthrow "[Memory] Read must be explicit or ifetch"
-  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
+  | MemRead (MemReq.make macc addr addr_space 4 0) =>
       guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
       let initmem := Memory.initial_from_memMap initmem in
-      opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
-      mret (Ok (opcode, 0%bv), None)
+      if is_ifetch macc then
+        opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
+        mret (Ok (opcode, 0%bv), None)
+      else if is_explicit macc then
+        (* 4-byte explicit read: align to 8 bytes and extract correct half *)
+        let aligned_addr := bv_unset_bit 2 addr in
+        let bit2 := bv_get_bit 2 addr in
+        loc ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty aligned_addr))%string $ Loc.from_addr aligned_addr;
+        vaddr ← mget (IIS.strict ∘ PPState.iis);
+        mem ← mget PPState.mem;
+        '(view, val64) ← Exec.liftSt
+          PPState.state (read_mem loc vaddr macc initmem mem);
+        mset PPState.iis $ IIS.add view;;
+        let val32 : bv 32 := if bit2 then bv_extract 32 32 val64 else bv_extract 0 32 val64 in
+        mret (Ok (val32, bv_0 0), None)
+      else mthrow "[Memory] Read must be explicit or ifetch"
   | MemRead _ => mthrow "[Memory] Read size must be 4 or 8 bytes"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
@@ -584,6 +598,22 @@ Section RunOutcome.
         vdata ← mget (IIS.strict ∘ PPState.iis);
         '(mem, vpre_opt) ← Exec.liftSt PPState.state
                 $ write_mem_xcl tid addr vdata macc mem val;
+        msetv PPState.mem mem;;
+        mret (Ok (), vpre_opt)
+      else mthrow "[Memory] Non-explicit write not supported"
+  | MemWrite (MemReq.make macc addr addr_space 4 0) val32 tags =>
+      (* 4-byte write: align to 8 bytes and place value in correct half *)
+      guard_or "[Unsupported] Access outside Non-Secure space" (addr_space = PAS_NonSecure);;
+      let aligned_addr := bv_unset_bit 2 addr in
+      let bit2 := bv_get_bit 2 addr in
+      loc ← othrow ("[Memory] Address not 8-byte aligned: " ++ (pretty aligned_addr))%string $ Loc.from_addr aligned_addr;
+      if is_explicit macc then
+        mem ← mget PPState.mem;
+        vdata ← mget (IIS.strict ∘ PPState.iis);
+        (* Zero-extend 32-bit value and place in upper or lower half based on bit 2 *)
+        let val64 : val := if bit2 then bv_concat 64 val32 (bv_0 32) else bv_zero_extend 64 val32 in
+        '(mem, vpre_opt) ← Exec.liftSt PPState.state
+                $ write_mem_xcl tid loc vdata macc mem val64;
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
       else mthrow "[Memory] Non-explicit write not supported"

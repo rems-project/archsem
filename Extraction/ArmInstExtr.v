@@ -54,4 +54,5 @@ Set Extraction Output Directory ".".
 
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
 Separate Extraction Arm sail_tiny_arm_sem
-  sequential_modelc UMPromising_cert_c VMPromising_cert_c.
+  sequential_modelc UMPromising_cert_c VMPromising_cert_c
+  UMPromising_cert_c_pf VMPromising_cert_c_pf.

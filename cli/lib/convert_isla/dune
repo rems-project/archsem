@@ -1,6 +1,6 @@
 (library
  (name convert_isla_lib)
- (modules ast parser lexer symbols allocator assembler evaluator converter)
+ (modules ast parser lexer symbols allocator assembler evaluator page_tables input_parser output_emitter converter assertion_parser)
  (libraries zarith otoml str))
 
 (menhir

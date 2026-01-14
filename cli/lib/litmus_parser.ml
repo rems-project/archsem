@@ -36,6 +36,7 @@ let parse_reg_value v =
 type requirement =
   | Eq of RegVal.gen
   | Neq of RegVal.gen
+  | EqAny of RegVal.gen list  (* Match any of the values - used for multi-PC termCond *)
 
 (** Parses a register key-value pair into (Reg.t, requirement) with eq/ne support *)
 let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
@@ -51,6 +52,17 @@ let parse_register (k : string) (v : Otoml.t) : (Reg.t * requirement) option =
          | Some (Otoml.TomlString op), _ -> failwith ("[Parser] Unknown operator: " ^ op)
          (* No op/val keys - treat as struct value (e.g., PSTATE = { EL = 0, SP = 0 }) *)
          | _ -> Eq (parse_reg_value v))
+      (* Array of values: treat as EqAny (e.g., _PC = [0x2004, 0x1404]) *)
+      | Otoml.TomlArray values ->
+        let parsed_values = List.map (fun item ->
+          match item with
+          | Otoml.TomlInteger i -> RegVal.Number (Z.of_int i)
+          | Otoml.TomlString s ->
+              (* Handle hex strings like "0x2004" *)
+              RegVal.Number (Z.of_string s)
+          | _ -> failwith ("[Parser] Unsupported array element type for register: " ^ k)
+        ) values in
+        EqAny parsed_values
       (* Simple values: treat as equality requirement *)
       | Otoml.TomlInteger _ | Otoml.TomlString _ -> Eq (parse_reg_value v)
       (* Unsupported types *)
@@ -83,6 +95,7 @@ let parse_registers (toml : Otoml.t) : RegMap.t list =
       match rv with
       | Eq v -> RegMap.insert (RegVal.of_gen reg v |> Result.get_ok) regmap
       | Neq _ -> failwith "[Config] Neq not supported in init"
+      | EqAny _ -> failwith "[Config] EqAny not supported in init"
     ) RegMap.empty table
   ) regvals
 
@@ -135,6 +148,10 @@ let parse_termCond (num_threads : int) (toml : Otoml.t) : termCond =
             RegVal.to_gen rv = expected
           | Some rv, Neq expected ->
             RegVal.to_gen rv <> expected
+          | Some rv, EqAny expected_list ->
+            (* Match if actual value equals ANY of the expected values *)
+            let actual = RegVal.to_gen rv in
+            List.exists (fun expected -> actual = expected) expected_list
           | None, _ ->
             (* Register not found - condition fails *)
             false

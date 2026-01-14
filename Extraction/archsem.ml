@@ -142,9 +142,10 @@ module ArchState = struct
     in
     match TM.mem_read (Z.of_int size) addr memory_to_read with
     | Some bytes ->
-        let value = List.fold_left (fun acc b ->
+        (* ARM is little-endian: first byte is least significant *)
+        let value = List.fold_right (fun b acc ->
           Z.logor (Z.shift_left acc 8) b
-        ) Z.zero bytes in
+        ) bytes Z.zero in
         Some (RegVal.Number value)
     | None -> None
 end
@@ -191,3 +192,14 @@ let vmProm_model fuel debug mem_strict bbm_check term initState =
   VMPromising.coq_VMPromising_cert_c (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
     debug mem_strict bbm_check (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic
+
+let umProm_model_pf fuel term initState =
+  UMPromising.coq_UMPromising_cert_c_pf (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
+    (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
+  |> Obj.magic
+
+let vmp_model_pf fuel debug mem_strict bbm_check term initState =
+  VMPromising.coq_VMPromising_cert_c_pf (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
+    debug mem_strict bbm_check (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
+  |> Obj.magic
+

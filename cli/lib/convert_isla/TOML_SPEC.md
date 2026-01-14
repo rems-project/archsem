@@ -118,24 +118,45 @@ Defines expected final states. Each outcome is a separate block.
 
 ```toml
 [[outcome]]
-allowed.<TID> = { <REG> = { op = "eq"|"ne", val = <VALUE> }, ... }
+allowed = { regs = { "<TID>" = { <REG> = <VALUE> } } }
+# or with operator
+allowed = { regs = { "<TID>" = { <REG> = { op = "eq"|"ne", val = <VALUE> } } } }
+# with memory
+allowed = { mem = [{ addr = <ADDR>, value = <VALUE>, size = 8 }] }
+# combined
+allowed = { regs = {...}, mem = [...] }
 ```
 
 - `allowed`: Outcome that may occur
-- `enforced`: Outcome that must occur (coverage check)
+- `forbidden`: Outcome that must not occur (coverage check)
 
 ### Examples
 
 ```toml
-# Single register check
+# Single register check (equality, shorthand)
 [[outcome]]
-allowed.0 = { R0 = { op = "eq", val = 0x110 } }
+allowed = { regs = { "0" = { R0 = 0x110 } } }
 
 # Multiple registers
 [[outcome]]
-allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
+allowed = { regs = { "0" = { R5 = 0x0, R2 = 0x2a } } }
 
-# Negative check
+# Inequality check
 [[outcome]]
-allowed.0 = { R0 = { op = "ne", val = 0x0 } }
+allowed = { regs = { "0" = { R0 = { op = "ne", val = 0x0 } } } }
+
+# Memory check
+[[outcome]]
+allowed = { mem = [{ addr = 0x81000, value = 0x100000000000000, size = 8 }] }
+
+# Combined register and memory
+[[outcome]]
+allowed = {
+  regs = { "0" = { R0 = 0x1 } },
+  mem = [{ addr = 0x82000, value = 0x0, size = 8 }]
+}
+
+# Forbidden outcome (must not occur)
+[[outcome]]
+forbidden = { regs = { "0" = { R0 = 0x0 } } }
 ```

@@ -21,7 +21,7 @@ let rec eval e =
     let mask = Z.sub (Z.shift_left Z.one (hi - lo + 1)) Z.one in
     Z.logand (Z.shift_right v lo) mask
   | ECall("extz", args) -> snd(List.nth args 0) |> eval
-  (* [desc3] constructs a Level 3 page descriptor with access flags 0x743
+  (* [desc3] constructs a Level 3 page descriptor (0x60000000000743 = RW, non-executable)
      For VA symbols, we need to resolve to the PA they map to *)
   | ECall("desc3", args) ->
     let pa_expr = snd(List.nth args 0) in
@@ -29,12 +29,26 @@ let rec eval e =
       | EVar v -> Symbols.get_pa_for_va v  (* Resolve VA->PA mapping *)
       | _ -> eval pa_expr
     in
-    Z.logor pa (Z.of_int 0x743)
-  (* [mkdescN] constructs a valid page descriptor value (setting valid bit 0x1 | table bit 0x2) *)
+    Z.logor pa (Z.of_string "0x60000000000743")
+  (* [mkdescN] constructs a Level N page descriptor with output address and optional attributes.
+     mkdesc3(oa=addr) creates a leaf page descriptor; mkdesc2(table=addr) creates a table descriptor *)
   | ECall(name, args) when String.length name >= 6 && String.sub name 0 6 = "mkdesc" ->
-    let v = eval(snd(List.nth args 0)) in Z.logor v (Z.of_int 3)
+    let level = int_of_string (String.sub name 6 1) in
+    (* Check for table descriptor (next-level pointer) vs page descriptor (leaf) *)
+    let is_table = List.exists (fun (k, _) -> k = "table") args in
+    if is_table || level < 3 then
+      (* Table descriptor: just set valid+table bits (0x3) *)
+      let addr = try List.assoc "table" args |> eval
+                 with Not_found -> snd(List.nth args 0) |> eval in
+      Z.logor addr (Z.of_int 3)
+    else
+      (* Page descriptor: use full descriptor format with OA directly (no VA->PA resolution) *)
+      let oa = try List.assoc "oa" args |> eval
+               with Not_found -> snd(List.nth args 0) |> eval in
+      Z.logor oa (Z.of_string "0x60000000000743")
   (* [pteN/tableN] calculates the Physical Address of a Page Table Entry at a given level.
-     For pte3, we use the tracked L3 table address from install_mapping if available. *)
+     If explicit table argument provided (not page_table_base), use it directly.
+     Otherwise, for pte2/pte3, use tracked L2/L3 table addresses from install_mapping. *)
   | ECall(name, args) when
       (String.length name = 4 && String.sub name 0 3 = "pte") ||
       (String.length name = 6 && String.sub name 0 5 = "table") ->
@@ -42,22 +56,34 @@ let rec eval e =
     let shift = 39 - (9 * level) in
     let va_expr = snd (List.nth args 0) in
     let va = eval va_expr in
-    (* For pte3, try to use tracked L3 table if VA symbol is known *)
-    let table =
-      if level = 3 then
-        match va_expr with
-        | EVar sym ->
-          (match Hashtbl.find_opt Symbols.l3_tables sym with
-           | Some l3_addr -> l3_addr
-           | None ->
-             if List.length args > 1 then eval(snd(List.nth args 1))
-             else Symbols.get_symbol_addr "page_table_base")
-        | _ ->
-          if List.length args > 1 then eval(snd(List.nth args 1))
-          else Symbols.get_symbol_addr "page_table_base"
-      else
-        if List.length args > 1 then eval(snd(List.nth args 1))
-        else Symbols.get_symbol_addr "page_table_base"
+    (* Check if explicit non-default table argument is provided *)
+    let explicit_table =
+      if List.length args > 1 then
+        match snd (List.nth args 1) with
+        | EVar "page_table_base" -> None  (* Treat as no explicit table *)
+        | _ -> Some (eval(snd(List.nth args 1)))
+      else None
+    in
+    let table = match explicit_table with
+      | Some addr -> addr
+      | None ->
+        (* Use tracked l2/l3_tables for the VA *)
+        if level = 2 then
+          match va_expr with
+          | EVar sym ->
+            (match Hashtbl.find_opt Symbols.l2_tables sym with
+             | Some l2_addr -> l2_addr
+             | None -> Symbols.get_symbol_addr "page_table_base")
+          | _ -> Symbols.get_symbol_addr "page_table_base"
+        else if level = 3 then
+          match va_expr with
+          | EVar sym ->
+            (match Hashtbl.find_opt Symbols.l3_tables sym with
+             | Some l3_addr -> l3_addr
+             | None -> Symbols.get_symbol_addr "page_table_base")
+          | _ -> Symbols.get_symbol_addr "page_table_base"
+        else
+          Symbols.get_symbol_addr "page_table_base"
     in
     let idx = Z.to_int (Z.logand (Z.shift_right va shift) (Z.of_int 0x1FF)) in
     Z.add table (Z.of_int (idx * 8))

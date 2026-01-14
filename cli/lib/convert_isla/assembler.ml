@@ -1,4 +1,39 @@
+(** Rewrite non-shareable TLBI instructions to inner-shareable (IS) variants.
+    The model only supports IS variants, and for single-core semantics they're equivalent. *)
+let rewrite_tlbi_to_is asm_str =
+  (* TLBI variants with register operand: VAE1, VALE1, VAAE1, VAALE1, ASIDE1, etc. *)
+  let with_reg_patterns = [
+    (* EL1 variants *)
+    "VAE1"; "VALE1"; "VAAE1"; "VAALE1"; "ASIDE1";
+    (* EL2 variants *)
+    "VAE2"; "VALE2"; "IPAS2E1"; "IPAS2LE1";
+    (* EL3 variants *)
+    "VAE3"; "VALE3";
+  ] in
+  (* TLBI variants without register operand *)
+  let no_reg_patterns = [
+    "VMALLE1"; "VMALLS12E1"; "ALLE1"; "ALLE2"; "ALLE3"; "ALLE1IS"; "ALLE2IS"; "ALLE3IS";
+  ] in
+  let result = ref asm_str in
+  (* Rewrite variants with register: "TLBI VAE1,Xn" -> "TLBI VAE1IS,Xn" *)
+  List.iter (fun op ->
+    (* Match "TLBI op," but not "TLBI opIS," (case insensitive) *)
+    let pattern = Str.regexp_case_fold (Printf.sprintf "\\(TLBI[ \t]+\\)\\(%s\\)\\([ \t]*,\\)" op) in
+    result := Str.global_replace pattern (Printf.sprintf "\\1\\2IS\\3") !result
+  ) with_reg_patterns;
+  (* Rewrite variants without register: "TLBI VMALLE1" -> "TLBI VMALLE1IS" *)
+  List.iter (fun op ->
+    (* Only rewrite if not already IS variant *)
+    if not (Str.string_match (Str.regexp_case_fold ".*IS$") op 0) then begin
+      let pattern = Str.regexp_case_fold (Printf.sprintf "\\(TLBI[ \t]+\\)\\(%s\\)\\([ \t]*\\($\\|[\n\r]\\)\\)" op) in
+      result := Str.global_replace pattern (Printf.sprintf "\\1\\2IS\\3") !result
+    end
+  ) no_reg_patterns;
+  !result
+
 let encode_assembly ?(arch="aarch64") asm_str =
+  (* Rewrite non-shareable TLBI to IS variants *)
+  let asm_str = rewrite_tlbi_to_is asm_str in
   (* Create a temporary file for the assembly code *)
   let asm_file = Filename.temp_file "asm_" ".s" in
   (* Create a temporary file for the object code *)

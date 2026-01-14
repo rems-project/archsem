@@ -418,9 +418,14 @@ Definition ttbrs : gset reg :=
     TTBR1_EL2;
     VTTBR_EL2]@{reg}.
 
+(** Registers that are writable for ERET (exception return) but should not be
+    in strict_regs to avoid conflict with translation read constraints *)
+Definition eret_writable_regs : gset reg :=
+  list_to_set [PSTATE; SPSR_EL1; SPSR_EL2; SPSR_EL3]@{reg}.
+
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
-  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg ∨ r ∈ eret_writable_regs).
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
@@ -1012,8 +1017,9 @@ Module TLB.
       - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
       - Reads next-level PTE at [index]; if valid and table, build child context
         (ASID dropped if global) and insert into VATLB.
-      - Otherwise returns empty. *)
-  Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
+      - Otherwise returns empty.
+      - [orig_vatlb] is the original VATLB (before updates) used to detect lost entries. *)
+  Definition va_fill_lvl (vatlb : VATLB.t) (orig_vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
@@ -1044,7 +1050,23 @@ Module TLB.
           | None eq:_ => mthrow "[Translation] Intermediate level should have a child level"
           end
         else
-          Ok (vatlb, false)
+          (* PTE is invalid - check if original had entries for this child context *)
+          match inspect $ child_lvl (Ctxt.lvl ctxt) with
+          | Some clvl eq:e =>
+            let va := next_va ctxt index (child_lvl_add_one _ _ e) in
+            (* Check with inherited ASID (covers both global and non-global cases from original) *)
+            let ndctxt := NDCtxt.make (Ctxt.is_upper ctxt) va (Ctxt.asid ctxt) in
+            let child_ctxt := existT clvl ndctxt in
+            (* Also check global context (ASID = None) *)
+            let ndctxt_global := NDCtxt.make (Ctxt.is_upper ctxt) va None in
+            let child_ctxt_global := existT clvl ndctxt_global in
+            let had_entries := ¬(VATLB.get child_ctxt orig_vatlb = ∅)
+                            ∨ ¬(VATLB.get child_ctxt_global orig_vatlb = ∅) in
+            if decide had_entries
+            then Ok (vatlb, true)  (* Lost entries - this is a change *)
+            else Ok (vatlb, false)
+          | None eq:_ => Ok (vatlb, false)
+          end
       else
         guard_or ("[Memory] Next level PTE read failed at " ++ (pretty loc))%string (negb mem_strict);;
         Ok (vatlb, false).
@@ -1077,7 +1099,7 @@ Module TLB.
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
           foldlM (λ '(vatlb_prev, is_changed_prev) te,
             '(vatlb_lvl, is_changed_lvl) ←
-               va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr true;
+               va_fill_lvl vatlb_prev tlb.(vatlb) ts init mem time ctxt te index ttbr true;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
           ) prev tes
         ) (tlb.(vatlb), false) val_ttbrs
@@ -1115,7 +1137,7 @@ Module TLB.
       mret (vatlb_new, is_changed || is_changed_prev)
     ) (vatlb, false) (enum (bv 9)).
 
-  Definition traverse_lvl (vatlb : VATLB.t) (ts : TState.t)
+  Definition traverse_lvl (vatlb : VATLB.t) (orig_vatlb : VATLB.t) (ts : TState.t)
         (init : Memory.initial)
         (mem : Memory.t)
         (time : nat)
@@ -1124,7 +1146,7 @@ Module TLB.
         (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb_prev, is_changed_prev) index,
       '(vatlb_new, is_changed_new) ←
-        va_fill_lvl vatlb_prev ts init mem time (FE.ctxt fe) (projT2 fe) index ttbr mem_strict;
+        va_fill_lvl vatlb_prev orig_vatlb ts init mem time (FE.ctxt fe) (projT2 fe) index ttbr mem_strict;
       mret (vatlb_new, is_changed_new || is_changed_prev)
     ) (vatlb, false) (enum (bv 9)).
 
@@ -1149,9 +1171,9 @@ Module TLB.
             if decide (FE.lvl fe = plvl ∧ is_active_asid ts (FE.asid fe) val_ttbrs)
               then Some fe
               else None) (elements tlb.(vatlb)) in
-        foldlM (λ '(vatlb, is_changed_prev) fe,
+        foldlM (λ '(acc_vatlb, is_changed_prev) fe,
           '(vatlb_new, is_changed) ←
-            traverse_lvl vatlb ts init mem time fe ttbr mem_strict;
+            traverse_lvl acc_vatlb tlb.(vatlb) ts init mem time fe ttbr mem_strict;
           mret (vatlb_new, is_changed || is_changed_prev)
         ) (tlb.(vatlb), false) fes
       end;
@@ -1623,13 +1645,6 @@ Section BBM.
     Decision (is_loc_from_baddr loc baddr).
   Proof. unfold_decide. Defined.
 
-  Definition timestamp_before_tlbi (mem : Memory.t) : list nat :=
-    omap
-      (λ i,
-        if (mem !! i) is Some ev then
-          if ev is Ev.Tlbi _ then Some (i-1) else None
-        else None) (seq 1 (length mem)).
-
   Definition same_mem_content (mem : Memory.t) (init : Memory.initial)
                 (time : nat)
                 (lvl : Level)
@@ -1709,16 +1724,13 @@ Section BBM.
       let max_t := length mem in
       let ttbrs_to_check :=
         filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
-      let times := timestamp_before_tlbi mem in
-      let ts_to_check := if is_emptyb times then [max_t] else times in
       foldlM (λ violated ttbr,
         if (violated : bool) then mret true (* early return *)
         else
           snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr mem_strict;
           mret $
             existsb (λ '(tlb, time),
-              if decide (time ∉ ts_to_check) then false
-              else check_bbm_violation_in_snapshot mem initmem tlb time
+              check_bbm_violation_in_snapshot mem initmem tlb time
             ) snapshots
       ) false (elements ttbrs_to_check)
     else
@@ -2101,28 +2113,34 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       (* using traversed snapshots also works here *)
       snapshots ← mlift $ TLB.unique_snapshots_for_va_until ts init mem vmax_t va ttbr;
-      valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
-      invalid_entries ← mlift $
-        TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
-      (* update IIS with either a valid translation result or an invalid result *)
-      valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
-        end;
-      invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
-        end;
-      mchoosel (valid_res ++ invalid_res)
+      (* Handle empty snapshots case - no valid translation possible at this view.
+         Discard this execution path as no translation can succeed. *)
+      if decide (snapshots = []) then
+        mdiscard
+      else
+        valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+        invalid_entries ← mlift $
+          TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
+        (* update IIS with either a valid translation result or an invalid result *)
+        valid_res ←
+          for (val_ttbr, path, t, ti) in valid_entries do
+            val_ttbr ← othrow
+              "TTBR value type does not match with the value from the translation"
+              (val_to_regval ttbr val_ttbr);
+            let root := (Some (existT ttbr val_ttbr)) in
+            let ti := if is_ifetch then None else ti in
+            mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          end;
+        invalid_res ←
+          for (val_ttbr, path, t, ti) in invalid_entries do
+            val_ttbr ← othrow
+              "TTBR value type does not match with the value from the translation"
+              (val_to_regval ttbr val_ttbr);
+            let root := (Some (existT ttbr val_ttbr)) in
+            mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          end;
+        chosen ← mchoosel (valid_res ++ invalid_res);
+        mret chosen
     else
       mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
   mset PPState.iis $ IIS.set_trs trans_res.1;;

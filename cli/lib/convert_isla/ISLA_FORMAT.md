@@ -154,9 +154,13 @@ address       ::= hex_literal
 
 ---
 
-## 3. Register Reset DSL (`[thread.N.reset]`)
+## 3. Register Initialization (`[thread.N.reset]` or `[thread.N.init]`)
 
-The values in the reset table are strings evaluated at test generation/initialization time to determine 64-bit register values.
+The converter supports both `reset` (page table tests) and `init` (usermode tests) sections. Both can be specified as:
+- Separate table: `[thread.N.reset]` or `[thread.N.init]`
+- Inline table: `init = { X1 = "x", X2 = "y" }`
+
+The values in the reset/init table are strings evaluated at test generation/initialization time to determine 64-bit register values.
 
 ### Grammar
 
@@ -244,6 +248,7 @@ code = """
       - `&`: Logical AND
       - `|`: Logical OR
       - `=`: Equality
+      - `~`: Inequality (can be used inline or wrapping: `0:X4~2` or `~(0:X4=2)`)
 
 ## 6. Full Example (Multi-level)
 
@@ -283,4 +288,22 @@ R3 = "mkdesc2(table=extz(0x300000, 64))" # L2 Table Descriptor
 [final]
 expect = "sat"
 assertion = "0:X0 = 1 & *pa1 = 1"
+```
+
+## 7. Usermode Test Example (Inline Init)
+
+```toml
+arch = "AArch64"
+name = "simple_load"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { X1 = "x", X3 = "y" }  # Inline init format
+code = """
+    LDR W0,[X1]
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0~0"  # X0 should NOT equal 0
 ```
