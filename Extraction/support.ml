@@ -26,3 +26,9 @@ let vec_eqdep_dec eq_dec _ _ v1 v2 =
     | x :: xs, y :: ys -> eq_dec x y && aux xs ys
     | _, _ -> false
   in aux v1 v2
+
+(* Debug trace support for VMPromising model.
+   When enabled, the extracted debug_trace_translation function prints to stderr. *)
+let debug_trace_enabled = ref false
+
+let set_debug_trace enabled = debug_trace_enabled := enabled

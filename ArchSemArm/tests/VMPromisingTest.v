@@ -120,7 +120,7 @@ Module EORMMUOFF.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -178,7 +178,7 @@ Module EOR.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -242,7 +242,7 @@ Module LDR.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -305,7 +305,7 @@ Module STRLDR.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -380,7 +380,7 @@ Module CORPTE.
     (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -481,7 +481,7 @@ Module MP.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -576,7 +576,7 @@ Module MPDMBS.
   Definition bbm_check := false.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -674,7 +674,7 @@ Module BBMSuccess.
   Definition bbm_check := true.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -752,7 +752,7 @@ Module BBMFailure.
   Definition bbm_check := true.
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 

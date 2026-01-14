@@ -105,7 +105,7 @@ Module EOR.
     (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -140,7 +140,7 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
     (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -185,7 +185,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
@@ -262,7 +262,7 @@ Module MP.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -345,7 +345,7 @@ Module MPDMBS.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -424,7 +424,7 @@ Module LB.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
@@ -502,7 +502,7 @@ Module LBDMBS.
     (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 

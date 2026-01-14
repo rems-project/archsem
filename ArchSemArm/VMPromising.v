@@ -50,6 +50,28 @@ Import (hints) UMPromising.
 #[local] Open Scope nat.
 #[local] Open Scope stdpp.
 
+(** Debug trace axioms for translation debugging.
+    Each returns its first argument to prevent extraction optimization.
+    Extracted to OCaml printf to stderr, controlled by Support.debug_trace_enabled. *)
+
+(* Trace memory/view state: vmax_t (mem length), vpre_t, va -> vmax_t *)
+Axiom debug_trace_trans_state : nat -> nat -> bv 64 -> nat.
+
+(* Trace snapshot filtering: before_filter, after_filter, va -> before_filter *)
+Axiom debug_trace_snapshot_filter : nat -> nat -> bv 64 -> nat.
+
+(* Trace snapshot/entry counts: num_snapshots, num_valid, num_invalid, va -> num_snapshots *)
+Axiom debug_trace_translation : nat -> nat -> nat -> bv 64 -> nat.
+
+(* Trace chosen translation result: is_valid (1=valid, 0=invalid), trans_time, inv_time_opt, va -> is_valid *)
+Axiom debug_trace_trans_choice : nat -> nat -> option nat -> bv 64 -> nat.
+
+(* Trace individual valid entry: trans_time, trans_time, inv_time_opt, va -> trans_time *)
+Axiom debug_trace_valid_entry : nat -> nat -> option nat -> bv 64 -> nat.
+
+(* Trace individual invalid entry: trans_time, trans_time, inv_time_opt, va -> trans_time *)
+Axiom debug_trace_invalid_entry : nat -> nat -> option nat -> bv 64 -> nat.
+
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)
 
@@ -418,9 +440,14 @@ Definition ttbrs : gset reg :=
     TTBR1_EL2;
     VTTBR_EL2]@{reg}.
 
+(** Registers that are writable for ERET (exception return) but should not be
+    in strict_regs to avoid conflict with translation read constraints *)
+Definition eret_writable_regs : gset reg :=
+  list_to_set [PSTATE; SPSR_EL1; SPSR_EL2; SPSR_EL3]@{reg}.
+
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
-  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg ∨ r ∈ eret_writable_regs).
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
@@ -2096,33 +2123,63 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
 
+  (* Debug: trace state before translation *)
+  let vmax_chk := debug_trace_trans_state vmax_t vpre_t va in
+  guard_or "[Assertion] vmax trace" (vmax_chk =? vmax_t);;
+
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       (* using traversed snapshots also works here *)
-      snapshots ← mlift $ TLB.unique_snapshots_for_va_until ts init mem vmax_t va ttbr;
-      valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
-      invalid_entries ← mlift $
-        TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
-      (* update IIS with either a valid translation result or an invalid result *)
-      valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
-        end;
-      invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
-        end;
-      mchoosel (valid_res ++ invalid_res)
+      snapshots_raw ← mlift $ TLB.unique_snapshots_for_va_until ts init mem vmax_t va ttbr;
+      let snapshots := filter (λ s, vpre_t ≤ s.2) snapshots_raw in
+      (* Debug: trace snapshot filtering *)
+      let filt_chk := debug_trace_snapshot_filter (length snapshots_raw) (length snapshots) va in
+      guard_or "[Assertion] filter trace" (filt_chk =? length snapshots_raw);;
+      (* Handle empty snapshots case - no valid translation possible at this view.
+         Discard this execution path as no translation can succeed. *)
+      if decide (snapshots = []) then
+        mdiscard
+      else
+        valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+        invalid_entries ← mlift $
+          TLB.get_invalid_entries_from_snapshots snapshots ts init mem tid is_ets2 va asid ttbr;
+        (* Debug trace: print snapshot and entry counts. Use returned value to prevent optimization. *)
+        let num_snaps := debug_trace_translation
+                   (length snapshots) (length valid_entries) (length invalid_entries) va in
+        guard_or "[Assertion] snapshot count mismatch" (num_snaps =? length snapshots);;
+        (* update IIS with either a valid translation result or an invalid result *)
+        (* Debug trace valid entries inside the loop *)
+        valid_res ←
+          for (val_ttbr, path, t, ti) in valid_entries do
+            (* Debug: trace this valid entry *)
+            let t' := debug_trace_valid_entry t t ti va in
+            guard_or "[Assertion] valid entry time" (t' =? t);;
+            val_ttbr ← othrow
+              "TTBR value type does not match with the value from the translation"
+              (val_to_regval ttbr val_ttbr);
+            let root := (Some (existT ttbr val_ttbr)) in
+            let ti := if is_ifetch then None else ti in
+            mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          end;
+        (* Debug trace invalid entries inside the loop *)
+        invalid_res ←
+          for (val_ttbr, path, t, ti) in invalid_entries do
+            (* Debug: trace this invalid entry *)
+            let t' := debug_trace_invalid_entry t t ti va in
+            guard_or "[Assertion] invalid entry time" (t' =? t);;
+            val_ttbr ← othrow
+              "TTBR value type does not match with the value from the translation"
+              (val_to_regval ttbr val_ttbr);
+            let root := (Some (existT ttbr val_ttbr)) in
+            mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          end;
+        chosen ← mchoosel (valid_res ++ invalid_res);
+        (* Debug trace: print the chosen result *)
+        let is_valid := if (length valid_res <=? 0)%nat then 0 else 1 in
+        let chk := debug_trace_trans_choice is_valid chosen.1.(IIS.TransRes.time) chosen.2 va in
+        guard_or "[Assertion] choice trace" (chk =? is_valid);;
+        mret chosen
     else
       mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
   mset PPState.iis $ IIS.set_trs trans_res.1;;

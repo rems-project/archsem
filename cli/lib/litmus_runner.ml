@@ -25,8 +25,9 @@ let string_of_gen = function
   | _ -> "?"
 
 (* Checks if a final state matches a single outcome (all thread conditions must match) *)
-let check_outcome (fs : ArchState.t) (outcome : Litmus_parser.cond) : bool =
-  List.for_all (fun (tid, expected_regs) ->
+let check_outcome (fs : ArchState.t) (reg_assertions : Litmus_parser.reg_assertion list) (mem_assertions : Litmus_parser.mem_assertion list) : bool =
+  (* Check register conditions *)
+  let regs_match = List.for_all (fun (tid, expected_regs) ->
     let actual_regs = ArchState.reg tid fs in
     List.for_all (fun (reg, req) ->
       match RegMap.get_opt reg actual_regs with
@@ -37,10 +38,20 @@ let check_outcome (fs : ArchState.t) (outcome : Litmus_parser.cond) : bool =
         | Litmus_parser.Neq expected_val -> actual_gen <> expected_val)
       | None -> false
     ) expected_regs
-  ) outcome
+  ) reg_assertions in
+  (* Check memory conditions *)
+  let mem_match = List.for_all (fun (addr, size, req) ->
+    match ArchState.mem_read addr size fs with
+    | Some actual_val ->
+        (match req with
+        | Litmus_parser.Eq expected_val -> actual_val = expected_val
+        | Litmus_parser.Neq expected_val -> actual_val <> expected_val)
+    | None -> false
+  ) mem_assertions in
+  regs_match && mem_match
 
 let print_forbidden_violation (i : int) (arch_state : ArchState.t)
-    (forbidden_outcome : Litmus_parser.cond) =
+    (forbidden_outcome : Litmus_parser.reg_assertion list) =
   Printf.printf "FORBIDDEN OUTCOME OBSERVED: Execution %d matched a forbidden outcome!\n" (i + 1);
   List.iter (fun (tid, expected_regs) ->
     Printf.printf "  Thread %d:\n" tid;
@@ -58,18 +69,24 @@ let print_forbidden_violation (i : int) (arch_state : ArchState.t)
     ) expected_regs
   ) forbidden_outcome
 
-(** Runs model executions and checks coverage (allowed) and forbidden constraints.
-    Returns true if all allowed outcomes are covered and no forbidden outcomes are observed. *)
+(** Result of running executions *)
+type test_result =
+  | Equal     (* Results match expected outcomes *)
+  | Different (* Results differ from expected outcomes *)
+  | Error     (* Model failed with errors *)
+
+(** Runs model executions and checks coverage (allowed) and forbidden constraints. *)
 let run_executions model_name model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
-    (outcomes : Litmus_parser.outcome list) : bool =
+    (outcomes : Litmus_parser.outcome list) : test_result =
   Printf.printf "Running test with model %s%s%s and fuel %d...\n" (c_bold ^ c_cyan) model_name c_reset fuel;
   let results = model fuel termCond arch_state in
 
+  (* Extract both register and memory conditions from outcomes *)
   let allowed_outcomes = List.filter_map
-    (function Litmus_parser.Allowed c -> Some c | _ -> None) outcomes in
+    (function Litmus_parser.Allowed (c, m) -> Some (c, m) | _ -> None) outcomes in
   let forbidden_outcomes = List.filter_map
-    (function Litmus_parser.Forbidden c -> Some c | _ -> None) outcomes in
+    (function Litmus_parser.Forbidden (c, m) -> Some (c, m) | _ -> None) outcomes in
 
   (* Pretty-print error with model context - errors now have [Category] prefix from Coq *)
   let format_error model err =
@@ -103,9 +120,9 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
   (* Coverage (allowed): For ALL allowed checks, there must exist SOME execution
      that matches it. This verifies the model can exhibit all expected behaviors. *)
   let passed_coverage =
-    List.for_all (fun expected ->
-      let matched = List.exists (fun fs -> check_outcome fs expected) valid_final_states in
-      if not matched && valid_final_states <> [] then (
+    List.for_all (fun (reg_assertion, mem_assertions) ->
+      let matched = List.exists (fun fs -> check_outcome fs reg_assertion mem_assertions) valid_final_states in
+      if not matched then (
         Printf.printf "COVERAGE FAIL: No execution matched expected outcome:\n";
         List.iter (fun (tid, regs) ->
           Printf.printf "  Thread %d: %s\n" tid
@@ -113,7 +130,7 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
               let (op, v) = match req with Litmus_parser.Eq v -> ("=", v) | Litmus_parser.Neq v -> ("!=", v) in
               Printf.sprintf "%s%s%s" (Reg.to_string reg) op (string_of_gen v)
             ) regs))
-        ) expected;
+        ) reg_assertion;
         (* Show what we actually got *)
         if List.length valid_final_states <= 25 then (
           Printf.printf "  Actual executions (%d total):\n" (List.length valid_final_states);
@@ -126,7 +143,7 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
                 let actual_str = match actual_opt with Some g -> string_of_gen g | None -> "N/A" in
                 Printf.printf "      %d:%s = %s\n" tid (Reg.to_string reg) actual_str
               ) regs
-            ) expected
+            ) reg_assertion
           ) valid_final_states
         ) else
           Printf.printf "  Got %d executions, none matching\n" (List.length valid_final_states)
@@ -144,21 +161,26 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
         match fs_opt with
         | Some fs ->
           (* Check if this execution matches ANY forbidden outcome *)
-          let violation = List.find_opt (fun c -> check_outcome fs c) forbidden_outcomes in
+          let violation = List.find_opt (fun (reg_a, mem_a) -> check_outcome fs reg_a mem_a) forbidden_outcomes in
           (match violation with
-           | Some forbidden_cond ->
-               print_forbidden_violation i fs forbidden_cond;
+           | Some (reg_assertion, _mem_assertions) ->
+               print_forbidden_violation i fs reg_assertion;
                false (* This execution matched a forbidden outcome - FAIL *)
            | None -> true) (* This execution didn't match any forbidden outcome - OK *)
         | None -> true (* Errors don't count against forbidden check *)
       ) analyzed_results
   in
 
-  (* Report if no valid executions at all *)
-  if valid_final_states = [] && allowed_outcomes <> [] then
-    Printf.printf "NO VALID EXECUTIONS: All %d executions failed with errors\n" (List.length results);
-
-  passed_coverage && passed_forbidden
+  (* Report if no valid executions at all - this is an ERROR *)
+  let has_errors = valid_final_states = [] && results <> [] in
+  if has_errors then (
+    Printf.printf "%sNO VALID EXECUTIONS:%s All %d executions failed with errors\n"
+      (c_bold ^ c_red) c_reset (List.length results);
+    Error
+  ) else if passed_coverage && passed_forbidden then
+    Equal  (* Results match expectations *)
+  else
+    Different  (* Results differ from expectations *)
 
 (** Main entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)
@@ -170,7 +192,7 @@ let run_litmus_test model_name model filename =
     try
     let toml = Otoml.Parser.from_file filename in
     let fuel = Otoml.find_opt toml Litmus_parser.get_int ["fuel"]
-               |> Option.value ~default:1000 in
+               |> Option.value ~default:10000 in
 
     (* Parse Architecture State *)
     let reg_maps = Litmus_parser.parse_registers toml in
@@ -182,10 +204,12 @@ let run_litmus_test model_name model filename =
     let outcome = Litmus_parser.parse_outcomes toml in
 
     Printf.printf "\nSuccessfully parsed %s\n" filename;
-    let passed = run_executions model_name model arch_state num_threads fuel termConds outcome in
-    if passed then Printf.printf "RESULT: %sPASS%s\n" c_green c_reset
-    else Printf.printf "RESULT: %sFAIL%s\n" c_red c_reset;
-    passed
+    let result = run_executions model_name model arch_state num_threads fuel termConds outcome in
+    (match result with
+    | Equal -> Printf.printf "RESULT: %sEQUAL%s\n" c_green c_reset
+    | Different -> Printf.printf "RESULT: %sDIFFERENT%s\n" c_yellow c_reset
+    | Error -> Printf.printf "RESULT: %sERROR%s\n" c_red c_reset);
+    result = Equal
 
   with
   | Otoml.Parse_error (pos, msg) ->

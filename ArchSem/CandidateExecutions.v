@@ -1062,6 +1062,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
     Definition cd_to_archState (cd : t) : archState nmth :=
       {|archState.regs := final_reg_map cd;
         archState.memory := final_mem_map cd;
+        archState.final_memory := None;
         archState.address_space := cd.(init).(archState.address_space)|}.
 
     (** ** Memory based relations *)

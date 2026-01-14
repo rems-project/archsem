@@ -90,6 +90,8 @@ module ArchState : sig
   val reg : int -> t -> RegMap.t
 
   val mem : t -> MemMap.t
+
+  val mem_read : Z.t -> int -> t -> RegVal.gen option
 end
 
 type termCond = (RegMap.t -> bool) list
@@ -107,7 +109,9 @@ module ArchModel : sig
 
   type 'a t = (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
 
-  type 'a vmp_t = (* fuel *) int -> (* debug *) bool -> (* mem_strict *) bool -> (* bbm_check *) bool -> termCond -> ArchState.t -> 'a Res.t list
+  type 'a vmp_t = (* fuel *) int ->
+    (* debug *) bool -> (* mem_strict *) bool -> (* bbm_check *) bool ->
+    termCond -> ArchState.t -> 'a Res.t list
 end
 
 val seq_model : empty ArchModel.t
@@ -115,3 +119,21 @@ val seq_model : empty ArchModel.t
 val umProm_model : empty ArchModel.t
 
 val vmProm_model : empty ArchModel.vmp_t
+
+val umProm_model_pf : empty ArchModel.t
+
+val vmp_model_pf : empty ArchModel.vmp_t
+
+(** Debug tracing control for VMPromising model *)
+module Debug : sig
+  (** Enable or disable debug trace output to stderr.
+      When enabled, prints information about:
+      - Number of TLB snapshots computed per translation
+      - Number of valid translation entries found
+      - Number of invalid (fault) translation entries found
+      - Virtual address being translated *)
+  val set_trace_enabled : bool -> unit
+
+  (** Check if debug tracing is currently enabled *)
+  val is_trace_enabled : unit -> bool
+end

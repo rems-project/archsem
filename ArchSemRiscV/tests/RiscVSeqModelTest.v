@@ -151,6 +151,7 @@ Definition termCond : terminationCondition 1 :=
 
 Definition initState :=
   {|archState.memory := init_mem;
+    archState.final_memory := None;
     archState.regs := [# init_reg];
     archState.address_space := () |}.
 Definition test_results :=
@@ -179,6 +180,7 @@ Definition termCond : terminationCondition 1 :=
 
 Definition initState :=
   {|archState.memory := init_mem;
+    archState.final_memory := None;
     archState.regs := [# init_reg];
     archState.address_space := () |}.
 Definition test_results :=
@@ -208,6 +210,7 @@ Module STRLDR. (* sd x2, 0x100(x1); ld x1, 0x100(x1) at 0x500, using address 0x1
 
   Definition initState :=
     {|archState.memory := init_mem;
+      archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := () |}.
   Definition test_results :=
@@ -241,7 +244,7 @@ Module Factorial. (* https://godbolt.org/z/fzzajP9nq *)
     (λ tid rm, reg_lookup PC rm =? Some (0x1234 : bv 64)).
 
   Definition initState :=
-    {|archState.memory := init_mem;
+    {|archState.memory := init_mem; archState.final_memory := None;
       archState.regs := [# init_reg];
       archState.address_space := () |}.
   Definition test_results :=
