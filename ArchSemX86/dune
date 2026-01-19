@@ -3,6 +3,7 @@
  (package coq-archsem-x86)
  (modules
    X86Inst
+   OperationalX86TSO
  )
  (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem SailTinyX86)
  (coqdoc_flags :standard --utf8
