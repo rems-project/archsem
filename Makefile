@@ -19,6 +19,7 @@ DIRS=Common
 DIRS+=ArchSem
 DIRS+=ArchSemArm
 DIRS+=ArchSemRiscV
+DIRS+=ArchSemX86
 DIRS+=Extraction
 
 TARFILES=$(DIRS)

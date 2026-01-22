@@ -45,3 +45,4 @@ projects or Rocq files (assuming you are using a Rocq setup from opam):
  - ArchSem (Architecture generic part)
  - ArchSemArm (Arm instantiation)
  - ArchSemRiscV (RISC-V instantiation)
+ - ArchSemX86 (x86 instantiation)

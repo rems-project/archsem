@@ -5,7 +5,7 @@
 
 ArchSem is a Rocq framework to define the semantics of CPU architectures
 such as Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set semantics.
-The framework is designed to be generic, but so far is only instantiated for Arm-A and RISC-V.
+The framework is designed to be generic, but so far is only instantiated for Arm-A, RISC-V and x86.
 
 ## Paper
 
@@ -112,6 +112,7 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
 - `ArchSemRiscV` The RISC-V instantiation of the library. This includes:
   - A User-mode axiomatic model (`UMAxRiscV.v`)
+- `ArchSemX86` The x86 instantiation of the library.
 - `Extraction` contains machinery to extract the code to OCaml, for now it is
   mainly use to check that the code _can_ be extracted rather than as an
   actually usable OCaml library
@@ -125,6 +126,7 @@ will be generated in:
 - `_build/default/ArchSem/ArchSem.html/toc.html`
 - `_build/default/ArchSemArm/ArchSemArm.html/toc.html`
 - `_build/default/ArchSemRiscV/ArchSemRiscV.html/toc.html`
+- `_build/default/ArchSemX86/ArchSemX86.html/toc.html`
 
 
 ## Current limitations
