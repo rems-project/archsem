@@ -1769,8 +1769,7 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
   let va := tlbi.(TLBIInfo_rec).(TLBIRecord_address) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
-  upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
-                (is_upper_va va);
+  let upper := bv_extract 55 1 va =? 1%bv in
   let va_extracted := bv_extract 12 36 va in
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
