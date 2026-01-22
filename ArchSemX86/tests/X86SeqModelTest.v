@@ -173,8 +173,8 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
     |> reg_insert RIP 0x500
     |> reg_insert RDI 5 (* factorial argument *)
     |> reg_insert RCX 0x1234 (* return address *) 
-    |> reg_insert RBP 0
-    |> reg_insert RSP 0
+    |> reg_insert RBP 0x1335
+    |> reg_insert RSP 0x1335
     |> reg_insert RAX 0.
 
   Definition init_mem : memoryMap:=
@@ -196,7 +196,7 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
     |> mem_insert 0x533 1 0xc9              (* leave *)
     |> mem_insert 0x534 1 0xc3              (* ret *)
 
-    |> mem_insert 0xffff_ffff_ffff_ff00 256 0. (* Memory need to exist to be written to *)
+    |> mem_insert 0x1235 256 0. (* Memory need to exist to be written to *)
 
   Definition termCond : terminationCondition 1 :=
     (λ tid rm, reg_lookup RIP rm =? Some (0x1234 : bv 64)).
