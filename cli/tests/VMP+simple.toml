@@ -75,4 +75,4 @@ data = 0x60000000001443
 _PC = 0x8000000508
 
 [[outcome]]
-allowed.0 = { R0 = { op = "eq", val = 0x2a } }
+observable.0 = { R0 = { op = "eq", val = 0x2a } }

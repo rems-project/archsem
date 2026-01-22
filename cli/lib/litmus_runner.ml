@@ -52,9 +52,9 @@ let check_outcome (fs : ArchState.t) (reg_assertions : Litmus_parser.reg_asserti
   ) mem_assertions in
   regs_match && mem_match
 
-let print_forbidden_violation (i : int) (arch_state : ArchState.t)
-    (forbidden_outcome : Litmus_parser.reg_assertion list) =
-  Printf.printf "FORBIDDEN OUTCOME OBSERVED: Execution %d matched a forbidden outcome!\n" (i + 1);
+let print_unobservable_violation (i : int) (arch_state : ArchState.t)
+    (unobservable_outcome : Litmus_parser.reg_assertion list) =
+  Printf.printf "UNOBSERVABLE OUTCOME OBSERVED: Execution %d matched an unobservable outcome!\n" (i + 1);
   List.iter (fun (tid, expected_regs) ->
     Printf.printf "  Thread %d:\n" tid;
     let actual_regs = ArchState.reg tid arch_state in
@@ -66,10 +66,10 @@ let print_forbidden_violation (i : int) (arch_state : ArchState.t)
         | Litmus_parser.Neq v -> ("ne", string_of_gen v)
         | Litmus_parser.EqAny vs -> ("any", String.concat "|" (List.map string_of_gen vs))
       in
-      Printf.printf "    %s: actual=%s, forbidden=%s (%s)\n"
+      Printf.printf "    %s: actual=%s, unobservable=%s (%s)\n"
         (Reg.to_string reg) actual_str expected_str op_str
     ) expected_regs
-  ) forbidden_outcome
+  ) unobservable_outcome
 
 (** Result of running executions *)
 type test_result =
@@ -78,7 +78,7 @@ type test_result =
   | ZeroExec    (* Model produced 0 executions *)
   | Error       (* Model failed with errors *)
 
-(** Runs model executions and checks coverage (allowed) and forbidden constraints. *)
+(** Runs model executions and checks coverage (observable) and unobservable constraints. *)
 let run_executions model_name model (arch_state : ArchState.t) (_num_threads : int) (fuel : int)
     (termCond : termCond)
     (outcomes : Litmus_parser.outcome list) : test_result =
@@ -86,10 +86,10 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
   let results = model fuel termCond arch_state in
 
   (* Extract both register and memory conditions from outcomes *)
-  let allowed_outcomes = List.filter_map
-    (function Litmus_parser.Allowed (c, m) -> Some (c, m) | _ -> None) outcomes in
-  let forbidden_outcomes = List.filter_map
-    (function Litmus_parser.Forbidden (c, m) -> Some (c, m) | _ -> None) outcomes in
+  let observable_outcomes = List.filter_map
+    (function Litmus_parser.Observable (c, m) -> Some (c, m) | _ -> None) outcomes in
+  let unobservable_outcomes = List.filter_map
+    (function Litmus_parser.Unobservable (c, m) -> Some (c, m) | _ -> None) outcomes in
 
   (* Pretty-print error with model context - errors now have [Category] prefix from Coq *)
   let format_error model err =
@@ -120,18 +120,21 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
     List.filter_map (function ArchModel.Res.FinalState fs -> Some fs | _ -> None) results
   in
 
-  (* Coverage (allowed): For ALL allowed checks, there must exist SOME execution
-     that matches it. This verifies the model can exhibit all expected behaviors. *)
+  (* Coverage (Observed): For ALL observable checks, if there exists SOME execution
+     that matches it, then the model can exhibit expected behaviors. *)
   let passed_coverage =
     List.for_all (fun (reg_assertion, mem_assertions) ->
-      let matched = List.exists (fun fs -> check_outcome fs reg_assertion mem_assertions) valid_final_states in
+      let matched = List.exists (fun fs ->
+          check_outcome fs reg_assertion mem_assertions
+        ) valid_final_states in
       if not matched then (
         Printf.printf "COVERAGE FAIL: No execution matched expected outcome:\n";
         let req_to_string req =
           match req with
           | Litmus_parser.Eq v -> ("=", string_of_gen v)
           | Litmus_parser.Neq v -> ("!=", string_of_gen v)
-          | Litmus_parser.EqAny vs -> ("∈", "{" ^ String.concat "|" (List.map string_of_gen vs) ^ "}")
+          | Litmus_parser.EqAny vs ->
+            ("∈", "{" ^ String.concat "|" (List.map string_of_gen vs) ^ "}")
         in
         List.iter (fun (tid, regs) ->
           Printf.printf "  Thread %d: %s\n" tid
@@ -172,25 +175,25 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
           Printf.printf "  Got %d executions, none matching\n" (List.length valid_final_states)
       );
       matched
-    ) allowed_outcomes
+    ) observable_outcomes
   in
 
-  (* Forbidden (unsat): NO execution should match ANY forbidden outcome.
-     If any execution matches a forbidden outcome, the test fails. *)
-  let passed_forbidden =
-    if forbidden_outcomes = [] then true
+  (* Unobservable (unsat): NO execution should match ANY unobservable outcome.
+     If any execution matches an unobservable outcome, the test fails. *)
+  let passed_unobservable =
+    if unobservable_outcomes = [] then true
     else
       List.for_all (fun (i, fs_opt) ->
         match fs_opt with
         | Some fs ->
-          (* Check if this execution matches ANY forbidden outcome *)
-          let violation = List.find_opt (fun (reg_a, mem_a) -> check_outcome fs reg_a mem_a) forbidden_outcomes in
+          (* Check if this execution matches ANY unobservable outcome *)
+          let violation = List.find_opt (fun (reg_a, mem_a) -> check_outcome fs reg_a mem_a) unobservable_outcomes in
           (match violation with
            | Some (reg_assertion, _mem_assertions) ->
-               print_forbidden_violation i fs reg_assertion;
-               false (* This execution matched a forbidden outcome - FAIL *)
-           | None -> true) (* This execution didn't match any forbidden outcome - OK *)
-        | None -> true (* Errors don't count against forbidden check *)
+               print_unobservable_violation i fs reg_assertion;
+               false (* This execution matched an unobservable outcome - FAIL *)
+           | None -> true) (* This execution didn't match any unobservable outcome - OK *)
+        | None -> true (* Errors don't count against unobservable check *)
       ) analyzed_results
   in
 
@@ -206,12 +209,12 @@ let run_executions model_name model (arch_state : ArchState.t) (_num_threads : i
     Printf.printf "%sNO VALID EXECUTIONS:%s All %d executions failed with errors\n"
       (c_bold ^ c_red) c_reset (List.length results);
     Error
-  ) else if passed_coverage && passed_forbidden then
-    Observed  (* Model produced the specified outcome *)
+  ) else if passed_coverage && passed_unobservable then
+    Observed (* Model produced the specified outcome *)
   else
-    Unobserved  (* Model did not produce the specified outcome *)
+    Unobserved (* Model did not produce the specified outcome *)
 
-(** Main entry point: parses a TOML litmus test file and runs it with the given model.
+(** Entry point: parses a TOML litmus test file and runs it with the given model.
     Returns true if the test passes (coverage + safety checks). *)
 let run_litmus_test model_name model filename =
   if not (Sys.file_exists filename) then (

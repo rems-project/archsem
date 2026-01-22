@@ -33,10 +33,6 @@ let page_mask = Z.of_string "0xFFFFFFFFFFFFF000"
 (* Wire up Symbols module to use Allocator for page registration *)
 let () = Symbols.allocator_add_region := Allocator.add_region
 
-(** =============================================================================
-    PAGE TABLE INSTALLATION
-    ============================================================================= *)
-
 (** Install a page table mapping from VA to target descriptor.
     ~is_code: if true, use executable descriptor; otherwise use data descriptor *)
 let rec install_mapping ?(is_code=false) state table_base level va target force_level alias_opt va_sym_opt =

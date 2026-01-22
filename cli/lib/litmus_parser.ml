@@ -168,15 +168,15 @@ type reg_assertion = int * reg_cond
 type mem_assertion = Z.t * int * requirement
 
 type outcome =
-  | Allowed of reg_assertion list * mem_assertion list
-  | Forbidden of reg_assertion list * mem_assertion list
+  | Observable of reg_assertion list * mem_assertion list
+  | Unobservable of reg_assertion list * mem_assertion list
 
 (** Parses a condition block (thread ID -> register requirements) *)
 let parse_cond (toml : Otoml.t) : reg_assertion list =
   match toml with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
       List.filter_map (fun (tid_s, regs_toml) ->
-        (* Skip non-numeric keys like "mem" from "forbidden.mem" *)
+        (* Skip non-numeric keys like "mem" from "unobservable.mem" *)
         match int_of_string_opt tid_s with
         | Some tid ->
           let reg_conds =
@@ -209,7 +209,8 @@ let parse_single_mem_assertion (t : (string * Otoml.t) list) : mem_assertion opt
         | Otoml.TomlString s -> Z.of_string s
         | _ -> failwith "[Parser] Invalid addr type in memory assertion"
       in
-      let (value, req_type) = match List.assoc_opt "op" t with
+      let (value, req_type) =
+        match List.assoc_opt "op" t with
         | Some (Otoml.TomlString "ne") ->
             (match value_toml with
              | Otoml.TomlInteger v -> (Z.of_int v, fun v -> Neq v)
@@ -222,24 +223,24 @@ let parse_single_mem_assertion (t : (string * Otoml.t) list) : mem_assertion opt
       Some (addr, size, req_type (Number value))
   | _ -> None
 
-(** Parses a single [[outcome]] block into Allowed or Forbidden *)
+(** Parses a single [[outcome]] block into Observable or Unobservable *)
 let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
-  let has_allowed = List.exists (fun (k, _) -> k = "allowed") pairs in
-  let has_forbidden = List.exists (fun (k, _) -> k = "forbidden") pairs in
-  if has_allowed && has_forbidden then
-    failwith "[Config] Outcome cannot contain both 'allowed' and 'forbidden'";
-  match List.find_opt (fun (k, _) -> k = "allowed" || k = "forbidden") pairs with
+  let has_observable = List.exists (fun (k, _) -> k = "observable") pairs in
+  let has_unobservable = List.exists (fun (k, _) -> k = "unobservable") pairs in
+  if has_observable && has_unobservable then
+    failwith "[Config] Outcome cannot contain both 'observable' and 'unobservable'";
+  match List.find_opt (fun (k, _) -> k = "observable" || k = "unobservable") pairs with
   | Some (k, v) ->
     (* Parse register assertions: look for "regs" key, or fall back to parsing directly *)
     let reg_assertions =
       match v with
       | Otoml.TomlTable t | Otoml.TomlInlineTable t ->
           (match List.assoc_opt "regs" t with
-           | Some reg_toml -> parse_cond reg_toml  (* New format: allowed.regs = {...} *)
-           | None -> parse_cond v)  (* Old format: allowed.0 = {...} directly *)
+           | Some reg_toml -> parse_cond reg_toml  (* New format: observable.regs = {...} *)
+           | None -> parse_cond v)  (* Old format: observable.0 = {...} directly *)
       | _ -> parse_cond v
     in
-    (* Parse memory assertions: look for "mem" key under allowed/forbidden *)
+    (* Parse memory assertions: look for "mem" key under observable/unobservable *)
     let mem_assertions =
       match v with
       | Otoml.TomlTable t | Otoml.TomlInlineTable t ->
@@ -257,8 +258,8 @@ let parse_outcome (pairs : (string * Otoml.t) list) : outcome =
            | _ -> [])
       | _ -> []
     in
-    if k = "allowed" then Allowed (reg_assertions, mem_assertions) else Forbidden (reg_assertions, mem_assertions)
-  | None -> failwith "[Config] Outcome must contain 'allowed' or 'forbidden'"
+    if k = "observable" then Observable (reg_assertions, mem_assertions) else Unobservable (reg_assertions, mem_assertions)
+  | None -> failwith "[Config] Outcome must contain 'observable' or 'unobservable'"
 
 (** Parses all [[outcome]] blocks from the TOML file *)
 let parse_outcomes (toml : Otoml.t) : outcome list =

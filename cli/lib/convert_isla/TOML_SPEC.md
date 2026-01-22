@@ -16,7 +16,7 @@ FEAT_ETS2 = true
 [[registers]]   # Per-thread register init
 [[memory]]      # Memory regions (code + data)
 [[termCond]]    # Termination conditions
-[[outcome]]     # Expected outcomes
+[[outcome]]     # Possible outcomes
 ```
 
 ---
@@ -122,41 +122,10 @@ allowed = { regs = { "<TID>" = { <REG> = <VALUE> } } }
 # or with operator
 allowed = { regs = { "<TID>" = { <REG> = { op = "eq"|"ne", val = <VALUE> } } } }
 # with memory
-allowed = { mem = [{ addr = <ADDR>, value = <VALUE>, size = 8 }] }
+observable = { mem = [{ addr = <ADDR>, value = <VALUE>, size = 8 }] }
 # combined
-allowed = { regs = {...}, mem = [...] }
+observable = { regs = {...}, mem = [...] }
 ```
 
-- `allowed`: Outcome that may occur
-- `forbidden`: Outcome that must not occur (coverage check)
-
-### Examples
-
-```toml
-# Single register check (equality, shorthand)
-[[outcome]]
-allowed = { regs = { "0" = { R0 = 0x110 } } }
-
-# Multiple registers
-[[outcome]]
-allowed = { regs = { "0" = { R5 = 0x0, R2 = 0x2a } } }
-
-# Inequality check
-[[outcome]]
-allowed = { regs = { "0" = { R0 = { op = "ne", val = 0x0 } } } }
-
-# Memory check
-[[outcome]]
-allowed = { mem = [{ addr = 0x81000, value = 0x100000000000000, size = 8 }] }
-
-# Combined register and memory
-[[outcome]]
-allowed = {
-  regs = { "0" = { R0 = 0x1 } },
-  mem = [{ addr = 0x82000, value = 0x0, size = 8 }]
-}
-
-# Forbidden outcome (must not occur)
-[[outcome]]
-forbidden = { regs = { "0" = { R0 = 0x0 } } }
-```
+- `observable`: Defines outcomes that could be observable (coverage check).
+- `unobservable`: Defines outcomes that should NOT be reachable (safety check).

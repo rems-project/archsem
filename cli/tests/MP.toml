@@ -58,14 +58,14 @@ _PC = 0x508
 _PC = 0x608
 
 [[outcome]]
-allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
+observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
 
 [[outcome]]
-allowed.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
+observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
-allowed.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
+observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
-allowed.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
+observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
 
