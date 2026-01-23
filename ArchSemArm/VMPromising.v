@@ -1097,23 +1097,18 @@ Module TLB.
   Proof. unfold_decide. Defined.
 
   (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
-  Definition affects_va (va : bv 36) (last : bool)
+  Definition affects_va (va : bv 36) (last : bool) (upper : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     let '(te_lvl, te_va, te_val) :=
           (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else True).
-  Instance Decision_affects_va (va : bv 36) (last : bool)
+    ∧ (if last then is_final te_lvl te_val else True)
+    ∧ (upper = Ctxt.upper ctxt).
+  Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_va va last ctxt te).
-  Proof. unfold_decide. Defined.
-
-  Definition affects_upper (upper : bool) (ctxt : Ctxt.t) : Prop :=
-    upper = Ctxt.upper ctxt.
-  Instance Decision_affects_upper (upper : bool) (ctxt : Ctxt.t) :
-    Decision (affects_upper upper ctxt).
+    Decision (affects_va va last upper ctxt te).
   Proof. unfold_decide. Defined.
 
   (** Decide a TLBI instruction affects a given TLB entry *)
@@ -1122,11 +1117,9 @@ Module TLB.
     match tlbi with
     | TLBI.All tid => True
     | TLBI.Va tid asid va last upper =>
-      affects_asid asid ctxt ∧ affects_va va last ctxt te
-      ∧ affects_upper upper ctxt
+      affects_asid asid ctxt ∧ affects_va va last upper ctxt te
     | TLBI.Asid tid asid => affects_asid asid ctxt
-    | TLBI.Vaa tid va last upper => affects_va va last ctxt te
-      ∧ affects_upper upper ctxt
+    | TLBI.Vaa tid va last upper => affects_va va last upper ctxt te
     end.
   Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
                      (te : Entry.t (Ctxt.lvl ctxt)) :
