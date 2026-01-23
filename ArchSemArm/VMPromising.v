@@ -76,8 +76,8 @@ Module TLBI.
   Inductive t :=
   | All (tid : nat)
   | Asid (tid : nat) (asid : bv 16)
-  | Va (tid : nat) (asid : bv 16) (va : bv 36) (last : bool)
-  | Vaa (tid : nat) (va : bv 36) (last : bool).
+  | Va (tid : nat) (asid : bv 16) (va : bv 36) (last : bool) (upper : bool)
+  | Vaa (tid : nat) (va : bv 36) (last : bool) (upper : bool).
 
   #[global] Instance dec : EqDecision t.
   solve_decision.
@@ -87,16 +87,16 @@ Module TLBI.
     match tlbi with
     | All tid => tid
     | Asid tid _ => tid
-    | Va tid _ _ _ => tid
-    | Vaa tid _ _ => tid
+    | Va tid _ _ _ _ => tid
+    | Vaa tid _ _ _ => tid
     end.
 
   Definition asid_opt (tlbi : t) : option (bv 16) :=
     match tlbi with
     | All _ => None
     | Asid _ asid => Some asid
-    | Va _ asid _ _ => Some asid
-    | Vaa _ _ _ => None
+    | Va _ asid _ _ _ => Some asid
+    | Vaa _ _ _ _ => None
     end.
 
   Definition asid (tlbi : t) : bv 16 :=
@@ -106,8 +106,8 @@ Module TLBI.
     match tlbi with
     | All _ => None
     | Asid _ _ => None
-    | Va _ _ va _ => Some va
-    | Vaa _ va _ => Some va
+    | Va _ _ va _ _ => Some va
+    | Vaa _ va _ _ => Some va
     end.
 
   Definition va (tlbi : t) : bv 36 :=
@@ -117,12 +117,20 @@ Module TLBI.
     match tlbi with
     | All _ => None
     | Asid _ _ => None
-    | Va _ _ _ last => Some last
-    | Vaa _ _ last => Some last
+    | Va _ _ _ last _ => Some last
+    | Vaa _ _ last _ => Some last
     end.
 
   Definition last (tlbi : t) : bool :=
     default false (last_opt tlbi).
+
+  Definition upper_opt (tlbi : t) : option bool :=
+    match tlbi with
+    | All _ => None
+    | Asid _ _ => None
+    | Va _ _ _ _ upper => Some upper
+    | Vaa _ _ _ upper => Some upper
+    end.
 End TLBI.
 
 (** Promising events appearing in the trace *)
@@ -702,8 +710,8 @@ Definition prefix (lvl : Level) := bv (level_length lvl).
 Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
   bv_extract 12 n va.
 
-Definition prefix_to_va {n : N} (is_upper : bool) (p : bv n) : bv 64 :=
-  let varange_bits : bv 16 := if is_upper then (-1)%bv else 0%bv in
+Definition prefix_to_va {n : N} (upper : bool) (p : bv n) : bv 64 :=
+  let varange_bits : bv 16 := if upper then (-1)%bv else 0%bv in
   let padding := bv_0 (48 - n) in
   bv_concat 64 varange_bits (bv_concat 48 p padding).
 
@@ -769,12 +777,12 @@ Module TLB.
   Module NDCtxt.
     Record t (lvl : Level) :=
       make {
-          is_upper : bool;
+          upper : bool;
           va : prefix lvl;
           asid : option (bv 16);
         }.
     Arguments make {_} _ _.
-    Arguments is_upper {_}.
+    Arguments upper {_}.
     Arguments va {_}.
     Arguments asid {_}.
 
@@ -786,7 +794,7 @@ Module TLB.
 
     #[global] Instance count lvl : Countable (t lvl).
     Proof.
-      eapply (inj_countable' (fun ndc => (is_upper ndc, va ndc, asid ndc))
+      eapply (inj_countable' (fun ndc => (upper ndc, va ndc, asid ndc))
                         (fun x => make x.1.1 x.1.2 x.2)).
       abstract sauto.
     Defined.
@@ -796,7 +804,7 @@ Module TLB.
     Definition t := {lvl : Level & NDCtxt.t lvl}.
     Definition lvl : t -> Level := projT1.
     Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
-    Definition is_upper (ctxt : t) : bool := NDCtxt.is_upper (nd ctxt).
+    Definition upper (ctxt : t) : bool := NDCtxt.upper (nd ctxt).
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
     Definition asid (ctxt : t) : option (bv 16) := NDCtxt.asid (nd ctxt).
   End Ctxt.
@@ -962,7 +970,7 @@ Module TLB.
       (ttbr : reg) : result string (VATLB.t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
-    is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
     foldlM (λ '(vatlb, is_changed) sreg,
       val_ttbr ← othrow "TTBR should be a 64 bit value"
                     $ regval_to_val ttbr sreg.1;
@@ -971,7 +979,7 @@ Module TLB.
       if (Memory.read_at loc init mem time) is Some (memval, _) then
         if decide (is_table memval) then
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make is_upper va (Some asid) in
+          let ndctxt := NDCtxt.make upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
           let entry : Entry.t (Ctxt.lvl ctxt) :=
             Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
@@ -1010,7 +1018,7 @@ Module TLB.
           let va := next_va ctxt index (child_lvl_add_one _ _ e) in
           let asid := if bool_decide (is_global clvl next_pte) then None
                       else Ctxt.asid ctxt in
-          let ndctxt := NDCtxt.make (Ctxt.is_upper ctxt) va asid in
+          let ndctxt := NDCtxt.make (Ctxt.upper ctxt) va asid in
           let ctxt := existT clvl ndctxt in
           let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
@@ -1042,12 +1050,12 @@ Module TLB.
         let index := level_index va lvl in
         sregs ← othrow "TTBR should exist in initial state"
                 $ TState.read_sreg_at ts ttbr time;
-        is_upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+        upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
         foldlM (λ prev sreg,
           val_ttbr ← othrow "TTBR should be a 64 bit value"
                   $ regval_to_val ttbr sreg.1;
           let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make is_upper pva (Some asid) in
+          let ndctxt := NDCtxt.make upper pva (Some asid) in
           let ctxt := existT plvl ndctxt in
           (* parent entries should be from the original TLB (in the parent level) *)
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
@@ -1079,30 +1087,28 @@ Module TLB.
 
   (** Decide if a TLB entry is affected by an invalidation by asid at this asid *)
   Definition affects_asid (asid : bv 16)
-                          (ctxt : Ctxt.t)
-                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
+                          (ctxt : Ctxt.t) : Prop :=
     match (Ctxt.asid ctxt) with
     | Some te_asid => te_asid = asid
     | None => False
     end.
-  Instance Decision_affects_asid (asid : bv 16)
-                                 (ctxt : Ctxt.t)
-                                 (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_asid asid ctxt te).
+  Instance Decision_affects_asid (asid : bv 16) (ctxt : Ctxt.t) :
+    Decision (affects_asid asid ctxt).
   Proof. unfold_decide. Defined.
 
   (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
-  Definition affects_va (va : bv 36) (last : bool)
+  Definition affects_va (va : bv 36) (last : bool) (upper : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     let '(te_lvl, te_va, te_val) :=
           (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
     (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else True).
-  Instance Decision_affects_va (va : bv 36) (last : bool)
+    ∧ (if last then is_final te_lvl te_val else True)
+    ∧ (upper = Ctxt.upper ctxt).
+  Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_va va last ctxt te).
+    Decision (affects_va va last upper ctxt te).
   Proof. unfold_decide. Defined.
 
   (** Decide a TLBI instruction affects a given TLB entry *)
@@ -1110,10 +1116,10 @@ Module TLB.
                      (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     match tlbi with
     | TLBI.All tid => True
-    | TLBI.Va tid asid va last =>
-      affects_asid asid ctxt te ∧ affects_va va last ctxt te
-    | TLBI.Asid tid asid => affects_asid asid ctxt te
-    | TLBI.Vaa tid va last => affects_va va last ctxt te
+    | TLBI.Va tid asid va last upper =>
+      affects_asid asid ctxt ∧ affects_va va last upper ctxt te
+    | TLBI.Asid tid asid => affects_asid asid ctxt
+    | TLBI.Vaa tid va last upper => affects_va va last upper ctxt te
     end.
   Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
                      (te : Entry.t (Ctxt.lvl ctxt)) :
@@ -1234,10 +1240,10 @@ Module TLB.
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
             result string (list (val * list val * (option nat))) :=
-    is_upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
+    upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
                 (is_upper_va va);
-    let ndctxt_asid := NDCtxt.make is_upper (level_prefix va lvl) (Some asid) in
-    let ndctxt_global := NDCtxt.make is_upper (level_prefix va lvl) None in
+    let ndctxt_asid := NDCtxt.make upper (level_prefix va lvl) (Some asid) in
+    let ndctxt_global := NDCtxt.make upper (level_prefix va lvl) None in
     candidates_asid ←
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_asid;
     candidates_global ←
@@ -1274,9 +1280,9 @@ Module TLB.
                 (ttbr : reg) :
         result string (list (val * list val * (option nat))) :=
     if parent_lvl lvl is Some parent_lvl then
-      is_upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
+      upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
                 (is_upper_va va);
-      let ndctxt := NDCtxt.make is_upper (level_prefix va parent_lvl) asid in
+      let ndctxt := NDCtxt.make upper (level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
       let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
       let tes := filter (λ te, is_table (TLB.Entry.pte te)) tes in
@@ -1754,8 +1760,10 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     "TLBIs in other regimes than EL10 are unsupported"
     (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) = Regime_EL10);;
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
+  let va := tlbi.(TLBIInfo_rec).(TLBIRecord_address) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
-  let va := bv_extract 12 36 (tlbi.(TLBIInfo_rec).(TLBIRecord_address)) in
+  let upper := bv_extract 55 1 va =? 1%bv in
+  let va_extracted := bv_extract 12 36 va in
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
@@ -1764,8 +1772,8 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
-    | TLBIOp_VAA => mret $ TLBI.Vaa tid va last
-    | TLBIOp_VA => mret $ TLBI.Va tid asid va last
+    | TLBIOp_VAA => mret $ TLBI.Vaa tid va_extracted last upper
+    | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   mem ← mget PPState.mem;
