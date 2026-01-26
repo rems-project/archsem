@@ -38,7 +38,7 @@
 (******************************************************************************)
 
 From ASCommon Require Import Options.
-From ASCommon Require Import Common GRel FMon.
+From ASCommon Require Import Common Exec FMon.
 
 Require Import X86Inst.
 
@@ -49,12 +49,6 @@ Require Import X86Inst.
 
 (* TSO Model Types*)
 
-(* Unique event ID *)
-Definition eid: Type := nat.
-
-(* Hardware thread ID *)
-Definition tid: Type := nat.
-
 Definition value: Type := forall (opsize: operand_size), bits opsize.
 
 Inductive fence: Type :=
@@ -62,15 +56,16 @@ Inductive fence: Type :=
 | SFence
 | MFence.
 
+(* eid = event id, tid = thread id*)
 Inductive event: Type :=
-| Write (a: eid) (t: tid) (x: address) (v: value)
-| Read (a: eid) (t: tid) (x: address) (v: value)
-| Dequeue (a: eid) (t: tid) (x: address) (v: value)
-| Fence (a: eid) (t: tid) (fence_type: fence)
-| Lock (a: eid) (t: tid)
-| Unlock (a: eid) (t: tid).
+| Write (eid: nat) (tid: nat) (x: address) (v: value)
+| Read (eid: nat) (tid: nat) (x: address) (v: value)
+| Dequeue (eid: nat) (tid: nat) (x: address) (v: value)
+| Fence (eid: nat) (tid: nat) (fence_type: fence)
+| Lock (eid: nat) (tid: nat)
+| Unlock (eid: nat) (tid: nat).
 
-Definition get_event_id (e: event): eid :=
+Definition get_event_id (e: event): nat :=
     match e with
     | Write a _ _ _ => a
     | Read a _ _ _ => a
@@ -80,7 +75,7 @@ Definition get_event_id (e: event): eid :=
     | Unlock a _ => a
     end.
 
-Definition get_thread_id (e: event): tid :=
+Definition get_thread_id (e: event): nat :=
     match e with
     | Write _ t _ _ => t
     | Read _ t _ _ => t
@@ -124,10 +119,12 @@ Definition is_dequeue (e: event): bool :=
     | _ => false
     end.
 
+(* archState + extra fields (buffer and lock)*)
 Record machine_state: Type := {
-    M: address -> option value; (* NOTE: slides don't make it option type, and initialises all memory to 0. // Shared memory *)
-    B: tid -> list {e: event | is_write(e)}; (* Gives the store buffer for each thread. Each buffer is a list of write events, most recent first *)
-    L: option tid (* Global machine lock, indicating when some thread has exclusive access to memory *)
+    R: gmap nat registerMap; (* Registers for each thread *)
+    M: memoryMap;
+    B: gmap nat (list {e: event | is_write(e)}); (* Gives the store buffer for each thread. Each buffer is a list of write events, most recent first *)
+    L: option nat (* Global machine lock, indicating when some thread has exclusive access to memory *)
 }.
 
 Fixpoint no_pending (buffer: list {e: event | is_write(e)}) (x: address): bool :=
@@ -138,8 +135,31 @@ Fixpoint no_pending (buffer: list {e: event | is_write(e)}) (x: address): bool :
         else no_pending t x
     end.
 
-Definition not_blocked (m: machine_state) (t: tid): bool :=
+Definition not_blocked (m: machine_state) (tid: nat): bool :=
     let lock := L m in 
-        if lock is Some t then true
+        if lock is Some tid then true
         else if lock is None then true 
         else false.
+
+Definition read_reg (tid: nat) (reg: reg) (state: machine_state): option (reg_type reg) :=
+    match (gmap_lookup tid (R state)) with
+    | Some regMap => dmap_lookup reg regMap
+    | None => None
+    end.
+
+Definition write_reg (tid: nat) (reg: reg) (val: reg_type reg) (state: machine_state): machine_state :=
+    set (lookup tid ∘ R) (option_map (dmap_insert reg val)) state.
+
+Section RunOutcome.
+  Context (tid : nat) (initmem : memoryMap).
+
+  Equations run_outcome (call : outcome) : Exec.t (machine_state) string (eff_ret call) :=
+    | RegRead reg racc =>
+        opt ←  mget (read_reg tid reg);
+        othrow ("Register " ++ pretty reg ++ " not found")%string opt
+    | RegWrite reg racc val =>
+        opt ←  mget (read_reg tid reg);
+          guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string $
+            is_Some opt;;
+        mSet $ write_reg tid reg val.
+End RunOutcome.
