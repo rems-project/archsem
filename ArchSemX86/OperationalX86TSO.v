@@ -181,34 +181,36 @@ Section RunOutcome.
         guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string (is_Some opt);;
         mSet (write_reg tid reg val)
     | MemRead (MemReq.make macc addr () size 0) =>
+        (* TODO: add and prioritise store forwarding *)
+
         (* Ensure conditions for performing a memory read are satisfied *)
         guard_or "Memory access type not supported" (negb(is_ifetch macc || is_explicit macc));;
         is_blocked ← mget (blocked tid);
         option_no_pending ← (mget (no_pending addr tid));
         guard_or ("Thread " ++ pretty tid ++ " has no buffer")%string (is_Some option_no_pending);;
         let is_no_pending := default false option_no_pending in
-        if is_blocked || (negb is_no_pending) then
-            mthrow ("Thread " ++ pretty tid ++ " is blocked")%string
-        else
-            (* Acquire lock if needed*)
-            (
-                if is_explicit macc && is_atomic_rmw macc then (
-                    state ← mGet;
-                    guard_or 
-                        ("Thread " ++ pretty tid ++ " can't acquire lock as its store buffer is not empty")%string
-                        (negb(buffer_empty tid state));; 
-                    lock ← mget L; 
-                    guard_or 
-                        ("Thread " ++ pretty tid ++ " attempting to acquire a lock it already has")%string 
-                        (is_Some lock);;
-                    mSet (acquire_lock tid)
-                )
-                else mret ()
-            );;
-            (* Attempt memory read and return read value *)
-            opt ← mget (read_mem addr size);
-            read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
-            mret (Ok (read, bv_0 _))
+            guard_or 
+                ("Thread " ++ pretty tid ++ " is blocked")%string
+                (is_blocked || (negb is_no_pending));;
+        (* Acquire lock if needed*)
+        (
+            if is_explicit macc && is_atomic_rmw macc then (
+                state ← mGet;
+                guard_or 
+                    ("Thread " ++ pretty tid ++ " can't acquire lock as its store buffer is not empty")%string
+                    (negb(buffer_empty tid state));; 
+                lock ← mget L; 
+                guard_or 
+                    ("Thread " ++ pretty tid ++ " attempting to acquire a lock it already has")%string 
+                    (is_Some lock);;
+                mSet (acquire_lock tid)
+            )
+            else mret ()
+        );;
+        (* Attempt memory read and return read value *)
+        opt ← mget (read_mem addr size);
+        read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
+        mret (Ok (read, bv_0 _))
     | MemWrite (MemReq.make macc addr () size 0) val _ => 
         (* Add write to write buffer *)
         mSet (add_to_write_buffer tid addr size val);;
@@ -227,5 +229,6 @@ Section RunOutcome.
             else mret ()
         );;
         mret (Ok ())
+    (* TODO: add fence case*)
     | _ => mthrow "Unsupported outcome".
 End RunOutcome.
