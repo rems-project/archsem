@@ -51,89 +51,30 @@ Require Import X86Inst.
 
 (* TSO Model Types*)
 
-Definition value: Type := ∀ (opsize : N), bv opsize.
-
 Inductive fence: Type :=
 | LFence
 | SFence
 | MFence.
 
-(* eid = event id, tid = thread id*)
-Inductive event: Type :=
-| Write (eid : nat) (tid : nat) (x : address) (v : value)
-| Read (eid : nat) (tid : nat) (x : address) (v : value)
-| Dequeue (eid : nat) (tid : nat) (x : address) (v : value)
-| Fence (eid : nat) (tid : nat) (fence_type : fence)
-| Lock (eid : nat) (tid : nat)
-| Unlock (eid : nat) (tid : nat).
-
-Definition get_event_id (e : event) : nat :=
-    match e with
-    | Write a _ _ _ => a
-    | Read a _ _ _ => a
-    | Dequeue a _ _ _ => a
-    | Fence a _ _ => a
-    | Lock a _ => a
-    | Unlock a _ => a
-    end.
-
-Definition get_thread_id (e : event) : nat :=
-    match e with
-    | Write _ t _ _ => t
-    | Read _ t _ _ => t
-    | Dequeue _ t _ _ => t
-    | Fence _ t _ => t
-    | Lock _ t => t
-    | Unlock _ t => t
-    end.
-
-Definition get_address (e : event) : option address :=
-    match e with
-    | Write _ _ x _ => Some x
-    | Read _ _ x _ => Some x
-    | Dequeue _ _ x _ => Some x
-    | _ => None
-    end.
-
-Definition get_value (e : event) : option value :=
-    match e with
-    | Write _ _ _ v => Some v
-    | Read _ _ _ v => Some v
-    | Dequeue _ _ _ v => Some v
-    | _ => None
-    end.
-
-Definition is_read (e : event) : bool := 
-    match e with
-    | Read _ _ _ _ => true
-    | _ => false
-    end.
-
-Definition is_write (e : event) : bool := 
-    match e with
-    | Write _ _ _ _ => true
-    | _ => false
-    end.
-
-Definition is_dequeue (e : event) : bool :=
-    match e with
-    | Dequeue _ _ _ _ => true
-    | _ => false
-    end.
+Record addr_val : Type := {
+    addr: address;
+    size: N;
+    val: bv size
+}.
 
 (* archState + extra fields (buffer and lock)*)
 Record machine_state : Type := {
     R : gmap nat registerMap; (* Registers for each thread *)
     M : memoryMap;
-    B : gmap nat (list {e : event | is_write(e)}); (* Gives the store buffer for each thread. Each buffer is a list of write events, most recent first *)
+    B : gmap nat (list addr_val); (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, most recent first *)
     L : option nat (* Global machine lock, indicating when some thread has exclusive access to memory *)
 }.
 
-Fixpoint no_pending_inner (x : address) (buffer : (list {e : event | is_write(e)})) : bool :=
+Fixpoint no_pending_inner (x : address) (buffer : (list addr_val)) : bool :=
     match buffer with
     | nil => true
-    | w :: t =>
-        if get_address (proj1_sig w) is Some x then false (* proj1_sig extracts the type from the type-proof bundle *)
+    | h :: t =>
+        if decide(addr h = x) then false 
         else no_pending_inner x t
     end.
 
@@ -149,6 +90,19 @@ Definition blocked (tid : nat) (m : machine_state) : bool :=
         else if lock is None then false
         else true.
 
+Definition buffer_empty (tid : nat) (m : machine_state) : bool :=
+    match gmap_lookup tid (B m) with
+    | Some (x :: xs) => false
+    | _ => true
+    end.
+
+Definition thread_has_lock (tid : nat) (m : machine_state) : bool :=
+    match L m with
+    | Some tid => true
+    | _ => false
+    end.
+        
+
 Definition read_reg (tid : nat) (reg : reg) (state : machine_state) : option (reg_type reg) :=
     match (gmap_lookup tid (R state)) with
     | Some regMap => dmap_lookup reg regMap
@@ -158,19 +112,67 @@ Definition read_reg (tid : nat) (reg : reg) (state : machine_state) : option (re
 Definition write_reg (tid : nat) (reg : reg) (val : reg_type reg) (state : machine_state) : machine_state :=
     set (lookup tid ∘ R) (option_map (dmap_insert reg val)) state.
 
-Definition read_mem (tid : nat) (addr : address) (size : N) (state : machine_state) : option (bv (8 * size)) :=
+Definition read_mem (addr : address) (size : N) (state : machine_state) : option (bv (8 * size)) :=
     addr_range addr size
     |$> (fun curr_addr => (M state) !! curr_addr)
     |> list_of_options
     |$> bv_of_bytes (8 * size).
 
-Definition acquire_lock (tid: nat) (state: machine_state) : machine_state :=
+Definition add_to_write_buffer (tid : nat) (addr : address) (size : N) (val : bv (8 * size)) 
+    (state : machine_state) : machine_state :=
+        set (lookup tid ∘ B) 
+            (option_map (fun curr_list: 
+                list addr_val => (curr_list ++ [{|
+                    addr := addr; 
+                    size := (8 * size); 
+                    val := val
+                |}]))%list) 
+            state.
+
+Fixpoint write_mem_inner (addr : address) (bytes : list (bv 8)) 
+    : Exec.t machine_state string unit :=
+        if bytes is byte :: bytes then
+            opt ← mget $ read_mem addr (N.of_nat (length bytes));
+            guard_or "Memory isn't mapped to write" (is_Some opt);;
+            msetv (lookup addr ∘ M) (Some byte);;
+            write_mem_inner(addr `+Z` 1)%bv bytes
+        else mret ().
+
+Definition write_mem (addr : address) (size : N) (val : bv size)
+    : Exec.t machine_state string unit := 
+        bv_to_bytes 8 val
+        |> write_mem_inner addr.
+    
+Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: nat)
+    : Exec.t machine_state string unit :=
+        match buffer with
+        | [] => mret ()
+        | h :: t => 
+            write_mem (addr h) (size h) (val h);;
+            write_buffer_to_mem t tid
+        end.
+
+Definition empty_write_buffer (tid : nat) : Exec.t machine_state string unit :=
+    buffer ← mget (fun state => gmap_lookup tid (B state));
+    match buffer with
+    | None => mret ()
+    | Some b => 
+        (* Write all buffer contents to memory *)
+        write_buffer_to_mem b tid;;
+        (* Empty buffer *)
+        mSet (set (lookup tid ∘ B) (option_map (fun curr_list => [])))
+    end.
+
+Definition acquire_lock (tid : nat) (state : machine_state) : machine_state :=
     set L (fun curr_lock => Some tid) state.
+
+Definition release_lock (tid : nat) (state : machine_state) : machine_state :=
+    set L (fun curr_lock => None) state.
 
 Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
 
-  Equations run_outcome (call : outcome) : Exec.t (machine_state) string (eff_ret call) :=
+  Equations run_outcome (call : outcome) : Exec.t machine_state string (eff_ret call) :=
     | RegRead reg racc =>
         opt ← mget (read_reg tid reg);
         othrow ("Register " ++ pretty reg ++ " not found")%string opt
@@ -191,15 +193,39 @@ Section RunOutcome.
             (* Acquire lock if needed*)
             (
                 if is_explicit macc && is_atomic_rmw macc then (
-                    lock ← mget L;
-                    guard_or ("Thread " ++ pretty tid ++ " attempting to acquire a lock it already has")%string (is_Some lock);;
+                    state ← mGet;
+                    guard_or 
+                        ("Thread " ++ pretty tid ++ " can't acquire lock as its store buffer is not empty")%string
+                        (negb(buffer_empty tid state));; 
+                    lock ← mget L; 
+                    guard_or 
+                        ("Thread " ++ pretty tid ++ " attempting to acquire a lock it already has")%string 
+                        (is_Some lock);;
                     mSet (acquire_lock tid)
                 )
                 else mret ()
             );;
             (* Attempt memory read and return read value *)
-            opt ← mget (read_mem tid addr size);
+            opt ← mget (read_mem addr size);
             read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
-            mret (Ok (read, bv_0 _)).
-            
+            mret (Ok (read, bv_0 _))
+    | MemWrite (MemReq.make macc addr () size 0) val _ => 
+        (* Add write to write buffer *)
+        mSet (add_to_write_buffer tid addr size val);;
+        (* Handle atomic case (release lock) *)
+        (
+            if is_explicit macc && is_atomic_rmw macc then 
+                (* Make sure we have the lock before releasing it *)
+                state ← mGet;
+                guard_or
+                    ("Thread " ++ pretty tid ++ " attempting to release a lock it doesn't have")%string 
+                    (thread_has_lock tid state);;
+                (* Empty write buffer (other requirement for releasing lock) *)
+                empty_write_buffer tid;;
+                (* Release lock *)
+                mSet (release_lock tid)
+            else mret ()
+        );;
+        mret (Ok ())
+    | _ => mthrow "Unsupported outcome".
 End RunOutcome.
