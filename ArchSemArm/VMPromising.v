@@ -850,6 +850,23 @@ Definition output_addr_size (lvl : Level) : N := 48 - (offset_size lvl).
 Definition output_addr (lvl : Level) (e : val) : bv (output_addr_size lvl) :=
   bv_extract (offset_size lvl) (output_addr_size lvl) e.
 
+(** Extract AttrIndx field (bits 4:2) from a block/page descriptor.
+    This indexes into MAIR_ELx to determine memory type and cacheability. *)
+Definition attr_idx (e : val) : bv 3 := bv_extract 2 3 e.
+
+(** Extract Shareability field (bits 9:8) from a block/page descriptor.
+    00 = Non-shareable, 10 = Outer Shareable, 11 = Inner Shareable *)
+Definition shareability (e : val) : bv 2 := bv_extract 8 2 e.
+
+(** Extract non-Global bit (bit 11) from a block/page descriptor.
+    nG=0 means global (all ASIDs), nG=1 means non-global (ASID-specific). *)
+Definition is_non_global (e : val) : bool := (bv_extract 11 1 e) =? 1%bv.
+
+(** Extract Contiguous bit (bit 52) from a block/page descriptor.
+    When set, indicates this entry is part of a contiguous set of entries
+    that could be cached as a single TLB entry. *)
+Definition is_contiguous (e : val) : bool := (bv_extract 52 1 e) =? 1%bv.
+
 (** * TLB ***)
 
 Module TLB.
@@ -939,7 +956,7 @@ Module TLB.
     #[global] Typeclasses Transparent T.
     Definition t := hvec T.
 
-    Definition init : t := hvec_func (fun lvl => ∅).
+    Definition init : t := hvec_func (λ lvl, ∅).
 
     Definition get (ctxt : Ctxt.t) (vatlb : t) :
         gset (Entry.t (Ctxt.lvl ctxt)) :=
@@ -947,7 +964,7 @@ Module TLB.
 
     Definition getFE (ctxt : Ctxt.t) (vatlb : t) : gset (FE.t) :=
       get ctxt vatlb
-      |> set_map (fun (e : Entry.t (Ctxt.lvl ctxt)) => existT ctxt e).
+      |> set_map (existT ctxt).
 
     Definition singleton (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt)) : t :=
       hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := {[ entry ]}]} init.
@@ -980,15 +997,20 @@ Module TLB.
 
     Definition setFEs (ctxt : Ctxt.t)
         (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
-      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
+      let lvl := Ctxt.lvl ctxt in
+      let nd := Ctxt.nd ctxt in
+      hset lvl (<[ nd := entries ]> (hget lvl vatlb)) vatlb.
 
     Definition insert (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt))
         (vatlb : t) : t :=
-      let entries := get ctxt vatlb in
-      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries ∪ {[ entry ]}]} vatlb.
+      let lvl := Ctxt.lvl ctxt in
+      let nd := Ctxt.nd ctxt in
+      let lvl_map : T lvl := hget lvl vatlb in
+      let entries := (get ctxt vatlb) ∪ {[ entry ]} in
+      hset lvl (<[ nd := entries ]> lvl_map) vatlb.
 
     #[global] Instance empty : Empty t := VATLB.init.
-    #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
+    #[global] Instance union : Union t := λ x y, hmap2 (λ _, (∪ₘ)) x y.
 
     (** Domain of VATLB: the set of all contexts that have entries. *)
     #[global] Instance vatlb_dom : Dom t (gset Ctxt.t) :=
@@ -1712,6 +1734,254 @@ Export (hints) TLB.
 
 Module VATLB := TLB.VATLB.
 
+(** * BBM (Break-Before-Make) Violation Detection *)
+
+(** ARM requires Break-Before-Make (BBM) sequences when modifying page table
+    entries that are potentially cached in a TLB. A BBM violation occurs when
+    two conflicting translations exist simultaneously.
+
+    This section implements BBM violation detection by:
+    - Collecting TLB snapshots at key points in time
+    - Checking for conflicting entries within each snapshot
+    - Detecting both same-level and cross-level conflicts *)
+
+Section BBM.
+  Context (initmem : memoryMap).
+  Context (mem_param : MemParam.t).
+
+  (** ** Helper Functions *)
+
+  (** Check if MMU is enabled by reading SCTLR_EL1.M bit (bit 0).
+      BBM checking is only relevant when the MMU is enabled. *)
+  Definition is_mmu_enabled (ts : TState.t) : result string bool :=
+    '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
+    val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
+    Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
+
+  (** ** Memory Content Comparison *)
+
+  (** Check if a memory location falls within the address range
+      covered by a given base address. *)
+  Definition is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) : Prop :=
+    bv_extract (53 - n) n loc = baddr.
+  Instance Decision_is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) :
+    Decision (is_loc_from_baddr loc baddr).
+  Proof. unfold_decide. Defined.
+
+  (** Compare memory contents at two output addresses.
+
+      Even if two PTEs map to different physical addresses, a BBM violation
+      may be benign if the memory contents at both addresses are identical.
+      This function checks byte-by-byte equality across the mapped region.
+
+      Optimization: Instead of checking all possible offsets within a block
+      (which could be 2^21 bytes for a 2MB L2 block or 2^30 bytes for a 1GB
+      L1 block), we only check offsets corresponding to actually-initialized
+      memory locations. This is correct because:
+      - Uninitialized memory is treated as zero at both addresses
+      - If neither address range contains initialized data at an offset,
+        both read as zero and trivially match
+      - We only need to compare where at least one side has real data
+
+      The [relevant_locs] parameter contains all initialized memory locations
+      from the initial memory map. We filter these to find offsets that
+      fall within either output address range, then compare only those. *)
+  Definition mem_contents_eq (mem : Memory.t) (init : Memory.initial)
+                (time : nat)
+                (lvl : Level)
+                (oa1 oa2 : bv (output_addr_size lvl))
+                (relevant_locs : list Loc.t) : bool :=
+    let offset_bits := (53 - output_addr_size lvl)%N in
+    (* Filter to offsets that fall within either output address range.
+       This avoids iterating over millions of unused offsets in large blocks. *)
+    let relevant_offs :=
+      omap (λ loc,
+        if decide (is_loc_from_baddr loc oa1 ∨ is_loc_from_baddr loc oa2)
+          then Some (bv_extract 0 offset_bits loc)
+          else None) relevant_locs in
+    (* Compare memory contents at each relevant offset *)
+    forallb (λ offs,
+      let loc1 := bv_concat 53 oa1 offs in
+      let loc2 := bv_concat 53 oa2 offs in
+      let res1 := Memory.read_at loc1 init mem time in
+      let res2 := Memory.read_at loc2 init mem time in
+      match res1, res2 with
+      | Some res1, Some res2 => fst res1 =? fst res2
+      | Some res1, None => fst res1 =? 0%bv
+      | None, Some res2 => 0%bv =? fst res2
+      | None, None => true
+      end) relevant_offs.
+
+  (** ** BBM Violation Detection *)
+
+  (** Check if two translation contexts have overlapping VA ranges.
+
+      Each TLB entry covers a VA range determined by its level:
+      - Level 0: 9-bit prefix  → 512GB region
+      - Level 1: 18-bit prefix → 1GB region
+      - Level 2: 27-bit prefix → 2MB region
+      - Level 3: 36-bit prefix → 4KB region
+
+      Two entries overlap if:
+      1. Same address space (upper bit and ASID match)
+      2. The coarser entry's prefix matches the corresponding bits
+         of the finer entry's prefix
+
+      Example: Level 2 entry for VA prefix [0x000] overlaps with
+      Level 3 entry for VA prefix [0x000_XXX] (any suffix). *)
+  Definition va_ranges_overlap (c1 c2 : TLB.Ctxt.t) : bool :=
+    (* Must be in the same address space *)
+    if decide (TLB.Ctxt.upper c1 ≠ TLB.Ctxt.upper c2) then false
+    (* ASID must match (unless one is global with None) *)
+    else if decide (TLB.Ctxt.asid c1 ≠ TLB.Ctxt.asid c2
+                    ∧ TLB.Ctxt.asid c1 ≠ None
+                    ∧ TLB.Ctxt.asid c2 ≠ None) then false
+    else
+      let lvl1 := TLB.Ctxt.lvl c1 in
+      let lvl2 := TLB.Ctxt.lvl c2 in
+      let va1 := TLB.Ctxt.va c1 in
+      let va2 := TLB.Ctxt.va c2 in
+      (* Compare by truncating the finer prefix to the coarser level *)
+      if decide (lvl1 ≤ lvl2)%fin then
+        let va2_trunc : prefix lvl1 := bv_extract 0 (level_length lvl1) va2 in
+        va1 =? va2_trunc
+      else
+        let va1_trunc : prefix lvl2 := bv_extract 0 (level_length lvl2) va1 in
+        va1_trunc =? va2.
+
+  (** Check for BBM violation between two TLB entries.
+
+      Checks all seven ARM BBM scenarios (ARM DDI0487, D8.14.1) without
+      FEAT_BBM relaxations:
+
+      Same-level conflicts (entries at the same translation level):
+      - Output address change - different OA with writable mapping or
+         different memory contents
+      - Memory type/cacheability change - different AttrIndx values
+      - Shareability domain change - different SH field values
+      - Contiguous bit change
+      - Global/non-global change - different nG bit values
+
+      Cross-level conflicts (entries at different levels with overlapping VA):
+      - Block→Table conversion
+      - Table→Block conversion
+
+      Only checks final entries (blocks/pages). Table descriptors are skipped
+      since they don't represent actual address mappings.
+
+      Returns [true] if BBM is violated. *)
+  Definition is_bbm_violation (mem : Memory.t) (init : Memory.initial)
+                (time : nat)
+                (relevant_locs : list Loc.t)
+                (fe1 fe2 : TLB.FE.t) : bool :=
+    let c1 := TLB.FE.ctxt fe1 in
+    let c2 := TLB.FE.ctxt fe2 in
+    let lvl1 := TLB.FE.lvl fe1 in
+    let lvl2 := TLB.FE.lvl fe2 in
+    let pte1 := TLB.FE.pte fe1 in
+    let pte2 := TLB.FE.pte fe2 in
+    (* Skip non-final entries (table descriptors don't cause conflicts) *)
+    if decide (¬ is_final lvl1 pte1 ∨ ¬ is_final lvl2 pte2) then false
+    (* Skip if VA ranges don't overlap *)
+    else if negb (va_ranges_overlap c1 c2) then false
+    else
+      match decide (lvl1 = lvl2) with
+      | left Heq =>
+        (* Same level: check all descriptor attributes *)
+        let oa1 := output_addr lvl1 pte1 in
+        let oa2 : bv (output_addr_size lvl1) :=
+          ctrans (f_equal output_addr_size (eq_sym Heq)) (output_addr lvl2 pte2) in
+        (* Scenario 1: Output address change *)
+        if negb (oa1 =? oa2) then
+          if decide (allow_write lvl1 pte1 ∨ allow_write lvl2 pte2) then true
+          else negb (mem_contents_eq mem init time lvl1 oa1 oa2 relevant_locs)
+        (* Scenario 4: Memory type/cacheability (AttrIndx) change *)
+        else if negb (attr_idx pte1 =? attr_idx pte2) then true
+        (* Scenario 5: Shareability domain change *)
+        else if negb (shareability pte1 =? shareability pte2) then true
+        (* Scenario 6: Contiguous bit change *)
+        else if xorb (is_contiguous pte1) (is_contiguous pte2) then true
+        (* Scenario 7: Global/non-global change *)
+        else if xorb (is_non_global pte1) (is_non_global pte2) then true
+        else false
+      | right _ =>
+        (* Scenarios 2 & 3: Different levels with overlapping VA
+           (Block→Table or Table→Block conversion) *)
+        true
+      end.
+
+  (** ** TLB Snapshot Analysis *)
+
+  (** Check for BBM violations within a single TLB snapshot.
+
+      Collects all final entries (blocks and pages, not table descriptors)
+      and checks every pair for conflicts. This includes:
+      - Same-level conflicts (different OAs for same VA)
+      - Cross-level conflicts (overlapping VA ranges at different granularities)
+
+      Returns [true] if any violation is found. *)
+  Definition has_bbm_violation (mem : Memory.t)
+                (init : Memory.initial)
+                (tlb : TLB.t)
+                (time : nat) : bool :=
+    let relevant_locs := elements (dom init) in
+    let finals := TLB.VATLB.final_entries (TLB.vatlb tlb) in
+    existsb (λ '(fe1, fe2),
+      if decide (fe1 = fe2) then false
+      else is_bbm_violation mem init time relevant_locs fe1 fe2
+    ) (list_prod finals finals).
+
+  (** Find the TLB snapshot that was active at a given time.
+      Snapshots are stored in descending timestamp order, so we find
+      the first one with timestamp ≤ target. *)
+  Definition find_latest_snapshot_before (snapshots : list (TLB.t * nat))
+      (target : nat) : option (TLB.t * nat) :=
+    List.find (λ '(_, t), (t <=? target)%nat) snapshots.
+
+  (** ** Main BBM Violation Check *)
+
+  (** Check for BBM violations throughout program execution.
+
+      The check is performed at critical points:
+      1. At the final memory state (max timestamp)
+      2. Right before each TLBI instruction (when TLB state is "captured")
+
+      For each TTBR in use, builds TLB snapshots and checks each
+      snapshot for conflicting entries.
+
+      Returns [Ok true] if a violation is detected, [Ok false] if clean,
+      or an error if the check cannot be performed. *)
+  Definition check_bbm_violation (ts : TState.t)
+        (mem : Memory.t) : result string bool :=
+    mmu_enabled ← is_mmu_enabled ts;
+    if (mmu_enabled : bool) then
+      let initmem := Memory.initial_from_memMap initmem in
+      let max_t := length mem in
+      (* Only check TTBRs that are actually configured *)
+      let ttbrs_to_check :=
+        filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
+      (* Key timestamps: final state + just before each TLBI *)
+      let tlbi_times := filter (λ i,
+        if mem !! i is Some (Ev.Tlbi _) then true else false
+      ) (seq 1 max_t) in
+      let times_to_check := max_t :: (map (λ t, t - 1) tlbi_times) in
+      (* Check each TTBR, short-circuit on first violation *)
+      foldlM (λ violated ttbr,
+        if (violated : bool) then mret true
+        else
+          snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr mem_param;
+          mret $
+            existsb (λ target_time,
+              if find_latest_snapshot_before snapshots target_time is Some (tlb, _) then
+                has_bbm_violation mem initmem tlb target_time
+              else false
+            ) times_to_check
+      ) false (elements ttbrs_to_check)
+    else
+      (* MMU disabled: no translation, no BBM concerns *)
+      mret false.
+End BBM.
+
 (** * Instruction semantics ***)
 
 (** Intra instruction state for propagating views inside an instruction *)
@@ -2430,10 +2700,22 @@ Section ComputeProm.
                                 (mem : Memory.t)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
-    let res_proms := Exec.results $
-      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    let exec := run_to_termination_promise
+                  isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
+    (* Surface errors from execution *)
+    (if Exec.errors exec is (_, err) :: _ then mthrow err else mret ());;
+    let res_proms := Exec.results exec in
     guard_or ("Out of fuel when searching for new promises")%string
       (∀ r ∈ res_proms, r.2 = true);;
+
+    (* BBM check if enabled *)
+    let states := res_proms.*1.*2 in
+    bbm_results ←
+      if MemParam.bbm_check mem_param then
+        mapM (λ st, check_bbm_violation initmem mem_param
+                      (PPState.state st) (PPState.mem st)) states
+      else mret [];
+    guard_or ("BBM violation detected")%string (forallb negb bbm_results);;
 
     let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
     let tstates :=
