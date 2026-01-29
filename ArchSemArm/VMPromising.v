@@ -785,6 +785,23 @@ Definition is_global (lvl : Level) (e : val) : Prop :=
 Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
 Proof. unfold_decide. Defined.
 
+(** Extract AttrIndx field (bits 4:2) from a block/page descriptor.
+    This indexes into MAIR_ELx to determine memory type and cacheability. *)
+Definition attr_idx (e : val) : bv 3 := bv_extract 2 3 e.
+
+(** Extract Shareability field (bits 9:8) from a block/page descriptor.
+    00 = Non-shareable, 10 = Outer Shareable, 11 = Inner Shareable *)
+Definition shareability (e : val) : bv 2 := bv_extract 8 2 e.
+
+(** Extract non-Global bit (bit 11) from a block/page descriptor.
+    nG=0 means global (all ASIDs), nG=1 means non-global (ASID-specific). *)
+Definition is_non_global (e : val) : bool := (bv_extract 11 1 e) =? 1%bv.
+
+(** Extract Contiguous bit (bit 52) from a block/page descriptor.
+    When set, indicates this entry is part of a contiguous set of entries
+    that could be cached as a single TLB entry. *)
+Definition is_contiguous (e : val) : bool := (bv_extract 52 1 e) =? 1%bv.
+
 (** Check if a PTE allows write access.
     For table descriptors: check APTable[1] (bit 62) = 0
     For block/page entries: check AP[1] (bit 7) = 0
@@ -1189,7 +1206,6 @@ Module TLB.
 
   (** Traverse one level down from a parent entry for all possible indices.
       Iterates over all 512 indices at the next level to extend the TLB.
-
 
       The [mem_strict] param decides if non-existing memory triggers an error. *)
   Definition traverse_lvl (vatlb : VATLB.t) (ts : TState.t)
@@ -2302,11 +2318,184 @@ Section RunOutcome.
 
 End RunOutcome.
 
+(** * BBM Check Implementation *)
+
+(** BBM (Break-Before-Make) violation detection.
+
+    A BBM violation occurs when a page table entry is modified without
+    following the proper invalidation sequence (DSB, TLBI, DSB).
+
+    This section implements checking for all seven ARM BBM scenarios
+    (ARM DDI0487, D8.14.1):
+    - Same-level conflicts (output address, memory type, shareability,
+      contiguous bit, global/non-global changes)
+    - Cross-level conflicts (Block→Table or Table→Block conversion) *)
+
+
+Section BBM.
+  Context (initmem : memoryMap).
+
+  (** Check if MMU is enabled by reading SCTLR_EL1.M bit (bit 0).
+      BBM checking is only relevant when the MMU is enabled. *)
+  Definition is_mmu_enabled (ts : TState.t) : result string bool :=
+    '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
+    val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
+    Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
+
+  (** Check if a memory location falls within the address range
+      covered by a given base address. *)
+  Definition is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) : Prop :=
+    bv_extract (53 - n) n loc = baddr.
+  Instance Decision_is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) :
+    Decision (is_loc_from_baddr loc baddr).
+  Proof. unfold_decide. Defined.
+
+  (** Compare memory contents at two output addresses. *)
+  Definition mem_contents_eq (mem : Memory.t) (init : Memory.initial)
+                (time : nat)
+                (lvl : Level)
+                (oa1 oa2 : bv (output_addr_size lvl))
+                (relevant_locs : list Loc.t) : bool :=
+    let offset_bits := (53 - output_addr_size lvl)%N in
+    let relevant_offs :=
+      omap (λ loc,
+        if decide (is_loc_from_baddr loc oa1 ∨ is_loc_from_baddr loc oa2)
+          then Some (bv_extract 0 offset_bits loc)
+          else None) relevant_locs in
+    forallb (λ offs,
+      let loc1 := bv_concat 53 oa1 offs in
+      let loc2 := bv_concat 53 oa2 offs in
+      let res1 := Memory.read_at loc1 init mem time in
+      let res2 := Memory.read_at loc2 init mem time in
+      match res1, res2 with
+      | Some res1, Some res2 => fst res1 =? fst res2
+      | Some res1, None => fst res1 =? 0%bv
+      | None, Some res2 => 0%bv =? fst res2
+      | None, None => true
+      end) relevant_offs.
+
+  (** Check if two translation contexts have overlapping VA ranges. *)
+  Definition va_ranges_overlap (c1 c2 : TLB.Ctxt.t) : bool :=
+    if decide (TLB.Ctxt.upper c1 ≠ TLB.Ctxt.upper c2) then false
+    else if decide (TLB.Ctxt.asid c1 ≠ TLB.Ctxt.asid c2
+                    ∧ TLB.Ctxt.asid c1 ≠ None
+                    ∧ TLB.Ctxt.asid c2 ≠ None) then false
+    else
+      let lvl1 := TLB.Ctxt.lvl c1 in
+      let lvl2 := TLB.Ctxt.lvl c2 in
+      let va1 := TLB.Ctxt.va c1 in
+      let va2 := TLB.Ctxt.va c2 in
+      if decide (lvl1 ≤ lvl2)%fin then
+        let va2_trunc : prefix lvl1 := bv_extract 0 (level_length lvl1) va2 in
+        va1 =? va2_trunc
+      else
+        let va1_trunc : prefix lvl2 := bv_extract 0 (level_length lvl2) va1 in
+        va1_trunc =? va2.
+
+  (** Check for BBM violation between two TLB entries. *)
+  Definition is_bbm_violation (mem : Memory.t) (init : Memory.initial)
+                (time : nat)
+                (relevant_locs : list Loc.t)
+                (fe1 fe2 : TLB.FE.t) : bool :=
+    let c1 := TLB.FE.ctxt fe1 in
+    let c2 := TLB.FE.ctxt fe2 in
+    let lvl1 := TLB.FE.lvl fe1 in
+    let lvl2 := TLB.FE.lvl fe2 in
+    let pte1 := TLB.FE.pte fe1 in
+    let pte2 := TLB.FE.pte fe2 in
+    if decide (¬ is_final lvl1 pte1 ∨ ¬ is_final lvl2 pte2) then false
+    else if negb (va_ranges_overlap c1 c2) then false
+    else
+      match decide (lvl1 = lvl2) with
+      | left Heq =>
+        let oa1 := output_addr lvl1 pte1 in
+        let oa2 : bv (output_addr_size lvl1) :=
+          ctrans (f_equal output_addr_size (eq_sym Heq)) (output_addr lvl2 pte2) in
+        if negb (oa1 =? oa2) then
+          if decide (allow_write lvl1 pte1 ∨ allow_write lvl2 pte2) then true
+          else negb (mem_contents_eq mem init time lvl1 oa1 oa2 relevant_locs)
+        else if negb (attr_idx pte1 =? attr_idx pte2) then true
+        else if negb (shareability pte1 =? shareability pte2) then true
+        else if xorb (is_contiguous pte1) (is_contiguous pte2) then true
+        else if xorb (is_non_global pte1) (is_non_global pte2) then true
+        else false
+      | right _ => true
+      end.
+
+  (** Check for BBM violations within a single TLB snapshot. *)
+  Definition has_bbm_violation (mem : Memory.t)
+                (init : Memory.initial)
+                (tlb : TLB.t)
+                (time : nat) : bool :=
+    let relevant_locs := elements (dom init) in
+    let finals := TLB.VATLB.final_entries (TLB.vatlb tlb) in
+    existsb (λ '(fe1, fe2),
+      if decide (fe1 = fe2) then false
+      else is_bbm_violation mem init time relevant_locs fe1 fe2
+    ) (list_prod finals finals).
+
+  (** Find the TLB snapshot that was active at a given time. *)
+  Definition find_latest_snapshot_before (snapshots : list (TLB.t * nat))
+      (target : nat) : option (TLB.t * nat) :=
+    List.find (λ '(_, t), (t <=? target)%nat) snapshots.
+
+  (** Main BBM violation check. Returns [Ok true] if violation detected. *)
+  Definition check_bbm_violation (ts : TState.t)
+        (mem : Memory.t) (mem_strict : bool) : result string bool :=
+    mmu_enabled ← is_mmu_enabled ts;
+    if (mmu_enabled : bool) then
+      let init := Memory.initial_from_memMap initmem in
+      let max_t := length mem in
+      let ttbrs_to_check :=
+        filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
+      let tlbi_times := filter (λ i,
+        if mem !! i is Some (Ev.Tlbi _) then true else false
+      ) (seq 1 max_t) in
+      let times_to_check := max_t :: (map (λ t, t - 1) tlbi_times) in
+      foldlM (λ violated ttbr,
+        if (violated : bool) then mret true
+        else
+          snapshots ← TLB.unique_snapshots_until ts init mem max_t ttbr mem_strict;
+          mret $
+            existsb (λ target_time,
+              if find_latest_snapshot_before snapshots target_time is Some (tlb, _) then
+                has_bbm_violation mem init tlb target_time
+              else false
+            ) times_to_check
+      ) false (elements ttbrs_to_check)
+    else
+      mret false.
+End BBM.
+
+Module BBM.
+  (** The BBM parameter telling how strict the BBM checker must be *)
+  Inductive param :=
+  | Off
+  | Lax
+  | Strict.
+
+  (** Wrapper for check_valid_end that returns list of error strings. *)
+  Definition check (p : param) (tid : nat) (initmem : memoryMap) (ts : TState.t)
+      (mem : Memory.t) : list string :=
+    let aux_check strict :=
+      match check_bbm_violation initmem ts mem strict with
+      | Ok true => ["BBM violation detected"]
+      | Ok false => []
+      | Error s => [("BBM checker: " ++ s)%string]
+      end
+    in
+    match p with
+    | Off => []
+    | Lax => aux_check false
+    | Strict => aux_check true
+    end.
+End BBM.
+
 (** * Implement GenPromising ***)
 
 Import Promising.
 
-Definition VMPromising : Promising.Model :=
+Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
@@ -2318,17 +2507,19 @@ Definition VMPromising : Promising.Model :=
     mEvent_tid := Ev.tid;
     handle_outcome := run_outcome;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
-    check_valid_end := λ _ _ _ _, [];
+    check_valid_end := λ tid initmem ts mem, BBM.check bbm_param tid initmem ts mem;
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-Definition VMPromising_nocert :=
-  Promising_to_Modelnc (*certified=*)false VMPromising.
+Definition VMPromising_nocert (bbm_param : BBM.param) :=
+  Promising_to_Modelnc (*certified=*)false (VMPromising bbm_param).
 
-Definition VMPromising_cert :=
-  Promising_to_Modelnc (*certified=*)true VMPromising.
+Definition VMPromising_cert (bbm_param : BBM.param) :=
+  Promising_to_Modelnc (*certified=*)true (VMPromising bbm_param).
 
-Definition VMPromising_exe := Promising_to_Modelc VMPromising.
+Definition VMPromising_exe (bbm_param : BBM.param) :=
+  Promising_to_Modelc (VMPromising bbm_param).
 
-Definition VMPromising_pf := Promising_to_Modelc_pf VMPromising.
+Definition VMPromising_pf (bbm_param : BBM.param) :=
+  Promising_to_Modelc_pf (VMPromising bbm_param).
