@@ -417,6 +417,17 @@ Definition relaxed_regs : gset reg :=
        VBAR_EL3;
        VTTBR_EL2]@{reg}.
 
+(** TTBR registers used for BBM violation checking.
+    When checking BBM, we iterate over all TTBRs to find matching page tables. *)
+Definition ttbrs : gset reg :=
+  list_to_set [
+    TTBR0_EL1;
+    TTBR0_EL2;
+    TTBR0_EL3;
+    TTBR1_EL1;
+    TTBR1_EL2;
+    VTTBR_EL2]@{reg}.
+
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
   ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
@@ -658,6 +669,44 @@ Module TState.
     (update vcse v) ∘ (set levs (LEv.Cse v ::.)).
 End TState.
 
+(** Memory checking parameter for TLB operations and BBM validation.
+
+    This module controls two aspects of the model's behavior:
+
+    1. Memory strictness: Whether TLB fill operations must successfully read
+       page table memory, or can tolerate/skip read failures.
+
+    2. BBM checking: Whether Break-Before-Make violation checking is performed.
+       BBM requires that when modifying a page table entry, the old entry must
+       be invalidated (set to invalid) before the new entry is written.
+
+    The three modes are:
+    - [Off]:    No memory strictness, no BBM check. Most permissive mode.
+    - [Lax]:    Lax memory mode (tolerates TLB fill read failures), with BBM check.
+                Checks BBM but allows non-deterministic page table reads.
+    - [Strict]: Strict memory mode (TLB fill reads must succeed), with BBM check.
+                Most restrictive mode requiring all page table reads to succeed. *)
+Module MemParam.
+  Inductive t :=
+    | Off
+    | Lax
+    | Strict.
+
+  (** Returns true if TLB fill reads must succeed (strict mode). *)
+  Definition mem_strict (p : t) : bool :=
+    match p with
+    | Strict => true
+    | _ => false
+    end.
+
+  (** Returns true if BBM violation checking is enabled (Lax or Strict). *)
+  Definition bbm_check (p : t) : bool :=
+    match p with
+    | Off => false
+    | _ => true
+    end.
+End MemParam.
+
 (*** VA helper ***)
 
 Definition Level := fin 4.
@@ -750,9 +799,13 @@ Definition is_valid (e : val) : Prop :=
 Instance Decision_is_valid (e : val) : Decision (is_valid e).
 Proof. unfold_decide. Defined.
 
-Definition is_table (e : val) : Prop :=
-  (bv_extract 0 2 e) = 3%bv.
-Instance Decision_is_table (e : val) : Decision (is_table e).
+(** A PTE is a table descriptor if:
+    - It is not at the leaf level (level 3), AND
+    - Its bits [0:2] = 11 (table descriptor encoding)
+    At leaf level, bits [0:2]=11 indicates a page entry, not a table. *)
+Definition is_table (lvl : Level) (e : val) : Prop :=
+  lvl ≠ leaf_lvl ∧ (bv_extract 0 2 e) = 3%bv.
+Instance Decision_is_table (lvl : Level) (e : val) : Decision (is_table lvl e).
 Proof. unfold_decide. Defined.
 
 Definition is_block (e : val) : Prop :=
@@ -769,6 +822,33 @@ Definition is_global (lvl : Level) (e : val) : Prop :=
   is_final lvl e ∧ (bv_extract 11 1 e) = 0%bv.
 Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
 Proof. unfold_decide. Defined.
+
+(** Check if a PTE allows write access.
+    For table descriptors: check APTable[1] (bit 62) = 0
+    For block/page entries: check AP[1] (bit 7) = 0
+    AP[1]=0 means EL1 read/write, AP[1]=1 means EL1 read-only. *)
+Definition allow_write (lvl : Level) (e : val) : Prop :=
+  let ap := if decide (is_table lvl e) then (bv_extract 61 2 e)
+            else (bv_extract 6 2 e) in
+  (bv_extract 1 1 ap) = 0%bv.
+Instance Decision_allow_write (lvl : Level) (e : val) : Decision (allow_write lvl e).
+Proof. unfold_decide. Defined.
+
+(** The offset size (in bits) for a given translation level.
+    Level 0: 12 + 27 = 39 bits  (512GB block)
+    Level 1: 12 + 18 = 30 bits  (1GB block)
+    Level 2: 12 + 9  = 21 bits  (2MB block)
+    Level 3: 12 + 0  = 12 bits  (4KB page) *)
+Definition offset_size (lvl : Level) : N := (12 + (3 - lvl) * 9)%N.
+
+(** The output address size (in bits) for a given translation level.
+    This is 48 - offset_size, representing the significant address bits. *)
+Definition output_addr_size (lvl : Level) : N := 48 - (offset_size lvl).
+
+(** Extract the output address (OA) from a PTE at a given level.
+    The OA is the physical address base that the PTE maps to. *)
+Definition output_addr (lvl : Level) (e : val) : bv (output_addr_size lvl) :=
+  bv_extract (offset_size lvl) (output_addr_size lvl) e.
 
 (** * TLB ***)
 
@@ -909,6 +989,18 @@ Module TLB.
 
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
+
+    (** Domain of VATLB: the set of all contexts that have entries. *)
+    #[global] Instance vatlb_dom : Dom t (gset Ctxt.t) :=
+      λ vatlb,
+        fold_left (λ acc lvl,
+          map_fold (λ nd _ cur, {[existT lvl nd]} ∪ cur) acc (hget lvl vatlb)
+        ) (enum Level) ∅.
+
+    (** Get all final entries (blocks/pages, not table descriptors). *)
+    Definition final_entries (vatlb : t) : list FE.t :=
+      List.filter (λ fe, if decide (is_final (FE.lvl fe) (FE.pte fe)) then true else false)
+        (elements vatlb).
   End VATLB.
   Export (hints) VATLB.
 
@@ -974,7 +1066,7 @@ Module TLB.
       let loc := Loc.from_addr_in entry_addr in
       '(memval, _) ← othrow ("Failed to read page table memory at " ++ (pretty entry_addr))%string
                         $ Memory.read_at loc init mem time;
-      if decide (is_table memval) then
+      if decide (is_table root_lvl memval) then
         let asid := bv_extract 48 16 val_ttbr in
         let ndctxt := NDCtxt.make upper va (Some asid) in
         let ctxt := existT root_lvl ndctxt in
@@ -1004,7 +1096,7 @@ Module TLB.
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9) : result string (VATLB.t * bool) :=
-    if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
+    if decide (¬is_table (Ctxt.lvl ctxt) (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       let loc := Loc.from_addr_in entry_addr in
@@ -1313,7 +1405,7 @@ Module TLB.
       let ndctxt := NDCtxt.make upper (level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
       let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
-      let tes := filter (λ te, is_table (TLB.Entry.pte te)) tes in
+      let tes := filter (λ te, is_table parent_lvl (TLB.Entry.pte te)) tes in
       invalid_ptes ←
         for te in (elements tes) do
           let entry_addr :=
