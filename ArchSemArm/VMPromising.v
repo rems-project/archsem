@@ -1219,10 +1219,9 @@ Module TLB.
         (init : Memory.initial)
         (mem : Memory.t)
         (time : nat)
-        (ttbr : reg)
+        (upper : bool)
         (val_ttbrs : list (bv 64))
         (mem_param : MemParam.t) : result string (VATLB.t * bool) :=
-    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
     foldlM (λ '(vatlb_prev, is_changed_prev) index,
       '(vatlb_new, is_changed) ←
         va_fill_root vatlb_prev ts init mem time index upper val_ttbrs mem_param;
@@ -1255,12 +1254,12 @@ Module TLB.
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
-      (ttbr : reg)
+      (upper : bool)
       (val_ttbrs : list (bv 64))
       (mem_param : MemParam.t) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
-      | None => traverse_root tlb.(vatlb) ts init mem time ttbr val_ttbrs mem_param
+      | None => traverse_root tlb.(vatlb) ts init mem time upper val_ttbrs mem_param
       | Some plvl =>
         let fes :=
           omap (λ fe,
@@ -1287,10 +1286,11 @@ Module TLB.
         (mem_param : MemParam.t) : result string (t * bool) :=
     sregs ← othrow "TTBR should exist in initial state"
               $ TState.read_sreg_at ts ttbr time;
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
     let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ←
-          traverse tlb_prev ts init mem time lvl ttbr val_ttbrs mem_param;
+          traverse tlb_prev ts init mem time lvl upper val_ttbrs mem_param;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
@@ -2432,11 +2432,8 @@ Section ComputeProm.
                                 (debug : bool)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
-    let exec := run_to_termination_promise
-                  isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    let errs := Exec.errors exec in
-    guard_or (String.concat ", " errs.*2) (negb debug || is_emptyb errs);;
-    let res_proms := Exec.results exec in
+    let res_proms := Exec.results $
+      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
     guard_or ("Out of fuel when searching for new promises")%string
       (∀ r ∈ res_proms, r.2 = true);;
 
