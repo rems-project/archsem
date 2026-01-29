@@ -2341,119 +2341,16 @@ Section RunOutcome.
 
 End RunOutcome.
 
-Module CProm.
-  Record t :=
-    make {
-      proms : list Ev.t;
-    }.
-  #[global] Instance eta : Settable _ :=
-    settable! make <proms>.
-
-  #[global] Instance empty : Empty t := CProm.make [].
-
-  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ++ y.(proms)).
-
-  Definition init : t := make [].
-
-  (** Add the latest ev in the mem to the CProm
-      if the corresponding vpre is not bigger than the base *)
-  Definition add_if (mem : Memory.t) (vpre : view) (base : view) (cp : t) : t :=
-    if decide (vpre ≤ base)%nat then
-      match mem with
-      | ev :: mem =>
-        cp |> set proms (ev ::.)
-      | [] => cp
-      end
-    else cp.
-
-End CProm.
-
-Section ComputeProm.
-  Context (tid : nat).
-  Context (initmem : memoryMap).
-  Context (term : registerMap → bool).
-  Context (mem_param : MemParam.t).
-
-  Definition run_outcome_with_promise
-              (base : view)
-              (out : outcome) :
-        Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
-    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem mem_param out;
-    if vpre_opt is Some vpre then
-      mem ← mget (PPState.mem ∘ snd);
-      mset fst (CProm.add_if mem vpre base);;
-      mret res
-    else
-      mret res.
-
-  (* Run the thread state until termination, collecting certified promises.
-    Returns true if termination occurs within the given fuel,
-    false otherwise. *)
-  Fixpoint run_to_termination_promise
-                      (isem : iMon ())
-                      (fuel : nat)
-                      (base : nat) :
-      Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string bool :=
-    match fuel with
-    | 0%nat =>
-      ts ← mget (PPState.state ∘ snd);
-      mret (term (TState.reg_map ts))
-    | S fuel =>
-      let handler := run_outcome_with_promise base in
-      cinterp handler isem;;
-      ts ← mget (PPState.state ∘ snd);
-      if term (TState.reg_map ts) then
-        mret true
-      else
-        msetv (PPState.iis ∘ snd) IIS.init;;
-        run_to_termination_promise isem fuel base
-    end.
-
-  (** Run a thread to termination and collect certified promises.
-
-      Executes the thread semantics up to [fuel] steps, collecting any
-      promises that can be certified (i.e., the thread can reach a terminal
-      state while fulfilling all its promises).
-
-      Parameters:
-      - [mem_param]: Controls memory strictness for TLB fill operations.
-        - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill).
-        - [MemParam.Lax]: Lax memory mode (non-deterministic TLB fill).
-        - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed).
-
-      Returns a pair of:
-      - The list of certified promises (events that can be promised).
-      - The list of terminal thread states (states where no promises remain). *)
-  Definition run_to_termination (isem : iMon ())
-                                (fuel : nat)
-                                (ts : TState.t)
-                                (mem : Memory.t)
-      : result string (list Ev.t * list TState.t) :=
-    let base := List.length mem in
-    let res_proms := Exec.results $
-      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Out of fuel when searching for new promises")%string
-      (∀ r ∈ res_proms, r.2 = true);;
-
-    let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
-    let tstates :=
-      res_proms
-      |> omap (λ '((cp, st), _),
-          if is_emptyb (CProm.proms cp) then Some (PPState.state st)
-          else None) in
-    mret (promises, tstates).
-
-End ComputeProm.
-
 (** * Promising Model Instantiations *)
 
-(** ** Non-certified model *)
-Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
-  (mem : Memory.t) := {[ ev | (Ev.tid ev) = tid]}.
-Arguments allowed_promises_nocert _ _ _ /.
+Import Promising.
 
-(** Non-certified VM promising model instance. *)
-Definition VMPromising_nocert' (mem_param : MemParam.t) : PromisingModel :=
+(** VM Promising model parameterized by memory strictness.
+    - [mem_param]: Controls memory strictness for TLB fill operations.
+      - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill), no BBM check.
+      - [MemParam.Lax]: Lax memory mode with BBM check.
+      - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed), with BBM check. *)
+Definition VMPromising (mem_param : MemParam.t) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
@@ -2462,93 +2359,33 @@ Definition VMPromising_nocert' (mem_param : MemParam.t) : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
-    allowed_promises := allowed_promises_nocert;
-    handler := λ tid initmem, run_outcome' tid initmem mem_param;
+    mEvent_tid := Ev.tid;
+    handle_outcome := λ tid initmem, run_outcome tid initmem mem_param;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    check_valid_end := λ _ _ _ _, [];
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-Definition VMPromising_nocert isem :=
-  Promising_to_Modelnc isem (VMPromising_nocert' MemParam.Off).
+(** Non-certified VM promising model (default: lax memory mode). *)
+Definition VMPromising_nocert :=
+  Promising_to_Modelnc (*certified=*)false (VMPromising MemParam.Off).
 
-(** ** Certified model
+(** Certified VM promising model (default: lax memory mode). *)
+Definition VMPromising_cert :=
+  Promising_to_Modelnc (*certified=*)true (VMPromising MemParam.Off).
 
-    In the certified model, a promise is only allowed if the thread can
-    eventually fulfill it and reach a terminal state with no outstanding
-    promises. This ensures soundness. *)
+(** Executable VM promising model (default: lax memory mode). *)
+Definition VMPromising_exe := Promising_to_Modelc (VMPromising MemParam.Off).
 
-(** Single sequential step of the thread semantics. *)
-Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
-    (mem_param : MemParam.t) : relation (TState.t * Memory.t) :=
-  let handler := run_outcome' tid initmem mem_param in
-  λ '(ts, mem) '(ts', mem'),
-    (ts', mem') ∈
-    PPState.state ×× PPState.mem
-      <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
+(** Promise-free VM promising model (default: lax memory mode). *)
+Definition VMPromising_pf := Promising_to_Modelc_pf (VMPromising MemParam.Off).
 
-(** An event can be promised only if, after promising it, the thread can
-    reach a state where all promises are fulfilled. *)
-Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
-    (mem_param : MemParam.t) (ts : TState.t) (mem : Memory.t) : propset Ev.t :=
-  {[ ev |
-    let ts := TState.promise (length mem) ts in
-    let mem := ev :: mem in
-    ∃ ts' mem',
-      rtc (seq_step isem tid initmem mem_param) (ts, mem) (ts', mem') ∧
-        TState.prom ts' = []
-  ]}.
+(** Executable VM promising model with explicit memory parameter. *)
+Definition VMPromising_exe' (mem_param : MemParam.t) :=
+  Promising_to_Modelc (VMPromising mem_param).
 
-(** Certified VM promising model instance. *)
-Definition VMPromising_cert' (isem : iMon ()) (mem_param : MemParam.t) : PromisingModel :=
-  {|tState := TState.t;
-    tState_init := λ tid, TState.init;
-    tState_regs := TState.reg_map;
-    tState_nopromises := is_emptyb ∘ TState.prom;
-    iis := IIS.t;
-    iis_init := IIS.init;
-    address_space := PAS_NonSecure;
-    mEvent := Ev.t;
-    handler := λ tid initmem, run_outcome' tid initmem mem_param;
-    allowed_promises :=
-      λ tid initmem, allowed_promises_cert isem tid initmem mem_param;
-    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
-    memory_snapshot :=
-      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
-  |}.
+(** Promise-free VM promising model with explicit memory parameter. *)
+Definition VMPromising_pf' (mem_param : MemParam.t) :=
+  Promising_to_Modelc_pf (VMPromising mem_param).
 
-(** Implement the Executable Promising Model
-
-    Parameters:
-    - [mem_param]: Memory parameter controlling strictness for TLB fill.
-      - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill).
-      - [MemParam.Lax]: Lax memory mode (non-deterministic TLB fill).
-      - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed). *)
-
-Program Definition VMPromising_exe' (isem : iMon ()) (mem_param : MemParam.t)
-    : BasicExecutablePM :=
-  {|pModel := VMPromising_cert' isem mem_param;
-    enumerate_promises_and_terminal_states :=
-      λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term mem_param isem fuel ts mem
-  |}.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-
-(** Certified VM promising model with default settings (lax memory mode). *)
-Definition VMPromising_cert_c isem fuel :=
-  Promising_to_Modelc isem (VMPromising_exe' isem MemParam.Off) fuel.
-
-(** Certified VM promising model with explicit memory parameter control. *)
-Definition VMPromising_cert_c' isem fuel mem_param :=
-  Promising_to_Modelc isem (VMPromising_exe' isem mem_param) fuel.
-
-(** Promise-free certified VM promising model with default settings. *)
-Definition VMPromising_cert_c_pf isem fuel :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem MemParam.Off) fuel.
-
-(** Promise-free certified VM promising model with explicit memory parameter control. *)
-Definition VMPromising_cert_c_pf' isem fuel mem_param :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem mem_param) fuel.

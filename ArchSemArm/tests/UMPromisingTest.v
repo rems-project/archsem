@@ -112,9 +112,17 @@ Module EOR.
   Definition fuel := 2%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
+
+  Definition test_results_pf :=
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -147,7 +155,7 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
   Definition fuel := 2%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -155,7 +163,7 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -192,7 +200,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Definition fuel := 4%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -200,7 +208,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
@@ -269,7 +277,7 @@ Module MP.
   Definition fuel := 6%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -279,7 +287,7 @@ Module MP.
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
     [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
@@ -352,7 +360,7 @@ Module MPDMBS.
   Definition fuel := 9%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
@@ -363,7 +371,7 @@ Module MPDMBS.
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
@@ -431,7 +439,7 @@ Module LB.
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
     [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
@@ -441,7 +449,7 @@ Module LB.
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
     [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
@@ -509,7 +517,7 @@ Module LBDMBS.
   Definition fuel := 8%nat.
 
   Definition test_results :=
-    UMPromising_cert_c arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
@@ -520,7 +528,7 @@ Module LBDMBS.
   Qed.
 
   Definition test_results_pf :=
-    UMPromising_cert_c_pf arm_sem fuel n_threads termCond initState.
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ

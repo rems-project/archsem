@@ -50,7 +50,7 @@ let r0_extract (res : empty ArchModel.Res.t) : int =
   | FinalState fs -> RegMap.geti (Reg.r 0) (ArchState.reg 0 fs)
 
 
-let value = r0_extract (List.hd test)
+let value = r0_extract (List.hd _test_prom)
 
 let _ = Printf.printf "Number of results %i\n" (List.length test)
 
