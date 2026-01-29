@@ -2416,7 +2416,6 @@ Section ComputeProm.
       state while fulfilling all its promises).
 
       Parameters:
-      - [debug]: If true, errors are surfaced; if false, errors are suppressed.
       - [mem_param]: Controls memory strictness for TLB fill operations.
         - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill).
         - [MemParam.Lax]: Lax memory mode (non-deterministic TLB fill).
@@ -2429,7 +2428,6 @@ Section ComputeProm.
                                 (fuel : nat)
                                 (ts : TState.t)
                                 (mem : Memory.t)
-                                (debug : bool)
       : result string (list Ev.t * list TState.t) :=
     let base := List.length mem in
     let res_proms := Exec.results $
@@ -2522,36 +2520,35 @@ Definition VMPromising_cert' (isem : iMon ()) (mem_param : MemParam.t) : Promisi
 (** Implement the Executable Promising Model
 
     Parameters:
-    - [debug]: If true, errors are surfaced for debugging.
     - [mem_param]: Memory parameter controlling strictness for TLB fill.
       - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill).
       - [MemParam.Lax]: Lax memory mode (non-deterministic TLB fill).
       - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed). *)
 
-Program Definition VMPromising_exe' (isem : iMon ()) (debug : bool) (mem_param : MemParam.t)
+Program Definition VMPromising_exe' (isem : iMon ()) (mem_param : MemParam.t)
     : BasicExecutablePM :=
   {|pModel := VMPromising_cert' isem mem_param;
     enumerate_promises_and_terminal_states :=
       λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term mem_param isem fuel ts mem debug
+          run_to_termination tid initmem term mem_param isem fuel ts mem
   |}.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 Next Obligation. Admitted.
 
-(** Certified VM promising model with default settings (no debug, lax memory mode). *)
+(** Certified VM promising model with default settings (lax memory mode). *)
 Definition VMPromising_cert_c isem fuel :=
-  Promising_to_Modelc isem (VMPromising_exe' isem false MemParam.Off) fuel.
+  Promising_to_Modelc isem (VMPromising_exe' isem MemParam.Off) fuel.
 
 (** Certified VM promising model with explicit memory parameter control. *)
-Definition VMPromising_cert_c' isem fuel debug mem_param :=
-  Promising_to_Modelc isem (VMPromising_exe' isem debug mem_param) fuel.
+Definition VMPromising_cert_c' isem fuel mem_param :=
+  Promising_to_Modelc isem (VMPromising_exe' isem mem_param) fuel.
 
 (** Promise-free certified VM promising model with default settings. *)
 Definition VMPromising_cert_c_pf isem fuel :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem false MemParam.Off) fuel.
+  Promising_to_Modelc_pf isem (VMPromising_exe' isem MemParam.Off) fuel.
 
 (** Promise-free certified VM promising model with explicit memory parameter control. *)
-Definition VMPromising_cert_c_pf' isem fuel debug mem_param :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem debug mem_param) fuel.
+Definition VMPromising_cert_c_pf' isem fuel mem_param :=
+  Promising_to_Modelc_pf isem (VMPromising_exe' isem mem_param) fuel.
