@@ -923,20 +923,15 @@ Module TLB.
 
   Definition is_active_asid (ts : TState.t)
       (asid : option (bv 16))
-      (ttbr : reg) (time : nat) : Prop :=
+      (val_ttbrs : list (bv 64)) : Prop :=
     match asid with
     | Some asid =>
-      if TState.read_sreg_at ts ttbr time is Some sregs
-        then ∃ '(regval, view) ∈ sregs,
-              if (regval_to_val ttbr regval) is Some v
-                then asid = (bv_extract 48 16 v)
-                else False
-        else False
+      ∃ val_ttbr ∈ val_ttbrs, asid = (bv_extract 48 16 val_ttbr)
     | None => True
     end.
   Instance Decision_is_active_asid (ts : TState.t)
       (asid : option (bv 16))
-      (ttbr : reg) (time : nat) : Decision (is_active_asid ts asid ttbr time).
+      (val_ttbrs : list (bv 64)) : Decision (is_active_asid ts asid val_ttbrs).
   Proof. unfold_decide. Defined.
 
   Definition next_va {clvl : Level}
@@ -955,57 +950,60 @@ Module TLB.
        ttbr = TTBR1_EL2) then Some true
     else None.
 
-  (** Seed root-level TLB entries from [ttbr].
-      - Reads [ttbr] at [time], checks it is 64-bit.
-      - Computes root entry address for [va], reads memory.
-      - If entry is a table, builds a root context with ASID from TTBR
-        and inserts it into the input VATLB.
-      - Returns the new VATLB and the boolean value
-        if the new VATLB is different from the input *)
+  (** Seed root-level TLB entries from a list of TTBR values.
+
+      For each TTBR value in [val_ttbrs]:
+      - Computes the root page table entry address from the TTBR base and [va] index.
+      - Reads the entry from memory at [time].
+      - If the entry is a valid table descriptor, creates a TLB entry with
+        the ASID extracted from the TTBR value (bits 48-63) and the [upper]
+        flag indicating upper/lower VA range.
+      - Inserts the entry into the VATLB if not already present.
+
+      Returns [(vatlb', changed)] where [changed] is [true] if new entries
+      were added. *)
   Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : result string (VATLB.t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
-              $ TState.read_sreg_at ts ttbr time;
-    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    foldlM (λ '(vatlb, is_changed) sreg,
-      val_ttbr ← othrow "TTBR should be a 64 bit value"
-                    $ regval_to_val ttbr sreg.1;
+      (upper : bool)
+      (val_ttbrs : list (bv 64)) : result string (VATLB.t * bool) :=
+    foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
       let loc := Loc.from_addr_in entry_addr in
-      if (Memory.read_at loc init mem time) is Some (memval, _) then
-        if decide (is_table memval) then
-          let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make upper va (Some asid) in
-          let ctxt := existT root_lvl ndctxt in
-          let entry : Entry.t (Ctxt.lvl ctxt) :=
-            Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
-          (* add the entry to vatlb only when it is not in the original vatlb *)
-          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-            Ok (VATLB.insert ctxt entry vatlb, true)
-          else Ok (vatlb, is_changed)
-        else
-          Ok (vatlb, is_changed)
-      else
-        Ok (vatlb, is_changed)
-    ) (vatlb, false) sregs.
+      '(memval, _) ← othrow ("Failed to read page table memory at " ++ (pretty entry_addr))%string
+                        $ Memory.read_at loc init mem time;
+      if decide (is_table memval) then
+        let asid := bv_extract 48 16 val_ttbr in
+        let ndctxt := NDCtxt.make upper va (Some asid) in
+        let ctxt := existT root_lvl ndctxt in
+        let entry : Entry.t (Ctxt.lvl ctxt) :=
+          Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
+        (* add the entry to vatlb only when it is not in the original vatlb *)
+        if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+          Ok (VATLB.insert ctxt entry vatlb, true)
+        else Ok (vatlb, is_changed)
+      else Ok (vatlb, is_changed)
+    ) (vatlb, false) val_ttbrs.
 
-  (** Extend one level down from a parent table entry [te].
-      - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
-      - Reads next-level PTE at [index]; if valid and table, build child context
-        (ASID dropped if global) and insert into VATLB.
-      - Otherwise returns empty. *)
+  (** Extend a TLB entry one level down by following a table descriptor.
+
+      Given a parent TLB entry [te] at context [ctxt], reads the next-level
+      page table entry at the given [index] and creates a child TLB entry.
+
+      The child entry inherits the ASID from the parent unless the new PTE
+      has the global (nG) bit clear, in which case the ASID is dropped.
+
+      Returns [(vatlb', changed)] where [changed] is [true] if a new entry
+      was added. *)
   Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
-      (index : bv 9)
-      (ttbr : reg) : result string (VATLB.t * bool) :=
+      (index : bv 9) : result string (VATLB.t * bool) :=
     if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
@@ -1030,30 +1028,30 @@ Module TLB.
       else
         Ok (vatlb, false).
 
-  (** Make [tlb] containing entries for [va] at [lvl].
-      - At root: call [va_fill_root].
-      - At deeper levels: for each parent entry, call [va_fill_lvl].
-      - Returns [(new_tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
+  (** Fill TLB entries for a specific VA at a given translation level.
+
+      At the root level (level 0), seeds entries from TTBR values using
+      [va_fill_root]. At deeper levels, extends existing parent entries
+      using [va_fill_lvl].
+
+      Returns [(tlb', changed)] where [changed] is [true] if new entries
+      were added. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (ttbr : reg) : result string (t * bool) :=
+      (upper : bool)
+      (val_ttbrs : list (bv 64)) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) ttbr
+        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) upper val_ttbrs
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
-        sregs ← othrow "TTBR should exist in initial state"
-                $ TState.read_sreg_at ts ttbr time;
-        upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-        foldlM (λ prev sreg,
-          val_ttbr ← othrow "TTBR should be a 64 bit value"
-                  $ regval_to_val ttbr sreg.1;
+        foldlM (λ prev val_ttbr,
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make upper pva (Some asid) in
           let ctxt := existT plvl ndctxt in
@@ -1061,25 +1059,34 @@ Module TLB.
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
           foldlM (λ '(vatlb_prev, is_changed_prev) te,
             '(vatlb_lvl, is_changed_lvl) ←
-               va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr;
+              va_fill_lvl vatlb_prev ts init mem time ctxt te index;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
           ) prev tes
-        ) (tlb.(vatlb), false) sregs
+        ) (tlb.(vatlb), false) val_ttbrs
       end;
     mret $ (TLB.make vatlb_new, is_changed).
 
-  (** Fill TLB entries for [va] through all levels 0–3.
-      - Sequentially calls [va_fill] at each level.
-      - Produces a TLB with the full translation chain if available. *)
-  Definition update (tlb : t)
-      (ts : TState.t)
+  (** Fill TLB entries for a VA through all translation levels 0-3.
+
+      Iterates through each level, calling [va_fill] to progressively build
+      the complete translation chain from root to leaf. The [ttbr] register
+      determines both the upper/lower VA range and provides the base addresses.
+
+      Returns [(tlb', changed)] where [changed] is [true] if new entries
+      were added. *)
+  Definition update (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
+    sregs ← othrow "TTBR should exist in initial state"
+              $ TState.read_sreg_at ts ttbr time;
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+    let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
-      '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
+      '(tlb_new, is_changed) ←
+        va_fill tlb_prev ts init mem time lvl va upper val_ttbrs;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
