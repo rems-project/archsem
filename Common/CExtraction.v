@@ -60,6 +60,7 @@ Extraction Blacklist String.
 Extraction Blacklist List.
 
 Extract Inlined Constant Decision => "bool".
+Extract Inlined Constant Bool.eqb => "(=)".
 
 Extract Inductive fin => "ZO.t"
   [ "ZO.zero" "ZO.succ" ]
