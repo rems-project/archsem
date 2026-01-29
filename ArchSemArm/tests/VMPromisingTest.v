@@ -589,3 +589,175 @@ Module MPDMBS.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End MPDMBS.
+
+(* Sequential page table modification in single thread - BBM violation *)
+Module BBMFailure.
+  (* Single thread that:
+     1. Loads from VA 0x8000001000 (gets 0x2a from PA 0x1000)
+     2. Modifies L3[1] to remap VA 0x8000001000 -> PA 0x2000
+     3. Loads from VA 0x8000001000 again (gets 0x42 from PA 0x2000)
+
+     This violates BBM because the mapping is changed without proper
+     invalidation sequence (DSB, TLBI, DSB).
+  *)
+
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xf8606820  (* LDR X0, [X1, X0] - first load *)
+    |> mem_insert 0x504 4 0xf8226823  (* STR X3, [X1, X2] - modify page table *)
+    |> mem_insert 0x508 4 0xf8646824  (* LDR X4, [X1, X4] - second load *)
+    (* Data at two different physical locations *)
+    |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
+    |> mem_insert 0x2000 8 0x42       (* New PA - value 0x42 *)
+    (* Page tables *)
+    (* L0[1] -> L1 *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3 entries:
+       - L3[0]  -> PA 0x0000 (code page for PC)
+       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+       - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
+    *)
+    |> mem_insert 0x83000 8 0x40000000000783
+    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83080 8 0x60000000083703.
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 5%nat.
+
+  Definition test_results :=
+    VMPromising_pf' MemParam.LaxBBM arm_sem fuel n_threads termCond initState.
+
+  (* BBM failure: two different OAs have different memory contents *)
+  Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
+      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]; Error "BBM violation detected"].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End BBMFailure.
+
+(* Break-before-make success case *)
+Module BBMSuccess.
+  (* Thread 0 updates the last-level PTE for VA 0x8000001000 and then
+     executes a simplified break-before-make sequence that only
+     invalidates the last-level mapping for that VA:
+       DSB ishst; TLBI VALE1IS, X0; DSB ish.
+    Thread 1 performs a data access via VA 0x8000001000.
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000500
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x0
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  Definition init_reg_t2 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x8000000600
+    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R1 0x0
+    |> reg_insert SCTLR_EL1 0x1
+    |> reg_insert TCR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ESR_EL1 0x0
+    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Instructions of T1 *)
+    |> mem_insert 0x500 4 0xf8226823  (* STR X3, [X1, X2] - invalidate the PTE *)
+    |> mem_insert 0x504 4 0xd5033a9f  (* DSB ISHST *)
+    |> mem_insert 0x508 4 0xd5088320  (* TLBI VAE1IS - TLB invalidate by 0x8000001000 *)
+    |> mem_insert 0x50C 4 0xd5033b9f  (* DSB ISH *)
+    |> mem_insert 0x510 4 0xd5033fdf  (* ISB *)
+    (* Instructions of T2 *)
+    |> mem_insert 0x600 4 0xf8606820  (* LDR X0, [X1, X0] - read 0x8000001000 *)
+    (* Data at two different physical locations *)
+    |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
+    (* Page tables *)
+    (* L0[1] -> L1 *)
+    |> mem_insert 0x80008 8 0x81003
+    (* L1[0] -> L2 *)
+    |> mem_insert 0x81000 8 0x82003
+    (* L2[0] -> L3 *)
+    |> mem_insert 0x82000 8 0x83003
+    (* L3 entries:
+       - L3[0]  -> PA 0x0000 (code page for PC)
+       - L3[1]  -> PA 0x1000 (first data page)
+       - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
+    *)
+    |> mem_insert 0x83000 8 0x40000000000783
+    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83080 8 0x60000000083703.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at_t1 rm : bool :=
+    reg_lookup _PC rm =? Some (0x8000000514 : bv 64).
+
+  Definition terminate_at_t2 rm : bool :=
+    (* a valid translation *)
+    (reg_lookup _PC rm =? Some (0x8000000604 : bv 64))
+    (* or a fault *)
+    || ((reg_lookup FAR_EL1 rm =? Some (0x8000001000 : bv 64))
+        && (reg_lookup ELR_EL1 rm =? Some (0x8000000600 : bv 64))
+        && (reg_lookup ESR_EL1 rm =? Some (0x96000007 : bv 64))).
+
+  Definition terminate_at := [# terminate_at_t1; terminate_at_t2].
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, (terminate_at !!! tid) rm).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 8%nat.
+
+  Definition test_results_pf :=
+    VMPromising_pf' MemParam.LaxBBM arm_sem fuel n_threads termCond initState.
+
+  (* BBM check success *)
+  Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
+      [Ok [0x2a%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End BBMSuccess.

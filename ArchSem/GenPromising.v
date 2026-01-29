@@ -559,7 +559,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           vmap (λ '(tid, ts),
               enumerate_results tid (initmem st) fuel ts (events st)
             ) (venumerate (tstates st)) in
-        opt ← mchoosel (seq 0 4);
+        opt ← mchoosel (seq 0 5);
         match opt : nat with
         | 0 =>
           '(tid : fin n) ← mchoosef;
@@ -579,6 +579,18 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           mchoosel new_finals
         | 2 =>
           let errs := List.concat (vmap errors execution_results) in
+          err ← mchoosel errs;
+          mthrow err
+        | 3 =>
+          (* Check check_valid_end on terminated states and throw errors *)
+          let tstates_all := cprodn (vmap final_states execution_results) in
+          let errs :=
+            List.concat (omap (λ tstates,
+              let st := Make tstates st.(PState.initmem) st.(PState.events) in
+              if terminated prom term st && nopromises prom st then
+                Some (PState.check_valid_end prom st)
+              else None
+            ) tstates_all) in
           err ← mchoosel errs;
           mthrow err
         | _ =>
