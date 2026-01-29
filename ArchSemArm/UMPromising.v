@@ -224,18 +224,6 @@ Module Memory.
     in
     map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
 
-  (** Adds the view number to each message given a view for the last message.
-      This is for convenient use with cut_after.
-
-      TODO: it would make sense to make a function that does cut_after
-      and this in a single step. *)
-  (* Fixpoint with_views_from (v : view) (mem : t) *)
-  (*   : list (Msg.t * view) := *)
-  (*   match mem with *)
-  (*   | [] => [] *)
-  (*   | h :: q => (v, h) :: with_views_from (v - 1) q *)
-  (*   end. *)
-
   (** Returns the list of possible reads at a location restricted by a certain
       view. The list is never empty as one can always read from at least the
       initial value. Returns [None] if the address is not mapped in initial
@@ -611,102 +599,12 @@ Section RunOutcome.
 
 End RunOutcome.
 
-Module CProm.
-  Record t :=
-    make {
-      proms : list Msg.t;
-    }.
-  #[global] Instance eta : Settable _ :=
-    settable! make <proms>.
-
-  #[global] Instance empty : Empty t := CProm.make [].
-
-  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ++ y.(proms)).
-
-  Definition init : t := make [].
-
-  (** Add the latest msg in the mem to the CProm
-      if the corresponding vpre is not bigger than the base *)
-  Definition add_if (mem : Memory.t) (vpre : view) (base : view) (cp : t) : t :=
-    if decide (vpre ≤ base)%nat then
-      match mem with
-      | msg :: mem =>
-        cp |> set proms (msg ::.)
-      | [] => cp
-      end
-    else cp.
-
-End CProm.
-
-Section ComputeProm.
-  Context (tid : nat).
-  Context (initmem : memoryMap).
-  Context (term : registerMap → bool).
-
-  Definition run_outcome_with_promise
-              (base : view)
-              (out : outcome) :
-        Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
-    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out;
-    if vpre_opt is Some vpre then
-      mem ← mget (PPState.mem ∘ snd);
-      mset fst (CProm.add_if mem vpre base);;
-      mret res
-    else
-      mret res.
-
-  (* Run the thread state until termination, collecting certified promises.
-     Returns true if termination occurs within the given fuel,
-     false otherwise. *)
-  Fixpoint run_to_termination_promise
-                      (isem : iMon ())
-                      (fuel : nat)
-                      (base : nat) :
-      Exec.t (CProm.t * PPState.t TState.t Msg.t IIS.t) string bool :=
-    match fuel with
-    | 0%nat =>
-      ts ← mget (PPState.state ∘ snd);
-      mret (term (TState.reg_map ts))
-    | S fuel =>
-      let handler := run_outcome_with_promise base in
-      cinterp handler isem;;
-      ts ← mget (PPState.state ∘ snd);
-      if term (TState.reg_map ts) then
-        mret true
-      else
-        msetv (PPState.iis ∘ snd) IIS.init;;
-        run_to_termination_promise isem fuel base
-    end.
-
-  Definition run_to_termination (isem : iMon ())
-                                (fuel : nat)
-                                (ts : TState.t)
-                                (mem : Memory.t)
-      : result string (list Msg.t * list TState.t) :=
-    let base := List.length mem in
-    let res_proms := Exec.results $
-      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Out of fuel when searching for new promises")%string
-      (∀ r ∈ res_proms, r.2 = true);;
-    let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
-    let tstates :=
-      res_proms
-      |> omap (λ '((cp, st), _),
-          if is_emptyb (CProm.proms cp) then Some (PPState.state st)
-          else None) in
-    mret (promises, tstates).
-
-End ComputeProm.
 
 (** * Implement GenPromising ***)
 
-(** A thread is allowed to promise any promises with the correct tid for a
-    non-certified promising model *)
-Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
-  (mem : Memory.t) := {[ msg | msg.(Msg.tid) = tid]}.
-Arguments allowed_promises_nocert _ _ _ _ /.
+Import Promising.
 
-Definition UMPromising_nocert' : PromisingModel :=
+Definition UMPromising : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
@@ -715,72 +613,20 @@ Definition UMPromising_nocert' : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
-    handler := run_outcome';
-    allowed_promises := allowed_promises_nocert;
+    mEvent_tid := Msg.tid;
+    handle_outcome := run_outcome;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    check_valid_end := λ _ _ _ _, [];
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-Definition UMPromising_nocert isem :=
-  Promising_to_Modelnc isem UMPromising_nocert'.
+Definition UMPromising_nocert :=
+  Promising_to_Modelnc (*certified=*)false UMPromising.
 
-(* The certified version only works on simple ISA model without internal
-     state *)
+Definition UMPromising_cert :=
+  Promising_to_Modelnc (*certified=*)true UMPromising.
 
-Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
-  : relation (TState.t * Memory.t) :=
-  let handler := run_outcome' tid initmem in
-  λ '(ts, mem) '(ts', mem'),
-    (ts', mem') ∈
-      PPState.state ×× PPState.mem
-        <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
+Definition UMPromising_exe := Promising_to_Modelc UMPromising.
 
-Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
-    (ts : TState.t) (mem : Memory.t) :=
-  {[ msg |
-     let ts := TState.promise (length mem) ts in
-     let mem := msg :: mem in
-     ∃ ts' mem',
-       rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
-         TState.prom ts' = []
-  ]}.
-
-Definition UMPromising_cert' (isem : iMon ()) : PromisingModel :=
-  {|tState := TState.t;
-    tState_init := λ tid, TState.init;
-    tState_regs := TState.reg_map;
-    tState_nopromises := is_emptyb ∘ TState.prom;
-    iis := IIS.t;
-    iis_init := IIS.init;
-    address_space := PAS_NonSecure;
-    mEvent := Msg.t;
-    handler := run_outcome';
-    allowed_promises := allowed_promises_cert isem;
-    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
-    memory_snapshot :=
-      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
-  |}.
-
-Definition UMPromising_cert_nc isem :=
-  Promising_to_Modelnc isem (UMPromising_cert' isem).
-
-(** Implement the Executable Promising Model *)
-
-Program Definition UMPromising_exe' (isem : iMon ())
-    : BasicExecutablePM :=
-  {|pModel := UMPromising_cert' isem;
-    enumerate_promises_and_terminal_states :=
-      λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term isem fuel ts mem
-  |}.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-
-Definition UMPromising_cert_c isem fuel :=
-  Promising_to_Modelc isem (UMPromising_exe' isem) fuel.
-
-Definition UMPromising_cert_c_pf isem fuel :=
-  Promising_to_Modelc_pf isem (UMPromising_exe' isem) fuel.
+Definition UMPromising_pf := Promising_to_Modelc_pf UMPromising.
