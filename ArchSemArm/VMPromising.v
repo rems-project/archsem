@@ -1989,102 +1989,14 @@ Section RunOutcome.
 
 End RunOutcome.
 
-Module CProm.
-  Record t :=
-    make {
-      proms : list Ev.t;
-    }.
-  #[global] Instance eta : Settable _ :=
-    settable! make <proms>.
-
-  #[global] Instance empty : Empty t := CProm.make [].
-
-  #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ++ y.(proms)).
-
-  Definition init : t := make [].
-
-  (** Add the latest ev in the mem to the CProm
-      if the corresponding vpre is not bigger than the base *)
-  Definition add_if (mem : Memory.t) (vpre : view) (base : view) (cp : t) : t :=
-    if decide (vpre ≤ base)%nat then
-      match mem with
-      | ev :: mem =>
-        cp |> set proms (ev ::.)
-      | [] => cp
-      end
-    else cp.
-
-End CProm.
-
-Section ComputeProm.
-  Context (tid : nat).
-  Context (initmem : memoryMap).
-  Context (term : registerMap → bool).
-
-  Definition run_outcome_with_promise
-              (base : view)
-              (out : outcome) :
-        Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
-    '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out;
-    if vpre_opt is Some vpre then
-      mem ← mget (PPState.mem ∘ snd);
-      mset fst (CProm.add_if mem vpre base);;
-      mret res
-    else
-      mret res.
-
-  (* Run the thread state until termination, collecting certified promises.
-    Returns true if termination occurs within the given fuel,
-    false otherwise. *)
-  Fixpoint run_to_termination_promise
-                      (isem : iMon ())
-                      (fuel : nat)
-                      (base : nat) :
-      Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string bool :=
-    match fuel with
-    | 0%nat =>
-      ts ← mget (PPState.state ∘ snd);
-      mret (term (TState.reg_map ts))
-    | S fuel =>
-      let handler := run_outcome_with_promise base in
-      cinterp handler isem;;
-      ts ← mget (PPState.state ∘ snd);
-      if term (TState.reg_map ts) then
-        mret true
-      else
-        msetv (PPState.iis ∘ snd) IIS.init;;
-        run_to_termination_promise isem fuel base
-    end.
-
-  Definition run_to_termination (isem : iMon ())
-                                (fuel : nat)
-                                (ts : TState.t)
-                                (mem : Memory.t)
-      : result string (list Ev.t * list TState.t) :=
-    let base := List.length mem in
-    let res_proms := Exec.results $
-      run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in
-    guard_or ("Out of fuel when searching for new promises")%string
-      (∀ r ∈ res_proms, r.2 = true);;
-    let promises := res_proms.*1.*1 |> union_list |> CProm.proms in
-    let tstates :=
-      res_proms
-      |> omap (λ '((cp, st), _),
-          if is_emptyb (CProm.proms cp) then Some (PPState.state st)
-          else None) in
-    mret (promises, tstates).
-
-End ComputeProm.
+Section M.
+End M.
 
 (** * Implement GenPromising ***)
 
-(** A thread is allowed to promise any promises with the correct tid for a
-    non-certified promising model *)
-Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
-  (mem : Memory.t) := {[ ev | (Ev.tid ev) = tid]}.
-Arguments allowed_promises_nocert _ _ _ /.
+Import Promising.
 
-Definition VMPromising_nocert' : PromisingModel :=
+Definition VMPromising : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
@@ -2093,66 +2005,195 @@ Definition VMPromising_nocert' : PromisingModel :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
-    allowed_promises := allowed_promises_nocert;
-    handler := run_outcome';
+    mEvent_tid := Ev.tid;
+    handle_outcome := run_outcome;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    check_valid_end := λ _ _ _ _, [];
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-Definition VMPromising_nocert isem :=
-  Promising_to_Modelnc isem VMPromising_nocert'.
+Definition VMPromising_nocert :=
+  Promising_to_Modelnc (*certified=*)false VMPromising.
 
-Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
-  : relation (TState.t * Memory.t) :=
-  let handler := run_outcome' tid initmem in
-  λ '(ts, mem) '(ts', mem'),
-    (ts', mem') ∈
-    PPState.state ×× PPState.mem
-      <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
+Definition VMPromising_cert :=
+  Promising_to_Modelnc (*certified=*)true VMPromising.
 
-Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
-  (ts : TState.t) (mem : Memory.t) : propset Ev.t :=
-  {[ ev |
-    let ts := TState.promise (length mem) ts in
-    let mem := ev :: mem in
-    ∃ ts' mem',
-      rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧
-        TState.prom ts' = []
-  ]}.
+Definition VMPromising_exe := Promising_to_Modelc VMPromising.
 
-Definition VMPromising_cert' (isem : iMon ()) : PromisingModel :=
-  {|tState := TState.t;
-    tState_init := λ tid, TState.init;
-    tState_regs := TState.reg_map;
-    tState_nopromises := is_emptyb ∘ TState.prom;
-    iis := IIS.t;
-    iis_init := IIS.init;
-    address_space := PAS_NonSecure;
-    mEvent := Ev.t;
-    handler := run_outcome';
-    allowed_promises := allowed_promises_cert isem;
-    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
-    memory_snapshot :=
-      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
-  |}.
+Definition VMPromising_pf := Promising_to_Modelc_pf VMPromising.
 
-(** Implement the Executable Promising Model *)
 
-Program Definition VMPromising_exe' (isem : iMon ())
-    : BasicExecutablePM :=
-  {|pModel := VMPromising_cert' isem;
-    enumerate_promises_and_terminal_states :=
-      λ fuel tid term initmem ts mem,
-          run_to_termination tid initmem term isem fuel ts mem
-  |}.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
-Next Obligation. Admitted.
 
-Definition VMPromising_cert_c isem fuel :=
-  Promising_to_Modelc isem (VMPromising_exe' isem) fuel.
 
-Definition VMPromising_cert_c_pf isem fuel :=
-  Promising_to_Modelc_pf isem (VMPromising_exe' isem) fuel.
+
+
+
+
+(* Module CProm. *)
+(*   Record t := *)
+(*     make { *)
+(*       proms : list Ev.t; *)
+(*     }. *)
+(*   #[global] Instance eta : Settable _ := *)
+(*     settable! make <proms>. *)
+
+(*   #[global] Instance empty : Empty t := CProm.make []. *)
+
+(*   #[global] Instance union : Union t := λ x y, CProm.make (x.(proms) ++ y.(proms)). *)
+
+(*   Definition init : t := make []. *)
+
+(*   (** Add the latest ev in the mem to the CProm *)
+(*       if the corresponding vpre is not bigger than the base *) *)
+(*   Definition add_if (mem : Memory.t) (vpre : view) (base : view) (cp : t) : t := *)
+(*     if decide (vpre ≤ base)%nat then *)
+(*       match mem with *)
+(*       | ev :: mem => *)
+(*         cp |> set proms (ev ::.) *)
+(*       | [] => cp *)
+(*       end *)
+(*     else cp. *)
+
+(* End CProm. *)
+
+(* Section ComputeProm. *)
+(*   Context (tid : nat). *)
+(*   Context (initmem : memoryMap). *)
+(*   Context (term : registerMap → bool). *)
+
+(*   Definition run_outcome_with_promise *)
+(*               (base : view) *)
+(*               (out : outcome) : *)
+(*         Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string (eff_ret out) := *)
+(*     '(res, vpre_opt) ← Exec.liftSt snd $ run_outcome tid initmem out; *)
+(*     if vpre_opt is Some vpre then *)
+(*       mem ← mget (PPState.mem ∘ snd); *)
+(*       mset fst (CProm.add_if mem vpre base);; *)
+(*       mret res *)
+(*     else *)
+(*       mret res. *)
+
+(*   (* Run the thread state until termination, collecting certified promises. *)
+(*     Returns true if termination occurs within the given fuel, *)
+(*     false otherwise. *) *)
+(*   Fixpoint run_to_termination_promise *)
+(*                       (isem : iMon ()) *)
+(*                       (fuel : nat) *)
+(*                       (base : nat) : *)
+(*       Exec.t (CProm.t * PPState.t TState.t Ev.t IIS.t) string bool := *)
+(*     match fuel with *)
+(*     | 0%nat => *)
+(*       ts ← mget (PPState.state ∘ snd); *)
+(*       mret (term (TState.reg_map ts)) *)
+(*     | S fuel => *)
+(*       let handler := run_outcome_with_promise base in *)
+(*       cinterp handler isem;; *)
+(*       ts ← mget (PPState.state ∘ snd); *)
+(*       if term (TState.reg_map ts) then *)
+(*         mret true *)
+(*       else *)
+(*         msetv (PPState.iis ∘ snd) IIS.init;; *)
+(*         run_to_termination_promise isem fuel base *)
+(*     end. *)
+
+(*   Definition run_to_termination (isem : iMon ()) *)
+(*                                 (fuel : nat) *)
+(*                                 (ts : TState.t) *)
+(*                                 (mem : Memory.t) *)
+(*       : result string (list Ev.t * list TState.t) := *)
+(*     let base := List.length mem in *)
+(*     let res_proms := Exec.results $ *)
+(*       run_to_termination_promise isem fuel base (CProm.init, PPState.Make ts mem IIS.init) in *)
+(*     guard_or ("Out of fuel when searching for new promises")%string *)
+(*       (∀ r ∈ res_proms, r.2 = true);; *)
+(*     let promises := res_proms.*1.*1 |> union_list |> CProm.proms in *)
+(*     let tstates := *)
+(*       res_proms *)
+(*       |> omap (λ '((cp, st), _), *)
+(*           if is_emptyb (CProm.proms cp) then Some (PPState.state st) *)
+(*           else None) in *)
+(*     mret (promises, tstates). *)
+
+(* End ComputeProm. *)
+
+(* (** * Implement GenPromising ***) *)
+
+(* (** A thread is allowed to promise any promises with the correct tid for a *)
+(*     non-certified promising model *) *)
+(* Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t) *)
+(*   (mem : Memory.t) := {[ ev | (Ev.tid ev) = tid]}. *)
+(* Arguments allowed_promises_nocert _ _ _ /. *)
+
+(* Definition VMPromising_nocert' : PromisingModel := *)
+(*   {|tState := TState.t; *)
+(*     tState_init := λ tid, TState.init; *)
+(*     tState_regs := TState.reg_map; *)
+(*     tState_nopromises := is_emptyb ∘ TState.prom; *)
+(*     iis := IIS.t; *)
+(*     iis_init := IIS.init; *)
+(*     address_space := PAS_NonSecure; *)
+(*     mEvent := Ev.t; *)
+(*     allowed_promises := allowed_promises_nocert; *)
+(*     handler := run_outcome'; *)
+(*     emit_promise := λ tid initmem mem msg, TState.promise (length mem); *)
+(*     memory_snapshot := *)
+(*       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem); *)
+(*   |}. *)
+
+(* Definition VMPromising_nocert isem := *)
+(*   Promising_to_Modelnc isem VMPromising_nocert'. *)
+
+(* Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap) *)
+(*   : relation (TState.t * Memory.t) := *)
+(*   let handler := run_outcome' tid initmem in *)
+(*   λ '(ts, mem) '(ts', mem'), *)
+(*     (ts', mem') ∈ *)
+(*     PPState.state ×× PPState.mem *)
+(*       <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)). *)
+
+(* Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap) *)
+(*   (ts : TState.t) (mem : Memory.t) : propset Ev.t := *)
+(*   {[ ev | *)
+(*     let ts := TState.promise (length mem) ts in *)
+(*     let mem := ev :: mem in *)
+(*     ∃ ts' mem', *)
+(*       rtc (seq_step isem tid initmem) (ts, mem) (ts', mem') ∧ *)
+(*         TState.prom ts' = [] *)
+(*   ]}. *)
+
+(* Definition VMPromising_cert' (isem : iMon ()) : PromisingModel := *)
+(*   {|tState := TState.t; *)
+(*     tState_init := λ tid, TState.init; *)
+(*     tState_regs := TState.reg_map; *)
+(*     tState_nopromises := is_emptyb ∘ TState.prom; *)
+(*     iis := IIS.t; *)
+(*     iis_init := IIS.init; *)
+(*     address_space := PAS_NonSecure; *)
+(*     mEvent := Ev.t; *)
+(*     handler := run_outcome'; *)
+(*     allowed_promises := allowed_promises_cert isem; *)
+(*     emit_promise := λ tid initmem mem msg, TState.promise (length mem); *)
+(*     memory_snapshot := *)
+(*       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem); *)
+(*   |}. *)
+
+(* (** Implement the Executable Promising Model *) *)
+
+(* Program Definition VMPromising_exe' (isem : iMon ()) *)
+(*     : BasicExecutablePM := *)
+(*   {|pModel := VMPromising_cert' isem; *)
+(*     enumerate_promises_and_terminal_states := *)
+(*       λ fuel tid term initmem ts mem, *)
+(*           run_to_termination tid initmem term isem fuel ts mem *)
+(*   |}. *)
+(* Next Obligation. Admitted. *)
+(* Next Obligation. Admitted. *)
+(* Next Obligation. Admitted. *)
+(* Next Obligation. Admitted. *)
+
+(* Definition VMPromising_cert_c isem fuel := *)
+(*   Promising_to_Modelc isem (VMPromising_exe' isem) fuel. *)
+
+(* Definition VMPromising_cert_c_pf isem fuel := *)
+(*   Promising_to_Modelc_pf isem (VMPromising_exe' isem) fuel. *)
