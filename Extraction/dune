@@ -5,7 +5,7 @@
   (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
-                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
+                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool Bool CArith
                      CList CMaps COption Common CVec countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap HexString Interface list_monad list_relations
@@ -21,7 +21,7 @@
                      Qreduction ConstructiveCauchyRealsMult String1 System
                      BinaryString Operators_mwords GenPromising
                      TermModels vector0 VectorDef Vector UMPromising
-                     VMPromising GRel list_misc HVec
+                     VMPromising list_misc HVec
                      fin_sets list_basics)
 )
 

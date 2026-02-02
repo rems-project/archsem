@@ -107,11 +107,10 @@ module ArchModel : sig
 
   type 'a t = (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
 
-  type 'a vmp_t = (* fuel *) int -> (* debug *) bool -> (* mem_strict *) bool -> (* bbm_check *) bool -> termCond -> ArchState.t -> 'a Res.t list
 end
 
 val seq_model : empty ArchModel.t
 
 val umProm_model : empty ArchModel.t
 
-val vmProm_model : empty ArchModel.vmp_t
+val vmProm_model : empty ArchModel.t
