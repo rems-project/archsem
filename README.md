@@ -141,6 +141,13 @@ While most of the code can run in Rocq with `vm_compute` we currently do not
 have a good working extraction pipeline, or a CLI frontend to call models on
 litmus tests.
 
+### CLI Tools
+
+The `cli/` directory contains OCaml tools for working with ArchSem:
+
+- **from_isla**: Converts isla litmus tests to ArchSem TOML format.
+  Requires LLVM tools (`llvm-mc` and `llvm-objcopy`) in PATH for assembly encoding.
+
 ### Partiality handling
 
 In order to allow axiomatic models to define the consistency of partial
