@@ -6,7 +6,7 @@
    GenAxiomaticRiscV
    UMAxRiscV
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem Riscv)
+ (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem Riscv)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
                --external ../../Common/ASCommon.html ASCommon

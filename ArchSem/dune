@@ -10,7 +10,7 @@
    FromSail
    SeqModel
  )
- (theories stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon)
+ (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon)
  (coqdoc_flags :standard --utf8
                --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
                --external ../../Common/ASCommon.html ASCommon
