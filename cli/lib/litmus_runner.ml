@@ -6,6 +6,23 @@
 
 open Archsem
 
+(** {1 Result Types} *)
+
+type test_result =
+  | Expected     (** Outcome matched test expectations *)
+  | Unexpected   (** Outcome did not match test expectations *)
+  | ModelError   (** Model produced errors during execution *)
+  | ParseError   (** Parser or configuration error *)
+
+(** {1 ANSI Colors} *)
+
+let c_reset = "\027[0m"
+let c_bold = "\027[1m"
+let c_red = "\027[31m"
+let c_green = "\027[32m"
+let c_yellow = "\027[33m"
+let c_cyan = "\027[36m"
+
 (** {1 Helpers} *)
 
 let rec string_of_gen = function
@@ -41,9 +58,10 @@ let check_outcome (fs : ArchState.t) (cond : Litmus_parser.cond) : bool =
 
 (** {1 Test Execution} *)
 
-let run_executions model (init : ArchState.t) (fuel : int) (term : termCond)
-    (outcomes : Litmus_parser.outcome list) : bool =
-  Printf.printf "Running test with fuel %d...\n%!" fuel;
+let run_executions model_name model (init : ArchState.t) (fuel : int) (term : termCond)
+    (outcomes : Litmus_parser.outcome list) : test_result =
+  Printf.printf "Running with %s%s%s%s, fuel=%d...\n%!"
+    c_bold c_cyan model_name c_reset fuel;
   let results = model fuel term init in
 
   let observable = List.filter_map
@@ -51,17 +69,22 @@ let run_executions model (init : ArchState.t) (fuel : int) (term : termCond)
   let unobservable = List.filter_map
     (function Litmus_parser.Unobservable c -> Some c | _ -> None) outcomes in
 
+  let errors = List.filter_map (function
+    | ArchModel.Res.Error e -> Some e
+    | _ -> None) results in
   let final_states = List.filter_map (function
     | ArchModel.Res.FinalState fs -> Some fs
-    | ArchModel.Res.Error e -> Printf.printf "  Error: %s\n" e; None
-    | ArchModel.Res.Flagged _ -> Printf.printf "  Flagged\n"; None
-  ) results in
+    | _ -> None) results in
+
+  List.iter (fun e -> Printf.printf "  %s[Model] Error%s: %s\n" c_red c_reset e) errors;
+  if List.exists (function ArchModel.Res.Flagged _ -> true | _ -> false) results then
+    Printf.printf "  Flagged\n";
 
   (* Observable: interesting relaxed behaviors the test wants to capture *)
-  let passed_observable = List.for_all (fun cond ->
+  let observable_ok = List.for_all (fun cond ->
     let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
     if not matched && final_states <> [] then
-      Printf.printf "OBSERVABLE NOT FOUND: %s\n"
+      Printf.printf "%sOBSERVABLE NOT FOUND%s: %s\n" c_red c_reset
         (List.map (fun (tid, reqs) ->
           Printf.sprintf "%d:{%s}" tid (String.concat "," (List.map req_to_string reqs))
         ) cond |> String.concat " ");
@@ -69,10 +92,10 @@ let run_executions model (init : ArchState.t) (fuel : int) (term : termCond)
   ) observable in
 
   (* Unobservable: relaxed behaviors the test does not expect to occur *)
-  let passed_unobservable = List.for_all Fun.id (List.mapi (fun i fs ->
+  let unobservable_ok = List.for_all Fun.id (List.mapi (fun i fs ->
     match List.find_opt (fun c -> check_outcome fs c) unobservable with
     | Some cond ->
-      Printf.printf "UNOBSERVABLE FOUND in execution %d: %s\n" (i+1)
+      Printf.printf "%sUNOBSERVABLE FOUND%s in execution %d: %s\n" c_red c_reset (i+1)
         (List.map (fun (tid, reqs) ->
           Printf.sprintf "%d:{%s}" tid (String.concat "," (List.map req_to_string reqs))
         ) cond |> String.concat " ");
@@ -81,15 +104,23 @@ let run_executions model (init : ArchState.t) (fuel : int) (term : termCond)
   ) final_states) in
 
   if final_states = [] && observable <> [] then
-    Printf.printf "NO VALID EXECUTIONS: All %d failed\n" (List.length results);
+    Printf.printf "%sNO VALID EXECUTIONS%s: All %d failed\n" c_red c_reset (List.length results);
 
-  passed_observable && passed_unobservable
+  if errors <> [] then ModelError
+  else if observable_ok && unobservable_ok then Expected
+  else Unexpected
 
 (** {1 Entry Point} *)
 
-let run_litmus_test model filename =
+let result_to_string = function
+  | Expected -> c_green ^ "EXPECTED" ^ c_reset
+  | Unexpected -> c_yellow ^ "UNEXPECTED" ^ c_reset
+  | ModelError -> c_red ^ "MODEL ERROR" ^ c_reset
+  | ParseError -> c_red ^ "PARSE ERROR" ^ c_reset
+
+let run_litmus_test model_name model filename =
   if not (Sys.file_exists filename) then
-    (Printf.eprintf "File not found: %s\n" filename; false)
+    (Printf.eprintf "File not found: %s\n" filename; ParseError)
   else try
     let toml = Otoml.Parser.from_file filename in
     let fuel = Otoml.find_opt toml Litmus_parser.get_int ["fuel"] |> Option.value ~default:1000 in
@@ -99,13 +130,13 @@ let run_litmus_test model filename =
     let term = Litmus_parser.parse_termCond (List.length regs) toml in
     let outcomes = Litmus_parser.parse_outcomes toml in
 
-    Printf.printf "\nSuccessfully parsed %s\n" filename;
-    let passed = run_executions model init fuel term outcomes in
-    Printf.printf "\nRESULT: %s\n" (if passed then "PASS" else "FAIL");
-    passed
+    Printf.printf "\nParsed %s\n" filename;
+    let result = run_executions model_name model init fuel term outcomes in
+    Printf.printf "RESULT: %s\n\n" (result_to_string result);
+    result
   with
   | Otoml.Parse_error (pos, msg) ->
-    Printf.eprintf "Parse error at %s: %s\n"
-      (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos) msg; false
-  | Failure msg -> Printf.eprintf "Error: %s\n" msg; false
-  | exn -> Printf.eprintf "Unexpected: %s\n" (Printexc.to_string exn); false
+    Printf.eprintf "[Parser] error at %s: %s\n"
+      (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos) msg; ParseError
+  | Failure msg -> Printf.eprintf "%s\n" msg; ParseError
+  | exn -> Printf.eprintf "[Unexpected] %s\n" (Printexc.to_string exn); ParseError

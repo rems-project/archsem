@@ -1,17 +1,17 @@
-; Run all sequential tests
+; Run all sequential tests (seq/)
 (rule
  (alias runtest)
- (deps (glob_files *.toml))
+ (deps (glob_files seq/*.toml))
  (action (run %{exe:../bin/main.exe} seq %{project_root}/cli/tests)))
 
-; Run all UM Promising tests
+; Run all UM Promising tests (seq/ + ump/)
 (rule
  (alias runtest)
- (deps (glob_files *.toml))
+ (deps (glob_files seq/*.toml) (glob_files ump/*.toml))
  (action (run %{exe:../bin/main.exe} ump %{project_root}/cli/tests)))
 
-; Run all VM Promising tests
+; Run all VM Promising tests (seq/ + ump/ + vmp/)
 (rule
  (alias runtest)
- (deps (glob_files *.toml))
+ (deps (glob_files seq/*.toml) (glob_files ump/*.toml) (glob_files vmp/*.toml))
  (action (run %{exe:../bin/main.exe} vmp %{project_root}/cli/tests)))

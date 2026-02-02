@@ -1,10 +1,10 @@
 (** Litmus test runner CLI.
 
-    Usage: litmus_runner <model> <file_or_dir>
+    Usage: litmus_runner <model> <test_dir>
 
     Models: seq (sequential), ump (UM Promising), vmp (VM Promising)
 
-    If a directory is given, runs all .toml files matching the model prefix. *)
+    Runs all .toml files from the appropriate subdirectories of test_dir. *)
 
 open Archsem
 
@@ -14,23 +14,36 @@ let get_model = function
   | "vmp" -> vmProm_model
   | s -> failwith ("Unknown model: " ^ s ^ ". Use: seq, ump, vmp")
 
-(** Get test files for a model from a directory *)
-let get_test_files model_name dir =
-  let prefix = match model_name with
-    | "seq" -> "EOR"  (* Sequential tests start with EOR *)
-    | "ump" -> "MP"   (* UM Promising tests start with MP *)
-    | "vmp" -> "VMP"  (* VM Promising tests start with VMP *)
-    | _ -> ""
+(** Get all .toml files from a directory *)
+let get_toml_files dir =
+  if Sys.file_exists dir && Sys.is_directory dir then
+    Sys.readdir dir
+    |> Array.to_list
+    |> List.filter (fun f ->
+         String.length f > 5 &&
+         String.sub f (String.length f - 5) 5 = ".toml")
+    |> List.sort String.compare
+    |> List.map (Filename.concat dir)
+  else []
+
+(** Get test directories for a model.
+    Each model runs all tests from weaker models plus its own:
+    - seq: seq only
+    - ump: seq + ump
+    - vmp: seq + ump + vmp *)
+let get_test_dirs model_name base_dir =
+  let dirs = match model_name with
+    | "seq" -> ["seq"]
+    | "ump" -> ["seq"; "ump"]
+    | "vmp" -> ["seq"; "ump"; "vmp"]
+    | _ -> []
   in
-  Sys.readdir dir
-  |> Array.to_list
-  |> List.filter (fun f ->
-       String.length f > 5 &&
-       String.sub f (String.length f - 5) 5 = ".toml" &&
-       (prefix = "" || String.length f >= String.length prefix &&
-        String.sub f 0 (String.length prefix) = prefix))
-  |> List.sort String.compare
-  |> List.map (Filename.concat dir)
+  List.map (Filename.concat base_dir) dirs
+
+(** Get test files for a model from a base directory *)
+let get_test_files model_name base_dir =
+  get_test_dirs model_name base_dir
+  |> List.concat_map get_toml_files
 
 let () =
   if Array.length Sys.argv < 3 then (
@@ -52,18 +65,30 @@ let () =
   );
 
   let results = List.map (fun file ->
-    let passed = Archsem_test.Litmus_runner.run_litmus_test model file in
-    (file, passed)
+    let result = Archsem_test.Litmus_runner.run_litmus_test model_name model file in
+    (file, result)
   ) files in
 
   (* Summary *)
-  let passed = List.filter snd results |> List.length in
+  let open Archsem_test.Litmus_runner in
+  let num_expected = List.filter (fun (_, r) -> r = Expected) results |> List.length in
+  let num_unexpected = List.filter (fun (_, r) -> r = Unexpected) results |> List.length in
+  let num_model_error = List.filter (fun (_, r) -> r = ModelError) results |> List.length in
+  let num_parse_error = List.filter (fun (_, r) -> r = ParseError) results |> List.length in
   let total = List.length results in
   Printf.printf "\n========================================\n";
-  Printf.printf "Results: %d/%d tests passed\n" passed total;
+  Printf.printf "Results: %d/%d tests expected\n" num_expected total;
 
-  if passed < total then (
-    Printf.printf "Failed tests:\n";
-    List.iter (fun (f, p) -> if not p then Printf.printf "  - %s\n" f) results;
-    exit 1
-  )
+  if num_unexpected > 0 then (
+    Printf.printf "Unexpected:\n";
+    List.iter (fun (f, r) -> if r = Unexpected then Printf.printf "  - %s\n" f) results
+  );
+  if num_model_error > 0 then (
+    Printf.printf "Model errors:\n";
+    List.iter (fun (f, r) -> if r = ModelError then Printf.printf "  - %s\n" f) results
+  );
+  if num_parse_error > 0 then (
+    Printf.printf "Parse errors:\n";
+    List.iter (fun (f, r) -> if r = ParseError then Printf.printf "  - %s\n" f) results
+  );
+  if num_expected < total then exit 1
