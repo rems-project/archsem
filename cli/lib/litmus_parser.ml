@@ -61,12 +61,14 @@ let rec parse_value = function
     - Simple value: X0 = 1 (implies equality)
     - Explicit op: X0 = \{ op = "eq", val = 1 \} or \{ op = "ne", val = 1 \} *)
 let parse_requirement toml =
-  let pairs = get_pairs toml in
-  match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
-  | Some (Otoml.TomlString "eq"), Some v -> Eq (parse_value v)
-  | Some (Otoml.TomlString "ne"), Some v -> Neq (parse_value v)
-  | Some (Otoml.TomlString op), _ -> failwith ("Unknown op: " ^ op)
-  | _ -> Eq (parse_value toml)
+  match toml with
+  | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
+    (match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
+     | Some (Otoml.TomlString "eq"), Some v -> Eq (parse_value v)
+     | Some (Otoml.TomlString "ne"), Some v -> Neq (parse_value v)
+     | Some (Otoml.TomlString op), _ -> failwith ("Unknown op: " ^ op)
+     | _ -> Eq (parse_value toml))  (* Table without op/val = struct value *)
+  | _ -> Eq (parse_value toml)  (* Simple value = equality *)
 
 (** Parse a register key-value pair into (Reg.t, requirement) option.
     Returns None if the key is not a valid register name. *)
