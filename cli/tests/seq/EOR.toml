@@ -1,0 +1,21 @@
+arch="Arm"
+name="EOR"
+
+[[registers]]
+_PC = 0x500
+R0 = 0x0
+R1 = 0x11
+R2 = 0x101
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+[[memory]]
+base = 0x500
+size = 4
+data = 0xca020020
+
+[[termCond]]
+_PC = 0x504
+
+[[outcome]]
+observable.0.R0 = 0x110

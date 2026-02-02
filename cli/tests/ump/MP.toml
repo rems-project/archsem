@@ -1,0 +1,73 @@
+arch="Arm"
+name="MP"
+
+# Thread 1
+[[registers]]
+_PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x2a
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x1
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 2
+[[registers]]
+_PC = 0x600
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 1 Instructions
+[[memory]]
+base = 0x500
+size = 8
+data = [0xf8206822, 0xf8236885]
+
+# Thread 2 Instructions
+[[memory]]
+base = 0x600
+size = 8
+data = [0xf8636885, 0xf8606822]
+
+# Shared Data
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[memory]]
+base = 0x1200
+size = 8
+data = 0
+
+[[termCond]]
+_PC = 0x508
+
+[[termCond]]
+_PC = 0x608
+
+# Check that the parser can read multiple outcome formats
+[[outcome]]
+observable.1.R5 = 0x0
+observable.1.R2 = 0x2a
+
+[[outcome]]
+[outcome.observable.1]
+R5 = 0x0
+R2 = 0x0
+
+[[outcome]]
+observable.1.R5 = { op = "eq", val = 0x1 }
+observable.1.R2 = { op = "eq", val = 0x0 }
+
+[[outcome]]
+observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
+
