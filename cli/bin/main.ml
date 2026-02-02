@@ -7,6 +7,7 @@
     Runs all .toml files from the appropriate subdirectories of test_dir. *)
 
 open Archsem
+open Archsem_test
 
 let get_model = function
   | "seq" -> seq_model
@@ -14,8 +15,15 @@ let get_model = function
   | "vmp" -> vmProm_model
   | s -> failwith ("Unknown model: " ^ s ^ ". Use: seq, ump, vmp")
 
-(** Get all .toml files from a directory *)
+let model_full_name = function
+  | "seq" -> "Sequential"
+  | "ump" -> "UM Promising"
+  | "vmp" -> "VM Promising"
+  | s -> s
+
+(** Get all .toml files from a directory, returning (dir_name, file_path) pairs *)
 let get_toml_files dir =
+  let dir_name = Filename.basename dir in
   if Sys.file_exists dir && Sys.is_directory dir then
     Sys.readdir dir
     |> Array.to_list
@@ -23,14 +31,10 @@ let get_toml_files dir =
          String.length f > 5 &&
          String.sub f (String.length f - 5) 5 = ".toml")
     |> List.sort String.compare
-    |> List.map (Filename.concat dir)
+    |> List.map (fun f -> (dir_name, Filename.concat dir f))
   else []
 
-(** Get test directories for a model.
-    Each model runs all tests from weaker models plus its own:
-    - seq: seq only
-    - ump: seq + ump
-    - vmp: seq + ump + vmp *)
+(** Get test directories for a model *)
 let get_test_dirs model_name base_dir =
   let dirs = match model_name with
     | "seq" -> ["seq"]
@@ -56,7 +60,7 @@ let () =
 
   let files =
     if Sys.is_directory path then get_test_files model_name path
-    else [path]
+    else [("", path)]
   in
 
   if files = [] then (
@@ -64,31 +68,76 @@ let () =
     exit 1
   );
 
-  let results = List.map (fun file ->
-    let result = Archsem_test.Litmus_runner.run_litmus_test model_name model file in
-    (file, result)
+  let total = List.length files in
+  Printf.printf "%s%s=== %s Model (%d tests) ===%s\n\n"
+    Ansi.bold Ansi.cyan (model_full_name model_name) total Ansi.reset;
+
+  let results = List.mapi (fun i (dir, file) ->
+    Printf.printf "%s[%d/%d]%s %s\n%!"
+      Ansi.dim (i + 1) total Ansi.reset (Filename.basename file);
+    let result = Litmus_runner.run_litmus_test ~model_name model file in
+    (dir, file, result)
   ) files in
 
-  (* Summary *)
-  let open Archsem_test.Litmus_runner in
-  let num_expected = List.filter (fun (_, r) -> r = Expected) results |> List.length in
-  let num_unexpected = List.filter (fun (_, r) -> r = Unexpected) results |> List.length in
-  let num_model_error = List.filter (fun (_, r) -> r = ModelError) results |> List.length in
-  let num_parse_error = List.filter (fun (_, r) -> r = ParseError) results |> List.length in
-  let total = List.length results in
-  Printf.printf "\n========================================\n";
-  Printf.printf "Results: %d/%d tests expected\n" num_expected total;
+  (* Group results by directory *)
+  let dirs = List.sort_uniq String.compare (List.map (fun (d, _, _) -> d) results) in
+  let by_dir dir = List.filter (fun (d, _, _) -> d = dir) results in
 
-  if num_unexpected > 0 then (
-    Printf.printf "Unexpected:\n";
-    List.iter (fun (f, r) -> if r = Unexpected then Printf.printf "  - %s\n" f) results
+  (* Summary *)
+  let open Litmus_runner in
+  let count_expected lst = List.filter (fun (_, _, r) -> r = Expected) lst |> List.length in
+  let count_unexpected lst = List.filter (fun (_, _, r) -> r = Unexpected) lst |> List.length in
+  let count_errors lst = List.filter (fun (_, _, r) -> r = ModelError || r = ParseError) lst |> List.length in
+
+  let num_expected = count_expected results in
+  let num_unexpected = count_unexpected results in
+  let num_errors = count_errors results in
+
+  Printf.printf "\n%s========================================%s\n" Ansi.bold Ansi.reset;
+  Printf.printf "%s%s Model Summary%s\n" Ansi.bold (model_full_name model_name) Ansi.reset;
+  Printf.printf "----------------------------------------\n";
+
+  (* Per-directory breakdown *)
+  List.iter (fun dir ->
+    let dir_results = by_dir dir in
+    let dir_total = List.length dir_results in
+    let dir_expected = count_expected dir_results in
+    let dir_unexpected = count_unexpected dir_results in
+    let dir_errors = count_errors dir_results in
+    let symbol, color =
+      if dir_expected = dir_total then (Ansi.check, Ansi.green)
+      else if dir_errors > 0 then (Ansi.cross, Ansi.red)
+      else (Ansi.dot, Ansi.yellow)
+    in
+    Printf.printf "  %s%s%s %s/%s  %d/%d"
+      color symbol Ansi.reset dir Ansi.reset dir_expected dir_total;
+    if dir_unexpected > 0 then
+      Printf.printf " %s(%d unexpected)%s" Ansi.yellow dir_unexpected Ansi.reset;
+    if dir_errors > 0 then
+      Printf.printf " %s(%d errors)%s" Ansi.red dir_errors Ansi.reset;
+    Printf.printf "\n"
+  ) dirs;
+
+  (* List issues *)
+  if num_unexpected > 0 || num_errors > 0 then (
+    Printf.printf "----------------------------------------\n";
+    List.iter (fun (_, f, r) ->
+      match r with
+      | Unexpected ->
+        Printf.printf "  %s%s%s %s\n" Ansi.yellow Ansi.dot Ansi.reset (Filename.basename f)
+      | ModelError | ParseError ->
+        Printf.printf "  %s%s%s %s\n" Ansi.red Ansi.cross Ansi.reset (Filename.basename f)
+      | Expected -> ()
+    ) results
   );
-  if num_model_error > 0 then (
-    Printf.printf "Model errors:\n";
-    List.iter (fun (f, r) -> if r = ModelError then Printf.printf "  - %s\n" f) results
-  );
-  if num_parse_error > 0 then (
-    Printf.printf "Parse errors:\n";
-    List.iter (fun (f, r) -> if r = ParseError then Printf.printf "  - %s\n" f) results
-  );
+
+  Printf.printf "----------------------------------------\n";
+  let symbol, status_color =
+    if num_expected = total then (Ansi.check, Ansi.green)
+    else (Ansi.cross, Ansi.red)
+  in
+  Printf.printf "  %s%s%s %s%d/%d tests expected%s\n"
+    status_color symbol Ansi.reset status_color num_expected total Ansi.reset;
+  Printf.printf "%s========================================%s\n" Ansi.bold Ansi.reset;
+
   if num_expected < total then exit 1
