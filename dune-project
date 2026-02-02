@@ -67,4 +67,15 @@
  )
 )
 
+(package
+ (name archsem)
+ (synopsis "Archsem CLI and OCaml library to run ArchSem models")
+ (depends
+   coq-archsem
+   coq-archsem-arm
+  (otoml (>= 1.0))
+  (cmdliner (>= 1.3))
+ )
+)
+
 (generate_opam_files)

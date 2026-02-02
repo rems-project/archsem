@@ -27,5 +27,6 @@
 
 (library
  (name archsem)
+ (package archsem)
  (libraries zarith)
 )

@@ -1,0 +1,4 @@
+(library
+ (name archsem_test)
+ (package archsem)
+ (libraries archsem otoml))
