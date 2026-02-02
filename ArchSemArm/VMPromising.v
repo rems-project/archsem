@@ -980,12 +980,17 @@ Module TLB.
 
     Definition setFEs (ctxt : Ctxt.t)
         (entries : gset (Entry.t (Ctxt.lvl ctxt))) (vatlb : t) : t :=
-      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries]} vatlb.
+      let lvl := Ctxt.lvl ctxt in
+      let nd := Ctxt.nd ctxt in
+      hset lvl (<[ nd := entries ]> (hget lvl vatlb)) vatlb.
 
     Definition insert (ctxt : Ctxt.t) (entry : Entry.t (Ctxt.lvl ctxt))
         (vatlb : t) : t :=
-      let entries := get ctxt vatlb in
-      hset (Ctxt.lvl ctxt) {[(Ctxt.nd ctxt) := entries ∪ {[ entry ]}]} vatlb.
+      let lvl := Ctxt.lvl ctxt in
+      let nd := Ctxt.nd ctxt in
+      let lvl_map : T lvl := hget lvl vatlb in
+      let entries := (get ctxt vatlb) ∪ {[ entry ]} in
+      hset lvl (<[ nd := entries ]> lvl_map) vatlb.
 
     #[global] Instance empty : Empty t := VATLB.init.
     #[global] Instance union : Union t := fun x y => hmap2 (fun _ => (∪ₘ)) x y.
