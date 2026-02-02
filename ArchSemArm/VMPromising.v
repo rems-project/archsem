@@ -1741,9 +1741,9 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
 
 (** Perform a Context Synchronization Event (CSE).
 
-    CSEs occur at ISB instructions and exception returns. They ensure that
-    all prior context-changing operations (MSR writes, TLBIs) are observed
-    before subsequent instruction fetch and execution.
+    CSEs occur at ISB instructions, exception taking, and exception returns.
+    They ensure that all prior context-changing operations (MSR writes) are
+    observed before subsequent instruction fetch and execution.
 
     Non-deterministically chooses a view between the current dependencies
     and [vmax_t], then updates [vcse] and adds a CSE marker to the local
