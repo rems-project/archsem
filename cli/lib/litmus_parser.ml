@@ -131,11 +131,18 @@ let parse_termCond num_threads toml =
 
 (** {1 Outcome Parsing} *)
 
-(** Parse a condition block mapping thread IDs to register requirements. *)
+(** Parse a condition block mapping thread IDs to register requirements.
+    Supports nested format: { regs = { "0" = { R0 = 0 } }, mem = [...] } *)
 let parse_cond toml =
-  get_pairs toml |> List.filter_map (fun (tid_str, regs) ->
+  let pairs = get_pairs toml in
+  (* Look for regs key; if not found, treat whole table as thread->regs mapping *)
+  let reg_pairs = match List.assoc_opt "regs" pairs with
+    | Some regs_table -> get_pairs regs_table
+    | None -> pairs
+  in
+  reg_pairs |> List.filter_map (fun (tid_str, regs) ->
     match int_of_string_opt tid_str with
-    | None -> failwith ("Invalid thread ID: " ^ tid_str)
+    | None -> None  (* Skip non-thread keys like "mem" *)
     | Some tid -> Some (tid, parse_reg_table regs))
 
 (** Parse all [[outcome]] blocks from the TOML file. *)
