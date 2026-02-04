@@ -73,5 +73,5 @@ data = 0x1043 # PTE to page 0x1000 with bit 6 on for Unpriv data, and 0x3 to be 
 [[termCond]]
 _PC = 0x8000000508
 
-[[outcome]]
-observable.0.R0 = 0x2a
+[[final]]
+assertion.0.R0 = 0x2a

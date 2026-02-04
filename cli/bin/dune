@@ -1,5 +1,5 @@
-(executable
- (name main)
- (public_name archsem)
+(executables
+ (names main convert_isla)
+ (public_names archsem convert_isla)
  (package archsem)
- (libraries archsem archsem_test isla_converter otoml))
+ (libraries archsem archsem_test isla_converter cmdliner otoml))

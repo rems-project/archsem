@@ -1,8 +1,8 @@
 (** Litmus test runner.
 
-    Executes a model on parsed litmus tests and validates outcomes:
-    - Observable: Interesting relaxed behavior the test wants to capture
-    - Unobservable: Relaxed behavior the test does not expect to occur *)
+    Executes a model on parsed litmus tests and validates final conditions:
+    - Assertion: Expected reachable final state
+    - Negation: Final state expected to be unreachable *)
 
 open Archsem
 
@@ -62,10 +62,10 @@ let run_executions model init fuel term outcomes =
   let msg s = msgs := s :: !msgs in
   let results = model fuel term init in
 
-  let observable = List.filter_map
-    (function Litmus_parser.Observable c -> Some c | _ -> None) outcomes in
-  let unobservable = List.filter_map
-    (function Litmus_parser.Unobservable c -> Some c | _ -> None) outcomes in
+  let assertions = List.filter_map
+    (function Litmus_parser.Assertion c -> Some c | _ -> None) outcomes in
+  let negations = List.filter_map
+    (function Litmus_parser.Negation c -> Some c | _ -> None) outcomes in
 
   let errors = List.filter_map (function
     | ArchModel.Res.Error e -> Some e
@@ -81,18 +81,18 @@ let run_executions model init fuel term outcomes =
     msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
   if flags <> [] then msg "Flagged";
 
-  let observable_ok = List.for_all (fun cond ->
+  let assertions_ok = List.for_all (fun cond ->
     let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
     if not matched && final_states <> [] then
-      msg (Printf.sprintf "%sObservable not found%s: %s"
+      msg (Printf.sprintf "%sAssertion not found%s: %s"
         Terminal.red Terminal.reset (cond_to_string cond));
     matched
-  ) observable in
+  ) assertions in
 
-  let unobservable_ok = List.for_all Fun.id (List.mapi (fun i fs ->
-    match List.find_opt (fun c -> check_outcome fs c) unobservable with
+  let negations_ok = List.for_all Fun.id (List.mapi (fun i fs ->
+    match List.find_opt (fun c -> check_outcome fs c) negations with
     | Some cond ->
-      msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
+      msg (Printf.sprintf "%sNegation violated%s in execution %d: %s"
         Terminal.red Terminal.reset (i+1) (cond_to_string cond));
       false
     | None -> true
@@ -101,7 +101,7 @@ let run_executions model init fuel term outcomes =
   let result =
     if results = [] then NoBehaviour
     else if errors <> [] then ModelError
-    else if observable_ok && unobservable_ok then Expected
+    else if assertions_ok && negations_ok then Expected
     else Unexpected
   in
   (result, List.rev !msgs)
@@ -115,7 +115,9 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
-let run_litmus_test model filename =
+(** {1 Entry Point} *)
+
+let run_litmus_test ~model_name:_ model filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
     Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset name Terminal.red Terminal.reset;
