@@ -1,3 +1,7 @@
 (executable
  (name main)
- (libraries archsem archsem_test otoml))
+ (libraries archsem archsem_test isla_converter otoml))
+
+(executable
+ (name convert_isla)
+ (libraries isla_converter))
