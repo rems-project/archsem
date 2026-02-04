@@ -29,9 +29,16 @@ let page_mask = Z.of_string "0xFFFFFFFFFFFFF000"
       [9:8]=SH, [10]=AF, [11]=nG, [53]=PXN, [54]=UXN *)
 let table_descriptor_bits = Z.of_int 3  (* valid + table *)
 let leaf_page_desc = Z.of_string "0x60000000000703"  (* EL1 RW, EL0 none, ISH, AF, PXN+UXN *)
+let code_descriptor = Z.of_string "0x40000000000783"  (* EL1 RO, EL0 none, ISH, AF, UXN, PXN=0 *)
+let data_descriptor = leaf_page_desc
 
 (** Memory layout *)
-let initial_pa = Z.of_int 0x2000                 (* PA base, after reserved region *)
-let initial_code_va = Z.of_string "0x40000000"    (* 1GB *)
-let initial_data_va = Z.of_string "0x8000000000"  (* 32GB *)
-let constraint_skip = Z.of_int 0x100000           (* 1MB skip on constraint conflict *)
+let initial_pa = Z.of_int 0x50000                 (* PA base, after reserved region *)
+let initial_code_va = Z.of_string "0x40000000"     (* 1GB *)
+let initial_data_va = Z.of_string "0x8000000000"   (* 32GB *)
+let constraint_skip = Z.of_int 0x100000            (* 1MB skip on constraint conflict *)
+
+(** Code layout *)
+let instruction_size = 4  (* AArch64: 32-bit instructions *)
+let exception_vector_offset = 0x800  (* Offset before thread code for exception vectors *)
+let thread_code_base = Z.of_int 0x10000  (* Base PA for thread code pool *)
