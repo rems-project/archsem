@@ -38,3 +38,6 @@ let constraint_skip = Z.of_int 0x100000
 let instruction_size = 4  (* AArch64: 32-bit instructions *)
 let exception_vector_offset = 0x800  (* Offset before thread code for exception vectors *)
 let thread_code_base = Z.of_int 0x10000  (* Base PA for thread code pool *)
+
+(** Instruction opcodes *)
+let eret_opcode = 0xD69F03E0  (* ERET: exception return *)
