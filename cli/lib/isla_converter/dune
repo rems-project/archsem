@@ -1,6 +1,6 @@
 (library
  (name isla_converter)
- (modules ast parser lexer constants symbols allocator evaluator assembler page_tables types from_isla rewriter)
+ (modules ast parser lexer constants symbols allocator evaluator assembler page_tables types from_isla rewriter outcomes)
  (libraries zarith otoml str))
 
 (menhir
