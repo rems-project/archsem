@@ -35,7 +35,7 @@ let alloc size alignment =
     if is_free aligned size then (
       add_region aligned size;
       aligned
-    ) else try_find (Z.add base Symbols.page_size)
+    ) else try_find (Z.add base Constants.page_size_z)
   in
   let res = try_find !Symbols.next_free_addr in
   Symbols.next_free_addr := Z.add res size;
