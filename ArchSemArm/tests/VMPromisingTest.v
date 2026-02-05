@@ -756,7 +756,7 @@ Module BBMSuccess.
 
   (* BBM check success *)
   Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
-      [Ok [0x2a%Z]; Ok [0x8000001000%Z]].
+      [Ok [0x2a%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
