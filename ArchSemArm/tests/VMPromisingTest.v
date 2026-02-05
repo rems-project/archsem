@@ -694,6 +694,7 @@ Module BBMSuccess.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ESR_EL1 0x0
+    |> reg_insert VBAR_EL1 0x0       (* Exception vector base - needed for fault handling *)
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
