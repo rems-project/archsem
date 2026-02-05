@@ -680,30 +680,33 @@ End TState.
        BBM requires that when modifying a page table entry, the old entry must
        be invalidated (set to invalid) before the new entry is written.
 
-    The three modes are:
-    - [Off]:    No memory strictness, no BBM check. Most permissive mode.
-    - [Lax]:    Lax memory mode (tolerates TLB fill read failures), with BBM check.
-                Checks BBM but allows non-deterministic page table reads.
-    - [Strict]: Strict memory mode (TLB fill reads must succeed), with BBM check.
-                Most restrictive mode requiring all page table reads to succeed. *)
+    The four modes are:
+    - [Off]:       No memory strictness, no BBM check. Most permissive mode.
+    - [LaxBBM]:    Lax memory mode (tolerates TLB fill read failures), with BBM check.
+                   Checks BBM but allows non-deterministic page table reads.
+    - [Strict]:    Strict memory mode (TLB fill reads must succeed), no BBM check.
+                   Requires page table reads to succeed but does not check BBM.
+    - [StrictBBM]: Strict memory mode (TLB fill reads must succeed), with BBM check.
+                   Most restrictive mode requiring all page table reads to succeed. *)
 Module MemParam.
   Inductive t :=
     | Off
-    | Lax
-    | Strict.
+    | LaxBBM
+    | Strict
+    | StrictBBM.
 
   (** Returns true if TLB fill reads must succeed (strict mode). *)
   Definition mem_strict (p : t) : bool :=
     match p with
-    | Strict => true
+    | Strict | StrictBBM => true
     | _ => false
     end.
 
-  (** Returns true if BBM violation checking is enabled (Lax or Strict). *)
+  (** Returns true if BBM violation checking is enabled. *)
   Definition bbm_check (p : t) : bool :=
     match p with
-    | Off => false
-    | _ => true
+    | LaxBBM | StrictBBM => true
+    | _ => false
     end.
 End MemParam.
 
@@ -1058,8 +1061,8 @@ Module TLB.
       - Inserts the entry into the VATLB if not already present.
 
       Memory behavior controlled by [mem_param]:
-      - [MemParam.Strict]: Read failures cause an error.
-      - [MemParam.Lax] or [MemParam.Off]: Read failures are silently skipped.
+      - [MemParam.Strict] or [MemParam.StrictBBM]: Read failures cause an error.
+      - [MemParam.LaxBBM] or [MemParam.Off]: Read failures are silently skipped.
 
       Returns [(vatlb', changed)] where [changed] is [true] if new entries
       were added. *)
@@ -1101,8 +1104,8 @@ Module TLB.
       has the global (nG) bit clear, in which case the ASID is dropped.
 
       Memory behavior controlled by [mem_param]:
-      - [MemParam.Strict]: Read failures cause an error.
-      - [MemParam.Lax] or [MemParam.Off]: Read failures are silently skipped.
+      - [MemParam.Strict] or [MemParam.StrictBBM]: Read failures cause an error.
+      - [MemParam.LaxBBM] or [MemParam.Off]: Read failures are silently skipped.
 
       Returns [(vatlb', changed)] where [changed] is [true] if a new entry
       was added. *)
@@ -1148,8 +1151,8 @@ Module TLB.
       using [va_fill_lvl].
 
       Memory behavior controlled by [mem_param]:
-      - [MemParam.Strict]: Read failures cause an error.
-      - [MemParam.Lax] or [MemParam.Off]: Read failures are silently skipped.
+      - [MemParam.Strict] or [MemParam.StrictBBM]: Read failures cause an error.
+      - [MemParam.LaxBBM] or [MemParam.Off]: Read failures are silently skipped.
 
       Returns [(tlb', changed)] where [changed] is [true] if new entries
       were added. *)
@@ -1191,8 +1194,8 @@ Module TLB.
       determines both the upper/lower VA range and provides the base addresses.
 
       Memory behavior controlled by [mem_param]:
-      - [MemParam.Strict]: Read failures cause an error.
-      - [MemParam.Lax] or [MemParam.Off]: Read failures are silently skipped.
+      - [MemParam.Strict] or [MemParam.StrictBBM]: Read failures cause an error.
+      - [MemParam.LaxBBM] or [MemParam.Off]: Read failures are silently skipped.
 
       Returns [(tlb', changed)] where [changed] is [true] if new entries
       were added. *)
@@ -2353,8 +2356,9 @@ Import Promising.
 (** VM Promising model parameterized by memory strictness.
     - [mem_param]: Controls memory strictness for TLB fill operations.
       - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill), no BBM check.
-      - [MemParam.Lax]: Lax memory mode with BBM check.
-      - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed), with BBM check. *)
+      - [MemParam.LaxBBM]: Lax memory mode with BBM check.
+      - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed), no BBM check.
+      - [MemParam.StrictBBM]: Strict memory mode (TLB fill reads must succeed), with BBM check. *)
 Definition VMPromising (mem_param : MemParam.t) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
@@ -2372,19 +2376,19 @@ Definition VMPromising (mem_param : MemParam.t) : Promising.Model :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
-(** Non-certified VM promising model (default: lax memory mode). *)
+(** Non-certified VM promising model (default: strict memory mode). *)
 Definition VMPromising_nocert :=
-  Promising_to_Modelnc (*certified=*)false (VMPromising MemParam.Off).
+  Promising_to_Modelnc (*certified=*)false (VMPromising MemParam.Strict).
 
-(** Certified VM promising model (default: lax memory mode). *)
+(** Certified VM promising model (default: strict memory mode). *)
 Definition VMPromising_cert :=
-  Promising_to_Modelnc (*certified=*)true (VMPromising MemParam.Off).
+  Promising_to_Modelnc (*certified=*)true (VMPromising MemParam.Strict).
 
-(** Executable VM promising model (default: lax memory mode). *)
-Definition VMPromising_exe := Promising_to_Modelc (VMPromising MemParam.Off).
+(** Executable VM promising model (default: strict memory mode). *)
+Definition VMPromising_exe := Promising_to_Modelc (VMPromising MemParam.Strict).
 
-(** Promise-free VM promising model (default: lax memory mode). *)
-Definition VMPromising_pf := Promising_to_Modelc_pf (VMPromising MemParam.Off).
+(** Promise-free VM promising model (default: strict memory mode). *)
+Definition VMPromising_pf := Promising_to_Modelc_pf (VMPromising MemParam.Strict).
 
 (** Executable VM promising model with explicit memory parameter. *)
 Definition VMPromising_exe' (mem_param : MemParam.t) :=
