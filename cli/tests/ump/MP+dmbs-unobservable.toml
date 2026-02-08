@@ -6,7 +6,7 @@ FEAT_ETS2 = true
 
 # Thread 0: W data=0x2a; DMB; W flag=1
 [[registers]]
-_PC = 0x500
+PC = 0x500
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x2a
@@ -14,11 +14,11 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x1
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
 # Thread 1: R flag; DMB; R data
 [[registers]]
-_PC = 0x600
+PC = 0x600
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x0
@@ -26,7 +26,7 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x0
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
 # Thread 0 Instructions: STR X2,[X0,X1]; DMB SY; STR X5,[X3,X4]
 [[memory]]
@@ -52,10 +52,10 @@ size = 8
 data = 0
 
 [[termCond]]
-_PC = 0x50C
+PC = 0x50C
 
 [[termCond]]
-_PC = 0x60C
+PC = 0x60C
 
 # This outcome is FORBIDDEN by the DMB barriers:
 # If Thread 1 sees flag=1, then it must see data=0x2a (not 0)

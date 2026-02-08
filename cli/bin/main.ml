@@ -2,22 +2,30 @@
 
     Usage: litmus_runner <model> <test_dir>
 
-    Models: seq (sequential), ump (UM Promising), vmp (VM Promising)
+    Models: seqtiny, seq, umptiny, ump, vmptiny, vmp
 
-    Runs all .toml files from the appropriate subdirectories of test_dir. *)
+    Runs all .toml files from the appropriate subdirectories of test_dir.
+    Test directories: seq/, ump/, vmp/ — shared by both tiny and full models. *)
 
 open Archsem
 open Archsem_test
 
-let get_model = function
-  | "seq" -> seq_model
-  | "ump" -> umProm_model
-  | "vmp" -> vmProm_model
-  | s -> failwith ("Unknown model: " ^ s ^ ". Use: seq, ump, vmp")
+let get_runner model_name =
+  match model_name with
+  | "seqtiny" -> Litmus_runner.run_litmus_test_tiny ~model_name seqTiny_model
+  | "seq"     -> Litmus_runner.run_litmus_test_full ~model_name seq_model
+  | "umptiny" -> Litmus_runner.run_litmus_test_tiny ~model_name umPromTiny_model
+  | "ump"     -> Litmus_runner.run_litmus_test_full ~model_name umProm_model
+  | "vmptiny" -> Litmus_runner.run_litmus_test_tiny ~model_name vmPromTiny_model
+  | "vmp"     -> Litmus_runner.run_litmus_test_full ~model_name vmProm_model
+  | s -> failwith ("Unknown model: " ^ s ^ ". Use: seqtiny, seq, umptiny, ump, vmptiny, vmp")
 
 let model_full_name = function
+  | "seqtiny" -> "Sequential (tiny)"
   | "seq" -> "Sequential"
+  | "umptiny" -> "UM Promising (tiny)"
   | "ump" -> "UM Promising"
+  | "vmptiny" -> "VM Promising (tiny)"
   | "vmp" -> "VM Promising"
   | s -> s
 
@@ -37,9 +45,9 @@ let get_toml_files dir =
 (** Get test directories for a model *)
 let get_test_dirs model_name base_dir =
   let dirs = match model_name with
-    | "seq" -> ["seq"]
-    | "ump" -> ["seq"; "ump"]
-    | "vmp" -> ["seq"; "ump"; "vmp"]
+    | "seqtiny" | "seq" -> ["seq"]
+    | "umptiny" | "ump" -> ["seq"; "ump"]
+    | "vmptiny" | "vmp" -> ["seq"; "vmp"]
     | _ -> []
   in
   List.map (Filename.concat base_dir) dirs
@@ -51,11 +59,11 @@ let get_test_files model_name base_dir =
 
 let () =
   if Array.length Sys.argv < 3 then (
-    Printf.eprintf "Usage: %s <model: seq|ump|vmp> <file.toml|directory>\n" Sys.argv.(0);
+    Printf.eprintf "Usage: %s <model: seqtiny|seq|umptiny|ump|vmptiny|vmp> <file.toml|directory>\n" Sys.argv.(0);
     exit 1
   );
   let model_name = Sys.argv.(1) in
-  let model = get_model model_name in
+  let run = get_runner model_name in
   let path = Sys.argv.(2) in
 
   let files =
@@ -75,7 +83,7 @@ let () =
   let results = List.mapi (fun i (dir, file) ->
     Printf.printf "%s[%d/%d]%s %s\n%!"
       Ansi.dim (i + 1) total Ansi.reset (Filename.basename file);
-    let result = Litmus_runner.run_litmus_test ~model_name model file in
+    let result = run file in
     (dir, file, result)
   ) files in
 

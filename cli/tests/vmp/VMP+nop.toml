@@ -1,0 +1,58 @@
+# VMP NOP test - minimal test to isolate translation from instruction execution
+arch="Arm"
+name="VMP+nop"
+
+[config]
+FEAT_ETS2 = true
+
+# Thread 1 - Just execute a NOP via VA translation
+[[registers]]
+PC = 0x8000000500
+TTBR0_EL1 = 0x80000    # Page table base (physical address)
+TCR_EL1 = 0x200000010  # T0SZ=16 (48-bit VA), IPS=2 (40-bit PA), TG0=4KB
+SCTLR_EL1 = 0x1        # MMU enabled
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# NOP instruction at PA 0x500 (VA 0x8000000500)
+# NOP = 0xD503201F
+[[memory]]
+base = 0x500
+size = 4
+data = 0xD503201F
+
+# L0 table base (must exist for reads)
+[[memory]]
+base = 0x80000
+size = 8
+data = 0
+
+# L0[1] -> L1
+[[memory]]
+base = 0x80008
+size = 8
+data = 0x81803
+
+# L1[0] -> L2
+[[memory]]
+base = 0x81000
+size = 8
+data = 0x82803
+
+# L2[0] -> L3
+[[memory]]
+base = 0x82000
+size = 8
+data = 0x83803
+
+# L3[0]: map VA page 0x8000000000 -> PA page 0x0000 (executable)
+[[memory]]
+base = 0x83000
+size = 8
+data = 0x403
+
+[[termCond]]
+PC = 0x8000000504
+
+[[outcome]]
+observable.0 = { PC = { op = "eq", val = 0x8000000504 } }

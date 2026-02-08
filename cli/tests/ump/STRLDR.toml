@@ -1,0 +1,38 @@
+arch="Arm"
+name="STRLDR"
+
+[config]
+FEAT_ETS2 = true
+
+# Simple 1-thread test: Store then Load
+# STR X2, [X1, X0] ; Store 0x42 to address 0x1100
+# LDR X3, [X1, X0] ; Load from address 0x1100 into X3
+
+[[registers]]
+PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x42
+R3 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Instructions:
+# STR X2, [X1, X0] = 0xf8206822
+# LDR X3, [X1, X0] = 0xf8606823
+[[memory]]
+base = 0x500
+size = 8
+data = [0xf8206822, 0xf8606823]
+
+# Data memory at 0x1100
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[termCond]]
+PC = 0x508
+
+[[outcome]]
+observable.0 = { R3 = { op = "eq", val = 0x42 } }

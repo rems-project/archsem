@@ -402,31 +402,31 @@ Definition strict_regs : gset reg :=
        FAR_EL1;
        FAR_EL2;
        FAR_EL3;
-       PAR_EL1]@{reg}.
+       _PAR_EL1]@{reg}.
 
 (** Relaxed registers are not guaranteed to read the latest value. *)
 Definition relaxed_regs : gset reg :=
   list_to_set [
-       TTBR0_EL1;
-       TTBR0_EL2;
+       _TTBR0_EL1;
+       _TTBR0_EL2;
        TTBR0_EL3;
-       TTBR1_EL1;
+       _TTBR1_EL1;
        TTBR1_EL2;
        VBAR_EL1;
        VBAR_EL2;
        VBAR_EL3;
-       VTTBR_EL2]@{reg}.
+       _VTTBR_EL2]@{reg}.
 
 (** TTBR registers used for BBM violation checking.
     When checking BBM, we iterate over all TTBRs to find matching page tables. *)
 Definition ttbrs : gset reg :=
   list_to_set [
-    TTBR0_EL1;
-    TTBR0_EL2;
+    _TTBR0_EL1;
+    _TTBR0_EL2;
     TTBR0_EL3;
-    TTBR1_EL1;
+    _TTBR1_EL1;
     TTBR1_EL2;
-    VTTBR_EL2]@{reg}.
+    _VTTBR_EL2]@{reg}.
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
@@ -436,10 +436,12 @@ Proof. unfold_decide. Defined.
 
 Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
   | R_bitvector_64 _, v => Some v
+  | R_bitvector_128 _, v => Some (bv_extract 0 64 v)
   | _, v => None.
 
 Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
   | R_bitvector_64 _, v => Some v
+  | R_bitvector_128 _, v => Some (bv_zero_extend 128 v)
   | _, v => None.
 
 (** * The thread state *)
@@ -1059,11 +1061,11 @@ Module TLB.
 
   Definition is_upper_ttbr (ttbr : reg) : option bool :=
     if decide
-      (ttbr = TTBR0_EL1 ∨
-       ttbr = TTBR0_EL2 ∨
+      (ttbr = _TTBR0_EL1 ∨
+       ttbr = _TTBR0_EL2 ∨
        ttbr = TTBR0_EL3) then Some false
     else if decide
-      (ttbr = TTBR1_EL1 ∨
+      (ttbr = _TTBR1_EL1 ∨
        ttbr = TTBR1_EL2) then Some true
     else None.
 
@@ -1862,19 +1864,46 @@ Definition run_reg_trans_read (reg : reg) (racc : reg_acc)
     Exec.t TState.t string (reg_type reg * view) :=
   guard_or "Register read during the translation should be implicit"
     (¬ (is_Some racc));;
-  root ← othrow "Could not find the translation root: error in translation assumptions"
-    (trs.(IIS.TransRes.root));
-  if decide (root.T1 = reg) is left eq then
-    mret (ctrans eq root.T2, 0%nat)
-  else
-    ts ← mGet;
-    (* We are only allowed to read registers that are never written during the translation *)
-    guard_or
-      ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
-      $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
-    othrow
-      ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
-      $ TState.read_reg ts reg.
+  match trs.(IIS.TransRes.root) with
+  | Some root =>
+      if decide (root.T1 = reg) is left eq then
+        mret (ctrans eq root.T2, 0%nat)
+      else if decide (reg ∈ relaxed_regs) then
+        (* Relaxed registers read during translation (e.g. _VTTBR_EL2 for VMID)
+           are returned from the thread-local state with view 0, as translation
+           reads do not participate in memory ordering. *)
+        ts ← mGet;
+        '(v, _) ← othrow
+            ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+            $ TState.read_reg ts reg;
+        mret (v, 0%nat)
+      else
+        ts ← mGet;
+        guard_or
+          ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
+          $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
+        othrow
+          ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+          $ TState.read_reg ts reg
+  | None =>
+      ts ← mGet;
+      '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
+      val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
+      if (bv_extract 0 1 val_sctlr) =? 1%bv then
+        mthrow "Could not find the translation root: error in translation assumptions"
+      else if decide (reg ∈ relaxed_regs) then
+        '(v, _) ← othrow
+            ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+            $ TState.read_reg ts reg;
+        mret (v, 0%nat)
+      else
+        guard_or
+          ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
+          $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
+        othrow
+          ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
+          $ TState.read_reg ts reg
+  end.
 
 (** Run a RegRead outcome.
     Returns the register value based on the type of register and the access type. *)
@@ -1894,9 +1923,16 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
     Updates the thread state using a register value *)
 Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
-  guard_or
-    ("Cannot write to unknown register " ++ pretty reg)%string
-    (¬(is_reg_unknown reg));;
+  (* Store writes to unknown registers (e.g. PCUpdated, internal sail-arm
+     state) with view 0.  The full sail-arm model writes and reads back
+     internal flags; silently dropping writes causes stale reads. *)
+  if decide (is_reg_unknown reg) then
+    ts ← mget PPState.state;
+    nts ← othrow
+            ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+            $ TState.set_reg reg (val, 0%nat) ts;
+    msetv PPState.state nts
+  else
   guard_or
     "Non trivial write reg access types unsupported"
     (racc = None);;
@@ -2153,8 +2189,8 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | Regime_EL10 =>
     let varange_bit := bv_extract 48 1 va in
     if varange_bit =? 1%bv
-      then Ok (TTBR1_EL1 : reg)
-      else Ok (TTBR0_EL1 : reg)
+      then Ok (_TTBR1_EL1 : reg)
+      else Ok (_TTBR0_EL1 : reg)
   | _ => Error "This model does not support multiple regimes"
   end.
 
@@ -2183,6 +2219,12 @@ Definition ets3 (ts : TState.t) : result string bool :=
     in the intra-instruction state ([IIS.trs]) for use by subsequent
     translation reads. Also records the invalidation time if the translation
     may be affected by a future TLBI. *)
+(** Check if MMU is enabled by reading SCTLR_EL1.M bit (bit 0). *)
+Definition is_mmu_enabled (ts : TState.t) : result string bool :=
+  '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
+  val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
+  Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
+
 Definition run_trans_start (trans_start : TranslationStartInfo)
     (tid : nat) (init : Memory.initial) (mem_param : MemParam.t) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -2193,6 +2235,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
     AccessType_IFETCH in
   is_ets2 ← mlift (ets2 ts);
+  mmu_enabled ← mlift (is_mmu_enabled ts);
   let vpre_t := ts.(TState.vcse) ⊔
                  (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
@@ -2201,7 +2244,9 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
 
   trans_res ←
-    if decide (va_in_range va) then
+    if negb mmu_enabled then
+      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None)
+    else if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       snapshots ← mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t va ttbr mem_param;
       valid_entries ← mlift $ TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
@@ -2383,13 +2428,6 @@ Section BBM.
   Context (initmem : memoryMap).
   Context (mem_param : MemParam.t).
 
-  (** Check if MMU is enabled by reading SCTLR_EL1.M bit (bit 0).
-      BBM checking is only relevant when the MMU is enabled. *)
-  Definition is_mmu_enabled (ts : TState.t) : result string bool :=
-    '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
-    val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
-    Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
-
   (** Check if a memory location falls within the address range
       covered by a given base address. *)
   Definition is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) : Prop :=
@@ -2565,7 +2603,7 @@ Definition VMPromising_cert :=
 Definition VMPromising_exe := Promising_to_Modelc (VMPromising MemParam.Strict).
 
 (** Promise-free VM promising model (default: strict memory mode). *)
-Definition VMPromising_pf := Promising_to_Modelc_pf (VMPromising MemParam.Strict).
+Definition VMPromising_pf := Promising_to_Modelc_pf (VMPromising MemParam.Off).
 
 (** Executable VM promising model with explicit memory parameter. *)
 Definition VMPromising_exe' (mem_param : MemParam.t) :=

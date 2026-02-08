@@ -10,12 +10,12 @@ FEAT_ETS2 = true
 
 # Thread 1 - Store then Load through VA translation
 [[registers]]
-_PC = 0x8000000500
+PC = 0x8000000500
 R0 = 0x8000001000      # VA base for data access
 R1 = 0x100             # Offset (VA + offset = 0x8000001100)
 R2 = 0x2a              # Value to store
 TTBR0_EL1 = 0x80000    # Page table base (physical address)
-TCR_EL1 = 0x0          # Translation control register
+TCR_EL1 = 0x200000010  # T0SZ=16 (48-bit VA), IPS=2 (40-bit PA), TG0=4KB
 SCTLR_EL1 = 0x1        # MMU enabled
 ID_AA64MMFR1_EL1 = 0x0
 PSTATE = { "EL" = 0b00, "SP" = 0b0 }
@@ -72,7 +72,7 @@ size = 8
 data = 0x60000000001443
 
 [[termCond]]
-_PC = 0x8000000508
+PC = 0x8000000508
 
 [[outcome]]
 observable.0 = { R0 = { op = "eq", val = 0x2a } }

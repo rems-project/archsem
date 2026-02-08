@@ -4,9 +4,14 @@ name="MP"
 [config]
 FEAT_ETS2 = true
 
-# Thread 1
+# Message Passing (MP) litmus test - 2 threads
+# Thread 0: STR X2,[X1,X0] (write 0x2a to data=0x1100), STR X5,[X4,X3] (write 1 to flag=0x1200)
+# Thread 1: LDR X5,[X4,X3] (read flag=0x1200), LDR X2,[X1,X0] (read data=0x1100)
+# Tests: Can thread 1 see flag=1 but data=0? (allowed on ARM without barriers)
+
+# Thread 0
 [[registers]]
-_PC = 0x500
+PC = 0x500
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x2a
@@ -16,9 +21,9 @@ R5 = 0x1
 SCTLR_EL1 = 0x0
 PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
-# Thread 2
+# Thread 1
 [[registers]]
-_PC = 0x600
+PC = 0x600
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x0
@@ -28,19 +33,19 @@ R5 = 0x0
 SCTLR_EL1 = 0x0
 PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
-# Thread 1 Instructions
+# Thread 0: STR X2,[X1,X0]; STR X5,[X4,X3]
 [[memory]]
 base = 0x500
 size = 8
 data = [0xf8206822, 0xf8236885]
 
-# Thread 2 Instructions
+# Thread 1: LDR X5,[X4,X3]; LDR X2,[X1,X0]
 [[memory]]
 base = 0x600
 size = 8
 data = [0xf8636885, 0xf8606822]
 
-# Shared Data
+# Shared data at 0x1100, flag at 0x1200
 [[memory]]
 base = 0x1100
 size = 8
@@ -52,20 +57,21 @@ size = 8
 data = 0
 
 [[termCond]]
-_PC = 0x508
+PC = 0x508
 
 [[termCond]]
-_PC = 0x608
+PC = 0x608
+
+# All 4 outcomes for thread 1's view (R5=flag, R2=data)
+# flag=1, data=0 is the weak MP behavior (allowed on ARM)
+[[outcome]]
+observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
-
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
-

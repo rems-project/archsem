@@ -4,9 +4,9 @@ name="MP+dmbs"
 [config]
 FEAT_ETS2 = true
 
-# Thread 1
+# Thread 0: W data=0x2a; DMB SY; W flag=1
 [[registers]]
-_PC = 0x500
+PC = 0x500
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x2a
@@ -14,11 +14,11 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x1
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
-# Thread 2
+# Thread 1: R flag; DMB SY; R data
 [[registers]]
-_PC = 0x600
+PC = 0x600
 R0 = 0x1000
 R1 = 0x100
 R2 = 0x0
@@ -26,15 +26,15 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x0
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
-# Thread 1 Instructions
+# Thread 0 Instructions: STR X2,[X1,X0]; DMB SY; STR X5,[X4,X3]
 [[memory]]
 base = 0x500
 size = 12
 data = [0xf8206822, 0xd5033fbf, 0xf8236885]
 
-# Thread 2 Instructions
+# Thread 1 Instructions: LDR X5,[X4,X3]; DMB SY; LDR X2,[X1,X0]
 [[memory]]
 base = 0x600
 size = 12
@@ -52,10 +52,10 @@ size = 8
 data = 0
 
 [[termCond]]
-_PC = 0x50C
+PC = 0x50C
 
 [[termCond]]
-_PC = 0x60C
+PC = 0x60C
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
@@ -65,4 +65,3 @@ observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
-

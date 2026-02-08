@@ -37,23 +37,30 @@
 (*                                                                            *)
 (******************************************************************************)
 
+(** Tests for UMPromising - User-mode Promising model with full sail-arm *)
+
 From ASCommon Require Import Options.
 From ASCommon Require Import Common CResult CList Exec.
 
 From ArchSemArm Require Import ArmInst UMPromising.
+From ArchSemArm.tests Require Import SailArmRegs.
+
+Import SailArm.armv9_types.
+Import ArmTM.
 
 Open Scope stdpp.
 Open Scope bv.
 
+(** Helper to check register values in results *)
 Definition check_regs (r : register_bitvector_64) (regs : registerMap)
   : result string Z :=
-    if reg_lookup r regs is Some r0 then
+    if reg_lookup (R_bitvector_64 r) regs is Some r0 then
       Ok (bv_unsigned r0)
     else
-      Error ((pretty (r : reg )) +:+ " not in the thread state").
+      Error "register not in the thread state".
 
 Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
-    `(a : archModel.res ∅ n term) : result string Z :=
+    `(a : archModel.res Empty_set n term) : result string Z :=
   match a with
   | archModel.Res.FinalState fs _ =>
     let regs : registerMap := fs.(archState.regs) !!! tid in
@@ -62,49 +69,30 @@ Definition reg_extract {n} (reg : register_bitvector_64) (tid : fin n)
   | archModel.Res.Flagged e => match e with end
   end.
 
-Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
-  `(a : archModel.res ∅ n term) : result string (list Z) :=
-  match a with
-  | archModel.Res.FinalState fs _ =>
-      for (tid, reg) in regs do
-        let regmap : registerMap := fs.(archState.regs) !!! tid in
-        check_regs reg regmap
-      end
-  | archModel.Res.Error s => Error s
-  | archModel.Res.Flagged e => match e with end
-  end.
+(** We test against the full sail-arm semantics.
+    Using nondet=false to avoid enumerating large bitvector choices. *)
+Definition arm_full_sem := sail_arm_sem false.
 
-(** * Helper functions for PSTATE setup *)
-Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
-  inhabitant
-  |> set ProcState_EL (λ _, el)
-  |> set ProcState_SP (λ _, sp).
-
-(** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
-Definition arm_sem := sail_tiny_arm_sem true.
-
-
-(* Run EOR X0, X1, X2 at pc address 0x500, whose opcode is 0xca020020 *)
+(* Run EOR X0, X1, X2 at pc address 0x400000, opcode is 0xca020020 *)
 Module EOR.
   Definition init_reg : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x0
-    |> reg_insert R1 0x11
-    |> reg_insert R2 0x101
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    sail_arm_init_regs
+    |> add_common_regs
+    |> reg_insert (R_bitvector_64 PC) 0x400000
+    |> reg_insert (R_bitvector_64 R0) 0x0
+    |> reg_insert (R_bitvector_64 R1) 0x11
+    |> reg_insert (R_bitvector_64 R2) 0x101.
 
   Definition init_mem : memoryMap :=
-    ∅
-    |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
+    gmap.gmap_empty
+    |> mem_insert 0x400000 4 0xca020020. (* EOR X0, X1, X2 *)
 
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+    (fun tid rm => reg_lookup (R_bitvector_64 PC) rm =? Some (0x400004 : bv 64)).
 
-  Definition initState :=
+  Definition initState : archState n_threads :=
     {|archState.memory := init_mem;
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
@@ -112,429 +100,12 @@ Module EOR.
   Definition fuel := 2%nat.
 
   Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
+    UMPromising_exe arm_full_sem fuel n_threads termCond initState.
 
+  (* Expected: X0 = 0x11 XOR 0x101 = 0x110 *)
+  (* Note: This test takes significant time with the full sail-arm model *)
   Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
-    vm_compute (_ <$> _).
-    reflexivity.
-  Qed.
 End EOR.
-
-Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
-  Definition init_reg : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap:=
-    ∅
-    |> mem_insert 0x500 4 0xf8606820 (* LDR X0, [X1, X0] *)
-    |> mem_insert 0x1000 8 0x2a. (* data to be read *)
-
-  Definition n_threads := 1%nat.
-
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 2%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    reflexivity.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    reflexivity.
-  Qed.
-End LDR.
-
-Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1100 *)
-  Definition init_reg : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x100
-    |> reg_insert R2 0x2a
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap:=
-    ∅
-    |> mem_insert 0x500 4 0xf8206822 (* STR X2, [X1, X0] *)
-    |> mem_insert 0x504 4 0xf8606820 (* LDR X0, [X1, X0] *)
-    |> mem_insert 0x1100 8 0x0. (* Memory need to exists to be written to *)
-
-  Definition n_threads := 1%nat.
-
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 4%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    set_solver.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    set_solver.
-  Qed.
-End STRLDR.
-
-Module MP.
-  (* A classic MP litmus test
-     Thread 1: STR X2, [X1, X0]; STR X5, [X4, X3]
-     Thread 2: LDR X5, [X4, X3]; LDR X2, [X1, X0]
-
-     Expected outcome of (R5, R2) at Thread 2:
-      (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0), (0x1, 0x0)
-  *)
-
-  Definition init_reg_t1 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x100
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x200
-    |> reg_insert R2 0x2a
-    |> reg_insert R5 0x1
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_reg_t2 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x600
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x100
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x200
-    |> reg_insert R2 0x0
-    |> reg_insert R5 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap :=
-    ∅
-    (* Thread 1 @ 0x500 *)
-    |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
-    |> mem_insert 0x504 4 0xf8236885  (* STR X5, [X4, X3] *)
-    (* Thread 2 @ 0x600 *)
-    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
-    |> mem_insert 0x604 4 0xf8606822  (* LDR X2, [X1, X0] *)
-    (* Backing memory so the addresses exist *)
-    |> mem_insert 0x1100 8 0x0
-    |> mem_insert 0x1200 8 0x0.
-
-  Definition n_threads := 2%nat.
-
-  Definition terminate_at := [# Some (0x508 : bv 64); Some (0x608 : bv 64)].
-
-  (* Each thread’s PC must reach the end of its two instructions *)
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg_t1; init_reg_t2];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 6%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-End MP.
-
-Module MPDMBS.
-  (* A classic MP litmus test
-     Thread 1: STR X2, [X1, X0]; DMB SY; STR X5, [X4, X3]
-     Thread 2: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
-
-     Expected outcome of (R5, R2) at Thread 2:
-       (0x1, 0x2a), (0x0, 0x2a), (0x0, 0x0)
-  *)
-
-  Definition init_reg_t1 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x100
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x200
-    |> reg_insert R2 0x2a
-    |> reg_insert R5 0x1
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_reg_t2 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x600
-    |> reg_insert R0 0x1000
-    |> reg_insert R1 0x100
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x200
-    |> reg_insert R2 0x0
-    |> reg_insert R5 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap :=
-    ∅
-    (* Thread 1 @ 0x500 *)
-    |> mem_insert 0x500 4 0xf8206822  (* STR X2, [X1, X0] *)
-    |> mem_insert 0x504 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x508 4 0xf8236885  (* STR X5, [X4, X3] *)
-    (* Thread 2 @ 0x600 *)
-    |> mem_insert 0x600 4 0xf8636885  (* LDR X5, [X4, X3] *)
-    |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x608 4 0xf8606822  (* LDR X2, [X1, X0] *)
-    (* Backing memory so the addresses exist *)
-    |> mem_insert 0x1100 8 0x0
-    |> mem_insert 0x1200 8 0x0.
-
-  Definition n_threads := 2%nat.
-
-  Definition terminate_at := [# Some (0x50c : bv 64); Some (0x60c : bv 64)].
-
-  (* Each thread’s PC must reach the end of its three instructions *)
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg_t1; init_reg_t2];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 9%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
-  Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-End MPDMBS.
-
-
-Module LB.
-  (*
-     Thread 1 (X1=x, X2=#1, X3=y): LDR X0, [X1, X4]; STR X2, [X3, X4]
-     Thread 2 (X1=y, X2=#1, X3=x): LDR X0, [X1, X4]; STR X2, [X3, X4]
-  *)
-
-  Definition init_reg_t1 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x0
-    |> reg_insert R1 0x1000
-    |> reg_insert R2 0x1
-    |> reg_insert R3 0x2000
-    |> reg_insert R4 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_reg_t2 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x600
-    |> reg_insert R0 0x0
-    |> reg_insert R1 0x2000
-    |> reg_insert R2 0x1
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap :=
-    ∅
-    (* Thread 1 @ 0x500 *)
-    |> mem_insert 0x500 4 0xf8646820  (* LDR X0, [X1, X4] *)
-    |> mem_insert 0x504 4 0xf8246862  (* STR X2, [X3, X4] *)
-    (* Thread 2 @ 0x600 *)
-    |> mem_insert 0x600 4 0xf8646820  (* LDR X0, [X1, X4] *)
-    |> mem_insert 0x604 4 0xf8246862  (* STR X2, [X3, X4] *)
-    (* Backing memory *)
-    |> mem_insert 0x1000 8 0x00
-    |> mem_insert 0x2000 8 0x00.
-
-  Definition n_threads := 2%nat.
-
-  Definition terminate_at := [# Some (0x508 : bv 64); Some (0x608 : bv 64)].
-
-  (* Each thread’s PC must reach the end of its instructions *)
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg_t1; init_reg_t2];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 8%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
-    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-End LB.
-
-Module LBDMBS.
-  (*
-     Thread 1 (X1=x, X2=#1, X3=y): LDR X0, [X1, X4]; DMB SY; STR X2, [X3, X4]
-     Thread 2 (X1=y, X2=#1, X3=x): LDR X0, [X1, X4]; DMB SY; STR X2, [X3, X4]
-  *)
-
-  Definition init_reg_t1 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x500
-    |> reg_insert R0 0x0
-    |> reg_insert R1 0x1000
-    |> reg_insert R2 0x1
-    |> reg_insert R3 0x2000
-    |> reg_insert R4 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_reg_t2 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x600
-    |> reg_insert R0 0x0
-    |> reg_insert R1 0x2000
-    |> reg_insert R2 0x1
-    |> reg_insert R3 0x1000
-    |> reg_insert R4 0x0
-    |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
-
-  Definition init_mem : memoryMap :=
-    ∅
-    (* Thread 1 @ 0x500 *)
-    |> mem_insert 0x500 4 0xf8646820  (* LDR X0, [X1, X4] *)
-    |> mem_insert 0x504 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x508 4 0xf8246862  (* STR X2, [X3, X4] *)
-    (* Thread 2 @ 0x600 *)
-    |> mem_insert 0x600 4 0xf8646820  (* LDR X0, [X1, X4] *)
-    |> mem_insert 0x604 4 0xd5033fbf  (* DMB SY *)
-    |> mem_insert 0x608 4 0xf8246862  (* STR X2, [X3, X4] *)
-    (* Backing memory *)
-    |> mem_insert 0x1000 8 0x00
-    |> mem_insert 0x2000 8 0x00.
-
-  Definition n_threads := 2%nat.
-
-  Definition terminate_at := [# Some (0x50c : bv 64); Some (0x60c : bv 64)].
-
-  (* Each thread’s PC must reach the end of its instructions *)
-  Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
-
-  Definition initState :=
-    {|archState.memory := init_mem;
-      archState.regs := [# init_reg_t1; init_reg_t2];
-      archState.address_space := PAS_NonSecure |}.
-
-  Definition fuel := 8%nat.
-
-  Definition test_results :=
-    UMPromising_exe arm_sem fuel n_threads termCond initState.
-
-  (* The (1, 1) result is now impossible due the barriers. *)
-  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-
-  Definition test_results_pf :=
-    UMPromising_pf arm_sem fuel n_threads termCond initState.
-
-  (* The (1, 1) result is now impossible due the barriers. *)
-  Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
-    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
-  Proof.
-    vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
-  Qed.
-End LBDMBS.

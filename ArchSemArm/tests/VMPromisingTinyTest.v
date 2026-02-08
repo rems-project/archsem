@@ -167,7 +167,7 @@ Module EOR.
     |> reg_insert R2 0x101
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -225,7 +225,7 @@ Module LDR.
     |> reg_insert R1 0x0
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -284,7 +284,7 @@ Module STRLDR.
     |> reg_insert R2 0x2a
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -351,7 +351,7 @@ Module LDRPT.
     |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
@@ -429,7 +429,7 @@ Module MP.
     |> reg_insert R5 0x1
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -444,7 +444,7 @@ Module MP.
     |> reg_insert R5 0x0
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -520,7 +520,7 @@ Module MPDMBS.
     |> reg_insert R5 0x1
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -535,7 +535,7 @@ Module MPDMBS.
     |> reg_insert R5 0x0
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
 
@@ -611,7 +611,7 @@ Module BBMFailure.
     |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
@@ -681,7 +681,7 @@ Module BBMSuccess.
     |> reg_insert R3 0x0
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
@@ -692,7 +692,7 @@ Module BBMSuccess.
     |> reg_insert R1 0x0
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert _TTBR0_EL1 0x80000
     |> reg_insert ESR_EL1 0x0
     |> reg_insert VBAR_EL1 0x0       (* Exception vector base - needed for fault handling *)
     |> reg_insert ID_AA64MMFR1_EL1 0x0

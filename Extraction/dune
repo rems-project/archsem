@@ -2,10 +2,10 @@
 
 (coq.extraction
   (prelude ArmInstExtr)
-  (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
+  (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm SailArm
             ASCommon ArchSem ArchSemArm)
   (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
-                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
+                     BinNat BinNums NatDef BinPos PosDef Zeuclid CBase CBitvector CBool CArith
                      CList CMaps COption Common CVec countable CResult CSets Datatypes
                      decidable definitions Effects Exec fin0 finite fin_maps Fin
                      FMon gmap HexString Interface list_monad list_relations
@@ -17,12 +17,17 @@
                      ConcurrencyInterfaceBuiltinsV2
                      ConcurrencyInterfaceTypesV2
                      Rdefinitions ClassicalDedekindReals
-                     ConstructiveCauchyReals QArith_base Ring_theory QExtra Qabs
+                     ConstructiveCauchyAbs ConstructiveCauchyReals QArith_base Ring_theory QExtra Qabs
                      Qreduction ConstructiveCauchyRealsMult String1 System
                      BinaryString Operators_mwords GenPromising
-                     TermModels vector0 VectorDef Vector UMPromising
-                     VMPromising list_misc HVec
-                     fin_sets list_basics)
+                     TermModels vector0 VectorDef Vector HVec
+                     UMPromising VMPromising
+                     armv9 armv9_types fin_sets list_basics
+                     Bool CMorphisms CRelationClasses Init list_misc
+                     Ranalysis1 Raxioms Rbasic_fun Real Rfunctions RIneq
+                     ROrderedType Rpow_def Rsqrt_def R_sqrt SeqProp
+                     ConstructiveEpsilon ConstructiveExtra ConstructiveLUB
+                     ConstructiveRcomplete ConstructiveReals Qround)
 )
 
 (library

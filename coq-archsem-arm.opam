@@ -20,6 +20,7 @@ depends: [
   "dune" {>= "3.8"}
   "coq-archsem"
   "coq-sail-tiny-arm" {dev}
+  "coq-sail-arm" {dev}
   "odoc" {with-doc}
 ]
 build: [
@@ -38,5 +39,6 @@ build: [
 ]
 dev-repo: "git+https://github.com/rems-project/archsem.git"
 pin-depends: [
-  [ "coq-sail-tiny-arm.dev" "git+https://github.com/rems-project/sail-tiny-arm.git#d0b3032" ]
+  [ "coq-sail-tiny-arm.dev" "git+https://github.com/rems-project/sail-tiny-arm.git#045706b" ]
+  [ "coq-sail-arm.dev" "git+https://github.com/rems-project/sail-arm.git#2dc6446"]
 ]

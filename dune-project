@@ -46,6 +46,7 @@
  (depends
    coq-archsem
    (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
  )
 )
 

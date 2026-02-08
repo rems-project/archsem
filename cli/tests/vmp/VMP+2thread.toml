@@ -9,7 +9,7 @@ FEAT_ETS2 = true
 
 # Thread 0: Writer - STR X2, [X1, X0]; STR X5, [X4, X3]
 [[registers]]
-_PC = 0x8000000500
+PC = 0x8000000500
 R0 = 0x8000001000      # VA base
 R1 = 0x100             # Offset -> VA 0x8000001100
 R2 = 0x2a              # Data value
@@ -17,14 +17,14 @@ R3 = 0x8000001000      # VA base
 R4 = 0x200             # Offset -> VA 0x8000001200
 R5 = 0x1               # Flag value
 TTBR0_EL1 = 0x80000
-TCR_EL1 = 0x0
+TCR_EL1 = 0x200000010
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
 PSTATE = { "EL" = 0b00, "SP" = 0b0 }
 
 # Thread 1: Reader - LDR X5, [X4, X3]; LDR X2, [X1, X0]
 [[registers]]
-_PC = 0x8000000600
+PC = 0x8000000600
 R0 = 0x8000001000
 R1 = 0x100
 R2 = 0x0
@@ -32,7 +32,7 @@ R3 = 0x8000001000
 R4 = 0x200
 R5 = 0x0
 TTBR0_EL1 = 0x80000
-TCR_EL1 = 0x0
+TCR_EL1 = 0x200000010
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
 PSTATE = { "EL" = 0b00, "SP" = 0b0 }
@@ -102,10 +102,10 @@ size = 8
 data = 0x1443
 
 [[termCond]]
-_PC = 0x8000000508
+PC = 0x8000000508
 
 [[termCond]]
-_PC = 0x8000000608
+PC = 0x8000000608
 
 # All 4 outcomes allowed for MP without barriers
 [[outcome]]

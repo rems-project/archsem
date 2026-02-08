@@ -10,14 +10,14 @@ FEAT_ETS2 = true
 
 # Thread 1: Reads, modifies PTE, reads again
 [[registers]]
-_PC = 0x8000000500
+PC = 0x8000000500
 R0 = 0x8000001000      # VA to load from
 R1 = 0x0               # Base offset
 R2 = 0x8000010008      # VA of L3[1] descriptor
 R3 = 0x60000000002783  # New descriptor: VA -> PA 0x2000
 R4 = 0x8000001000      # VA to load from (second load)
 TTBR0_EL1 = 0x80000
-TCR_EL1 = 0x0
+TCR_EL1 = 0x200000010
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
 PSTATE = { "EL" = 0b01, "SP" = 0b1 }
@@ -87,7 +87,7 @@ size = 8
 data = 0x60000000083703
 
 [[termCond]]
-_PC = 0x800000050c
+PC = 0x800000050c
 
 # R0 should be 0x2a (from old mapping)
 # R4 could be 0x2a (cached) or 0x42 (new mapping) due to weak memory

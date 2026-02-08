@@ -1,10 +1,22 @@
-; Run all sequential tests (seq/)
+; Run sequential tiny tests (seq/)
+(rule
+ (alias runtest)
+ (deps (glob_files seq/*.toml))
+ (action (run %{exe:../bin/main.exe} seqtiny %{project_root}/cli/tests)))
+
+; Run sequential full tests (seq/)
 (rule
  (alias runtest)
  (deps (glob_files seq/*.toml))
  (action (run %{exe:../bin/main.exe} seq %{project_root}/cli/tests)))
 
-; Run all UM Promising tests (seq/ + ump/)
+; Run UM Promising tiny tests (seq/ + ump/)
+(rule
+ (alias runtest)
+ (deps (glob_files seq/*.toml) (glob_files ump/*.toml))
+ (action (run %{exe:../bin/main.exe} umptiny %{project_root}/cli/tests)))
+
+; Run UM Promising full tests (seq/ + ump/)
 (rule
  (alias runtest)
  (deps (glob_files seq/*.toml) (glob_files ump/*.toml))
@@ -14,4 +26,4 @@
 (rule
  (alias runtest)
  (deps (glob_files seq/*.toml) (glob_files ump/*.toml) (glob_files vmp/*.toml))
- (action (run %{exe:../bin/main.exe} vmp %{project_root}/cli/tests)))
+ (action (run %{exe:../bin/main.exe} vmptiny %{project_root}/cli/tests)))

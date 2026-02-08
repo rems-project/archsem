@@ -10,13 +10,13 @@ FEAT_ETS2 = true
 
 # Thread 1: Invalidates PTE and performs TLBI
 [[registers]]
-_PC = 0x8000000500
+PC = 0x8000000500
 R0 = 0x8000001000      # VA for TLBI target
 R1 = 0x0               # Base offset
 R2 = 0x8000010008      # VA of L3[1] descriptor (page table VA alias)
 R3 = 0x0               # Invalid entry (break)
 TTBR0_EL1 = 0x80000
-TCR_EL1 = 0x0
+TCR_EL1 = 0x200000010
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
 PSTATE = { "EL" = 0b01, "SP" = 0b1 }
@@ -82,7 +82,7 @@ size = 8
 data = 0x60000000083703
 
 [[termCond]]
-_PC = 0x8000000514
+PC = 0x8000000514
 
 [[outcome]]
 observable.0 = { R3 = { op = "eq", val = 0x0 } }

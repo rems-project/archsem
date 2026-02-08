@@ -46,10 +46,19 @@ Extract Inductive ArchSem.Interface.reg_gen_val =>
   "Reggenval.gen"
   ["Reggenval.Number" "Reggenval.String" "Reggenval.Array" "Reggenval.Struct"].
 
+(* Provide implementations for classical axioms used by Coq's real number library.
+   These shouldn't be called during memory model execution but are needed for
+   the extracted code to compile. *)
+Require Import Reals.ClassicalDedekindReals.
+Extract Constant sig_forall_dec => "Axiom_impl.sig_forall_dec".
+Extract Constant sig_not_dec => "Axiom_impl.sig_not_dec".
+
+
 (* DO NOT run this file in your editor. This will extract in the correct folder
-   when dune does the extraction *)
-Set Extraction Output Directory ".".
+
+   when dune does the extraction *)Set Extraction Output Directory ".".
 
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
-Separate Extraction Arm sail_tiny_arm_sem
-  sequential_modelc UMPromising_pf VMPromising_pf.
+Separate Extraction ArmTiny Arm sail_tiny_arm_sem sail_arm_sem
+   sequential_modelc ArmSeqModel.sequential_modelc
+   UMPromising_pf VMPromising_pf.

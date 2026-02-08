@@ -1,0 +1,81 @@
+arch="Arm"
+name="SB"
+
+[config]
+FEAT_ETS2 = true
+
+# Store Buffer (SB) litmus test - 2 threads
+# Thread 0: STR X2,[X1,X0] (write 1 to X=0x1100), LDR X5,[X4,X3] (read Y=0x1200)
+# Thread 1: STR X5,[X4,X3] (write 1 to Y=0x1200), LDR X2,[X1,X0] (read X=0x1100)
+# Tests: Can both reads see 0? (allowed on ARM, forbidden on SC)
+
+# Thread 0
+[[registers]]
+PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x1
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 1
+[[registers]]
+PC = 0x600
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x1
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b00 }
+
+# Thread 0: STR X2,[X1,X0]; LDR X5,[X4,X3]
+[[memory]]
+base = 0x500
+size = 8
+data = [0xf8206822, 0xf8636885]
+
+# Thread 1: STR X5,[X4,X3]; LDR X2,[X1,X0]
+[[memory]]
+base = 0x600
+size = 8
+data = [0xf8236885, 0xf8606822]
+
+# Shared data: X at 0x1100, Y at 0x1200
+[[memory]]
+base = 0x1100
+size = 8
+data = 0
+
+[[memory]]
+base = 0x1200
+size = 8
+data = 0
+
+[[termCond]]
+PC = 0x508
+
+[[termCond]]
+PC = 0x608
+
+# All 4 outcomes - Thread 0's R5 is Y, Thread 1's R2 is X
+# Weak behavior (both read 0) - allowed on ARM
+[[outcome]]
+observable.0 = { R5 = { op = "eq", val = 0x0 } }
+observable.1 = { R2 = { op = "eq", val = 0x0 } }
+
+[[outcome]]
+observable.0 = { R5 = { op = "eq", val = 0x0 } }
+observable.1 = { R2 = { op = "eq", val = 0x1 } }
+
+[[outcome]]
+observable.0 = { R5 = { op = "eq", val = 0x1 } }
+observable.1 = { R2 = { op = "eq", val = 0x0 } }
+
+[[outcome]]
+observable.0 = { R5 = { op = "eq", val = 0x1 } }
+observable.1 = { R2 = { op = "eq", val = 0x1 } }

@@ -590,6 +590,8 @@ Section RunOutcome.
       ts ← mget PPState.state;
     mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
     mret ((), None)
+  | TranslationStart _ => mret ((), None)
+  | TranslationEnd _ => mret ((), None)
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
 
