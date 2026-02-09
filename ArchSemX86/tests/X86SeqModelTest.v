@@ -68,7 +68,7 @@ Definition regs_extract `(a : archModel.Res.t ∅ 1 term) :
   | archModel.Res.Flagged e => match e with end
   end.
 
-(** Standard initial congiguration for user mode *)
+(** Standard initial configuration for user mode *)
 Definition common_init_regs :=
   ∅
   |> reg_insert RIP 0x0
