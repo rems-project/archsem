@@ -1,0 +1,204 @@
+opam-version: "2.0"
+name: "coq-archsem-riscv"
+version: "dev"
+synopsis:
+  "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation"
+maintainer: "Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>"
+authors: [
+  "Thibaut Pérami"
+  "Yeji Han"
+  "Zonguyan Liu"
+  "Nils Lauermann"
+  "Jean Pichon-Pharabod"
+  "Brian Campbell"
+  "Alasdair Armstrong"
+  "Ben Simner"
+  "Peter Sewell"
+]
+license: "BSD-2-Clause"
+homepage: "https://github.com/rems-project/archsem"
+bug-reports: "https://github.com/rems-project/archsem/issues"
+depends: [
+  "astring" {= "0.8.5" & with-doc}
+  "base" {= "v0.16.4"}
+  "base-bigarray" {= "base"}
+  "base-bytes" {= "base" & dev}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "base64" {= "3.5.2" & dev}
+  "bisect_ppx" {= "2.8.3" & dev}
+  "camlp-streams" {= "5.0.1" & with-doc}
+  "cmdliner" {= "1.3.0" & dev}
+  "conf-cmake" {= "1" & dev}
+  "conf-findutils" {= "1" & dev}
+  "conf-gmp" {= "5"}
+  "conf-linux-libc-dev" {= "0"}
+  "conf-pkg-config" {= "4"}
+  "coq" {= "9.0.1"}
+  "coq-archsem" {= "dev"}
+  "coq-archsem-common" {= "dev"}
+  "coq-core" {= "9.0.1"}
+  "coq-equations" {= "1.3.1+9.0"}
+  "coq-hammer-tactics" {= "1.3.2+9.0"}
+  "coq-record-update" {= "0.3.6"}
+  "coq-sail-riscv" {= "dev" & dev}
+  "coq-sail-stdpp" {= "0.20"}
+  "coq-stdlib" {= "9.0.0"}
+  "coq-stdpp" {= "1.12.0"}
+  "coq-stdpp-bitvector" {= "1.12.0"}
+  "coqide-server" {= "9.0.1"}
+  "cppo" {= "1.8.0" & with-doc}
+  "crunch" {= "4.0.0" & with-doc}
+  "csexp" {= "1.5.2"}
+  "dune" {= "3.20.2"}
+  "dune-configurator" {= "3.20.2"}
+  "dune-private-libs" {= "3.20.2" & dev}
+  "dune-site" {= "3.20.2" & dev}
+  "dyn" {= "3.20.2" & dev}
+  "fmt" {= "0.11.0" & with-doc}
+  "fpath" {= "0.7.3" & with-doc}
+  "lem" {= "2025-03-13" & dev}
+  "libsail" {= "0.20" & dev}
+  "linenoise" {= "1.5.1" & dev}
+  "linksem" {= "0.8" & dev}
+  "menhir" {= "20250912" & dev}
+  "menhirCST" {= "20250912" & dev}
+  "menhirLib" {= "20250912" & dev}
+  "menhirSdk" {= "20250912" & dev}
+  "num" {= "1.6" & dev}
+  "ocaml" {= "4.14.2"}
+  "ocaml-compiler-libs" {= "v0.12.4"}
+  "ocaml-config" {= "2"}
+  "ocaml-option-flambda" {= "1"}
+  "ocaml-variants" {= "4.14.2+options"}
+  "ocamlbuild" {= "0.16.1" & dev}
+  "ocamlfind" {= "1.9.8"}
+  "ocamlgraph" {= "2.2.0" & dev}
+  "odoc" {= "3.1.0" & with-doc}
+  "odoc-parser" {= "3.1.0" & with-doc}
+  "omd" {= "1.3.2" & dev}
+  "ordering" {= "3.20.2" & dev}
+  "ott" {= "0.34" & dev}
+  "pp" {= "2.0.0" & dev}
+  "pprint" {= "20230830" & dev}
+  "ppx_derivers" {= "1.2.1"}
+  "ppx_optcomp" {= "v0.16.0"}
+  "ppxlib" {= "0.35.0"}
+  "ptime" {= "1.2.0" & with-doc}
+  "re" {= "1.14.0" & with-doc}
+  "rocq-core" {= "9.0.1"}
+  "rocq-equations" {= "1.3.1+9.0"}
+  "rocq-runtime" {= "9.0.1"}
+  "rocq-stdlib" {= "9.0.0"}
+  "sail" {= "0.20" & dev}
+  "sail_c_backend" {= "0.20" & dev}
+  "sail_coq_backend" {= "0.20" & dev}
+  "sail_doc_backend" {= "0.20" & dev}
+  "sail_latex_backend" {= "0.20" & dev}
+  "sail_lean_backend" {= "0.20" & dev}
+  "sail_lem_backend" {= "0.20" & dev}
+  "sail_manifest" {= "0.20" & dev}
+  "sail_ocaml_backend" {= "0.20" & dev}
+  "sail_output" {= "0.20" & dev}
+  "sail_smt_backend" {= "0.20" & dev}
+  "sail_sv_backend" {= "0.20" & dev}
+  "seq" {= "base" & with-doc}
+  "sexplib0" {= "v0.16.0"}
+  "stdio" {= "v0.16.0"}
+  "stdlib-shims" {= "0.3.0"}
+  "stdune" {= "3.20.2" & dev}
+  "topkg" {= "1.1.1" & with-doc}
+  "tyxml" {= "4.6.0" & with-doc}
+  "uutf" {= "1.0.4" & with-doc}
+  "yojson" {= "3.0.0" & dev}
+  "zarith" {= "1.14"}
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+]
+dev-repo: "git+https://github.com/rems-project/archsem.git"
+pin-depends: [
+  [
+    "coq-record-update.0.3.6"
+    "https://github.com/tchajed/coq-record-update/archive/v0.3.6.tar.gz"
+  ]
+  [
+    "coq-sail-riscv.dev" "git+https://github.com/bacam/sail-riscv.git#f6eb4cb"
+  ]
+  [
+    "coq-sail-stdpp.0.20"
+    "git+https://github.com/rems-project/coq-sail.git#6136421"
+  ]
+  [
+    "coq-stdpp.1.12.0"
+    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+  ]
+  [
+    "coq-stdpp-bitvector.1.12.0"
+    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+  ]
+  ["libsail.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"]
+  [
+    "menhir.20250912"
+    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20250912/archive.tar.gz"
+  ]
+  [
+    "ocaml-variants.4.14.2+options"
+    "https://github.com/ocaml/ocaml/archive/4.14.2.tar.gz"
+  ]
+  ["sail.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"]
+  [
+    "sail_c_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_coq_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_doc_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_latex_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_lean_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_lem_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_manifest.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_ocaml_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_output.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_smt_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+  [
+    "sail_sv_backend.0.20"
+    "git+https://github.com/rems-project/sail.git#89f1a2f4"
+  ]
+]

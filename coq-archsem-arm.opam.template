@@ -1,3 +1,0 @@
-pin-depends: [
-  [ "coq-sail-tiny-arm.dev" "git+https://github.com/rems-project/sail-tiny-arm.git#a8c990d" ]
-]

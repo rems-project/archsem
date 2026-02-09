@@ -1,0 +1,113 @@
+opam-version: "2.0"
+name: "coq-archsem"
+version: "dev"
+synopsis:
+  "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part"
+maintainer: "Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>"
+authors: [
+  "Thibaut Pérami"
+  "Yeji Han"
+  "Zonguyan Liu"
+  "Nils Lauermann"
+  "Jean Pichon-Pharabod"
+  "Brian Campbell"
+  "Alasdair Armstrong"
+  "Ben Simner"
+  "Peter Sewell"
+]
+license: "BSD-2-Clause"
+homepage: "https://github.com/rems-project/archsem"
+bug-reports: "https://github.com/rems-project/archsem/issues"
+depends: [
+  "astring" {= "0.8.5" & with-doc}
+  "base" {= "v0.16.4"}
+  "base-bigarray" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "camlp-streams" {= "5.0.1" & with-doc}
+  "cmdliner" {= "1.3.0" & with-doc}
+  "conf-gmp" {= "5"}
+  "conf-linux-libc-dev" {= "0"}
+  "conf-pkg-config" {= "4"}
+  "coq" {= "9.0.1"}
+  "coq-archsem-common" {= "dev"}
+  "coq-core" {= "9.0.1"}
+  "coq-equations" {= "1.3.1+9.0"}
+  "coq-hammer-tactics" {= "1.3.2+9.0"}
+  "coq-record-update" {= "0.3.6"}
+  "coq-sail-stdpp" {= "0.20"}
+  "coq-stdlib" {= "9.0.0"}
+  "coq-stdpp" {= "1.12.0"}
+  "coq-stdpp-bitvector" {= "1.12.0"}
+  "coqide-server" {= "9.0.1"}
+  "cppo" {= "1.8.0" & with-doc}
+  "crunch" {= "4.0.0" & with-doc}
+  "csexp" {= "1.5.2"}
+  "dune" {= "3.20.2"}
+  "dune-configurator" {= "3.20.2"}
+  "fmt" {= "0.11.0" & with-doc}
+  "fpath" {= "0.7.3" & with-doc}
+  "ocaml" {= "4.14.2"}
+  "ocaml-compiler-libs" {= "v0.12.4"}
+  "ocaml-config" {= "2"}
+  "ocaml-option-flambda" {= "1"}
+  "ocaml-variants" {= "4.14.2+options"}
+  "ocamlbuild" {= "0.16.1" & with-doc}
+  "ocamlfind" {= "1.9.8"}
+  "odoc" {= "3.1.0" & with-doc}
+  "odoc-parser" {= "3.1.0" & with-doc}
+  "ppx_derivers" {= "1.2.1"}
+  "ppx_optcomp" {= "v0.16.0"}
+  "ppxlib" {= "0.35.0"}
+  "ptime" {= "1.2.0" & with-doc}
+  "re" {= "1.14.0" & with-doc}
+  "rocq-core" {= "9.0.1"}
+  "rocq-equations" {= "1.3.1+9.0"}
+  "rocq-runtime" {= "9.0.1"}
+  "rocq-stdlib" {= "9.0.0"}
+  "seq" {= "base" & with-doc}
+  "sexplib0" {= "v0.16.0"}
+  "stdio" {= "v0.16.0"}
+  "stdlib-shims" {= "0.3.0"}
+  "topkg" {= "1.1.1" & with-doc}
+  "tyxml" {= "4.6.0" & with-doc}
+  "uutf" {= "1.0.4" & with-doc}
+  "zarith" {= "1.14"}
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+]
+dev-repo: "git+https://github.com/rems-project/archsem.git"
+pin-depends: [
+  [
+    "coq-record-update.0.3.6"
+    "https://github.com/tchajed/coq-record-update/archive/v0.3.6.tar.gz"
+  ]
+  [
+    "coq-sail-stdpp.0.20"
+    "git+https://github.com/rems-project/coq-sail.git#6136421"
+  ]
+  [
+    "coq-stdpp.1.12.0"
+    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+  ]
+  [
+    "coq-stdpp-bitvector.1.12.0"
+    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+  ]
+  [
+    "ocaml-variants.4.14.2+options"
+    "https://github.com/ocaml/ocaml/archive/4.14.2.tar.gz"
+  ]
+]

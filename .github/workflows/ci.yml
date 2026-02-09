@@ -7,101 +7,78 @@ on:
   pull_request:
   workflow_dispatch:
 
-# cancel in-progress job when a new push is performed
+# cancel in-progress job when a new push is performed (except on main)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
 
 jobs:
   build:
-    strategy:
-      matrix:
-        ocaml-version: [4.14.2]
-        dune-version: [3.20.2]
-        rocq-version: [9.0.1]
-        stdpp-version: [1.12.0]
-
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
 
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: System dependencies (ubuntu)
+    - name: Install system dependencies (ubuntu)
       run: |
         sudo apt update
-        sudo apt install -y build-essential opam z3 cmake
+        sudo apt install -y build-essential z3 cmake pkg-config
 
-    # Cache with local pinned dependencies
-    - name: Restore pinned OPAM cache
-      id: cache-opam-restore-pinned
-      uses: actions/cache/restore@v4
-      with:
-        path: ~/.opam
-        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}-${{ hashFiles('*.opam') }}
+    - name: Get up-to-date OPAM
+      run: |
+        wget -O opam-2.5 https://github.com/ocaml/opam/releases/download/2.5.0/opam-2.5.0-x86_64-linux
 
-    # Cache with only repo dependencies, in particular Ocaml and Rocq
-    - name: Restore base OPAM cache
-      if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
+    - name: Check OPAM signature
+      run: |
+        echo "7aae51da01a66666c8733130852c2c00546eff486effb0999b78145cb75aee74  opam-2.5" | sha256sum --check
+
+    - name: Install OPAM
+      run: |
+        sudo install opam-2.5 /usr/local/bin/opam
+
+
+    - name: Restore OPAM cache
       id: cache-opam-restore
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}
+        key: locked-${{ hashFiles('*.opam.locked') }}
 
-    - name: Setup base OPAM
-      if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' &&
-              steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+    - name: Install OPAM dependencies
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       run: |
-        opam --version
-        opam init --yes --no-setup --disable-sandboxing --shell=sh --compiler=${{ matrix.ocaml-version }}
-        opam repo add --yes rocq-released https://rocq-prover.org/opam/released
-        eval $(opam env --switch=${{ matrix.ocaml-version }})
+        echo "Initializing opam"
+        opam init --yes --no-setup --bare --disable-sandboxing --shell=sh
+        echo "Adding rocq-released"
+        opam repo add --yes --set-default rocq-released https://rocq-prover.org/opam/released
+        echo "Creating an empty switch"
+        opam switch create --empty archsem-switch
+        eval $(opam env --switch=archsem-switch)
+        echo "Updating opam"
         opam update
-        opam pin --yes --no-action dune ${{ matrix.dune-version }}
-        opam pin --yes --no-action coq ${{ matrix.rocq-version }}
-        opam pin --yes --no-action coq-stdpp ${{ matrix.stdpp-version }}
-        opam pin --yes --no-action coq-stdpp-bitvector ${{ matrix.stdpp-version }}
-        opam pin --yes --no-action coq-record-update 0.3.6
-        opam install --yes dune coq coq-stdpp coq-stdpp-bitvector coq-record-update
+        echo "Installing dependencies"
+        opam install . --deps-only --locked --confirm-level=unsafe-yes
+        echo "Cleaning up for cache size"
         opam clean
         opam clean -r
 
-    - name: Save base OPAM cache
+    - name: Save OPAM cache
       uses: actions/cache/save@v4
-      if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' &&
-              steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: base-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}
-
-    - name: Install pinned dependencies
-      if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
-      run: |
-        opam switch ${{ matrix.ocaml-version }}
-        eval $(opam env)
-        opam install --deps-only --confirm-level=unsafe-yes .
-        # This is needed with opam 2.1, not with opam 2.3. I haven't tested 2.2
-        opam install --yes sail coq-sail-tiny-arm coq-sail-riscv coq-sail-tiny-x86
-        opam clean
-        opam clean -r
-
-    - name: Save pinned OPAM cache
-      uses: actions/cache/save@v4
-      if: ${{ steps.cache-opam-restore-pinned.outputs.cache-hit != 'true' }}
-      with:
-        path: ~/.opam
-        key: pin-${{ matrix.ocaml-version }}-${{ matrix.dune-version }}-${{ matrix.rocq-version }}-${{ matrix.stdpp-version }}-${{ hashFiles('*.opam') }}
+        key: locked-${{ hashFiles('*.opam.locked') }}
 
     - name: Build
       run: |
-        opam switch ${{ matrix.ocaml-version }}
+        opam switch archsem-switch
         eval $(opam env)
         dune build
 
-    - name: Tests
+    - name: Run tests
       run: |
-        opam switch ${{ matrix.ocaml-version }}
+        opam switch archsem-switch
         eval $(opam env)
         dune runtest
