@@ -6,6 +6,7 @@
 (license "BSD-2-Clause")
 (authors
   "Thibaut Pérami"
+  "Yeji Han"
   "Zonguyan Liu"
   "Nils Lauermann"
   "Jean Pichon-Pharabod"

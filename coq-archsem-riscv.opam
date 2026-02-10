@@ -5,6 +5,7 @@ synopsis:
 maintainer: ["Thibaut Pérami <thibaut.perami@cl.cam.ac.uk>"]
 authors: [
   "Thibaut Pérami"
+  "Yeji Han"
   "Zonguyan Liu"
   "Nils Lauermann"
   "Jean Pichon-Pharabod"
@@ -37,6 +38,3 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/rems-project/archsem.git"
-pin-depends: [
-  [ "coq-sail-riscv.dev" "git+https://github.com/bacam/sail-riscv.git#f6eb4cb"]
-]
