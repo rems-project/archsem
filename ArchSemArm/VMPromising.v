@@ -923,20 +923,15 @@ Module TLB.
 
   Definition is_active_asid (ts : TState.t)
       (asid : option (bv 16))
-      (ttbr : reg) (time : nat) : Prop :=
+      (val_ttbrs : list (bv 64)) : Prop :=
     match asid with
     | Some asid =>
-      if TState.read_sreg_at ts ttbr time is Some sregs
-        then ∃ '(regval, view) ∈ sregs,
-              if (regval_to_val ttbr regval) is Some v
-                then asid = (bv_extract 48 16 v)
-                else False
-        else False
+      ∃ val_ttbr ∈ val_ttbrs, asid = (bv_extract 48 16 val_ttbr)
     | None => True
     end.
   Instance Decision_is_active_asid (ts : TState.t)
       (asid : option (bv 16))
-      (ttbr : reg) (time : nat) : Decision (is_active_asid ts asid ttbr time).
+      (val_ttbrs : list (bv 64)) : Decision (is_active_asid ts asid val_ttbrs).
   Proof. unfold_decide. Defined.
 
   Definition next_va {clvl : Level}
@@ -955,57 +950,60 @@ Module TLB.
        ttbr = TTBR1_EL2) then Some true
     else None.
 
-  (** Seed root-level TLB entries from [ttbr].
-      - Reads [ttbr] at [time], checks it is 64-bit.
-      - Computes root entry address for [va], reads memory.
-      - If entry is a table, builds a root context with ASID from TTBR
-        and inserts it into the input VATLB.
-      - Returns the new VATLB and the boolean value
-        if the new VATLB is different from the input *)
+  (** Seed root-level TLB entries from a list of TTBR values.
+
+      For each TTBR value in [val_ttbrs]:
+      - Computes the root page table entry address from the TTBR base and [va] index.
+      - Reads the entry from memory at [time].
+      - If the entry is a valid table descriptor, creates a TLB entry with
+        the ASID extracted from the TTBR value (bits 48-63) and the [upper]
+        flag indicating upper/lower VA range.
+      - Inserts the entry into the VATLB if not already present.
+
+      Returns [(vatlb', changed)] where [changed] is [true] if new entries
+      were added. *)
   Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
-      (ttbr : reg) : result string (VATLB.t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
-              $ TState.read_sreg_at ts ttbr time;
-    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    foldlM (λ '(vatlb, is_changed) sreg,
-      val_ttbr ← othrow "TTBR should be a 64 bit value"
-                    $ regval_to_val ttbr sreg.1;
+      (upper : bool)
+      (val_ttbrs : list (bv 64)) : result string (VATLB.t * bool) :=
+    foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
       let loc := Loc.from_addr_in entry_addr in
-      if (Memory.read_at loc init mem time) is Some (memval, _) then
-        if decide (is_table memval) then
-          let asid := bv_extract 48 16 val_ttbr in
-          let ndctxt := NDCtxt.make upper va (Some asid) in
-          let ctxt := existT root_lvl ndctxt in
-          let entry : Entry.t (Ctxt.lvl ctxt) :=
-            Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
-          (* add the entry to vatlb only when it is not in the original vatlb *)
-          if decide (entry ∉ (VATLB.get ctxt vatlb)) then
-            Ok (VATLB.insert ctxt entry vatlb, true)
-          else Ok (vatlb, is_changed)
-        else
-          Ok (vatlb, is_changed)
-      else
-        Ok (vatlb, is_changed)
-    ) (vatlb, false) sregs.
+      '(memval, _) ← othrow ("Failed to read page table memory at " ++ (pretty entry_addr))%string
+                        $ Memory.read_at loc init mem time;
+      if decide (is_table memval) then
+        let asid := bv_extract 48 16 val_ttbr in
+        let ndctxt := NDCtxt.make upper va (Some asid) in
+        let ctxt := existT root_lvl ndctxt in
+        let entry : Entry.t (Ctxt.lvl ctxt) :=
+          Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
+        (* add the entry to vatlb only when it is not in the original vatlb *)
+        if decide (entry ∉ (VATLB.get ctxt vatlb)) then
+          Ok (VATLB.insert ctxt entry vatlb, true)
+        else Ok (vatlb, is_changed)
+      else Ok (vatlb, is_changed)
+    ) (vatlb, false) val_ttbrs.
 
-  (** Extend one level down from a parent table entry [te].
-      - Requires [te] ∈ [vatlb] and ASID active for [ttbr].
-      - Reads next-level PTE at [index]; if valid and table, build child context
-        (ASID dropped if global) and insert into VATLB.
-      - Otherwise returns empty. *)
+  (** Extend a TLB entry one level down by following a table descriptor.
+
+      Given a parent TLB entry [te] at context [ctxt], reads the next-level
+      page table entry at the given [index] and creates a child TLB entry.
+
+      The child entry inherits the ASID from the parent unless the new PTE
+      has the global (nG) bit clear, in which case the ASID is dropped.
+
+      Returns [(vatlb', changed)] where [changed] is [true] if a new entry
+      was added. *)
   Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (ctxt : Ctxt.t)
       (te : Entry.t (Ctxt.lvl ctxt))
-      (index : bv 9)
-      (ttbr : reg) : result string (VATLB.t * bool) :=
+      (index : bv 9) : result string (VATLB.t * bool) :=
     if decide (¬is_table (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
@@ -1030,30 +1028,30 @@ Module TLB.
       else
         Ok (vatlb, false).
 
-  (** Make [tlb] containing entries for [va] at [lvl].
-      - At root: call [va_fill_root].
-      - At deeper levels: for each parent entry, call [va_fill_lvl].
-      - Returns [(new_tlb, is_changed)]. [is_changed] is true when there are new VATLB entries. *)
+  (** Fill TLB entries for a specific VA at a given translation level.
+
+      At the root level (level 0), seeds entries from TTBR values using
+      [va_fill_root]. At deeper levels, extends existing parent entries
+      using [va_fill_lvl].
+
+      Returns [(tlb', changed)] where [changed] is [true] if new entries
+      were added. *)
   Definition va_fill (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
       (va : bv 64)
-      (ttbr : reg) : result string (t * bool) :=
+      (upper : bool)
+      (val_ttbrs : list (bv 64)) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) ttbr
+        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl) upper val_ttbrs
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
-        sregs ← othrow "TTBR should exist in initial state"
-                $ TState.read_sreg_at ts ttbr time;
-        upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-        foldlM (λ prev sreg,
-          val_ttbr ← othrow "TTBR should be a 64 bit value"
-                  $ regval_to_val ttbr sreg.1;
+        foldlM (λ prev val_ttbr,
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make upper pva (Some asid) in
           let ctxt := existT plvl ndctxt in
@@ -1061,25 +1059,34 @@ Module TLB.
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
           foldlM (λ '(vatlb_prev, is_changed_prev) te,
             '(vatlb_lvl, is_changed_lvl) ←
-               va_fill_lvl vatlb_prev ts init mem time ctxt te index ttbr;
+              va_fill_lvl vatlb_prev ts init mem time ctxt te index;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
           ) prev tes
-        ) (tlb.(vatlb), false) sregs
+        ) (tlb.(vatlb), false) val_ttbrs
       end;
     mret $ (TLB.make vatlb_new, is_changed).
 
-  (** Fill TLB entries for [va] through all levels 0–3.
-      - Sequentially calls [va_fill] at each level.
-      - Produces a TLB with the full translation chain if available. *)
-  Definition update (tlb : t)
-      (ts : TState.t)
+  (** Fill TLB entries for a VA through all translation levels 0-3.
+
+      Iterates through each level, calling [va_fill] to progressively build
+      the complete translation chain from root to leaf. The [ttbr] register
+      determines both the upper/lower VA range and provides the base addresses.
+
+      Returns [(tlb', changed)] where [changed] is [true] if new entries
+      were added. *)
+  Definition update (tlb : t) (ts : TState.t)
       (init : Memory.initial)
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
+    sregs ← othrow "TTBR should exist in initial state"
+              $ TState.read_sreg_at ts ttbr time;
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
+    let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
-      '(tlb_new, is_changed) ← va_fill tlb_prev ts init mem time lvl va ttbr;
+      '(tlb_new, is_changed) ←
+        va_fill tlb_prev ts init mem time lvl va upper val_ttbrs;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
@@ -1126,12 +1133,19 @@ Module TLB.
     Decision (affects tlbi ctxt te).
   Proof. unfold_decide. Defined.
 
+  (** Apply a TLBI instruction to a TLB by removing all affected entries. *)
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
-  (** Get the unique TLB states from [time_prev] to [time_prev + cnt]
-      along with their views as a [list (t * nat)].
-      The list is sorted in descending order by timestamp. *)
+  (** Compute unique TLB snapshots for a specific VA over a time range.
+
+      Iterates from [time_prev + 1] to [time_prev + cnt], updating the TLB
+      at each step by:
+      - Applying any TLBI events in memory.
+      - Calling [update] to fill new translation entries.
+
+      Only records snapshots where the TLB actually changed. The result is
+      accumulated in [acc] and returned in descending timestamp order. *)
   Fixpoint unique_snapshots_between (ts : TState.t) (mem_init : Memory.initial)
                        (mem : Memory.t)
                        (tlb_prev : t)
@@ -1164,9 +1178,11 @@ Module TLB.
         ts mem_init mem tlb time_cur ccnt va ttbr acc
     end.
 
-  (** Get the unique TLB states up until the timestamp [time]
-      along with their views as a [list (TLB.t * nat)].
-      The list is sorted in descending order by timestamp. *)
+  (** Compute all unique TLB snapshots for a VA from time 0 to [time].
+
+      Initializes the TLB at time 0, then calls [unique_snapshots_between]
+      to track changes. Returns snapshots in descending timestamp order,
+      including the initial state at time 0. *)
   Definition unique_snapshots_until (ts : TState.t)
                        (mem_init : Memory.initial)
                        (mem : Memory.t)
@@ -1176,6 +1192,10 @@ Module TLB.
     '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
     unique_snapshots_between ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
 
+  (** Check if a TLB entry is invalidated by a TLBI from a different thread.
+
+      Returns [True] if the TLBI is from a different thread than [tid] and
+      the entry is affected by the invalidation. *)
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
                 (tid : nat)
@@ -1187,6 +1207,11 @@ Module TLB.
     Decision (is_te_invalidated_by_tlbi tlbi tid ctxt te).
   Proof. unfold_decide. Defined.
 
+  (** Find the first TLBI event in [evs] that invalidates the given entry.
+
+      Scans through timestamped events looking for a TLBI from another thread
+      that affects the entry [te] at context [ctxt]. Returns [Some t] with the
+      timestamp of the first such TLBI, or [None] if no invalidation is found. *)
   Fixpoint invalidation_time_from_evs (tid : nat)
               (ctxt : Ctxt.t)
               (te : Entry.t (Ctxt.lvl ctxt))
@@ -1204,8 +1229,11 @@ Module TLB.
       end
     end.
 
-  (** Calculate the earliest future time at which a translation entry is
-      effectively invalidated in the TLB due to a TLBI event *)
+  (** Calculate the earliest future time at which a TLB entry is invalidated.
+
+      Searches memory events after [trans_time] for a TLBI from another thread
+      that would invalidate entry [te]. Used to determine the validity window
+      of a translation result. *)
   Definition invalidation_time (mem : Memory.t)
                 (tid : nat)
                 (trans_time : nat)
@@ -1460,8 +1488,16 @@ End IIS.
 
 Import UMPromising(view_if, read_fwd_view).
 
-(** Performs a memory read at a location with a view and return possible output
-    states with the timestamp and value of the read *)
+(** Perform an explicit memory read.
+
+    Computes the pre-view [vpre] from address dependencies and barrier ordering,
+    then reads from any write at or after [vpre] that is coherent. Handles:
+    - Forwarding from the thread's own recent stores via [fwdb].
+    - Acquire semantics for load-acquire instructions.
+    - Exclusive load tracking for load-exclusive instructions.
+    - Invalidation time checking for translated addresses.
+
+    Returns the post-view and read value. *)
 Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
     (invalidation_time : option nat) (macc : mem_acc)
     (init : Memory.initial) :
@@ -1632,10 +1668,16 @@ Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initia
   else mthrow "Non-ifetch 4 bytes access".
 
 
-(** Performs a memory write for a thread tid at a location loc with view
-    vaddr and vdata. Return the new state.
+(** Perform a memory write.
 
-    This may mutate memory if no existing promise can be fullfilled *)
+    First attempts to fulfill an existing promise; if none matches, creates
+    a new promise. Computes the pre-view from speculative dependencies and
+    barrier ordering. The write must occur after both [vpre] and the
+    coherence point for the location.
+
+    Handles release semantics by updating [vrel] for store-release.
+    Returns [(time, Some vpre)] if a new promise was created, or
+    [(time, None)] if an existing promise was fulfilled. *)
 Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
       (invalidation_time : option nat) (macc : mem_acc) (data : val) :
     Exec.t (TState.t * Memory.t) string (view * option view) :=
@@ -1666,13 +1708,16 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
   mset fst $ TState.update TState.vrel (view_if is_release time);;
   mret (time, if (new_promise : bool) then Some vpre else None).
 
-(** Tries to perform a memory write.
+(** Perform a memory write, handling exclusive stores.
 
-    If the store is not exclusive, the write is always performed and the third
-    return value is true.
+    For non-exclusive stores, simply calls [write_mem].
 
-    If the store is exclusive the write may succeed or fail and the third
-    return value indicate the success (true for success, false for error) *)
+    For exclusive stores (store-exclusive), additionally checks that:
+    - There was a prior load-exclusive ([xclb] is set).
+    - No other thread has written to the location since the load-exclusive.
+
+    If the exclusive check fails, the execution is discarded (store fails).
+    On success, clears [xclb] and updates the forwarding database. *)
 Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     (invalidation_time : option nat) (macc : mem_acc) (data : val) :
   Exec.t (TState.t * Memory.t) string (option view) :=
@@ -1694,6 +1739,15 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
     mset fst $ TState.set_fwdb loc (FwdItem.make time viio false);;
     mret vpre_opt.
 
+(** Perform a Context Synchronization Event (CSE).
+
+    CSEs occur at ISB instructions, exception taking, and exception returns.
+    They ensure that all prior context-changing operations (MSR writes) are
+    observed before subsequent instruction fetch and execution.
+
+    Non-deterministically chooses a view between the current dependencies
+    and [vmax_t], then updates [vcse] and adds a CSE marker to the local
+    event list. *)
 Definition run_cse (vmax_t : view) : Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   iis ← mget snd;
@@ -1703,7 +1757,13 @@ Definition run_cse (vmax_t : view) : Exec.t (TState.t * IIS.t) string () :=
   mset fst $ TState.cse vpost;;
   mset snd $ IIS.add vpost.
 
-(** Perform a barrier, mostly view shuffling *)
+(** Execute a barrier instruction (DMB, DSB, or ISB).
+
+    Barriers enforce ordering between memory accesses by updating view
+    state. The specific semantics depend on the barrier type:
+    - DMB: Orders loads/stores without waiting for completion.
+    - DSB: Stronger ordering, waits for prior operations to complete.
+    - ISB: Context synchronization, handled via [run_cse]. *)
 Definition run_barrier (barrier : barrier) (vmax_t : view) :
   Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
@@ -1791,6 +1851,7 @@ Definition va_in_range (va : bv 64) : Prop :=
 Instance Decision_va_in_range (va : bv 64) : Decision (va_in_range va).
 Proof. unfold_decide. Defined.
 
+(** Determine the TTBR register for a VA based on the translation regime. *)
 Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   match regime with
   | Regime_EL10 =>
@@ -1814,6 +1875,18 @@ Definition ets3 (ts : TState.t) : result string bool :=
   val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
   mret (bv_extract 36 4 val =? 3%bv).
 
+(** Handle the start of an address translation.
+
+    This is called when the architecture initiates a translation table walk.
+    Computes all possible translation results by:
+    1. Building TLB snapshots for the VA across all timestamps.
+    2. Collecting valid translations (successful page table walks).
+    3. Collecting invalid translations (faults due to invalid PTEs).
+
+    Non-deterministically selects one translation result and records it
+    in the intra-instruction state ([IIS.trs]) for use by subsequent
+    translation reads. Also records the invalidation time if the translation
+    may be affected by a future TLBI. *)
 Definition run_trans_start (trans_start : TranslationStartInfo)
                            (tid : nat) (init : Memory.initial) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
@@ -1862,6 +1935,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   mset PPState.iis $ IIS.set_trs trans_res.1;;
   mset PPState.iis $ IIS.set_inv_time trans_res.2.
 
+(** Compute the pre-view for a translation fault on a read access. *)
 Definition read_fault_vpre (is_acq : bool)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
@@ -1871,6 +1945,7 @@ Definition read_fault_vpre (is_acq : bool)
               ⊔ view_if is_acq ts.(TState.vrel) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
+(** Compute the pre-view for a translation fault on a write access. *)
 Definition write_fault_vpre (is_rel : bool)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
@@ -1880,6 +1955,12 @@ Definition write_fault_vpre (is_rel : bool)
               ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   mret $ iis.(IIS.strict) ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
+(** Handle the end of an address translation.
+
+    If the translation succeeded (no fault), clears the translation state.
+    If a fault occurred, updates views to reflect the fault timing. With
+    ETS3, faults may be discarded if they occur before recent memory
+    accesses. *)
 Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
@@ -2056,6 +2137,15 @@ Section ComputeProm.
         run_to_termination_promise isem fuel base
     end.
 
+  (** Run a thread to termination and collect certified promises.
+
+      Executes the thread semantics up to [fuel] steps, collecting any
+      promises that can be certified (i.e., the thread can reach a terminal
+      state while fulfilling all its promises).
+
+      Returns a pair of:
+      - The list of certified promises (events that can be promised).
+      - The list of terminal thread states (states where no promises remain). *)
   Definition run_to_termination (isem : iMon ())
                                 (fuel : nat)
                                 (ts : TState.t)
@@ -2076,14 +2166,14 @@ Section ComputeProm.
 
 End ComputeProm.
 
-(** * Implement GenPromising ***)
+(** * Promising Model Instantiations *)
 
-(** A thread is allowed to promise any promises with the correct tid for a
-    non-certified promising model *)
+(** ** Non-certified model *)
 Definition allowed_promises_nocert tid (initmem : memoryMap) (ts : TState.t)
   (mem : Memory.t) := {[ ev | (Ev.tid ev) = tid]}.
 Arguments allowed_promises_nocert _ _ _ /.
 
+(** Non-certified VM promising model instance. *)
 Definition VMPromising_nocert' : PromisingModel :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
@@ -2103,6 +2193,13 @@ Definition VMPromising_nocert' : PromisingModel :=
 Definition VMPromising_nocert isem :=
   Promising_to_Modelnc isem VMPromising_nocert'.
 
+(** ** Certified model
+
+    In the certified model, a promise is only allowed if the thread can
+    eventually fulfill it and reach a terminal state with no outstanding
+    promises. This ensures soundness. *)
+
+(** Single sequential step of the thread semantics. *)
 Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
   : relation (TState.t * Memory.t) :=
   let handler := run_outcome' tid initmem in
@@ -2111,6 +2208,8 @@ Definition seq_step (isem : iMon ()) (tid : nat) (initmem : memoryMap)
     PPState.state ×× PPState.mem
       <$> (Exec.success_state_list $ cinterp handler isem (PPState.Make ts mem IIS.init)).
 
+(** An event can be promised only if, after promising it, the thread can
+    reach a state where all promises are fulfilled. *)
 Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
   (ts : TState.t) (mem : Memory.t) : propset Ev.t :=
   {[ ev |
@@ -2121,6 +2220,7 @@ Definition allowed_promises_cert (isem : iMon ()) tid (initmem : memoryMap)
         TState.prom ts' = []
   ]}.
 
+(** Certified VM promising model instance. *)
 Definition VMPromising_cert' (isem : iMon ()) : PromisingModel :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
