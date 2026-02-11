@@ -37,6 +37,31 @@ Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
   | archModel.Res.Flagged e => match e with end
   end.
 
+(* Helper functions for memory checks *)
+
+Definition check_mem (addr : address) (size : N) (mem : memoryMap)
+  : result string Z :=
+    let read_res :=
+      addr_range addr size
+        |$> (fun curr_addr => (mem !! curr_addr))
+        |> list_of_options
+        |$> bv_of_bytes (8 * size)
+    in
+    if read_res is Some val then
+      Ok (bv_unsigned val)
+    else
+      Error ((pretty (addr : address)) +:+ " of size " +:+ (pretty (size : N)) +:+ " not fully mapped").
+
+Definition mem_extract (addr : address) (size : N)
+    `(a : archModel.res ∅ n term) : result string Z :=
+  match a with
+  | archModel.Res.FinalState fs _ =>
+    let mem : memoryMap := fs.(archState.memory) in
+    check_mem addr size mem
+  | archModel.Res.Error s => Error s
+  | archModel.Res.Flagged e => match e with end
+  end.
+
 (** Standard initial configuration for user mode *)
 Definition common_init_regs :=
   ∅
@@ -81,7 +106,7 @@ Module EOR.
 End EOR.
 
 Module MP.
-  (* MP litmus test
+  (* Message Passing litmus test
     Thread 1 : MOV [ECX], 0x1; MOV [EDX], 0x1
     Thread 2 : MOV EAX, [EDX]; MOV EBX, [ECX]
 
@@ -140,3 +165,127 @@ Module MP.
   Qed.
 
 End MP.
+
+Module SB.
+  (* Store Buffer litmus test
+    Thread 1 : MOV [ECX], 0x1; MOV EAX, [EDX]
+    Thread 2 : MOV [EDX], 0x1; MOV EAX, [ECX]
+
+    Expected result : All combinations of EAX = 0 or 1 in both threads should be possible
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x500
+    |> reg_insert RAX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+  Definition init_reg_t2 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x600
+    |> reg_insert RAX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 6 0x0000000101c7  (* MOV [ECX], 0x1 = 0x00000001 @ 0b00_000_001 @ 0xC7 *)
+    |> mem_insert 0x506 2 0x028b  (* MOV EAX, [EDX] = 0b00_000_010 @ 0x8B *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 6 0x0000000102c7  (* MOV [EDX], 0x1 = 0x00000001 @ 0b00_000_010 @ 0xC7 *)
+    |> mem_insert 0x606 2 0x018b  (* MOV EAX, [ECX] = 0b00_000_001 @ 0x8B *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x508 : bv 64); Some (0x608 : bv 64)].
+
+  (* Each thread’s PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup RIP rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := () |}.
+
+  Definition fuel := 12%nat.
+
+  Definition test_results :=
+    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+  
+  Goal elements (regs_extract [(0%fin, RAX); (1%fin, RAX)] <$> test_results) ≡ₚ
+    [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End SB.
+
+Module R_PO_MFENCE.
+  (* Read + thread 0 in Program Order + thread 1 has MFENCE litmus test
+    Thread 1 : MOV [ECX], 0x1; MOV [EDX], 0x1
+    Thread 2 : MOV [EDX], 0x2; MFENCE; MOV EAX,[ECX] 
+
+    Expected result : ([EDX]=2 /\ Thread 1:EAX=0) should be impossible
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x500
+    |> reg_insert RAX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+  Definition init_reg_t2 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x600
+    |> reg_insert RAX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+    Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 6 0x0000000101c7  (* MOV [ECX], 0x1 = 0x00000001 @ 0b00_000_001 @ 0xC7 *)
+    |> mem_insert 0x506 6 0x0000000102c7  (* MOV [EDX], 0x1 = 0x00000001 @ 0b00_000_010 @ 0xC7 *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 6 0x0000000202c7  (* MOV [EDX], 0x2 = 0x00000002 @ 0b00_000_010 @ 0xC7 *)
+    |> mem_insert 0x606 3 0xF8ae0f  (* MFENCE = 0b11_111_??? @ 0xAE @ 0x0F *)
+    |> mem_insert 0x609 2 0x018b  (* MOV EAX, [ECX] = 0b00_000_001 @ 0x8B *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x50c : bv 64); Some (0x60b : bv 64)].
+
+  (* Each thread’s PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup RIP rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := () |}.
+
+  Definition fuel := 12%nat.
+
+  Definition test_results :=
+    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+
+  Definition result_extractions :=
+    (fun test_result => [(reg_extract RAX 1%fin test_result); (mem_extract 0x1200 8 test_result)]) <$> test_results.
+  
+  Goal elements result_extractions ≡ₚ
+    [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End R_PO_MFENCE.

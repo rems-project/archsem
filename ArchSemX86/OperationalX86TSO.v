@@ -351,6 +351,9 @@ Section Model.
         end.
 End Model.
 
+Definition all_buffers_empty {nth} (state: machine_state_t nth): bool :=
+    bool_decide (∀ t : Fin.t nth, buffer_empty nth t state).
+
 Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t (machine_state_t nth) string () :=
     (* The transition taken is either a flush to memory or a run_outcome call *)
 
@@ -385,11 +388,12 @@ Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ()) (term : terminationCond
         (* run until out of fuel or conditions met *)
         if fuel is S fuel then
             step isem term;;
-            state ← mget to_archState;
-            if decide (archState.is_terminated term state) is left p then
-                mret (existT state p)
-            else
-                run_to_term fuel isem term
+            mstate ← mGet;
+            astate ← mget to_archState;
+            match decide (archState.is_terminated term astate), all_buffers_empty mstate with
+            | left p, true => mret (existT astate p)
+            | _, _ => run_to_term fuel isem term
+            end
         else
             mthrow "Out of fuel".
 
