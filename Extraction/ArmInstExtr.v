@@ -51,4 +51,5 @@ Extract Inductive ArchSem.Interface.reg_gen_val =>
 Set Extraction Output Directory ".".
 
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
-Separate Extraction sequential_modelc sail_tiny_arm_sem Arm UMPromising_pf.
+Separate Extraction Arm sail_tiny_arm_sem
+  sequential_modelc UMPromising_pf VMPromising_pf.
