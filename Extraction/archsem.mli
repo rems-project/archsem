@@ -113,4 +113,6 @@ val seq_model : empty ArchModel.t
 
 val umProm_model : empty ArchModel.t
 
-val vmProm_model : ?mem_param:VMPromising.MemParam.t -> empty ArchModel.t
+type mem_param = Off | LaxBBM | Strict | StrictBBM
+
+val vmProm_model : mem_param -> empty ArchModel.t

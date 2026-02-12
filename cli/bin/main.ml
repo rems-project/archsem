@@ -4,10 +4,17 @@ open Cmdliner
 
 (** {1 Model Selection} *)
 
-let get_model = function
+let mem_param_of_string = function
+  | "off" -> Archsem.Off
+  | "laxbbm" -> Archsem.LaxBBM
+  | "strict" -> Archsem.Strict
+  | "strictbbm" -> Archsem.StrictBBM
+  | s -> failwith ("Unknown mem_param: " ^ s ^ ". Use: off, laxbbm, strict, strictbbm")
+
+let get_model mem_param = function
   | "seq" -> seq_model
   | "ump" -> umProm_model
-  | "vmp" -> fun fuel term initState -> vmProm_model fuel term initState
+  | "vmp" -> vmProm_model mem_param
   | s -> failwith ("Unknown model: " ^ s ^ ". Use: seq, ump, vmp")
 
 (** {1 File Discovery} *)
@@ -76,6 +83,7 @@ let convert_isla_files ~usermode isla_files =
 
 type args = {
   model_name: string;
+  mem_param: string;
   path: string;
   isla_mode: bool;
   usermode: bool;
@@ -90,6 +98,10 @@ let path_t =
   let doc = "Path to test file or directory." in
   Arg.(required & pos 1 (some string) None & info [] ~docv:"PATH" ~doc)
 
+let mem_param_t =
+  let doc = "Memory parameter for vmp model. One of $(b,off), $(b,laxbbm), $(b,strict), $(b,strictbbm)." in
+  Arg.(value & opt string "off" & info ["mem-param"] ~docv:"PARAM" ~doc)
+
 let isla_mode_t =
   let doc = "Input is isla format (converts to archsem before running)." in
   Arg.(value & flag & info ["isla"] ~doc)
@@ -99,10 +111,10 @@ let usermode_t =
   Arg.(value & flag & info ["usermode"] ~doc)
 
 let args_t =
-  let make model_name path isla_mode usermode =
-    { model_name; path; isla_mode; usermode }
+  let make model_name mem_param path isla_mode usermode =
+    { model_name; mem_param; path; isla_mode; usermode }
   in
-  Term.(const make $ model_name_t $ path_t $ isla_mode_t $ usermode_t)
+  Term.(const make $ model_name_t $ mem_param_t $ path_t $ isla_mode_t $ usermode_t)
 
 (** {1 Test Execution} *)
 
@@ -123,7 +135,8 @@ let collect_test_files args =
 (** {1 Entry Point} *)
 
 let run args =
-  let model = get_model args.model_name in
+  let mem_param = mem_param_of_string args.mem_param in
+  let model = get_model mem_param args.model_name in
 
   let files, temp_files = collect_test_files args in
 

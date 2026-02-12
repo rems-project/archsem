@@ -171,7 +171,16 @@ let umProm_model fuel term initState =
     (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic
 
-let vmProm_model ?(mem_param = VMPromising.MemParam.LaxBBM) fuel term initState =
-  VMPromising.coq_VMPromising_pf mem_param (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
+type mem_param = Off | LaxBBM | Strict | StrictBBM
+
+let mem_param_to_coq = function
+  | Off -> VMPromising.MemParam.Off
+  | LaxBBM -> VMPromising.MemParam.LaxBBM
+  | Strict -> VMPromising.MemParam.Strict
+  | StrictBBM -> VMPromising.MemParam.StrictBBM
+
+let vmProm_model mem_param fuel term initState =
+  VMPromising.coq_VMPromising_pf (mem_param_to_coq mem_param)
+    (ArmInst.sail_tiny_arm_sem true) (Z.of_int fuel)
     (ArchState.num_thread initState |> Z.of_int) (termCond_to_coq term) initState
   |> Obj.magic

@@ -136,7 +136,6 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   Import IWA.Interface.
   Import TM.
 
-  (* Namespace *)
   Module Promising.
 
   (** This structure defines a promising model that can share common
@@ -146,8 +145,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         as long as they are all fulfilled by the end
       - The certified non-executable version where promises can only be made if
         there is a sequential trace that lead to that promise being fulfilled.
-      - The direct executable model which explores all interleaving of promising
-        and instruction steps
+      - The direct executable model which explores all interleaving of promising and instruction steps
       - The promise-free executable model which does a smarter search based on
         some commutation properties of steps, namely that instruction step of
         different thread commute and that a promise step after an instruction
@@ -171,7 +169,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
           condition and compute a final state *)
       tState_regs : tState → registerMap;
       (** Check if a thread state has no pending promises, which means that it
-          can be explained with the current memory state *)
+          can be explain with the current memory state *)
       tState_nopromises : tState → bool;
       (** Intra instruction state, reset after each instruction *)
       iis : Type;
@@ -179,6 +177,10 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       (** The type of memory event, any communication between threads must go here *)
       mEvent : Type;
       mEvent_eq_dec : EqDecision mEvent;
+      (** Boolean equality for events, using only computable
+          integer comparisons.  Unlike [mEvent_eq_dec] this never
+          gets stuck under [vm_compute] on opaque bitvector proofs. *)
+      mEvent_eqb : mEvent → mEvent → bool;
       (** Give the tid that initiated that event *)
       mEvent_tid : mEvent → nat;
       (** The address space this model is built against, we expect non-secure
@@ -186,8 +188,8 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       address_space : addr_space;
       (** The handler for instruction effects, applies the effect of a single
           outcome to the thread state. If the outcome need one or more event to
-          be added to memory,it adds them and return the view of those events in
-          the option, otherwise it returns [None] *)
+          be added,it adds them and return the view of those events in the
+          option, otherwise it returns [None] *)
       handle_outcome : (* tid *) nat → (* initial memory *) memoryMap →
                   ∀ out : outcome,
                   Exec.t (PPState.t tState mEvent iis) string
@@ -199,7 +201,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       emit_promise : (* tid *) nat → memoryMap → PromMemory.t mEvent →
                      mEvent → tState → tState;
       (** Hook for extra UB checks to be done before returning a final state,
-          e.g. BBM checks. Any returned string is an error, [[]] is success. *)
+          e.g. BBM checks, return any error string (empty means no errors) *)
       check_valid_end : (* tid *) nat → memoryMap → tState →
                              PromMemory.t mEvent → list string;
       (** Computes the final memory after a certain promising history *)
@@ -207,6 +209,59 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     }.
   #[global] Arguments Model : clear implicits.
   End Promising.
+
+  (** To make a promising model executable, one must provide a function that
+      compute for each thread a summary of the next actions that can be taken as
+      an [ExecutablePMResult]. This summary contains:
+      - A list [promises] of certified promises that can be added which should
+        be the set defined by [allowed_promises];
+      - A list of [final_states] that can reached with the current memory history
+        *without* adding new promises;
+      - A list of [errors] that can be reached with the current memory history
+        *without* adding new promises;
+      - If the exploration runs [out_of_fuel]. *)
+  (* Record EnumerationResult {mEvent tState} := *)
+  (*   { *)
+  (*     promises : list mEvent; *)
+  (*     final_states : list tState; *)
+  (*     errors : list string; *)
+  (*     out_of_fuel : bool *)
+  (*     }. *)
+  (* Arguments EnumerationResult : clear implicits. *)
+
+  (** This is a basic way of making a promising model executable, so I'll make
+      it generic *)
+  (* Structure Executable := { *)
+  (*     pModel :> Model; *)
+
+  (*     (** Run the thread to termination, collecting the possible model *)
+  (*     transitions from that thread. See above for the description of what is collected *) *)
+  (*     enumerate_promises_and_terminal_states : *)
+  (*       (* fuel *) nat → (* tid *) nat → *)
+  (*       (* termination condition *) (registerMap → bool) → *)
+  (*       memoryMap → pModel.(tState) → PromMemory.t pModel.(mEvent) → *)
+  (*       EnumerationResult pModel.(mEvent) pModel.(tState); *)
+
+  (*     enumerate_promises_allowed : *)
+  (*       ∀ fuel tid term initMem ts mem epr, *)
+  (*         enumerate_promises_and_terminal_states fuel tid term initMem ts mem = epr → *)
+  (*         ∀ ev, ev ∈ epr.(promises) ↔ ev ∈ pModel.(allowed_promises) tid initMem ts mem; *)
+
+  (*     terminal_state_no_outstanding_promise : *)
+  (*       ∀ fuel tid term initMem ts mem epr, *)
+  (*         enumerate_promises_and_terminal_states fuel tid term initMem ts mem = epr → *)
+  (*         ∀ tts ∈ epr.(final_states), pModel.(tState_nopromises) tts; *)
+
+  (*     terminal_state_is_terminated : *)
+  (*     ∀ fuel tid term initMem ts mem epr, *)
+  (*         enumerate_promises_and_terminal_states fuel tid term initMem ts mem = epr → *)
+  (*         ∀ tts ∈ epr.(final_states), term (pModel.(tState_regs) tts); *)
+
+  (*     (* TODO: add terminal_state_is_reachable *) *)
+  (*   }. *)
+  (* Arguments Executable : clear implicits. *)
+  (* End PM. *)
+  (* Export (coercions) PM. *)
 
   Module PState. (* namespace *)
     Section PS.
@@ -260,6 +315,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
       Definition check_valid_end (ps : t) :=
         List.concat (map (check_valid_end_tid ps) (enum (fin n))).
 
+
       Definition PState_PPState tid (pst : t) :
           PPState.t tState mEvent prom.(iis) :=
         PPState.Make (tstate tid pst) pst.(events) prom.(iis_init).
@@ -291,7 +347,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         else prom.(mEvent_tid) ev = tid.
 
       (** Emit a promise from a thread by tid *)
-      Definition promise_tid (tid : fin n) (event : mEvent) (st : t) :=
+      Definition promise_tid (st : t) (tid : fin n) (event : mEvent) :=
         let st := set events (event ::.) st in
         set (tstate tid)
           (prom.(emit_promise) tid st.(initmem) st.(events) event)
@@ -303,11 +359,11 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
         (ps', ()) ∈ (run_tid tid ps) → step certified ps ps'
       | SPromise (tid : fin n) (event : mEvent) :
         allowed_promises_tid certified ps tid event →
-        step certified ps (promise_tid tid event ps).
+        step certified ps (promise_tid ps tid event).
 
       Lemma step_promise certified (ps ps' : t) (tid : fin n) (event : mEvent) :
         allowed_promises_tid certified ps tid event →
-        ps' = promise_tid tid event ps →
+        ps' = promise_tid ps tid event →
         step certified ps ps'.
       Proof using. sauto l:on. Qed.
 
@@ -357,9 +413,9 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
   (** Computational promising state. Right now it the same type as PState.t but
       with more methods *)
   Module CPState.
-    Import Promising.
     Include PState.
     Section CPS.
+    Import Promising.
     Context (isem : iMon ()).
     Context (prom : Model).
     Context {n : nat}.
@@ -369,8 +425,18 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Local Notation iis := (iis prom).
     Local Notation t := (t tState mEvent n).
 
-    Let mEvent_eq_dec := prom.(mEvent_eq_dec).
+    Definition mEvent_eq_dec := prom.(mEvent_eq_dec).
     Local Existing Instance mEvent_eq_dec.
+
+    (** [remove_dups] using a boolean equality, avoiding opaque
+        proof terms that block [vm_compute]. *)
+    Fixpoint remove_dups_by {A} (eqb : A → A → bool) (l : list A) : list A :=
+      match l with
+      | [] => []
+      | x :: l' =>
+        if existsb (eqb x) l' then remove_dups_by eqb l'
+        else x :: remove_dups_by eqb l'
+      end.
 
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated prom term x }.
@@ -387,89 +453,91 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
     Section EnumerateResult.
       Context (tid : fin n) (initmem : memoryMap).
+    Definition run_outcome_with_promise (base : nat) (out : outcome) :
+      Exec.t (list mEvent * PPState.t tState mEvent iis) string (eff_ret out) :=
+      '(res, vpre_opt) ← Exec.liftSt snd $ prom.(handle_outcome) tid initmem out;
+      if vpre_opt is Some vpre then
+        if decide (vpre ≤ base)%nat then
+          mem ← mget (PPState.mem ∘ snd);
+          (* Take all promises after base (made by that outcome) and add them to
+             the list of possible new promises *)
+          mset fst (take (length mem - base) mem ++.);;
+          mret res
+        else mret res
+      else
+        mret res.
 
-      Definition run_outcome_with_promise (base : nat) (out : outcome) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string (eff_ret out) :=
-        '(res, vpre_opt) ← Exec.liftSt snd $ prom.(handle_outcome) tid initmem out;
-        if vpre_opt is Some vpre then
-          if decide (vpre ≤ base)%nat then
-            mem ← mget (PPState.mem ∘ snd);
-            (* Take all promises after base (made by that outcome) and add them
-               to the list of possible new promises *)
-            mset fst (take (length mem - base) mem ++.);;
-            mret res
-          else mret res
-        else
-          mret res.
+    Fixpoint run_to_termination (fuel : nat) (base : nat) :
+      Exec.t (list mEvent * PPState.t tState mEvent iis) string bool :=
+      match fuel with
+      | 0%nat =>
+          ts ← mget (PPState.state ∘ snd);
+          mret (term tid (prom.(tState_regs) ts))
+      | S fuel =>
+          let handler := run_outcome_with_promise base in
+          cinterp handler isem;;
+          ts ← mget (PPState.state ∘ snd);
+          if term tid (prom.(tState_regs) ts) then
+            mret true
+          else
+            msetv (PPState.iis ∘ snd) prom.(iis_init);;
+            run_to_termination fuel base
+      end.
 
-      Fixpoint run_to_termination (fuel : nat) (base : nat) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string bool :=
-        match fuel with
-        | 0%nat =>
-            ts ← mget (PPState.state ∘ snd);
-            mret (term tid (prom.(tState_regs) ts))
-        | S fuel =>
-            let handler := run_outcome_with_promise base in
-            cinterp handler isem;;
-            ts ← mget (PPState.state ∘ snd);
-            if term tid (prom.(tState_regs) ts) then
-              mret true
-            else
-              msetv (PPState.iis ∘ snd) prom.(iis_init);;
-              run_to_termination fuel base
-        end.
-
-      Record EnumerationResult :=
-        {
-          promises : list mEvent;
-          final_states : list tState;
-          errors : list string;
-          out_of_fuel : bool
+    Record EnumerationResult :=
+      {
+        promises : list mEvent;
+        final_states : list tState;
+        errors : list string;
+        out_of_fuel : bool
         }.
 
-      Definition enumerate_results (fuel : nat) (ts : tState)
-          (mem : PromMemory.t mEvent) : EnumerationResult :=
-        let base := List.length mem in
-        let res :=
-          run_to_termination fuel base
-            ([], PPState.Make ts mem prom.(iis_init))
-        in
-        let success_states := Exec.success_state_list res in
-        let out_of_fuel := bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
-        (* let out_of_fuel := true in *)
-        let promises := List.concat (success_states.*1) |> remove_dups in
-        let tstates :=
-          success_states
-          |> omap (λ '(new_proms, st),
-                 if is_emptyb new_proms then Some (PPState.state st)
-                 else None) in
-        let errors :=
-          res |> Exec.errors |>
-            omap (λ '((new_proms, _), err_msg),
-                if is_emptyb new_proms then Some err_msg
-                else None) in
-        {|promises:=promises;
-          final_states:=tstates;
-          errors:=errors;
-          out_of_fuel:=out_of_fuel|}.
+    Definition enumerate_results (fuel : nat) (ts : tState) (mem : PromMemory.t mEvent)
+      : EnumerationResult :=
+      let base := List.length mem in
+      let res :=
+        run_to_termination fuel base
+          ([], PPState.Make ts mem prom.(iis_init))
+      in
+      let success_states := Exec.success_state_list res in
+      let out_of_fuel := bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
+      (* let out_of_fuel := true in *)
+      let promises := List.concat (success_states.*1) |> remove_dups_by prom.(Promising.mEvent_eqb) in
+      let tstates :=
+        success_states
+        |> omap (λ '(new_proms, st),
+               if is_emptyb new_proms then Some (PPState.state st)
+               else None) in
+      let errors :=
+        res |> Exec.errors |>
+          omap (λ '((new_proms, _), err_msg),
+              if is_emptyb new_proms then Some err_msg
+              else None) in
+      {|promises:=promises;
+        final_states:=tstates;
+        errors:=errors;
+        out_of_fuel:=out_of_fuel|}.
     End EnumerateResult.
 
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      let (promises, _, _, out_of_fuel) :=
-        enumerate_results tid (initmem st) fuel (tstate tid st) (events st)
-      in
+      let (promises, _, _, out_of_fuel) := enumerate_results
+                                        tid (initmem st) fuel (tstate tid st) (events st) in
       if out_of_fuel then
         b ← mchoosef;
         if (b : bool) then mthrow "out of fuel" else mchoosel promises
       else mchoosel promises.
 
     (** Take any promising step for that tid and promise it *)
-    Definition cpromise_tid (fuel : nat) (tid : fin n) : Exec.t t string () :=
-      st ← mGet;
-      ev ← mlift (promise_select_tid fuel st tid);
-      mSetv (promise_tid prom tid ev st).
+    Definition cpromise_tid (fuel : nat) (tid : fin n)
+      : Exec.t t string () :=
+    λ st,
+      let res_st :=
+        ev ← promise_select_tid fuel st tid;
+        mret $ promise_tid prom st tid ev
+      in
+        Exec.make ((.,()) <$> res_st.(Exec.results)) ((st,.) <$> res_st.(Exec.errors)).
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
@@ -500,36 +568,43 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
     Fixpoint run_promise_first (fuel : nat) : Exec.t t string final :=
       if fuel is S fuel then
         st ← mGet;
-        (* Find out next possible promises or terminating states for each thread *)
+        (* Find out next possible promises or terminating states at the current thread *)
         let execution_results :=
           vmap (λ '(tid, ts),
               enumerate_results tid (initmem st) fuel ts (events st)
             ) (venumerate (tstates st)) in
-        opt ← mchoosel (seq 0 4);
+        opt ← mchoosel (seq 0 5);
         match opt : nat with
         | 0 =>
           '(tid : fin n) ← mchoosef;
           next_ev ← mchoosel (execution_results !!! tid).(promises);
-          mSet (promise_tid prom tid next_ev);;
+          mSet (λ st, promise_tid prom st tid next_ev);;
           run_promise_first fuel
         | 1 =>
           (* Compute cartesian products of the possible thread states *)
-          tstates ← mchoosel $ cprodn (vmap final_states execution_results);
-          (* Lift them into full promising state *)
-          let st := Make tstates st.(initmem) st.(events) in
-          (* Discard the one with pending promises in any thread *)
-          guard_discard $ nopromises prom st;;
-          (* Discard the non-terminated ones *)
-          term_proof ← guard_discard $ terminated prom term st;
-          (* Check for final errors (e.g. BBM checks) *)
-          let errs := check_valid_end prom st in
-          if errs is [] then
-            mret (make_final st term_proof)
-          else
-            err ← mchoosel errs;
-            mthrow err
+          let tstates_all := cprodn (vmap final_states execution_results) in
+          let new_finals :=
+            omap (λ tstates,
+              let st := Make tstates st.(PState.initmem) st.(PState.events) in
+              if decide $ terminated prom term st is left pt
+              then Some (make_final st pt)
+              else None
+              ) tstates_all in
+          mchoosel new_finals
         | 2 =>
           let errs := List.concat (vmap errors execution_results) in
+          err ← mchoosel errs;
+          mthrow err
+        | 3 =>
+          (* Check check_valid_end on terminated states and throw errors *)
+          let tstates_all := cprodn (vmap final_states execution_results) in
+          let errs :=
+            List.concat (omap (λ tstates,
+              let st := Make tstates st.(PState.initmem) st.(PState.events) in
+              if terminated prom term st && nopromises prom st then
+                Some (PState.check_valid_end prom st)
+              else None
+            ) tstates_all) in
           err ← mchoosel errs;
           mthrow err
         | _ =>

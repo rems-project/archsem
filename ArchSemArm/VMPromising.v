@@ -54,23 +54,107 @@ Import (hints) UMPromising.
     without mixed-size on top of the new interface *)
 
 (** This model only works for 8-bytes aligned locations, as there
-    in no support for mixed-sizes yet. Also all location are
+    is no support for mixed-sizes yet. Also all locations are
     implicitly in the non-secure world.
 
-    So in order to get the physical address you need to append 3 zeros.
+    So in order to get the physical address you need to append 3 zeros. *)
+Module Loc.
+  Definition t := bv 53.
+  #[export] Typeclasses Transparent t.
+  #[export] Hint Transparent t : bv_unfold_db.
 
-    We reuse the location setup from the User-Mode promising model. *)
-Module Loc := UMPromising.Loc.
+  #[global] Instance dec : EqDecision t.
+  Proof. unfold t. solve_decision. Defined.
+
+  #[global] Instance count : Countable t.
+  Proof. unfold t. exact (bv_countable_compute _). Defined.
+
+  (** Convert a location into an ARM physical address *)
+  Definition to_addr (loc : t) : address := bv_concat 56 loc (bv_0 3).
+
+  (** Recover a location from an ARM physical address. *)
+  Definition from_addr (addr : address) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 53 addr)
+    else None.
+
+  Lemma to_from_addr (addr : address) (loc : t) :
+    from_addr addr = Some loc → to_addr loc = addr.
+  Proof.
+    unfold from_addr,to_addr in *.
+    cdestruct addr,loc |- *** #CDestrMatch.
+    bv_solve'.
+  Qed.
+
+  Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
+    unfold t in *.
+    unfold from_addr, to_addr.
+    cdestruct |- *** #CDestrMatch; bv_solve'.
+  Qed.
+
+  (** Convert a location to a list of covered physical addresses *)
+  Definition to_addrs (loc : t) : list address := addr_range (to_addr loc) 8.
+
+  (** Give the location containing an addr *)
+  Definition from_addr_in (addr : address) : t := bv_extract 3 53 addr.
+
+  (** Give the index of an addr inside its containing 8-bytes word *)
+  Definition addr_index (addr : address) : bv 3 := bv_extract 0 3 addr.
+
+  Lemma from_addr_addr_in addr loc :
+    from_addr addr = Some loc → from_addr_in addr = loc.
+  Proof. unfold from_addr,from_addr_in. cdestruct |- *** #CDestrMatch. Qed.
+
+  Lemma from_addr_in_to_addrs loc :
+    ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
+  Proof.
+    unfold from_addr_in, to_addrs, addr_range, addr_addN, to_addr.
+    set_unfold.
+    cdestruct |- ***.
+    unfold t, addr_size in *.
+    bv_solve.
+  Qed.
+
+  (** Convert a physical address back to a 64 bits "virtual" address *)
+  Definition to_va (loc : t) : bv 64 :=
+    bv_concat 64 (bv_0 8) $ bv_concat 56 loc (bv_0 3).
+
+  Definition from_va (addr : bv 64) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 53 addr)
+    else None.
+End Loc.
+Import (hints) Loc.
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
+Definition sval (size : N) := bv (8 * size).
+#[export] Typeclasses Transparent sval.
 Definition val := bv 64.
 #[global] Typeclasses Transparent val.
 
 Definition val_to_address (v : val) : address :=
   bv_extract 0 56 v.
 
-(** We also reuse the Msg object from the User-Mode Promising Model. *)
-Module Msg := UMPromising.Msg.
+(** Message type for memory events, parameterized by access size in bytes.
+    Currently VMPromising always uses size 8 (8-byte aligned). *)
+Module Msg.
+  Record t (size : N) := make { tid : nat; loc : Loc.t; val : sval size }.
+
+  Arguments make {_} _ _ _.
+  Arguments tid {_}.
+  Arguments loc {_}.
+  Arguments val {_}.
+
+  #[global] Instance eq_dec size : EqDecision (t size).
+  Proof. solve_decision. Defined.
+
+  #[global] Instance count size : Countable (t size).
+  Proof.
+    apply (inj_countable' (λ msg, (tid msg, loc msg, val msg))
+                      (λ x, make x.1.1 x.1.2 x.2)).
+    by intros [].
+  Defined.
+End Msg.
 
 Module TLBI.
   Inductive t :=
@@ -136,7 +220,7 @@ End TLBI.
 (** Promising events appearing in the trace *)
 Module Ev.
   Inductive t :=
-  | Msg (msg : Msg.t)
+  | Msg (msg : Msg.t 8)
   | Tlbi (tlbi : TLBI.t).
 
   #[global] Instance dec : EqDecision t.
@@ -155,7 +239,7 @@ Module Ev.
     | Tlbi _ => false
     end.
 
-  Definition get_msg (ev : t) : option Msg.t :=
+  Definition get_msg (ev : t) : option (Msg.t 8) :=
     match ev with
     | Msg msg => Some msg
     | _ => None
@@ -166,8 +250,41 @@ Module Ev.
     | Tlbi tlbi => Some tlbi
     | _ => None
     end.
+
+  (** Boolean equality for events using only computable integer
+      comparisons.  Unlike [dec] this never gets stuck under
+      [vm_compute] on opaque bitvector proofs. *)
+  Definition msg_eqb (m1 m2 : Msg.t 8) : bool :=
+    (Msg.tid m1 =? Msg.tid m2)%nat &&
+    (bv_unsigned (Msg.loc m1) =? bv_unsigned (Msg.loc m2))%Z &&
+    (bv_unsigned (Msg.val m1) =? bv_unsigned (Msg.val m2))%Z.
+
+  Definition tlbi_eqb (t1 t2 : TLBI.t) : bool :=
+    match t1, t2 with
+    | TLBI.All tid1, TLBI.All tid2 => (tid1 =? tid2)%nat
+    | TLBI.Asid tid1 asid1, TLBI.Asid tid2 asid2 =>
+        (tid1 =? tid2)%nat &&
+        (bv_unsigned asid1 =? bv_unsigned asid2)%Z
+    | TLBI.Va tid1 asid1 va1 last1 upper1, TLBI.Va tid2 asid2 va2 last2 upper2 =>
+        (tid1 =? tid2)%nat &&
+        (bv_unsigned asid1 =? bv_unsigned asid2)%Z &&
+        (bv_unsigned va1 =? bv_unsigned va2)%Z &&
+        Bool.eqb last1 last2 && Bool.eqb upper1 upper2
+    | TLBI.Vaa tid1 va1 last1 upper1, TLBI.Vaa tid2 va2 last2 upper2 =>
+        (tid1 =? tid2)%nat &&
+        (bv_unsigned va1 =? bv_unsigned va2)%Z &&
+        Bool.eqb last1 last2 && Bool.eqb upper1 upper2
+    | _, _ => false
+    end.
+
+  Definition eqb (e1 e2 : t) : bool :=
+    match e1, e2 with
+    | Msg m1, Msg m2 => msg_eqb m1 m2
+    | Tlbi t1, Tlbi t2 => tlbi_eqb t1 t2
+    | _, _ => false
+    end.
+
 End Ev.
-Coercion Ev.Msg : Msg.t >-> Ev.t.
 Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
 
 (** A view is just a natural *)
@@ -190,7 +307,7 @@ Module Memory.
   Definition initial_from_memMap (mem : memoryMap) : initial :=
     mem
     |> dom
-    |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
+    |> (set_map Loc.from_addr_in : _ → gset Loc.t)
     |> set_fold (λ loc map,
         let base := Loc.to_addr loc in
         let lo :=
@@ -227,7 +344,7 @@ Module Memory.
     | [] => init !! loc |$> (., 0%nat)
     | (Ev.Msg msg) :: mem' =>
         if Msg.loc msg =? loc then
-          Some (Msg.val msg, List.length mem)
+          Some (Msg.val msg : val, List.length mem)
         else read_last loc init mem'
     | Ev.Tlbi _ :: mem' => read_last loc init mem'
     end.
@@ -269,7 +386,7 @@ Module Memory.
     let final :=
       foldl (λ nmem ev,
           if ev is Ev.Msg msg
-          then insert msg.(Msg.loc) msg.(Msg.val) nmem
+          then insert msg.(Msg.loc) (msg.(Msg.val) : val) nmem
           else nmem)
         init mem
     in
@@ -288,7 +405,7 @@ Module Memory.
              match ev with
              | Ev.Msg msg =>
                  if Msg.loc msg =? loc
-                 then Some (Msg.val msg, v)
+                 then Some (Msg.val msg : val, v)
                  else None
              | Ev.Tlbi _ => None
              end)
@@ -308,7 +425,11 @@ Module Memory.
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
   Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (λ t, mem !! t = Some ev)
+    prom |> List.filter (λ t,
+              match mem !! t with
+              | Some ev' => Ev.eqb ev ev'
+              | None => false
+              end)
          |> reverse
          |> head.
 
@@ -333,7 +454,16 @@ Module Memory.
 End Memory.
 Import (hints) Memory.
 
-Module FwdItem := UMPromising.FwdItem.
+Module FwdItem.
+  Record t :=
+    make {
+        time : nat;
+        view : view;
+        xcl : bool
+      }.
+
+  Definition init := make 0 0 false.
+End FwdItem.
 
 
 Definition EL := (fin 4).
@@ -683,7 +813,7 @@ End TState.
     The four modes are:
     - [Off]:       No memory strictness, no BBM check. Most permissive mode.
     - [LaxBBM]:    Lax memory mode (tolerates TLB fill read failures), with BBM check.
-                   Checks BBM but allows uninitialized page table reads.
+                   Checks BBM but allows non-deterministic page table reads.
     - [Strict]:    Strict memory mode (TLB fill reads must succeed), no BBM check.
                    Requires page table reads to succeed but does not check BBM.
     - [StrictBBM]: Strict memory mode (TLB fill reads must succeed), with BBM check.
@@ -881,7 +1011,7 @@ Module TLB.
           va : prefix lvl;
           asid : option (bv 16);
         }.
-    Arguments make {_} _ _.
+    Arguments make {_} _ _ _.
     Arguments upper {_}.
     Arguments va {_}.
     Arguments asid {_}.
@@ -1782,7 +1912,12 @@ Module IIS.
 
 End IIS.
 
-Import UMPromising(view_if, read_fwd_view).
+Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
+
+(** The view of a read from a forwarded write *)
+Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
+  if f.(FwdItem.xcl) && is_rel_acq macc
+  then f.(FwdItem.time) else f.(FwdItem.view).
 
 (** Perform an explicit memory read.
 
@@ -1977,14 +2112,15 @@ Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initia
 Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
       (invalidation_time : option nat) (macc : mem_acc) (data : val) :
     Exec.t (TState.t * Memory.t) string (view * option view) :=
-  let msg := Msg.make tid loc data in
+  let msg := @Msg.make 8 tid loc data in
+  let ev := Ev.Msg msg in
   let is_release := is_rel_acq macc in
   '(ts, mem) ← mGet;
   '(time, new_promise) ←
-    match Memory.fulfill msg (TState.prom ts) mem with
+    match Memory.fulfill ev (TState.prom ts) mem with
     | Some t => mret (t, false)
     | None =>
-      t ← Exec.liftSt snd $ Memory.promise msg;
+      t ← Exec.liftSt snd $ Memory.promise ev;
       mret (t, true)
     end;
   let vbob :=
@@ -2037,9 +2173,9 @@ Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
 
 (** Perform a Context Synchronization Event (CSE).
 
-    CSEs occur at ISB instructions, exception taking, and exception returns.
-    They ensure that all prior context-changing operations (MSR writes) are
-    observed before subsequent instruction fetch and execution.
+    CSEs occur at ISB instructions and exception returns. They ensure that
+    all prior context-changing operations (MSR writes, TLBIs) are observed
+    before subsequent instruction fetch and execution.
 
     Non-deterministically chooses a view between the current dependencies
     and [vmax_t], then updates [vcse] and adds a CSE marker to the local
@@ -2298,7 +2434,7 @@ Definition run_take_exception (fault : exn) (vmax_t : view) :
 
 (** Runs an outcome. *)
 Section RunOutcome.
-  Context (mem_param : MemParam.t) (tid : nat) (initmem : memoryMap).
+  Context (tid : nat) (initmem : memoryMap) (mem_param : MemParam.t).
 
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out * option view) :=
@@ -2526,10 +2662,16 @@ Definition bbm_check_impl (mem_param : MemParam.t) (tid : nat)
     | Error _ => [] (* Ignore check errors, don't block execution *)
     end.
 
-(** * Implement GenPromising ***)
+(** * Promising Model Instantiations *)
 
 Import Promising.
 
+(** VM Promising model parameterized by memory strictness.
+    - [mem_param]: Controls memory strictness for TLB fill operations.
+      - [MemParam.Off]: Lax memory mode (non-deterministic TLB fill), no BBM check.
+      - [MemParam.LaxBBM]: Lax memory mode with BBM check.
+      - [MemParam.Strict]: Strict memory mode (TLB fill reads must succeed), no BBM check.
+      - [MemParam.StrictBBM]: Strict memory mode (TLB fill reads must succeed), with BBM check. *)
 Definition VMPromising (mem_param : MemParam.t) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
@@ -2539,22 +2681,27 @@ Definition VMPromising (mem_param : MemParam.t) : Promising.Model :=
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
+    mEvent_eqb := Ev.eqb;
     mEvent_tid := Ev.tid;
-    handle_outcome := run_outcome mem_param;
+    handle_outcome := λ tid initmem, run_outcome tid initmem mem_param;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     check_valid_end := λ tid initmem ts mem, bbm_check_impl mem_param tid initmem ts mem;
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
   |}.
 
+(** Non-certified VM promising model. *)
 Definition VMPromising_nocert (mem_param : MemParam.t) :=
   Promising_to_Modelnc (*certified=*)false (VMPromising mem_param).
 
+(** Certified VM promising model. *)
 Definition VMPromising_cert (mem_param : MemParam.t) :=
   Promising_to_Modelnc (*certified=*)true (VMPromising mem_param).
 
+(** Executable VM promising model *)
 Definition VMPromising_exe (mem_param : MemParam.t) :=
   Promising_to_Modelc (VMPromising mem_param).
 
+(** Promise-free VM promising model *)
 Definition VMPromising_pf (mem_param : MemParam.t) :=
   Promising_to_Modelc_pf (VMPromising mem_param).

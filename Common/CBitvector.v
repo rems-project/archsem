@@ -40,9 +40,9 @@
 (** Unfortunately this development needs to support two kinds of bitvector.
     The module will attempt to provide smooth interoperability between the two *)
 
-From Stdlib Require Import Lia HexString.
+From Stdlib Require Import Lia HexString Eqdep_dec.
 
-From stdpp Require Import decidable countable vector pretty.
+From stdpp Require Import decidable countable finite vector pretty.
 From stdpp.bitvector Require Import bitvector tactics.
 
 Require Import Options.
@@ -59,6 +59,79 @@ Proof using.
   - left. abstract naive_solver use bv_eq.
   - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
 Defined.
+
+(** ** Computation-friendly [EqDecision] for [bv]
+
+The stdpp [bv_eq_dec] produces equality proofs that use [bv_wf_pi]
+(proof irrelevance for [BvWf]), which is opaque ([Qed]).  Under [vm_compute],
+this makes the proof term inside [left] stuck: any dependent match
+([eq_rect], [f_equal], …) on the resulting equality cannot reduce.
+This cascades through [Msg.eq_dec], [Ev.eq_dec], [Memory.fulfill], and
+the entire promising-model execution.
+
+We replace it with a version whose equality proof reduces completely
+under [vm_compute], following the same pattern as [vec_countable] in CVec.v. *)
+
+(** Transparent proof irrelevance for [Is_true].
+    [Is_true b] is [if b then True else False].
+    When [b = true], both proofs are [I]; when [b = false], there are none. *)
+Definition Is_true_pi (b : bool) (p1 p2 : Is_true b) : p1 = p2 :=
+  match b return ∀ (p1 p2 : Is_true b), p1 = p2 with
+  | true => fun p1 p2 => match p1, p2 with I, I => eq_refl end
+  | false => fun p1 => match p1 with end
+  end p1 p2.
+
+(** Transparent proof irrelevance for [BvWf], using [Is_true_pi]. *)
+Definition BvWf_pi_compute (n : N) (z : Z) (p1 p2 : BvWf n z) : p1 = p2 :=
+  Is_true_pi _ p1 p2.
+
+(** Normalizes a [BvWf] proof to [I] by matching on the boolean
+    [(0 <=? z) && (z <? bv_modulus n)] — which always reduces for
+    concrete [n] and [z] — while ignoring the original (possibly
+    opaque) proof entirely.  In the [true] branch the proof is
+    replaced by [I : True]; the [false] branch is unreachable for
+    well-formed bitvectors. *)
+Definition BvWf_compute (n : N) (z : Z) (pf : BvWf n z) : BvWf n z :=
+  match (0 <=? z)%Z && (z <? bv_modulus n)%Z as b
+    return Is_true b → Is_true b
+  with
+  | true => fun _ => I
+  | false => fun pf => pf
+  end pf.
+
+(** Normalize a bitvector so its [BvWf] proof is [I].
+    For concrete values, [bv_normalize b] computes to [@BV n v I]. *)
+Definition bv_normalize {n : N} (b : bv n) : bv n :=
+  @BV n (bv_unsigned b) (BvWf_compute n (bv_unsigned b) (bv_is_wf b)).
+
+#[export] Remove Hints bv_eq_dec : typeclass_instances.
+#[export] Remove Hints bv_countable : typeclass_instances.
+#[export] Remove Hints bv_finite : typeclass_instances.
+
+#[export] Instance bv_eq_dec_compute (n : N) : EqDecision (bv n) :=
+  fun a b =>
+    match a, b with
+    | @BV _ v1 p1, @BV _ v2 p2 =>
+      match Z.eq_dec v1 v2 with
+      | left H =>
+          left (match H in (_ = v) return ∀ p : BvWf n v, @BV n v1 p1 = @BV n v p with
+                | eq_refl => fun p2' => f_equal (@BV n v1) (BvWf_pi_compute n v1 p1 p2')
+                end p2)
+      | right H => right (fun Heq : @BV n v1 p1 = @BV n v2 p2 =>
+                            H (f_equal bv_unsigned Heq))
+      end
+    end.
+
+#[export] Instance bv_countable_compute n : Countable (bv n) :=
+  inj_countable bv_unsigned (Z_to_bv_checked n) (Z_to_bv_checked_bv_unsigned n).
+
+(** Reuse enum/proofs from stdpp's [bv_finite]; the [NoDup] and [elem_of]
+    proofs are [EqDecision]-independent so they transfer directly. *)
+#[export] Instance bv_finite_compute n : Finite (bv n) := {|
+  enum := @enum _ _ (@bv_finite n);
+  NoDup_enum := @NoDup_enum _ _ (@bv_finite n);
+  elem_of_enum := @elem_of_enum _ _ (@bv_finite n)
+|}.
 
 (** Pretty instances *)
 
