@@ -145,9 +145,12 @@ let parse_cond toml =
     | None -> None  (* Skip non-thread keys like "mem" *)
     | Some tid -> Some (tid, parse_reg_table regs))
 
-(** Parse all [[outcome]] blocks from the TOML file. *)
+(** Parse all [[outcome]] blocks from the TOML file.
+    Returns empty list if no outcomes are specified. *)
 let parse_outcomes toml =
-  Otoml.find toml get_list ["outcome"] |> List.filter_map (fun node ->
+  match Otoml.find_opt toml get_list ["outcome"] with
+  | None -> []
+  | Some outcomes -> outcomes |> List.filter_map (fun node ->
     match node with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
       (match List.assoc_opt "observable" pairs, List.assoc_opt "unobservable" pairs with

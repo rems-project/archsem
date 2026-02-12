@@ -107,12 +107,14 @@ let run_executions model init fuel term outcomes =
 (** {1 Result Formatting} *)
 
 let result_to_string = function
-  | Expected -> Ansi.green ^ "expected" ^ Ansi.reset
-  | Unexpected -> Ansi.yellow ^ "unexpected" ^ Ansi.reset
+  | Expected -> Ansi.green ^ "outcomes match test spec" ^ Ansi.reset
+  | Unexpected -> Ansi.yellow ^ "outcomes differ from test spec" ^ Ansi.reset
   | ModelError -> Ansi.red ^ "model error" ^ Ansi.reset
   | ParseError -> Ansi.red ^ "parse error" ^ Ansi.reset
 
-let run_litmus_test model filename =
+(** {1 Entry Point} *)
+
+let run_litmus_test ~model_name:_ model filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
     Printf.printf "  %s✗%s %s  %sfile not found%s\n" Ansi.red Ansi.reset name Ansi.red Ansi.reset;

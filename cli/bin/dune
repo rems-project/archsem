@@ -1,7 +1,7 @@
 (executable
  (name main)
- (libraries archsem archsem_test isla_converter otoml))
+ (libraries archsem archsem_test isla_converter otoml cmdliner))
 
 (executable
  (name convert_isla)
- (libraries isla_converter))
+ (libraries isla_converter cmdliner))
