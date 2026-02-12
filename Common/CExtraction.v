@@ -53,6 +53,9 @@ From Stdlib Require Import ExtrOcamlNativeString.
 From Stdlib Require Import ExtrOcamlZBigInt.
 From Stdlib Require Import ExtrOcamlNatBigInt.
 
+(* Bool.eqb extraction *)
+Extract Inlined Constant Bool.eqb => "(=)".
+
 (* Extract Constant BinNums.PosDef.Pos.add => "Big_int_Z.add_big_int". *)
 
 Extract Inlined Constant map => "Stdlib.List.map".

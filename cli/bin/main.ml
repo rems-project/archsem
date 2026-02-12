@@ -6,6 +6,7 @@
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
 
 open Archsem
+open Archsem_test
 
 let get_model = function
   | "seq" -> seq_model
@@ -21,7 +22,7 @@ let get_toml_files dir =
          String.length f > 5 &&
          String.sub f (String.length f - 5) 5 = ".toml")
     |> List.sort String.compare
-    |> List.map (Filename.concat dir)
+    |> List.map (fun f -> Filename.concat dir f)
   else []
 
 let () =
@@ -43,10 +44,10 @@ let () =
     exit 1
   );
 
-  let open Archsem_test.Litmus_runner in
+  let open Litmus_runner in
 
   Printf.printf "\n%s%s%s%s  %d test(s)\n\n"
-    c_bold c_cyan model_name c_reset (List.length files);
+    Ansi.bold Ansi.cyan model_name Ansi.reset (List.length files);
 
   let results = List.map (fun file ->
     let result = run_litmus_test model file in
@@ -62,44 +63,43 @@ let () =
   let total = List.length results in
   let all_pass = num_expected = total in
 
-  let c_dim = "\027[2m" in
   let repeat n s = String.concat "" (List.init n (fun _ -> s)) in
 
-  Printf.printf "\n%s──────────────────────────────────────────%s\n" c_dim c_reset;
+  Printf.printf "\n%s──────────────────────────────────────────%s\n" Ansi.dim Ansi.reset;
 
-  let status_color = if all_pass then c_green else c_red in
+  let status_color = if all_pass then Ansi.green else Ansi.red in
   Printf.printf "  %s%sSUMMARY%s  %s · %d tests\n"
-    c_bold status_color c_reset model_name total;
+    Ansi.bold status_color Ansi.reset model_name total;
 
   let bar_w = 34 in
   let filled = if total > 0 then num_expected * bar_w / total else 0 in
   let empty = bar_w - filled in
   let pct = if total > 0 then num_expected * 100 / total else 0 in
   Printf.printf "  %s%s%s%s%s %d%%%s\n"
-    status_color (repeat filled "█") c_dim (repeat empty "░") status_color pct c_reset;
+    status_color (repeat filled "█") Ansi.dim (repeat empty "░") status_color pct Ansi.reset;
 
-  Printf.printf "%s──────────────────────────────────────────%s\n" c_dim c_reset;
+  Printf.printf "%s──────────────────────────────────────────%s\n" Ansi.dim Ansi.reset;
 
   Printf.printf "  %s✓%s Expected     %s%d%s\n"
-    c_green c_reset c_green num_expected c_reset;
+    Ansi.green Ansi.reset Ansi.green num_expected Ansi.reset;
   if num_unexpected > 0 then
     Printf.printf "  %s✗%s Unexpected   %s%d%s\n"
-      c_yellow c_reset c_yellow num_unexpected c_reset;
+      Ansi.yellow Ansi.reset Ansi.yellow num_unexpected Ansi.reset;
   if num_model_error > 0 then
     Printf.printf "  %s✗%s Model Error  %s%d%s\n"
-      c_red c_reset c_red num_model_error c_reset;
+      Ansi.red Ansi.reset Ansi.red num_model_error Ansi.reset;
   if num_parse_error > 0 then
     Printf.printf "  %s✗%s Parse Error  %s%d%s\n"
-      c_red c_reset c_red num_parse_error c_reset;
+      Ansi.red Ansi.reset Ansi.red num_parse_error Ansi.reset;
 
   let failures = List.filter (fun (_, r) -> r <> Expected) results in
   if failures <> [] then begin
-    Printf.printf "%s──────────────────────────────────────────%s\n" c_dim c_reset;
-    Printf.printf "  %s%sFailed:%s\n" c_bold c_red c_reset;
+    Printf.printf "%s──────────────────────────────────────────%s\n" Ansi.dim Ansi.reset;
+    Printf.printf "  %s%sFailed:%s\n" Ansi.bold Ansi.red Ansi.reset;
     List.iter (fun (f, r) ->
       Printf.printf "    %s  %s\n" (Filename.basename f) (result_to_string r)
     ) failures
   end;
 
-  Printf.printf "%s──────────────────────────────────────────%s\n\n" c_dim c_reset;
+  Printf.printf "%s──────────────────────────────────────────%s\n\n" Ansi.dim Ansi.reset;
   if not all_pass then exit 1

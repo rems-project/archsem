@@ -1,0 +1,9 @@
+(library
+ (name isla_converter)
+ (modules ast parser lexer)
+ (libraries zarith))
+
+(menhir
+ (modules parser))
+
+(ocamllex lexer)
