@@ -28,6 +28,8 @@
   (coq-hammer-tactics (>= 1.3.2))
   (coq-stdpp (= 1.12.0))
   (coq-stdpp-bitvector (= 1.12.0))
+  (otoml (>= 1.0))
+  (cmdliner (>= 1.3))
  )
 )
 
