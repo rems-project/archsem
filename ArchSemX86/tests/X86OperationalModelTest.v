@@ -289,3 +289,86 @@ Module R_PO_MFENCE.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End R_PO_MFENCE.
+
+Module IRIW.
+  (* Independent Reads & Independent Writes litmus test
+    Thread 1 : MOV [ECX], 0x1
+    Thread 2 : MOV EAX, [ECX]; MOV EBX, [EDX]
+    Thread 3 : MOV [EDX], 0x1
+    Thread 4 : MOV EAX, [EDX]; MOV EBX, [ECX]
+
+    Expected result: (1:EAX=1 ∧ 1:EBX=0 ∧ 3:EAX=1 ∧ 3:EBX=0) should be impossible
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x500
+    |> reg_insert RCX 0x1100.
+
+  Definition init_reg_t2 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x600
+    |> reg_insert RAX 0x0
+    |> reg_insert RBX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+  Definition init_reg_t3 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x700
+    |> reg_insert RDX 0x1200.
+
+  Definition init_reg_t4 : registerMap :=
+    common_init_regs
+    |> reg_insert RIP 0x800
+    |> reg_insert RAX 0x0
+    |> reg_insert RBX 0x0
+    |> reg_insert RCX 0x1100
+    |> reg_insert RDX 0x1200.
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 6 0x0000000101c7  (* MOV [ECX], 0x1 = 0x00000001 @ 0b00_000_001 @ 0xC7 *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 2 0x018b  (* MOV EAX, [ECX] = 0b00_000_001 @ 0x8B *)
+    |> mem_insert 0x602 2 0x1a8b  (* MOV EBX, [EDX] = 0b00_011_010 @ 0x8B *)
+    (* Thread 3 @ 0x700 *)
+    |> mem_insert 0x700 6 0x0000000102c7  (* MOV [EDX], 0x1 = 0x00000001 @ 0b00_000_010 @ 0xC7 *)
+    (* Thread 4 @ 0x800 *)
+    |> mem_insert 0x800 2 0x028b  (* MOV EAX, [EDX] = 0b00_000_010 @ 0x8B *)
+    |> mem_insert 0x802 2 0x198b  (* MOV EBX, [ECX] = 0b00_011_001 @ 0x8B *)
+    (* Backing memory so the addresses exist *)
+    |> mem_insert 0x1100 8 0x0
+    |> mem_insert 0x1200 8 0x0.
+
+  Definition n_threads := 4%nat.
+
+  Definition terminate_at := [# Some (0x506 : bv 64); Some (0x604 : bv 64); Some (0x706 : bv 64); Some (0x804 : bv 64)].
+
+  (* Each thread’s PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup RIP rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2; init_reg_t3; init_reg_t4];
+      archState.address_space := () |}.
+
+  Definition fuel := 12%nat.
+
+  Definition test_results :=
+    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+
+  Check (regs_extract [(0%fin, RAX); (1%fin, RAX)] <$> test_results).
+
+  Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX); (3%fin, RAX); (3%fin, RBX)] <$> test_results) ≡ₚ
+    [Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x1%Z];
+      Ok [0x0%Z; 0x1%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x1%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x1%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x1%Z; 0x1%Z; 0x1%Z];
+      Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x0%Z; 0x1%Z; 0x1%Z];
+      Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x1%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End IRIW.
