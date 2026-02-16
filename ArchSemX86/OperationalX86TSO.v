@@ -362,13 +362,16 @@ Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t
     '(tid_temp : {x : fin nth | ((TermThreads nth state !!! x) = false)}) ← mchoosef;
     let tid := proj1_sig tid_temp in
 
-    (* Get transition type *)
-    '(flush_transition : bool) ← mchoosef;
-
     (* Get step conditions *)
     let regMap := Reg nth state !!! tid in
     let termCondMet := term tid regMap in
     let bufferEmpty := buffer_empty nth tid state in
+
+    (* Get transition type. Only consider transitions that are possible *)
+    '(flush_transition_temp : {x : bool | (bufferEmpty = true /\ termCondMet = false /\ x = false) \/ 
+                                (termCondMet = true /\ bufferEmpty = false /\ x = true) \/
+                                (bufferEmpty = false /\ termCondMet = false)}) ← mchoosef;
+    let flush_transition := proj1_sig flush_transition_temp in
 
     if termCondMet && bufferEmpty then
         (* Terminate thread if there is no more work to do *)
@@ -376,9 +379,6 @@ Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t
     else if flush_transition then
         (* Flush one item to memory *)
         flush_one_item_buffer nth tid
-    else if termCondMet then
-        (* If an execution step can't be made, then discard path *)
-        mdiscard
     else
         (* Run one outcome *)
         cinterp (run_outcome nth tid) isem.
