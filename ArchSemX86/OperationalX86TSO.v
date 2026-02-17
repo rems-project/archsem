@@ -390,7 +390,8 @@ Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ()) (term : terminationCond
             step isem term;;
             mstate ← mGet;
             astate ← mget to_archState;
-            match decide (archState.is_terminated term astate), all_buffers_empty mstate with
+            let non_generic_state_empty := all_buffers_empty mstate && bool_decide (Lock nth mstate = None) in
+            match decide (archState.is_terminated term astate), non_generic_state_empty  with
             | left p, true => mret (existT astate p)
             | _, _ => run_to_term fuel isem term
             end
