@@ -38,7 +38,6 @@ jobs:
       run: |
         sudo install opam-2.5 /usr/local/bin/opam
 
-
     - name: Restore OPAM cache
       id: cache-opam-restore
       uses: actions/cache/restore@v4
@@ -46,23 +45,34 @@ jobs:
         path: ~/.opam
         key: locked-${{ hashFiles('*.opam.locked') }}
 
+    - name: Initialize OPAM
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      run: |
+        opam init --yes --no-setup --bare --disable-sandboxing --shell=sh
+
+    - name: Add Rocq OPAM repo
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      run: |
+        opam repo add --yes --set-default rocq-released https://rocq-prover.org/opam/released
+
+    - name: Create OPAM switch
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      run: |
+        opam switch create --empty archsem-switch
+
     - name: Install OPAM dependencies
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       run: |
-        echo "Initializing opam"
-        opam init --yes --no-setup --bare --disable-sandboxing --shell=sh
-        echo "Adding rocq-released"
-        opam repo add --yes --set-default rocq-released https://rocq-prover.org/opam/released
-        echo "Creating an empty switch"
-        opam switch create --empty archsem-switch
-        eval $(opam env --switch=archsem-switch)
-        echo "Updating opam"
-        opam update
-        echo "Installing dependencies"
         opam install . --deps-only --locked --confirm-level=unsafe-yes
-        echo "Cleaning up for cache size"
+
+    - name: Clean OPAM folder for caching
+      if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      run: |
         opam clean
         opam clean -r
+        opam clean -c
+        rm -rf ~/.opam/archsem-switch/.opam-switch/sources
+        rm -rf ~/.opam/repo/
 
     - name: Save OPAM cache
       uses: actions/cache/save@v4
@@ -73,12 +83,8 @@ jobs:
 
     - name: Build
       run: |
-        opam switch archsem-switch
-        eval $(opam env)
-        dune build
+        opam exec -- dune build
 
     - name: Run tests
       run: |
-        opam switch archsem-switch
-        eval $(opam env)
-        dune runtest
+        opam exec -- dune runtest
