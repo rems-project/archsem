@@ -106,8 +106,18 @@ module ArchModel : sig
   end
 
   type 'a t = (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
+
 end
 
 val seq_model : empty ArchModel.t
 
 val umProm_model : empty ArchModel.t
+
+module BBM : sig
+  type param =
+    | Off
+    | Lax
+    | Strict
+end
+
+val vmProm_model : ?mem_param:BBM.param -> empty ArchModel.t

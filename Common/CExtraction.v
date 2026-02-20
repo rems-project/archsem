@@ -41,7 +41,7 @@ From Stdlib Require Import ZArith.
 From Stdlib Require Import Extraction.
 
 Require Import Options.
-Require Import Common.
+Require Import Common HVec.
 
 
 
@@ -61,10 +61,14 @@ Extraction Blacklist List.
 
 Extract Inlined Constant Decision => "bool".
 Extract Inlined Constant Bool.eqb => "(=)".
+Extraction Inline decide.
+Extraction Inline decide_rel.
+
+(** * Finite numbers *)
 
 Extract Inductive fin => "ZO.t"
   [ "ZO.zero" "ZO.succ" ]
-  "(fun _fO _fS _n -> garbage___garbage)".
+  "Support.fin_case".
 
 Extraction Implicit Fin.F1 [n].
 Extraction Implicit Fin.FS [n].
@@ -82,11 +86,16 @@ Extract Inlined Constant fin0_magic => "Support.fin0_magic".
 Extracted as lists for now *)
 
 Extract Inductive vec => list [ "[]" "( :: )" ].
+Extraction Implicit vnil [A].
 Extraction Implicit vcons [A n].
 Extraction Implicit vmap [A B n].
 Extract Inlined Constant vmap => "List.map".
 Extract Inlined Constant list_to_vec  => "(fun x -> x)".
 
+Extraction Implicit Vector.last [A n].
+Extract Inlined Constant Vector.last => "Support.list_last".
+Extraction Implicit Vector.append [A n p].
+Extract Inlined Constant Vector.append => "List.append".
 
 Extraction Implicit vector_lookup_total [A m].
 Extract Inlined Constant vector_lookup_total => "Support.list_get".
@@ -99,6 +108,17 @@ Extract Inlined Constant vec_to_list => "(fun x -> x)".
 
 Extraction Implicit cprodn [A n].
 Extraction Implicit vmapM [A B n].
+
+Extraction Implicit vec_dec [A n].
+Extract Inlined Constant vec_dec => "List.equal".
+
+(* In theory by marking the correct arguments implicit, this could also just be
+   List.equal, but I (TP) couldn't make it work *)
+Extract Inlined Constant vec_eqdep_dec => "Support.vec_eqdep_dec".
+
+(** * HVec *)
+Extraction Implicit hget [n].
+Extraction Implicit hset [n].
 
 (** * Result *)
 
