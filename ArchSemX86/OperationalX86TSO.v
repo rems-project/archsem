@@ -61,7 +61,7 @@ Record addr_val : Type := {
 Record machine_state (threads: nat) := {
     Reg : vec registerMap threads; (* Registers for each thread *)
     Mem : memoryMap;
-    Buffer : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, least recent first *)
+    Buffer : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, oldest first *)
     Lock : option (fin threads); (* Global machine lock, indicating when some thread has exclusive access to memory *)
     MemWritten : gset address; (* Set of memory addresses that have been written to *)
     TermThreads : vec bool threads;
@@ -101,23 +101,35 @@ Section Model.
     Definition all_buffers_empty (state: mstate_threads): bool :=
         bool_decide (∀ t : fin threads, buffer_empty t state).
 
-    Fixpoint read_from_write_buffer_inner (buffer : list addr_val) (u_addr: Z)
-        (sz : N) (acc : option (bv (8 * sz))) : option (bv (8 * sz)) :=
-            (* A load that forwards from a store must have the same address start point 
-            and therefore the same alignment as the store data *)
-            match buffer with
+    Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val) (goal_addr: address) (goal_size : N)
+        : option (bv (8 * goal_size)) :=
+            (* Allow a direct match to be store-forwarded 
+            if it is the most recent write to all relevant addresses.
+            Underapproximation of store buffering.
+            Reverse buffer so that we see most recent writes first *)
+            match rev_buffer with
             | x :: xs =>
-                if bool_decide ((bv_unsigned (addr x) = u_addr) ∧ (Z.of_N (size x) >= Z.of_N sz)) then (
-                    let new_val := bv_extract 0 (8 * sz) (val x) in
-                        read_from_write_buffer_inner xs u_addr sz (Some new_val)
-                )
-                else read_from_write_buffer_inner xs u_addr sz acc
-            | _ => acc
+                let goal_range : gset address := list_to_set (addr_range goal_addr goal_size) in
+                let x_range : gset address := list_to_set (addr_range (addr x) (size x)) in
+                (* If we have a direct match, then perform store forwarding *)
+                if bool_decide (goal_range = x_range) then
+                    let unsigned_val := bv_unsigned (val x) in
+                    let return_val := Z_to_bv (8 * goal_size) unsigned_val in
+                    Some return_val
+                (* If we don't have a direct match,
+                but some of the desired addresses have been written to,
+                then prohibit store forwarding *)
+                else if bool_decide (goal_range ∩ x_range ≠ ∅) then
+                    None
+                else read_from_write_buffer_inner xs goal_addr goal_size
+            | _ => None
             end. 
 
     Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N) (state : mstate_threads)
         : option (bv (8 * size)) :=
-            read_from_write_buffer_inner (Buffer threads state !!! tid) (bv_unsigned addr) size None.
+            (* Reverse buffer so that we see most recent writes first *)
+            let rev_buffer := rev (Buffer threads state !!! tid) in
+            read_from_write_buffer_inner rev_buffer addr size.
 
     Fixpoint add_to_mem_written (addr : address) (size : nat)
         : Exec.t mstate_threads string unit :=
@@ -163,17 +175,15 @@ Section Model.
 
     Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address) (size : N)
         : Exec.t mstate_threads string (bv (8 * size)) :=
-            (* Attempt store forwarding if read is not an instruction fetch *)
+            (* Attempt store forwarding *)
             opt ← mget (read_from_write_buffer tid addr size);
-            match opt with
-            | Some read => 
+            if opt is Some read then
                 mret read
-            | None =>
+            else
                 (* Attempt memory read and return read value *)
                 opt ← mget (fun state => mem_lookup addr size (Mem threads state));
                 read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
-                mret read
-            end.
+                mret read.
 
     Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads)
     : Exec.t mstate_threads string unit :=
@@ -189,7 +199,7 @@ Section Model.
         (* Write all buffer contents to memory *)
         write_buffer_to_mem buffer tid;;
         (* Empty buffer *)
-        mset (lookup_total tid ∘ Buffer threads) (fun curr_list => []).
+        mset (lookup_total tid ∘ Buffer threads) (fun curr_buffer => []).
 
 
 
@@ -211,7 +221,7 @@ Section Model.
     Definition acquire_lock_conditional (tid : fin threads) : Exec.t mstate_threads string unit :=
         (* Ensure thread can acquire lock: a thread (including thread tid) might already have the lock*)
         lock ← mget (Lock threads);
-        if bool_decide (is_Some lock) then mdiscard else mret ();;
+        guard_discard (lock = None);;
         (* Ensure thread can acquire lock: store buffer might not be empty.
         Hence eagerly empty buffer. Can do this as no other thread has lock *)
         empty_write_buffer tid;;
@@ -305,11 +315,7 @@ Section Model.
             (* Write first entry to memory *)
             write_mem (addr h) (size h) (val h);;
             (* Remove first entry from buffer *)
-            mset (lookup_total tid ∘ Buffer threads) (fun curr_list => 
-                match curr_list with
-                | [] => []
-                | h :: t => t
-                end)
+            mset (lookup_total tid ∘ Buffer threads) (fun curr_buffer => t)
         end.
 End Model.
 
