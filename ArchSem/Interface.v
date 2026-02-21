@@ -201,7 +201,7 @@ Module Interface (A : Arch).
 
   (** ** Memory access type utilities *)
 
-  Definition is_rel_acq macc := is_rel_acq_rcsc macc && is_rel_acq_rcpc macc.
+  Definition is_rel_acq macc := is_rel_acq_rcsc macc || is_rel_acq_rcpc macc.
 
   (** ** Memory utility *)
   Definition address := bv addr_size.
