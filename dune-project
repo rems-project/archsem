@@ -35,8 +35,8 @@
  (name coq-archsem)
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part")
  (depends
-   coq-archsem-common ; need same commit
-  (coq-sail-stdpp (= 0.20)) ; See coq-archsem.opam.template for the commit number
+   coq-archsem-common
+  (coq-sail-stdpp (= 0.20)) ; See coq-archsem.opam.locked for the commit number
  )
 )
 
@@ -45,7 +45,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
  (depends
    coq-archsem
-   (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.template for the commit number
+   (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.locked for the commit number
  )
 )
 
@@ -54,7 +54,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
  (depends
    coq-archsem
-   (coq-sail-riscv :dev) ; See coq-archsem-riscv.opam.template for the commit number
+   (coq-sail-riscv :dev) ; See coq-archsem-riscv.opam.locked for the commit number
  )
 )
 
@@ -63,7 +63,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, x86 instantiation")
  (depends
    coq-archsem
-   (coq-sail-tiny-x86 :dev) ; See coq-archsem-x86.opam.template for the commit number
+   (coq-sail-tiny-x86 :dev) ; See coq-archsem-x86.opam.locked for the commit number
  )
 )
 
