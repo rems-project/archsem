@@ -59,12 +59,12 @@ Record addr_val : Type := {
 
 (* archState + extra fields (buffer and lock)*)
 Record machine_state (threads: nat) := {
-    Reg : vec registerMap threads; (* Registers for each thread *)
-    Mem : memoryMap;
-    Buffer : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, oldest first *)
-    Lock : option (fin threads); (* Global machine lock, indicating when some thread has exclusive access to memory *)
-    MemWritten : gset address; (* Set of memory addresses that have been written to *)
-    TermThreads : vec bool threads;
+    regs : vec registerMap threads; (* Registers for each thread *)
+    mem : memoryMap;
+    buf : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, oldest first *)
+    lock : option (fin threads); (* Global machine lock, indicating when some thread has exclusive access to memory *)
+    memWritten : gset address; (* Set of memory addresses that have been written to *)
+    termThreads : vec bool threads;
     }.
 
 Section Model.
@@ -77,23 +77,23 @@ Section Model.
     (* REG FUNCTIONS *)
 
     Definition read_reg (tid : fin threads) (reg : reg) (state : mstate_threads) : option (reg_type reg) :=
-        let regMap := (Reg threads state !!! tid) in
+        let regMap := (regs threads state !!! tid) in
             dmap_lookup reg regMap.
 
     Definition write_reg (tid : fin threads) (reg : reg) (val : reg_type reg) (state : mstate_threads)
         : mstate_threads :=
-            set (lookup_total tid ∘ Reg threads) (dmap_insert reg val) state.
+            set (lookup_total tid ∘ regs threads) (dmap_insert reg val) state.
 
 
 
     (* BUFFER FUNCTIONS *)
 
     Definition no_pending (x : address) (tid : fin threads) (state : mstate_threads) : bool :=
-        let buffer := Buffer threads state !!! tid in
+        let buffer := buf threads state !!! tid in
             bool_decide (∀ av ∈ buffer, addr av ≠ x).
 
     Definition buffer_empty (tid : fin threads) (m : mstate_threads) : bool :=
-        match Buffer threads m !!! tid with
+        match buf threads m !!! tid with
         | x :: xs => false
         | [] => true
         end.
@@ -128,7 +128,7 @@ Section Model.
     Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N) (state : mstate_threads)
         : option (bv (8 * size)) :=
             (* Reverse buffer so that we see most recent writes first *)
-            let rev_buffer := rev (Buffer threads state !!! tid) in
+            let rev_buffer := rev (buf threads state !!! tid) in
             read_from_write_buffer_inner rev_buffer addr size.
 
     Fixpoint add_to_mem_written (addr : address) (size : nat)
@@ -136,7 +136,7 @@ Section Model.
         match size with
         | S size =>
             (* Add addr to the set of addresses that have been written to in memory*)
-            mset (MemWritten threads) (.∪{[addr]});;
+            mset (memWritten threads) (.∪{[addr]});;
             (* Move on to the next byte (if it exists)*)
             add_to_mem_written (addr `+Z` 1)%bv size
         | _ => mret ()
@@ -144,7 +144,7 @@ Section Model.
 
     Definition add_to_write_buffer (tid : fin threads) (addr : address) (size : N) (val : bv (8 * size))
     (state : mstate_threads) : mstate_threads :=
-        set (lookup_total tid ∘ Buffer threads)
+        set (lookup_total tid ∘ buf threads)
             (fun curr_list:
                 list addr_val => (curr_list ++ [{|
                     addr := addr;
@@ -159,15 +159,15 @@ Section Model.
 
     Definition mem_addr_modified (addr : address) (size : N) (state : mstate_threads) : bool :=
         (* Returns true if address modified in memory or written to in a store buffer *)
-        bool_decide (∃ a ∈ addr_range addr size, a ∈ MemWritten threads state).
+        bool_decide (∃ a ∈ addr_range addr size, a ∈ memWritten threads state).
 
     Definition write_mem (addr : address) (size : N) (val : bv (8 * size))
         : Exec.t mstate_threads string unit :=
             (* Check if memory address is mapped*)
-            opt ← mget (fun state => mem_lookup addr size (Mem threads state));
+            opt ← mget (fun state => mem_lookup addr size (mem threads state));
             guard_or "Memory isn't mapped to write" (is_Some opt);;
             (* Write to memory *)
-            mset (Mem threads) (mem_insert addr size val).
+            mset (mem threads) (mem_insert addr size val).
 
 
 
@@ -181,7 +181,7 @@ Section Model.
                 mret read
             else
                 (* Attempt memory read and return read value *)
-                opt ← mget (fun state => mem_lookup addr size (Mem threads state));
+                opt ← mget (fun state => mem_lookup addr size (mem threads state));
                 read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
                 mret read.
 
@@ -195,33 +195,33 @@ Section Model.
         end.
 
     Definition empty_write_buffer (tid : fin threads) : Exec.t mstate_threads string unit :=
-        buffer ← mget (fun state => (Buffer threads state) !!! tid);
+        buffer ← mget (fun state => (buf threads state) !!! tid);
         (* Write all buffer contents to memory *)
         write_buffer_to_mem buffer tid;;
         (* Empty buffer *)
-        mset (lookup_total tid ∘ Buffer threads) (fun curr_buffer => []).
+        mset (lookup_total tid ∘ buf threads) (fun curr_buffer => []).
 
 
 
     (* LOCK FUNCTIONS*)
 
     Definition blocked (tid : fin threads) (m : mstate_threads) : bool :=
-        let lock := Lock threads m in
-            if lock is Some tid' then bool_decide (tid ≠ tid')
+        let lock_status := lock threads m in
+            if lock_status is Some tid' then bool_decide (tid ≠ tid')
             else false.
 
     Definition thread_has_lock (tid : fin threads) (m : mstate_threads) : bool :=
-        let lock := Lock threads m in
-            if lock is Some tid' then bool_decide (tid = tid')
+        let lock_status := lock threads m in
+            if lock_status is Some tid' then bool_decide (tid = tid')
             else false.
 
     Definition acquire_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
-        set (Lock threads) (fun curr_lock => Some tid) state.
+        set (lock threads) (fun curr_lock => Some tid) state.
 
     Definition acquire_lock_conditional (tid : fin threads) : Exec.t mstate_threads string unit :=
         (* Ensure thread can acquire lock: a thread (including thread tid) might already have the lock*)
-        lock ← mget (Lock threads);
-        guard_discard (lock = None);;
+        lock_status ← mget (lock threads);
+        guard_discard (lock_status = None);;
         (* Ensure thread can acquire lock: store buffer might not be empty.
         Hence eagerly empty buffer. Can do this as no other thread has lock *)
         empty_write_buffer tid;;
@@ -229,7 +229,7 @@ Section Model.
         mSet (acquire_lock tid).
 
     Definition release_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
-        set (Lock threads) (fun curr_lock => None) state.
+        set (lock threads) (fun curr_lock => None) state.
 
     Definition release_lock_conditional (tid : fin threads) : Exec.t mstate_threads string unit :=
         (* Make sure we have the lock before releasing it *)
@@ -264,7 +264,7 @@ Section Model.
                     modified ← mget (mem_addr_modified addr size);
                     guard_or "IFetch reading from modified memory" (negb(is_ifetch macc && modified));;
                     (* Read from memory *)
-                    opt ← mget (fun state => mem_lookup addr size (Mem threads state));
+                    opt ← mget (fun state => mem_lookup addr size (mem threads state));
                     read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
                     mret (Ok (read, bv_0 _))
                 else if is_explicit macc then
@@ -288,7 +288,7 @@ Section Model.
                 (* Add write to write buffer *)
                 mSet (add_to_write_buffer tid addr size val);;
                 (* Handle atomic case (release lock) *)
-                (if is_explicit macc && is_atomic_rmw macc then
+                (if is_atomic_rmw macc then
                     release_lock_conditional tid
                 else 
                     mret ());;
@@ -308,32 +308,32 @@ Section Model.
     End RunOutcome.
 
     Definition flush_one_item_buffer (tid : fin threads) : Exec.t mstate_threads string unit :=
-        buffer ← mget (fun state : mstate_threads => (Buffer threads state) !!! tid);
+        buffer ← mget (fun state : mstate_threads => (buf threads state) !!! tid);
         match buffer with
         | [] => mdiscard
         | h :: t =>
             (* Write first entry to memory *)
             write_mem (addr h) (size h) (val h);;
             (* Remove first entry from buffer *)
-            mset (lookup_total tid ∘ Buffer threads) (fun curr_buffer => t)
+            mset (lookup_total tid ∘ buf threads) (fun curr_buffer => t)
         end.
 End Model.
 
 Definition from_archState {nth} (astate : archState nth) : machine_state nth :=
     {|
-        Reg := astate.(archState.regs);
-        Mem := astate.(archState.memory);
-        Buffer := Vector.const [] nth;
-        Lock := None;
-        MemWritten := ∅;
-        TermThreads := Vector.const false nth
+        regs := astate.(archState.regs);
+        mem := astate.(archState.memory);
+        buf := Vector.const [] nth;
+        lock := None;
+        memWritten := ∅;
+        termThreads := Vector.const false nth
     |}.
 
 Definition to_archState {nth} (mstate : machine_state nth) : option (archState nth) :=
-    if all_buffers_empty nth mstate && bool_decide (Lock nth mstate = None) then
+    if all_buffers_empty nth mstate && bool_decide (lock nth mstate = None) then
         Some {|
-            archState.regs := Reg nth mstate;
-            archState.memory := Mem nth mstate;
+            archState.regs := regs nth mstate;
+            archState.memory := mem nth mstate;
             archState.address_space := ()
         |}
     else None.
@@ -343,10 +343,10 @@ Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t
 
     (* Get tid *)
     state ← mGet;
-    '(exist _ tid _ : {x : fin nth | ((TermThreads nth state !!! x) = false)}) ← mchoosef;
+    '(exist _ tid _ : {x : fin nth | ((termThreads nth state !!! x) = false)}) ← mchoosef;
 
     (* Get step conditions *)
-    let regMap := Reg nth state !!! tid in
+    let regMap := regs nth state !!! tid in
     let termCondMet := term tid regMap in
     let bufferEmpty := buffer_empty nth tid state in
 
@@ -357,7 +357,7 @@ Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t
 
     if termCondMet && bufferEmpty then
         (* Terminate thread if there is no more work to do *)
-        mset (lookup_total tid ∘ TermThreads nth) (fun x => true)
+        mset (lookup_total tid ∘ termThreads nth) (fun x => true)
     else if flush_transition then
         (* Flush one item to memory *)
         flush_one_item_buffer nth tid
