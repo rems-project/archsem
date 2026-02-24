@@ -19,32 +19,23 @@ let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
     Sys.readdir dir
     |> Array.to_list
-    |> List.filter (fun f ->
-         String.length f > 5 &&
-         String.sub f (String.length f - 5) 5 = ".toml")
+    |> List.filter (fun f -> Filename.check_suffix f ".toml")
     |> List.sort String.compare
     |> List.map (Filename.concat dir)
   else []
 
-let () =
-  if Array.length Sys.argv < 3 then (
-    Printf.eprintf "Usage: %s <model: seq|ump|vmp> <path ...>\n" Sys.argv.(0);
-    exit 1
-  );
-  let model_name = Sys.argv.(1) in
-  let model = get_model model_name in
-  let paths = Array.to_list (Array.sub Sys.argv 2 (Array.length Sys.argv - 2)) in
-
+let get_all_tests paths =
   let files = List.concat_map (fun path ->
     if Sys.is_directory path then get_toml_files path
     else [path]
   ) paths in
-
   if files = [] then (
-    Printf.eprintf "No test files found for model %s in %s\n" model_name (String.concat ", " paths);
+    Printf.eprintf "No test files found in %s\n" (String.concat ", " paths);
     exit 1
   );
+  files
 
+let run_tests model_name model files =
   Terminal.print_header model_name (List.length files);
 
   let results = List.map (fun file ->
@@ -69,3 +60,15 @@ let () =
     ~no_behaviour:num_no_behaviour ~failures;
 
   if num_expected <> total then exit 1
+
+let () =
+  if Array.length Sys.argv < 3 then (
+    Printf.eprintf "Usage: %s <model: seq|ump|vmp> <path ...>\n" Sys.argv.(0);
+    exit 1
+  );
+  let model_name = Sys.argv.(1) in
+  let model = get_model model_name in
+  let paths = Array.to_list (Array.sub Sys.argv 2 (Array.length Sys.argv - 2)) in
+
+  let files = get_all_tests paths in
+  run_tests model_name model files
