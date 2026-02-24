@@ -1,6 +1,6 @@
 (library
  (name isla_converter)
- (modules ast parser lexer)
+ (modules ast parser lexer symbols allocator)
  (libraries zarith))
 
 (menhir
