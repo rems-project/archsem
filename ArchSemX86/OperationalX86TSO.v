@@ -102,7 +102,7 @@ Section Model.
         bool_decide (∀ t : fin threads, buffer_empty t state).
 
     Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val) (goal_addr: address) (goal_size : N)
-        : option (bv (8 * goal_size)) :=
+        : Exec.t mstate_threads string (option (bv (8 * goal_size))) :=
             (* Allow a direct match to be store-forwarded 
             if it is the most recent write to all relevant addresses.
             Underapproximation of store buffering.
@@ -115,18 +115,17 @@ Section Model.
                 if bool_decide (goal_range = x_range) then
                     let unsigned_val := bv_unsigned (val x) in
                     let return_val := Z_to_bv (8 * goal_size) unsigned_val in
-                    Some return_val
-                (* If we don't have a direct match,
-                but some of the desired addresses have been written to,
-                then prohibit store forwarding *)
+                    mret (Some return_val)
+                (* This model prohibits programs where mixed-size store forwarding could occur *)
                 else if bool_decide (goal_range ∩ x_range ≠ ∅) then
-                    None
+                    mthrow "Model prohibits programs where mixed-size store forwarding can occur"
                 else read_from_write_buffer_inner xs goal_addr goal_size
-            | _ => None
+            | _ => mret None
             end. 
 
-    Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N) (state : mstate_threads)
-        : option (bv (8 * size)) :=
+    Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N)
+        : Exec.t mstate_threads string (option (bv (8 * size))) :=
+            state ← mGet;
             (* Reverse buffer so that we see most recent writes first *)
             let rev_buffer := rev (buf threads state !!! tid) in
             read_from_write_buffer_inner rev_buffer addr size.
@@ -176,7 +175,7 @@ Section Model.
     Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address) (size : N)
         : Exec.t mstate_threads string (bv (8 * size)) :=
             (* Attempt store forwarding *)
-            opt ← mget (read_from_write_buffer tid addr size);
+            opt ← read_from_write_buffer tid addr size;
             if opt is Some read then
                 mret read
             else
