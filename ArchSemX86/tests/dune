@@ -1,6 +1,6 @@
 (coq.theory
  (name ArchSemX86.tests)
- (modules X86SeqModelTest)
+ (modules X86SeqModelTest X86OperationalModelTest)
  (theories ArchSemX86)
 )
 ; Do not build this folder by default but do it when running @runtest

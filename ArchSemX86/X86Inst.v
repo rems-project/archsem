@@ -83,7 +83,7 @@ Module NoCHERI.
   Definition no_cheri : ¬ X86.Arch.CHERI := ltac:(naive_solver).
 End NoCHERI.
 
-(** We can then instantiate the rest of the generic parts of ArchSem on RISC-V *)
+(** We can then instantiate the rest of the generic parts of ArchSem on x86 *)
 Module X86TM := TermModels X86.
 Module X86Cand := CandidateExecutions X86 X86TM NoCHERI.
 Module X86GenPro := GenPromising X86 X86TM.
