@@ -120,4 +120,4 @@ module BBM : sig
     | Strict
 end
 
-val vmProm_model : ?mem_param:BBM.param -> empty ArchModel.t
+val vmProm_model : ?bbm_param:BBM.param -> empty ArchModel.t

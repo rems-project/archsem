@@ -9,11 +9,7 @@ open Archsem
 open Archsem_test
 open Litmus_runner
 
-let get_model = function
-  | "seq" -> seq_model
-  | "ump" -> umProm_model
-  | "vmp" -> fun fuel term initState -> vmProm_model fuel term initState
-  | s -> failwith ("Unknown model: " ^ s ^ ". Use: seq, ump, vmp")
+(** {1 Running litmus tests} *)
 
 let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
@@ -61,14 +57,84 @@ let run_tests model_name model files =
 
   if num_expected <> total then exit 1
 
-let () =
-  if Array.length Sys.argv < 3 then (
-    Printf.eprintf "Usage: %s <model: seq|ump|vmp> <path ...>\n" Sys.argv.(0);
-    exit 1
-  );
-  let model_name = Sys.argv.(1) in
-  let model = get_model model_name in
-  let paths = Array.to_list (Array.sub Sys.argv 2 (Array.length Sys.argv - 2)) in
+(** {1 CLI } *)
 
-  let files = get_all_tests paths in
-  run_tests model_name model files
+open Cmdliner
+open Cmdliner.Term.Syntax
+
+(** Common positional argument for list of tests*)
+let test_path_term =
+  let doc = "The tests to run. Can be either single files or directories \
+             containing test files" in
+  Arg.(non_empty & pos_all file [] & info [] ~doc ~docv:"TESTS")
+
+(** The sequential model command *)
+let cmd_seq =
+  let run =
+    let+ paths = test_path_term in
+    let files = get_all_tests paths in
+    run_tests "seq" seq_model files
+  in
+  let info =
+    let doc = "Run sequential model" in
+    Cmd.(info "seq" ~doc)
+  in
+  Cmd.v info run
+
+(** The user-mode promising command *)
+let cmd_ump =
+  let run =
+    let+ paths = test_path_term in
+    let files = get_all_tests paths in
+    run_tests "ump" umProm_model files
+  in
+  let info =
+    let doc = "Run user-mode promising model" in
+    Cmd.(info "ump" ~doc)
+  in
+  Cmd.v info run
+
+(** The virtual-memory promising command *)
+let cmd_vmp =
+  let bbm_mode =
+    let off_info =
+      let doc = "Turn BBM checking off" in
+      Arg.(info ["bbm-off"] ~doc)
+    in
+    let lax_info =
+      let doc = "Make BBM checking lax: if a page table entries is missing, it \
+                 just ignores it" in
+      Arg.(info ["bbm-lax"] ~doc)
+    in
+    let strict_info =
+      let doc = "Make BBM checking strict: if a page table entries is missing, \
+                 the model catches fire" in
+      Arg.(info ["bbm-strict"] ~doc)
+    in
+    Arg.(value &
+         vflag BBM.Off (* ← default is Off for now *)
+           [(BBM.Off, off_info); (BBM.Lax, lax_info); (BBM.Strict, strict_info)])
+  in
+  let run =
+    let+ paths = test_path_term
+    and+ bbm_param = bbm_mode in
+    let files = get_all_tests paths in
+    run_tests "vmp" (vmProm_model ~bbm_param) files
+  in
+  let info =
+    let doc =
+      "Run virtual-memory promising model. Only one --bbm-* option can be active \
+       at the same time, the default is --bbm-off" in
+    Cmd.(info "vmp" ~doc)
+  in
+  Cmd.v info run
+
+(** The main archsem command *)
+let cmd =
+  let info =
+    let doc = "ArchSem model runner" in
+    Cmd.(info "archsem" ~doc)
+  in
+  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp]
+
+let () = exit (Cmd.eval cmd)
