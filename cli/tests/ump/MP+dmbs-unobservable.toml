@@ -64,5 +64,5 @@ _PC = 0x60C
 # This outcome is FORBIDDEN by the DMB barriers:
 # If Thread 1 sees flag=1, then it must see data=0x2a (not 0)
 # The DMB SY barriers enforce ordering between the writes and reads
-[[outcome]]
-unobservable.1 = { R5 = 0x1, R2 = 0x0 }
+[[final]]
+negation.1 = { R5 = 0x1, R2 = 0x0 }

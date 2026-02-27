@@ -105,14 +105,14 @@ _PC = 0x8000000508
 _PC = 0x8000000608
 
 # All 4 outcomes allowed for MP without barriers
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
+[[final]]
+assertion.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
 
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
+[[final]]
+assertion.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
 
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
+[[final]]
+assertion.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x0 } }
 
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
+[[final]]
+assertion.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }

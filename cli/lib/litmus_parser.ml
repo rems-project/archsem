@@ -4,7 +4,7 @@
     - [[registers]]: Initial register state per thread
     - [[memory]]: Initial memory contents
     - [[termCond]]: Termination conditions per thread (typically PC values)
-    - [[outcome]]: Expected observable/unobservable outcomes *)
+    - [[final]]: Expected assertion/negation final conditions *)
 
 open Archsem
 
@@ -19,12 +19,12 @@ type requirement =
 (** A condition maps thread IDs to lists of register requirements. *)
 type cond = (int * (Reg.t * requirement) list) list
 
-(** An outcome specifies whether a condition is observable or unobservable.
-    - Observable: Interesting relaxed behavior the test wants to capture
-    - Unobservable: Relaxed behavior the test does not expect to occur *)
+(** A final condition specifies whether a state is asserted or negated.
+    - Assertion: Expected reachable final state
+    - Negation: Final state expected to be unreachable *)
 type outcome =
-  | Observable of cond
-  | Unobservable of cond
+  | Assertion of cond
+  | Negation of cond
 
 
 (** {1 TOML Helpers} *)
@@ -161,14 +161,17 @@ let parse_cond toml =
     | None -> None  (* Skip non-thread keys like "mem" *)
     | Some tid -> Some (tid, parse_reg_req_table regs))
 
-(** Parse all [[outcome]] blocks from the TOML file. *)
+(** Parse all [[final]] blocks from the TOML file.
+    Returns empty list if no final conditions are specified. *)
 let parse_outcomes toml =
-  Otoml.find toml get_list ["outcome"] |> List.filter_map (fun node ->
+  match Otoml.find_opt toml get_list ["final"] with
+  | None -> []
+  | Some outcomes -> outcomes |> List.filter_map (fun node ->
     match node with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
-      (match List.assoc_opt "observable" pairs, List.assoc_opt "unobservable" pairs with
-       | Some v, None -> Some (Observable (parse_cond v))
-       | None, Some v -> Some (Unobservable (parse_cond v))
-       | Some _, Some _ -> failwith "Cannot have both observable and unobservable"
-       | None, None -> failwith "Outcome must have observable or unobservable")
+      (match List.assoc_opt "assertion" pairs, List.assoc_opt "negation" pairs with
+       | Some v, None -> Some (Assertion (parse_cond v))
+       | None, Some v -> Some (Negation (parse_cond v))
+       | Some _, Some _ -> failwith "Cannot have both assertion and negation"
+       | None, None -> failwith "Final block must have assertion or negation")
     | _ -> None)

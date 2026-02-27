@@ -105,8 +105,8 @@ _PC = 0x800000050c
 
 # R0 should be 0x2a (from old mapping)
 # R4 could be 0x2a (cached) or 0x42 (new mapping) (without BBM checker)
-[[outcome]]
-observable.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x2a } }
+[[final]]
+assertion.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x2a } }
 
-[[outcome]]
-observable.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x42 } }
+[[final]]
+assertion.0 = { R0 = { op = "eq", val = 0x2a }, R4 = { op = "eq", val = 0x42 } }

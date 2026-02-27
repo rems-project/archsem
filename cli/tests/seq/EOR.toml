@@ -17,5 +17,5 @@ data = 0xca020020
 [[termCond]]
 _PC = 0x504
 
-[[outcome]]
-observable.0.R0 = 0x110
+[[final]]
+assertion.0.R0 = 0x110
