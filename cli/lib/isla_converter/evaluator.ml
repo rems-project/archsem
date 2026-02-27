@@ -12,18 +12,8 @@
 
 open Ast
 
-(** Page table constants *)
-let leaf_page_desc = Z.of_string "0x60000000000743"
-let table_entry_bits = Z.of_int 3
-let pte_index_mask = Z.of_int 0x1FF
-let pte_index_bits = 9
-let pte_size = 8
+(** Page offset shift (bits [11:0] = 12 bits) *)
 let page_shift = 12
-let level0_shift = 39
-let page_mask = Z.of_string "0xFFFFFFFFFFFFF000"
-
-(** Calculate VA shift for a given page table level *)
-let shift_for_level level = level0_shift - (pte_index_bits * level)
 
 (** Get table base for PTE calculation at a given level *)
 let get_table_for_level level va_expr =
@@ -67,7 +57,7 @@ let rec eval e =
       | EVar v -> Symbols.get_pa_for_va v  (* Resolve VA->PA mapping *)
       | _ -> eval pa_expr
     in
-    Z.logor pa (leaf_page_desc)
+    Z.logor pa Constants.leaf_page_desc
   (* [mkdescN] constructs a Level N page descriptor with output address and optional attributes.
      mkdesc3(oa=addr) creates a leaf page descriptor; mkdesc2(table=addr) creates a table descriptor *)
   | ECall(name, args) when String.length name >= 6 && String.sub name 0 6 = "mkdesc" ->
@@ -78,12 +68,12 @@ let rec eval e =
       (* Table descriptor: just set valid+table bits (0x3) *)
       let addr = try List.assoc "table" args |> eval
                  with Not_found -> snd(List.nth args 0) |> eval in
-      Z.logor addr table_entry_bits
+      Z.logor addr Constants.table_descriptor_bits
     else
       (* Page descriptor: use full descriptor format with OA directly (no VA->PA resolution) *)
       let oa = try List.assoc "oa" args |> eval
                with Not_found -> snd(List.nth args 0) |> eval in
-      Z.logor oa (leaf_page_desc)
+      Z.logor oa Constants.leaf_page_desc
   (* [pteN/tableN] calculates the Physical Address of a Page Table Entry at a given level.
      If explicit table argument provided (not page_table_base), use it directly.
      Otherwise, for pte2/pte3, use tracked L2/L3 table addresses from install_mapping. *)
@@ -91,7 +81,7 @@ let rec eval e =
       (String.length name = 4 && String.sub name 0 3 = "pte") ||
       (String.length name = 6 && String.sub name 0 5 = "table") ->
     let level = int_of_string (String.sub name (String.length name - 1) 1) in
-    let shift = shift_for_level level in
+    let shift = Constants.shift_for_level level in
     let va_expr = snd (List.nth args 0) in
     let va = eval va_expr in
     let explicit_table =
@@ -105,8 +95,8 @@ let rec eval e =
       | Some addr -> addr
       | None -> get_table_for_level level va_expr
     in
-    let idx = Z.to_int (Z.logand (Z.shift_right va shift) pte_index_mask) in
-    Z.add table (Z.of_int (idx * pte_size))
+    let idx = Z.to_int (Z.logand (Z.shift_right va shift) Constants.pte_index_mask) in
+    Z.add table (Z.of_int (idx * Constants.pte_size))
   (* Bitvector operations handling (add, sub, logical ops, shifts) *)
   | ECall(op, args) when String.length op >= 2 && String.sub op 0 2 = "bv" ->
     let v1 = eval (snd (List.nth args 0)) in
@@ -122,12 +112,12 @@ let rec eval e =
      | _ -> failwith ("Unknown bitvector operation: " ^ op))
 
   | ECall("page", args) ->
-    Z.logand (eval(snd(List.nth args 0))) page_mask
+    Z.logand (eval(snd(List.nth args 0))) Constants.page_mask
   | ECall("offset", args) ->
     let va_arg = try List.assoc "va" args with _ -> snd(List.nth args 1) in
     let va = eval va_arg in
-    let idx = Z.to_int (Z.logand (Z.shift_right va page_shift) pte_index_mask) in
-    Z.of_int (idx * pte_size)
+    let idx = Z.to_int (Z.logand (Z.shift_right va page_shift) Constants.pte_index_mask) in
+    Z.of_int (idx * Constants.pte_size)
   | ECall("ttbr", args) ->
     let base_arg = try List.assoc "base" args with _ -> snd(List.nth args 1) in
     eval base_arg
