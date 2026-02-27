@@ -64,7 +64,7 @@ Record machine_state (threads: nat) := {
     buf : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, oldest first *)
     lock : option (fin threads); (* Global machine lock, indicating when some thread has exclusive access to memory *)
     memWritten : gset address; (* Set of memory addresses that have been written to *)
-    termThreads : vec bool threads;
+    termThreads : vec bool threads; (* true if that thread is finished (but not necessarily flushed *)
     }.
 
 Section Model.
@@ -318,15 +318,16 @@ Section Model.
         end.
 End Model.
 
-Definition from_archState {nth} (astate : archState nth) : machine_state nth :=
-    {|
-        regs := astate.(archState.regs);
-        mem := astate.(archState.memory);
-        buf := Vector.const [] nth;
-        lock := None;
-        memWritten := ∅;
-        termThreads := Vector.const false nth
-    |}.
+Definition from_archState {nth} (term : terminationCondition nth)
+    (astate : archState nth) : machine_state nth :=
+  {|
+    regs := astate.(archState.regs);
+    mem := astate.(archState.memory);
+    buf := Vector.const [] nth;
+    lock := None;
+    memWritten := ∅;
+    termThreads := vimap term astate.(archState.regs)
+  |}.
 
 Definition to_archState {nth} (mstate : machine_state nth) : option (archState nth) :=
     if all_buffers_empty nth mstate && bool_decide (lock nth mstate = None) then
@@ -337,32 +338,30 @@ Definition to_archState {nth} (mstate : machine_state nth) : option (archState n
         |}
     else None.
 
-Definition step {nth} (isem : iMon ()) (term : terminationCondition nth): Exec.t (machine_state nth) string () :=
-    (* The transition taken is either a flush to memory or a run_outcome call *)
-
-    (* Get tid *)
-    state ← mGet;
-    '(exist _ tid _ : {x : fin nth | ((termThreads nth state !!! x) = false)}) ← mchoosef;
-
-    (* Get step conditions *)
-    let regMap := regs nth state !!! tid in
-    let termCondMet := term tid regMap in
-    let bufferEmpty := buffer_empty nth tid state in
-
-    (* Get transition type. Only consider transitions that are possible *)
-    '(exist _ flush_transition _  : {x : bool | (bufferEmpty = true /\ termCondMet = false /\ x = false) \/ 
-                                (termCondMet = true /\ bufferEmpty = false /\ x = true) \/
-                                (bufferEmpty = false /\ termCondMet = false)}) ← mchoosef;
-
-    if termCondMet && bufferEmpty then
-        (* Terminate thread if there is no more work to do *)
-        mset (lookup_total tid ∘ termThreads nth) (fun x => true)
-    else if flush_transition then
-        (* Flush one item to memory *)
-        flush_one_item_buffer nth tid
+Definition step {nth} (isem : iMon ()) (term : terminationCondition nth):
+        Exec.t (machine_state nth) string () :=
+    (* The transition taken is either a flush to memory or a run_outcome call,
+       for a specific tid *)
+    tid ← mchoosef;
+    flush_transition ← mchoosef;
+    if (flush_transition : bool) then
+      (* This function discards if there is nothing to flush. *)
+      flush_one_item_buffer nth tid
     else
-        (* Run one outcome *)
-        cinterp (run_outcome nth tid) isem.
+      (* Check if the thread is already marked terminated, in which case there
+         is no transition to take. *)
+      terminated ← mget ((.!!! tid) ∘ termThreads nth);
+      guard_discard (negb terminated);;
+
+      (* Run one instruction *)
+      cinterp (run_outcome nth tid) isem;;
+
+      (* Check if the thread is actually terminated and mark it if so *)
+      'regs ← mget ((.!!! tid) ∘ regs nth);
+      if term tid regs then
+        (* Mark it as terminated *)
+        msetv ((.!!! tid) ∘ termThreads nth) true
+      else mret ().
 
 Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ()) (term : terminationCondition nth)
     : Exec.t (machine_state nth) string {s : archState nth & archState.is_terminated term s} :=
@@ -386,5 +385,5 @@ Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ()) (term : terminationCond
     all possible final states. *)
 Definition x86_operational_modelc (fuel : nat) (isem : iMon ()) : (archModel.c ∅) :=
     λ n term (initSt: archState n),
-    from_archState initSt
+    from_archState term initSt
     |> archModel.Res.from_exec (run_to_term fuel isem term).
