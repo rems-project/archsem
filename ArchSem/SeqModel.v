@@ -45,11 +45,11 @@ Require Import TermModels.
 
 
 (* Module to be imported *)
-Module SequentialModel (IWA : InterfaceWithArch) (Term : TermModelsT IWA)
-    (NC : NoCHERI IWA).
-  Import IWA.Arch.
-  Import IWA.Interface.
-  Import Term.
+Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
+    (TM : TermModelsT Arch Inter) (NC : NoCHERI Arch).
+  Import Arch.
+  Import Inter.
+  Import TM.
 
   Section Seq.
 

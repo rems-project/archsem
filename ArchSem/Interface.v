@@ -911,11 +911,6 @@ Module Type InterfaceT (A : Arch).
   Include Interface A.
 End InterfaceT.
 
-Module Type InterfaceWithArch.
-  Declare Module Arch : Arch.
-  Declare Module Interface : InterfaceT Arch.
-End InterfaceWithArch.
-
-Module Type NoCHERI (IWA : InterfaceWithArch).
-  Parameter no_cheri : ¬ IWA.Arch.CHERI.
+Module Type NoCHERI (A : Arch).
+  Parameter no_cheri : ¬ A.CHERI.
 End NoCHERI.

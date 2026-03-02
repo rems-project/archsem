@@ -45,9 +45,10 @@ Require Import TermModels.
 
 
 (** This module define helper function to manipulate ISA models. *)
-Module ISAManip (IWA : InterfaceWithArch) (TM : TermModelsT IWA). (* to be imported *)
-  Import IWA.Arch.
-  Import IWA.Interface.
+Module ISAManip (Arch : Arch) (Inter : InterfaceT Arch)
+    (TM : TermModelsT Arch Inter). (* to be imported *)
+  Import Arch.
+  Import Inter.
   Import TM.
 
   (** A global variable is a register that is always written before being read.

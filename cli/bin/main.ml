@@ -73,7 +73,7 @@ let cmd_seq =
   let run =
     let+ paths = test_path_term in
     let files = get_all_tests paths in
-    run_tests "seq" seq_model files
+    run_tests "seq" Arm.(seq_model tiny_isa) files
   in
   let info =
     let doc = "Run sequential model" in
@@ -86,7 +86,7 @@ let cmd_ump =
   let run =
     let+ paths = test_path_term in
     let files = get_all_tests paths in
-    run_tests "ump" umProm_model files
+    run_tests "ump" Arm.(umProm_model tiny_isa) files
   in
   let info =
     let doc = "Run user-mode promising model" in
@@ -96,6 +96,7 @@ let cmd_ump =
 
 (** The virtual-memory promising command *)
 let cmd_vmp =
+  let open Arm in
   let bbm_mode =
     let off_info =
       let doc = "Turn BBM checking off" in
@@ -119,7 +120,7 @@ let cmd_vmp =
     let+ paths = test_path_term
     and+ bbm_param = bbm_mode in
     let files = get_all_tests paths in
-    run_tests "vmp" (vmProm_model ~bbm_param) files
+    run_tests "vmp" (vmProm_model ~bbm_param tiny_isa) files
   in
   let info =
     let doc =

@@ -51,9 +51,9 @@ Require Import Interface.
 
     The definitions here will need to change to accommodate infinite execution
     or any externally observable behaviour (I/O). *)
-Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
-  Import IWA.Arch.
-  Import IWA.Interface.
+Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
+  Import Arch.
+  Import Inter.
 
   (** * Architectural States
 
@@ -372,6 +372,6 @@ Module TermModels (IWA : InterfaceWithArch). (* to be imported *)
 
 End TermModels.
 
-Module Type TermModelsT (IWA : InterfaceWithArch).
-  Include TermModels IWA.
+Module Type TermModelsT (Arch : Arch) (Inter : InterfaceT Arch).
+  Include TermModels Arch Inter.
 End TermModelsT.

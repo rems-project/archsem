@@ -37,21 +37,18 @@
 (*                                                                            *)
 (******************************************************************************)
 
-Require Import ASCommon.CExtraction.
-From ArchSemArm Require Import ArmInst UMPromising VMPromising.
-From ArchSemX86 Require Import X86Inst.
+Require Import Interface.
+Require Import TermModels.
+Require Import CandidateExecutions.
+Require Import GenPromising.
+Require Import SeqModel.
+Require Import ISAManip.
 
-Unset Extraction SafeImplicits.
-
-Extract Inductive ArchSem.Interface.reg_gen_val =>
-  "RegValGen.t"
-  ["RegValGen.Number" "RegValGen.String" "RegValGen.Array" "RegValGen.Struct"].
-
-(* DO NOT run this file in your editor. This will extract in the correct folder
-   when dune does the extraction *)
-Set Extraction Output Directory ".".
-
-#[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
-Separate Extraction
-  Arm sail_tiny_arm_sem UMPromising_pf VMPromising_pf
-  X86Inst.X86 sail_tiny_x86_sem.
+Module ArchInst (A : Arch) (NC : NoCHERI A).
+  Module Interface := Interface A.
+  Module TM := TermModels A Interface.
+  Module Cand := CandidateExecutions A Interface TM NC.
+  Module GenPro := GenPromising A Interface TM.
+  Module SeqModel := SequentialModel A Interface TM NC.
+  Module ISAManip := ISAManip A Interface TM.
+End ArchInst.

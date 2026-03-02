@@ -835,8 +835,8 @@ Section GRel.
       + hauto db:grel.
   Qed.
 
-  Global Instance grel_transitive_decision r : Decision (grel_transitive r).
-  Proof using. unfold grel_transitive. solve_decision. Qed.
+  Global Instance grel_transitive_dec r : Decision (grel_transitive r).
+  Proof using. unfold grel_transitive. solve_decision. Defined.
 
   Lemma grel_transitive_rew (r : grel) :
     grel_transitive r → r⁺ = r.

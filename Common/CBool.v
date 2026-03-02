@@ -310,7 +310,7 @@ Ltac2 decide_record0 () :=
       let (args, _) := decompose_non_dep_fun_type (Constr.type ctr) in
       (* printf "%a and %t" (prt_list prt_cstr) args t; *)
       decide_record_fields args;
-      abstract (left; split > [assumption..])
+      left; abstract (split > [assumption..])
   | [ |- _] => zero_tacticf "Not an Decision instance search"
   end.
 Ltac2 Notation decide_record := decide_record0 ().

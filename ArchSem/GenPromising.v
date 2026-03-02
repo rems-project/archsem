@@ -131,9 +131,10 @@ Module PPState.
 End PPState.
 
 (* to be imported *)
-Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
-  Import IWA.Arch.
-  Import IWA.Interface.
+Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
+    (TM : TermModelsT Arch Inter).
+  Import Arch.
+  Import Inter.
   Import TM.
 
   (* Namespace *)
@@ -563,6 +564,7 @@ Module GenPromising (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
 
 End GenPromising.
 
-Module Type GenPromisingT (IWA : InterfaceWithArch) (TM : TermModelsT IWA).
-  Include GenPromising IWA TM.
+Module Type GenPromisingT (Arch : Arch) (Inter : InterfaceT Arch)
+    (TM : TermModelsT Arch Inter).
+  Include GenPromising Arch Inter TM.
 End GenPromisingT.

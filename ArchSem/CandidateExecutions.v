@@ -62,10 +62,11 @@ Open Scope Z_scope.
 Open Scope stdpp_scope.
 
 (* Module to be imported *)
-Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (NC : NoCHERI IWA).
-  Import IWA.Arch.
-  Import IWA.Interface.
-  Import Term.
+Module CandidateExecutions (Arch : Arch) (Inter : InterfaceT Arch)
+    (TM : TermModelsT Arch Inter) (NC : NoCHERI Arch).
+  Import Arch.
+  Import Inter.
+  Import TM.
 
   #[local] Open Scope nat.
 
@@ -102,8 +103,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
     Proof.
       eapply (inj_countable' (fun eid => (tid eid, iid eid, ieid eid, byte eid))
                         (fun x => make x.1.1.1 x.1.1.2 x.1.2 x.2)).
-      sauto.
-    Qed.
+      abstract sauto.
+    Defined.
 
     Definition po_lt (id1 id2 : t) : Prop :=
       id1.(tid) = id2.(tid) ∧ id1.(iid) < id2.(iid).
@@ -201,7 +202,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         cmatch isem trc.
 
       #[global] Instance ISA_match_dec pe isem : Decision (ISA_match pe isem).
-      Proof using. unfold ISA_match. solve_decision. Qed.
+      Proof using. unfold ISA_match. solve_decision. Defined.
 
       (** Asserts that all the trace in an execution are complete and not partial traces *)
       Definition ISA_complete pe :=
@@ -816,7 +817,7 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
 
       #[global] Instance is_overlapping_dec addr eid1 eid2 :
         Decision (is_overlapping addr eid1 eid2).
-      Proof. unfold is_overlapping. tc_solve. Qed.
+      Proof. unfold is_overlapping. tc_solve. Defined.
 
       Lemma is_overlapping_sym pe eid1 eid2 :
         is_overlapping pe eid1 eid2 → is_overlapping pe eid2 eid1.
@@ -1145,8 +1146,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
       }.
     #[global] Arguments reads_from_wf : clear implicits.
 
-    Instance reads_from_wf_dec {cd : t} : Decision (reads_from_wf cd) :=
-      ltac:(decide_record).
+    Instance reads_from_wf_dec {cd : t} : Decision (reads_from_wf cd).
+    Proof. decide_record. Defined.
 
     (** *** Coherence wellformedness *)
 
@@ -1161,9 +1162,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           (weid1, weid2) ∈ coherence cd ∨ (weid2, weid1) ∈ coherence cd
       }.
     #[global] Arguments coherence_wf : clear implicits.
-    Instance coherence_wf_dec {cd : t} : Decision (coherence_wf cd) :=
-      ltac:(decide_record).
-
+    Instance coherence_wf_dec {cd : t} : Decision (coherence_wf cd).
+    Proof. decide_record. Defined.
 
     (** *** lxsx wellformedness *)
 
@@ -1175,7 +1175,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         lxsx_same_pa : lxsx cd ⊆ same_addr cd
       }.
     #[global] Arguments lxsx_wf : clear implicits.
-    Instance lxsx_wf_dec {cd : t} : Decision (lxsx_wf cd) := ltac:(decide_record).
+    Instance lxsx_wf_dec {cd : t} : Decision (lxsx_wf cd).
+    Proof. decide_record. Defined.
 
 
     (** *** Reg reads from wellformedness
@@ -1194,8 +1195,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           initial_reg_reads cd ⊆ possible_initial_reg_reads cd;
       }.
     #[global] Arguments reg_reads_from_wf : clear implicits.
-    Instance reg_reads_from_wf_dec {cd : t} : Decision (reg_reads_from_wf cd) :=
-      ltac:(decide_record).
+    Instance reg_reads_from_wf_dec {cd : t} : Decision (reg_reads_from_wf cd).
+    Proof. decide_record. Defined.
 
     Lemma rrf_irreflexive (cd : t) :
       reg_reads_from_wf cd → grel_irreflexive (reg_reads_from cd).
@@ -1256,8 +1257,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
           else True
       }.
     #[global] Arguments footprint_wf : clear implicits.
-    Instance footprint_wf_dec {cd : t} : Decision (footprint_wf cd) :=
-      ltac:(decide_record).
+    Instance footprint_wf_dec {cd : t} : Decision (footprint_wf cd).
+    Proof. decide_record. Defined.
 
     Record wf (cd : t) :=
       {
@@ -1269,7 +1270,8 @@ Module CandidateExecutions (IWA : InterfaceWithArch) (Term : TermModelsT IWA) (N
         lxsx_wf' :> lxsx_wf cd;
         reg_reads_from_wf' :> reg_reads_from_wf cd;
       }.
-    Instance wf_dec cd : Decision (wf cd) := ltac:(decide_record).
+    Instance wf_dec cd : Decision (wf cd).
+    Proof. decide_record. Defined.
 
     End Cand.
 

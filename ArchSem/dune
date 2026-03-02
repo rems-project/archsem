@@ -9,6 +9,7 @@
    GenPromising
    FromSail
    SeqModel
+   ArchInst
  )
  (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon)
  (coqdoc_flags :standard --utf8

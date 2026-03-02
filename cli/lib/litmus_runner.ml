@@ -5,6 +5,7 @@
     - Unobservable: Relaxed behavior the test does not expect to occur *)
 
 open Archsem
+open Arm
 
 (** {1 Result Types} *)
 
@@ -17,12 +18,12 @@ type test_result =
 
 (** {1 Helpers} *)
 
-let rec string_of_regval_gen = function
-  | RegVal.Number z -> Printf.sprintf "0x%s" (Z.format "%x" z)
-  | RegVal.String s -> Printf.sprintf "\"%s\"" s
-  | RegVal.Array vs ->
+let rec string_of_regval_gen : RegValGen.t -> string = function
+  | Number z -> Printf.sprintf "0x%s" (Z.format "%x" z)
+  | String s -> Printf.sprintf "\"%s\"" s
+  | Array vs ->
     Printf.sprintf "[%s]" (String.concat ", " (List.map string_of_regval_gen vs))
-  | RegVal.Struct fields ->
+  | Struct fields ->
     Printf.sprintf "{ %s }" (String.concat ", "
       (List.map (fun (k, v) -> Printf.sprintf "%s = %s" k (string_of_regval_gen v)) fields))
 

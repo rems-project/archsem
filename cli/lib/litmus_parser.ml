@@ -8,13 +8,14 @@
 
 open Archsem
 
+open Arm
 
 (** {1 Types} *)
 
 (** A requirement specifies an expected register value with equality or inequality. *)
 type requirement =
-  | Eq of RegVal.gen
-  | Neq of RegVal.gen
+  | Eq of RegValGen.t
+  | Neq of RegValGen.t
 
 (** A condition maps thread IDs to lists of register requirements. *)
 type cond = (int * (Reg.t * requirement) list) list
@@ -52,11 +53,11 @@ let parse_reg_name name =
 
 (** Recursively parse a TOML value into RegVal.gen.
     Handles integers, strings, and nested structs. *)
-let rec parse_reg_val = function
-  | Otoml.TomlInteger i -> RegVal.Number (Z.of_int i)
-  | Otoml.TomlString s -> RegVal.String s
-  | Otoml.TomlTable t | Otoml.TomlInlineTable t ->
-    RegVal.Struct (List.map (fun (k, v) -> (k, parse_reg_val v)) t)
+let rec parse_reg_val : Otoml.t -> RegValGen.t = function
+  | TomlInteger i -> Number (Z.of_int i)
+  | TomlString s -> String s
+  | TomlTable t | TomlInlineTable t ->
+    Struct (List.map (fun (k, v) -> (k, parse_reg_val v)) t)
   | _ -> failwith "Unsupported value type"
 
 (** Parse a register key-value pair into (Reg.t, RegVal.gen) *)
