@@ -1,0 +1,10 @@
+(library
+ (name utils)
+ (modules utils)
+ (libraries litmus otoml))
+
+(tests
+ (names litmus_spec_test)
+ (modules litmus_spec_test)
+ (libraries archsem litmus utils otoml ounit2)
+ (deps (glob_files ../seq/*.toml) (glob_files ../ump/*.toml) (glob_files ../vmp/*.toml)))

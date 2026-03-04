@@ -6,16 +6,16 @@
 
 open Archsem
 
-(** {1 Result Types} *)
+(** {1 Types} *)
 
 type test_result =
-  | Expected     (** Outcome matched test expectations *)
-  | Unexpected   (** Outcome did not match test expectations *)
-  | ModelError   (** Model produced errors during execution *)
-  | NoBehaviour   (** Model produces no behaviours (model bug) *)
-  | ParseError   (** Parser or configuration error *)
+  | Expected
+  | Unexpected
+  | ModelError
+  | NoBehaviour
+  | ParseError
 
-(** {1 Helpers} *)
+(** {1 Display Helpers} *)
 
 let rec string_of_regval_gen = function
   | RegVal.Number z -> Printf.sprintf "0x%s" (Z.format "%x" z)
@@ -28,8 +28,8 @@ let rec string_of_regval_gen = function
 
 let req_to_string (reg, req) =
   let op, v = match req with
-    | Parser.Eq v -> ("=", v)
-    | Parser.Neq v -> ("!=", v)
+    | Spec.ReqEq v -> ("=", v)
+    | Spec.ReqNe v -> ("!=", v)
   in
   Printf.sprintf "%s%s%s" (Reg.to_string reg) op (string_of_regval_gen v)
 
@@ -40,32 +40,32 @@ let cond_to_string cond =
 
 (** {1 Outcome Checking} *)
 
-let check_outcome (fs : ArchState.t) (cond : Parser.cond) : bool =
+let check_outcome (fs : ArchState.t) (cond : Spec.thread_cond list) : bool =
   List.for_all (fun (tid, reqs) ->
     let regs = ArchState.reg tid fs in
     List.for_all (fun (reg, req) ->
       match RegMap.get_opt reg regs with
       | None ->
-        failwith ("Outcome checker couldn't find register: " ^ (Reg.to_string reg))
+        failwith ("[[outcome]] register not found in final state: " ^ Reg.to_string reg)
       | Some rv ->
         let actual = RegVal.to_gen rv in
         (match req with
-         | Parser.Eq exp -> actual = exp
-         | Parser.Neq exp -> actual <> exp)
+         | Spec.ReqEq exp -> actual = exp
+         | Spec.ReqNe exp -> actual <> exp)
     ) reqs
   ) cond
 
 (** {1 Test Execution} *)
 
-let run_executions model init fuel term outcomes =
+let run_executions model init fuel term finals =
   let msgs = ref [] in
   let msg s = msgs := s :: !msgs in
   let results = model fuel term init in
 
   let observable = List.filter_map
-    (function Parser.Observable c -> Some c | _ -> None) outcomes in
+    (function Spec.Observable c -> Some c | _ -> None) finals in
   let unobservable = List.filter_map
-    (function Parser.Unobservable c -> Some c | _ -> None) outcomes in
+    (function Spec.Unobservable c -> Some c | _ -> None) finals in
 
   let errors = List.filter_map (function
     | ArchModel.Res.Error e -> Some e
@@ -74,8 +74,8 @@ let run_executions model init fuel term outcomes =
     | ArchModel.Res.FinalState fs -> Some fs
     | _ -> None) results in
   let flags = List.filter_map (function
-      | ArchModel.Res.Flagged x -> Some x
-      | _ -> None) results in
+    | ArchModel.Res.Flagged x -> Some x
+    | _ -> None) results in
 
   List.iter (fun e ->
     msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
@@ -115,20 +115,22 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
+let default_fuel = 1000
+
+let run_spec model (test : Spec.t) =
+  let init, term, finals = Archstate.spec_to_archstate test in
+  run_executions model init default_fuel term finals
+
 let run_litmus_test model filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
-    Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset name Terminal.red Terminal.reset;
+    Printf.printf "  %s✗%s %s  %sfile not found%s\n"
+      Terminal.red Terminal.reset name Terminal.red Terminal.reset;
     ParseError
   ) else try
     let toml = Otoml.Parser.from_file filename in
-    let fuel = Otoml.find_opt toml Parser.get_int ["fuel"] |> Option.value ~default:1000 in
-    let regs = Parser.parse_registers toml in
-    let mem = Parser.parse_memory toml in
-    let init = ArchState.make regs mem in
-    let term = Parser.parse_termCond (List.length regs) toml in
-    let outcomes = Parser.parse_outcomes toml in
-    let result, msgs = run_executions model init fuel term outcomes in
+    let test = Parser.parse_to_spec toml in
+    let result, msgs = run_spec model test in
     let icon, color = match result with
       | Expected -> Terminal.check, Terminal.green
       | Unexpected -> Terminal.cross, Terminal.yellow
@@ -144,7 +146,8 @@ let run_litmus_test model filename =
       msg Terminal.reset;
     ParseError
   | Failure msg ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
+    Printf.printf "  %s✗%s %s  %s%s%s\n"
+      Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
     ParseError
   | exn ->
     Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name

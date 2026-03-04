@@ -9,6 +9,11 @@ module Reg = struct
 
   let of_string = Arch.reg_of_string
 
+  let of_string_exn name =
+    match of_string name with
+    | Some r -> r
+    | None -> failwith ("unrecognized register name: " ^ name)
+
   let to_string = System_types.string_of_register
 
   let pc : t = R_bitvector_64 Coq__PC
