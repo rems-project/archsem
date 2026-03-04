@@ -16,6 +16,12 @@ style fixing of code that is also semantically changed.
 We are happy to use `Theorem` for the one important theorem of a file. `Lemma`
 should be used for any other proof.
 
+### Use of attribute
+
+We use `#[global]`, `#[export]` and `#[local]` instead of `Global`, ...
+
+Try to use export as much as possible and avoid global unless strictly necessary.
+
 ### Match indentation
 
 We indent match bodies by 4 spaces:
