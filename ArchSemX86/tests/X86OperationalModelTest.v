@@ -82,7 +82,7 @@ Definition check_mem (addr : address) (size : N) (mem : memoryMap)
   : result string Z :=
     let read_res :=
       addr_range addr size
-        |$> (fun curr_addr => (mem !! curr_addr))
+        |$> (λ curr_addr, (mem !! curr_addr))
         |> list_of_options
         |$> bv_of_bytes (8 * size)
     in
@@ -139,6 +139,7 @@ Module EOR.
     x86_operational_modelc 2 x86_sem 1%nat termCond initState.
 
   Goal reg_extract RAX 0%fin <$> test_results = Listset [Ok 0x110%Z].
+    Proof.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -195,7 +196,7 @@ Module MP.
 
   Definition test_results :=
     x86_operational_modelc fuel x86_sem n_threads termCond initState.
-  
+
   Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
@@ -256,7 +257,7 @@ Module SB.
 
   Definition test_results :=
     x86_operational_modelc fuel x86_sem n_threads termCond initState.
-  
+
   Goal elements (regs_extract [(0%fin, RAX); (1%fin, RAX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
@@ -268,7 +269,7 @@ End SB.
 Module R_PO_MFENCE.
   (* Read + thread 0 in Program Order + thread 1 has MFENCE litmus test
     Thread 1 : MOV [ECX], 0x1; MOV [EDX], 0x1
-    Thread 2 : MOV [EDX], 0x2; MFENCE; MOV EAX,[ECX] 
+    Thread 2 : MOV [EDX], 0x2; MFENCE; MOV EAX,[ECX]
 
     Expected result : ([EDX]=2 /\ Thread 1:EAX=0) should be impossible
   *)
@@ -319,8 +320,8 @@ Module R_PO_MFENCE.
     x86_operational_modelc fuel x86_sem n_threads termCond initState.
 
   Definition result_extractions :=
-    (fun test_result => [(reg_extract RAX 1%fin test_result); (mem_extract 0x1200 8 test_result)]) <$> test_results.
-  
+    (λ test_result, [(reg_extract RAX 1%fin test_result); (mem_extract 0x1200 8 test_result)]) <$> test_results.
+
   Goal elements result_extractions ≡ₚ
     [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
   Proof.
