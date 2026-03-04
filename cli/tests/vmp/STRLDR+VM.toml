@@ -4,9 +4,6 @@
 arch="Arm"
 name="STRLDR+VM"
 
-[config]
-FEAT_ETS2 = true
-
 # Thread 1 - Store then Load through VA translation
 [[registers]]
 _PC = 0x8000000500
