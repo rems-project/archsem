@@ -49,277 +49,299 @@ Require Import X86Inst.
 
 
 
-(* TSO Model Types*)
+(** * TSO Model Types *)
 
 Record addr_val : Type := {
     addr: address;
     size: N; (* IN BYTES *)
     val: bv (8 * size)
-}.
+  }.
 
 (* archState + extra fields (buffer and lock)*)
-Record machine_state (threads: nat) := {
+Record machine_state {threads: nat} := {
     regs : vec registerMap threads; (* Registers for each thread *)
     mem : memoryMap;
-    buf : vec (list addr_val) threads; (* Gives the store buffer for each thread. Each buffer is a list of address-value tuples, oldest first *)
-    lock : option (fin threads); (* Global machine lock, indicating when some thread has exclusive access to memory *)
-    memWritten : gset address; (* Set of memory addresses that have been written to *)
-    termThreads : vec bool threads; (* true if that thread is finished (but not necessarily flushed *)
-    }.
 
+    (* Store buffer for each thread. Each buffer is a list of address-value
+       tuples, oldest first *)
+    buf : vec (list addr_val) threads;
+
+    (* Global machine lock, indicating when some thread has exclusive access to
+       memory *)
+    lock : option (fin threads);
+
+    (* Set of memory addresses that have been written to *)
+    memWritten : gset address;
+
+    (* Whether a thread is terminated, but not necessarily flushed *)
+    termThreads : vec bool threads;
+  }.
+Arguments machine_state : clear implicits.
+
+(** * TSO Model *)
 Section Model.
-    Context (threads: nat).
+  Context {threads: nat}.
 
-    Notation mstate_threads := (machine_state threads).
-
-
-
-    (* REG FUNCTIONS *)
-
-    Definition read_reg (tid : fin threads) (reg : reg) (state : mstate_threads) : option (reg_type reg) :=
-        let regMap := (regs threads state !!! tid) in
-            dmap_lookup reg regMap.
-
-    Definition write_reg (tid : fin threads) (reg : reg) (val : reg_type reg) (state : mstate_threads)
-        : mstate_threads :=
-            set (lookup_total tid ∘ regs threads) (dmap_insert reg val) state.
+  Notation mstate_threads := (machine_state threads).
 
 
+  (** ** Register functions *)
 
-    (* BUFFER FUNCTIONS *)
+  Definition read_reg (tid : fin threads) (reg : reg) (state : mstate_threads) :
+      option (reg_type reg) :=
+    let regMap := (regs state !!! tid) in
+    dmap_lookup reg regMap.
 
-    Definition no_pending (x : address) (tid : fin threads) (state : mstate_threads) : bool :=
-        let buffer := buf threads state !!! tid in
-            bool_decide (∀ av ∈ buffer, addr av ≠ x).
-
-    Definition buffer_empty (tid : fin threads) (m : mstate_threads) : bool :=
-        match buf threads m !!! tid with
-        | x :: xs => false
-        | [] => true
-        end.
-
-    Definition all_buffers_empty (state: mstate_threads): bool :=
-        bool_decide (∀ t : fin threads, buffer_empty t state).
-
-    Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val) (goal_addr: address) (goal_size : N)
-        : Exec.t mstate_threads string (option (bv (8 * goal_size))) :=
-            (* Allow a direct match to be store-forwarded 
-            if it is the most recent write to all relevant addresses.
-            Underapproximation of store buffering.
-            Reverse buffer so that we see most recent writes first *)
-            match rev_buffer with
-            | x :: xs =>
-                let goal_range : gset address := list_to_set (addr_range goal_addr goal_size) in
-                let x_range : gset address := list_to_set (addr_range (addr x) (size x)) in
-                (* If we have a direct match, then perform store forwarding *)
-                if bool_decide (goal_range = x_range) then
-                    let unsigned_val := bv_unsigned (val x) in
-                    let return_val := Z_to_bv (8 * goal_size) unsigned_val in
-                    mret (Some return_val)
-                (* This model prohibits programs where mixed-size store forwarding could occur *)
-                else if bool_decide (goal_range ∩ x_range ≠ ∅) then
-                    mthrow "Model prohibits programs where mixed-size store forwarding can occur"
-                else read_from_write_buffer_inner xs goal_addr goal_size
-            | _ => mret None
-            end. 
-
-    Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N)
-        : Exec.t mstate_threads string (option (bv (8 * size))) :=
-            state ← mGet;
-            (* Reverse buffer so that we see most recent writes first *)
-            let rev_buffer := rev (buf threads state !!! tid) in
-            read_from_write_buffer_inner rev_buffer addr size.
-
-    Fixpoint add_to_mem_written (addr : address) (size : nat)
-        : Exec.t mstate_threads string unit :=
-        match size with
-        | S size =>
-            (* Add addr to the set of addresses that have been written to in memory*)
-            mset (memWritten threads) (.∪{[addr]});;
-            (* Move on to the next byte (if it exists)*)
-            add_to_mem_written (addr `+Z` 1)%bv size
-        | _ => mret ()
-        end.
-
-    Definition add_to_write_buffer (tid : fin threads) (addr : address) (size : N) (val : bv (8 * size))
-    (state : mstate_threads) : mstate_threads :=
-        set (lookup_total tid ∘ buf threads)
-            (fun curr_list:
-                list addr_val => (curr_list ++ [{|
-                    addr := addr;
-                    size := size;
-                    val := val
-                |}])%list)
-            state.
+  Definition write_reg (tid : fin threads) (reg : reg) (val : reg_type reg)
+      (state : mstate_threads) : mstate_threads :=
+    set (lookup_total tid ∘ regs) (dmap_insert reg val) state.
 
 
 
-    (* MEM FUNCTIONS *)
+  (** ** Buffer functions *)
 
-    Definition mem_addr_modified (addr : address) (size : N) (state : mstate_threads) : bool :=
-        (* Returns true if address modified in memory or written to in a store buffer *)
-        bool_decide (∃ a ∈ addr_range addr size, a ∈ memWritten threads state).
+  Definition no_pending (x : address) (tid : fin threads)
+      (state : mstate_threads) : bool :=
+    let buffer := buf state !!! tid in
+    bool_decide (∀ av ∈ buffer, addr av ≠ x).
 
-    Definition write_mem (addr : address) (size : N) (val : bv (8 * size))
-        : Exec.t mstate_threads string unit :=
-            (* Check if memory address is mapped*)
-            opt ← mget (fun state => mem_lookup addr size (mem threads state));
-            guard_or "Memory isn't mapped to write" (is_Some opt);;
-            (* Write to memory *)
-            mset (mem threads) (mem_insert addr size val).
+  Definition buffer_empty (tid : fin threads) (m : mstate_threads) : bool :=
+    if buf m !!! tid is [] then true else false.
 
+  Definition all_buffers_empty (state: mstate_threads): bool :=
+    bool_decide (∀ t : fin threads, buffer_empty t state).
 
+  Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val)
+      (goal_addr: address) (goal_size : N) :
+      Exec.t mstate_threads string (option (bv (8 * goal_size))) :=
+    (* Allow a direct match to be store-forwarded
+       if it is the most recent write to all relevant addresses.
+       Underapproximation of store buffering.
+       Reverse buffer so that we see most recent writes first *)
+    match rev_buffer with
+    | x :: xs =>
+        let goal_range : gset address := list_to_set (addr_range goal_addr goal_size) in
+        let x_range : gset address := list_to_set (addr_range (addr x) (size x)) in
+        (* If we have a direct match, then perform store forwarding *)
+        if bool_decide (goal_range = x_range) then
+          let unsigned_val := bv_unsigned (val x) in
+          let return_val := Z_to_bv (8 * goal_size) unsigned_val in
+          mret (Some return_val)
+        else if bool_decide (goal_range ∩ x_range ≠ ∅) then
+          mthrow "Model prohibits programs where mixed-size store forwarding can occur"
+        else read_from_write_buffer_inner xs goal_addr goal_size
+    | _ => mret None
+    end.
 
-    (* BUFFER AND MEM FUNCTIONS *)
+  Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N) :
+      Exec.t mstate_threads string (option (bv (8 * size))) :=
+    buffer ← mget ((.!!! tid) ∘ buf);
+    (* Reverse buffer so that we see most recent writes first *)
+    read_from_write_buffer_inner (rev buffer) addr size.
 
-    Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address) (size : N)
-        : Exec.t mstate_threads string (bv (8 * size)) :=
-            (* Attempt store forwarding *)
-            opt ← read_from_write_buffer tid addr size;
-            if opt is Some read then
-                mret read
-            else
-                (* Attempt memory read and return read value *)
-                opt ← mget (fun state => mem_lookup addr size (mem threads state));
-                read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
-                mret read.
+  Fixpoint add_to_mem_written (addr : address) (size : nat) :
+      Exec.t mstate_threads string unit :=
+    match size with
+    | S size =>
+        (* Add addr to the set of addresses that have been written to in memory*)
+        mset memWritten (.∪{[addr]});;
+        (* Move on to the next byte (if it exists)*)
+        add_to_mem_written (addr `+Z` 1)%bv size
+    | _ => mret ()
+    end.
 
-    Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads)
-    : Exec.t mstate_threads string unit :=
-        match buffer with
-        | [] => mret ()
-        | h :: t =>
-            write_mem (addr h) (size h) (val h);;
-            write_buffer_to_mem t tid
-        end.
-
-    Definition empty_write_buffer (tid : fin threads) : Exec.t mstate_threads string unit :=
-        buffer ← mget (fun state => (buf threads state) !!! tid);
-        (* Write all buffer contents to memory *)
-        write_buffer_to_mem buffer tid;;
-        (* Empty buffer *)
-        mset (lookup_total tid ∘ buf threads) (fun curr_buffer => []).
-
-
-
-    (* LOCK FUNCTIONS*)
-
-    Definition blocked (tid : fin threads) (m : mstate_threads) : bool :=
-        let lock_status := lock threads m in
-            if lock_status is Some tid' then bool_decide (tid ≠ tid')
-            else false.
-
-    Definition thread_has_lock (tid : fin threads) (m : mstate_threads) : bool :=
-        let lock_status := lock threads m in
-            if lock_status is Some tid' then bool_decide (tid = tid')
-            else false.
-
-    Definition acquire_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
-        set (lock threads) (fun curr_lock => Some tid) state.
-
-    Definition acquire_lock_conditional (tid : fin threads) : Exec.t mstate_threads string unit :=
-        (* Ensure thread can acquire lock: a thread (including thread tid) might already have the lock*)
-        lock_status ← mget (lock threads);
-        guard_discard (lock_status = None);;
-        (* Ensure thread can acquire lock: store buffer might not be empty.
-        Hence eagerly empty buffer. Can do this as no other thread has lock *)
-        empty_write_buffer tid;;
-        (* Acquire lock *)
-        mSet (acquire_lock tid).
-
-    Definition release_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
-        set (lock threads) (fun curr_lock => None) state.
-
-    Definition release_lock_conditional (tid : fin threads) : Exec.t mstate_threads string unit :=
-        (* Make sure we have the lock before releasing it *)
-        state ← mGet;
-        guard_discard (thread_has_lock tid state);;
-        (* Empty write buffer (eager) (other requirement for releasing lock) *)
-        empty_write_buffer tid;;
-        (* Release lock *)
-        mSet (release_lock tid).
+  Definition add_to_write_buffer (tid : fin threads) (addr : address)
+      (size : N) (val : bv (8 * size)) (state : mstate_threads) : mstate_threads :=
+    set ((.!!! tid) ∘ buf) (.++ [{| addr := addr; size := size; val := val |}])
+      state.
 
 
+  (** ** Memory functions *)
 
-    (* OUTCOMES *)
+  Definition mem_addr_modified (addr : address) (size : N) (state : mstate_threads) : bool :=
+    (* Returns true if address modified in memory or written to in a store buffer *)
+    bool_decide (∃ a ∈ addr_range addr size, a ∈ memWritten state).
 
-    Section RunOutcome.
-        Context (tid : fin threads).
+  Definition write_mem (addr : address) (size : N) (val : bv (8 * size)) :
+      Exec.t mstate_threads string unit :=
+    (* Check if memory address is mapped*)
+    opt ← mget (mem_lookup addr size ∘ mem);
+    guard_or "Memory isn't mapped to write" (is_Some opt);;
+    (* Write to memory *)
+    mset mem (mem_insert addr size val).
 
-        Notation mstate_threads := (machine_state threads).
 
-        Equations run_outcome (call : outcome) : Exec.t mstate_threads string (eff_ret call) :=
-            | RegRead reg racc =>
-                opt ← mget (read_reg tid reg);
-                othrow ("Register " ++ pretty reg ++ " not found")%string opt
-            | RegWrite reg racc val =>
-                opt ← mget (read_reg tid reg);
-                guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string (is_Some opt);;
-                mSet (write_reg tid reg val)
-            | MemRead (MemReq.make macc addr () size 0) =>
-                (* Split memory read by access type*)
-                if is_ifetch macc then
-                    (* Fail ifetch if the location we are attempting to fetch has been modified *)
-                    modified ← mget (mem_addr_modified addr size);
-                    guard_or "IFetch reading from modified memory" (negb(is_ifetch macc && modified));;
-                    (* Read from memory *)
-                    opt ← mget (fun state => mem_lookup addr size (mem threads state));
-                    read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
-                    mret (Ok (read, bv_0 _))
-                else if is_explicit macc then
-                    (* Can't explicitly read from memory if we are blocked (some other thread has the lock) *)
-                    is_blocked ← mget (blocked tid);
-                    guard_discard (negb is_blocked);;
-                    (* Acquire lock if needed*)
-                    (if is_atomic_rmw macc then
-                        acquire_lock_conditional tid
-                    else
-                        mret ());;
-                    (* Attempt store forwarding. Read from memory if store forwarding not possible *)
-                    read ← read_mem_with_store_forwarding tid addr size;
-                    mret (Ok (read, bv_0 _))
-                else
-                    mthrow "Memory access type not supported"
-            | MemRead _ => mthrow "Unsupported MemRead"
-            | MemWrite (MemReq.make macc addr () size 0) val _ =>
-                (* Add location to set of written memory addresses *)
-                add_to_mem_written addr (N.to_nat size);;
-                (* Add write to write buffer *)
-                mSet (add_to_write_buffer tid addr size val);;
-                (* Handle atomic case (release lock) *)
-                (if is_atomic_rmw macc then
-                    release_lock_conditional tid
-                else 
-                    mret ());;
-                mret (Ok ())
-            | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
-            | Barrier Barrier_LFENCE => mret ()
-            | Barrier _ =>
-                (* Write buffer (of thread tid) must be emptied before this instruction can complete.
-                Eager execution empties the buffer so that the instruction can complete. *)
-                is_blocked ← mget (blocked tid);
-                if (is_blocked : bool) then
-                    mdiscard
-                else
-                    empty_write_buffer tid
-            | GenericFail msg => mthrow msg
-            | _ => mthrow "Unsupported outcome".
-    End RunOutcome.
+  (** ** Buffer and Memory functions *)
 
-    Definition flush_one_item_buffer (tid : fin threads) : Exec.t mstate_threads string unit :=
-        buffer ← mget (fun state : mstate_threads => (buf threads state) !!! tid);
-        match buffer with
-        | [] => mdiscard
-        | h :: t =>
-            (* Write first entry to memory *)
-            write_mem (addr h) (size h) (val h);;
-            (* Remove first entry from buffer *)
-            mset (lookup_total tid ∘ buf threads) (fun curr_buffer => t)
-        end.
+  Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address)
+      (size : N) : Exec.t mstate_threads string (bv (8 * size)) :=
+    (* Attempt store forwarding *)
+    opt ← read_from_write_buffer tid addr size;
+    if opt is Some read then
+      mret read
+    else
+      (* Attempt memory read and return read value *)
+      opt ← mget (mem_lookup addr size ∘ mem);
+      read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
+      mret read.
+
+  Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads) :
+      Exec.t mstate_threads string unit :=
+    match buffer with
+    | [] => mret ()
+    | h :: t =>
+        write_mem (addr h) (size h) (val h);;
+        write_buffer_to_mem t tid
+    end.
+
+  Definition empty_write_buffer (tid : fin threads) : Exec.t mstate_threads string unit :=
+    buffer ← mget ((.!!! tid) ∘ buf);
+    (* Write all buffer contents to memory *)
+    write_buffer_to_mem buffer tid;;
+    (* Empty buffer *)
+    msetv ((.!!! tid) ∘ buf) [].
+
+
+  (** ** Lock functions *)
+
+  Definition blocked (tid : fin threads) (m : mstate_threads) : bool :=
+    if lock m is Some tid' then bool_decide (tid ≠ tid')
+    else false.
+
+  Definition thread_has_lock (tid : fin threads) (m : mstate_threads) : bool :=
+    if lock m is Some tid' then bool_decide (tid = tid')
+    else false.
+
+  Definition acquire_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
+    setv lock (Some tid) state.
+
+  Definition acquire_lock_conditional (tid : fin threads) :
+      Exec.t mstate_threads string unit :=
+    (* Ensure thread can acquire lock: a thread (including thread tid) might already have the lock*)
+    lock_status ← mget lock;
+    guard_discard (lock_status = None);;
+    (* Ensure thread can acquire lock: store buffer might not be empty.
+       Hence eagerly empty buffer. Can do this as no other thread has lock *)
+    empty_write_buffer tid;;
+    (* Acquire lock *)
+    mSet (acquire_lock tid).
+
+  Definition release_lock (tid : fin threads) (state : mstate_threads) : mstate_threads :=
+    setv lock None state.
+
+  Definition release_lock_conditional (tid : fin threads) :
+      Exec.t mstate_threads string unit :=
+    (* Make sure we have the lock before releasing it *)
+    state ← mGet;
+    guard_discard (thread_has_lock tid state);;
+    (* Empty write buffer (eager) (other requirement for releasing lock) *)
+    empty_write_buffer tid;;
+    (* Release lock *)
+    mSet (release_lock tid).
+
+
+
+  (** ** Run outcomes *)
+
+  Section RunOutcome.
+    Context (tid : fin threads).
+
+    Equations run_outcome (call : outcome) : Exec.t mstate_threads string (eff_ret call) :=
+    | RegRead reg racc =>
+        opt ← mget (read_reg tid reg);
+        othrow ("Register " ++ pretty reg ++ " not found")%string opt
+    | RegWrite reg racc val =>
+        opt ← mget (read_reg tid reg);
+        guard_or ("Writing register " ++ pretty reg ++ " not in initial state")%string (is_Some opt);;
+        mSet (write_reg tid reg val)
+    | MemRead (MemReq.make macc addr () size 0) =>
+        (* Split memory read by access type*)
+        if is_ifetch macc then
+          (* Fail ifetch if the location we are attempting to fetch has been
+             modified *)
+          modified ← mget (mem_addr_modified addr size);
+          guard_or "IFetch reading from modified memory" (negb modified);;
+          (* Read from memory *)
+          opt ← mget (mem_lookup addr size ∘ mem);
+          read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
+          mret (Ok (read, 0%bv))
+        else if is_explicit macc then
+          (* Can't explicitly read from memory if we are blocked (some other
+             thread has the lock) *)
+          is_blocked ← mget (blocked tid);
+          guard_discard (negb is_blocked);;
+          (* Acquire lock if needed*)
+          (if is_atomic_rmw macc then acquire_lock_conditional tid else mret ());;
+          (* Attempt store forwarding. Read from memory if store forwarding not
+             possible *)
+          read ← read_mem_with_store_forwarding tid addr size;
+          mret (Ok (read, bv_0 _))
+        else
+          mthrow "Memory access type not supported"
+    | MemRead _ => mthrow "Unsupported MemRead"
+    | MemWrite (MemReq.make macc addr () size 0) val _ =>
+        (* Add location to set of written memory addresses *)
+        add_to_mem_written addr (N.to_nat size);;
+        (* Add write to write buffer *)
+        mSet (add_to_write_buffer tid addr size val);;
+        (* Handle atomic case (release lock) *)
+        (if is_atomic_rmw macc then release_lock_conditional tid else mret ());;
+        mret (Ok ())
+    | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
+    | Barrier Barrier_LFENCE => mret ()
+    | Barrier _ =>
+        (* Write buffer (of thread tid) must be emptied before this instruction
+           can complete. *)
+        is_blocked ← mget (blocked tid);
+        guard_discard (negb is_blocked);;
+        empty_write_buffer tid
+    | GenericFail msg => mthrow msg
+    | _ => mthrow "Unsupported outcome".
+  End RunOutcome.
+
+  (** ** Flushing transition *)
+  Definition flush_one_item_buffer (tid : fin threads) :
+      Exec.t mstate_threads string unit :=
+    buffer ← mget ((.!!! tid) ∘ buf);
+    match buffer with
+    | [] => mdiscard
+    | h :: t =>
+        (* Write first entry to memory *)
+        write_mem (addr h) (size h) (val h);;
+        (* Remove first entry from buffer *)
+        msetv ((.!!! tid) ∘ buf) t
+    end.
+
+  (** ** Top level transition *)
+  Definition step (isem : iMon ()) (term : terminationCondition threads):
+      Exec.t mstate_threads string () :=
+    (* The transition taken is either a flush to memory or a run_outcome call,
+     for a specific tid *)
+    tid ← mchoosef;
+    flush_transition ← mchoosef;
+    if (flush_transition : bool) then
+      (* This function discards if there is nothing to flush. *)
+      flush_one_item_buffer tid
+    else
+      (* Check if the thread is already marked terminated, in which case there
+       is no transition to take. *)
+      terminated ← mget ((.!!! tid) ∘ termThreads);
+      guard_discard (negb terminated);;
+
+      (* Run one instruction *)
+      cinterp (run_outcome tid) isem;;
+      (* Check if the thread is actually terminated and mark it if so *)
+      'regs ← mget ((.!!! tid) ∘ regs);
+      if term tid regs then
+        (* Mark it as terminated *)
+        msetv ((.!!! tid) ∘ termThreads) true
+      else mret ().
 End Model.
 
+(** * Lift to executable archModel *)
+
 Definition from_archState {nth} (term : terminationCondition nth)
-    (astate : archState nth) : machine_state nth :=
+  (astate : archState nth) : machine_state nth :=
   {|
     regs := astate.(archState.regs);
     mem := astate.(archState.memory);
@@ -330,60 +352,33 @@ Definition from_archState {nth} (term : terminationCondition nth)
   |}.
 
 Definition to_archState {nth} (mstate : machine_state nth) : option (archState nth) :=
-    if all_buffers_empty nth mstate && bool_decide (lock nth mstate = None) then
-        Some {|
-            archState.regs := regs nth mstate;
-            archState.memory := mem nth mstate;
-            archState.address_space := ()
-        |}
-    else None.
+  if all_buffers_empty mstate && bool_decide (lock mstate = None) then
+    Some {|
+        archState.regs := regs mstate;
+        archState.memory := mem mstate;
+        archState.address_space := ()
+      |}
+  else None.
 
-Definition step {nth} (isem : iMon ()) (term : terminationCondition nth):
-        Exec.t (machine_state nth) string () :=
-    (* The transition taken is either a flush to memory or a run_outcome call,
-       for a specific tid *)
-    tid ← mchoosef;
-    flush_transition ← mchoosef;
-    if (flush_transition : bool) then
-      (* This function discards if there is nothing to flush. *)
-      flush_one_item_buffer nth tid
-    else
-      (* Check if the thread is already marked terminated, in which case there
-         is no transition to take. *)
-      terminated ← mget ((.!!! tid) ∘ termThreads nth);
-      guard_discard (negb terminated);;
-
-      (* Run one instruction *)
-      cinterp (run_outcome nth tid) isem;;
-
-      (* Check if the thread is actually terminated and mark it if so *)
-      'regs ← mget ((.!!! tid) ∘ regs nth);
-      if term tid regs then
-        (* Mark it as terminated *)
-        msetv ((.!!! tid) ∘ termThreads nth) true
-      else mret ().
-
-Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ()) (term : terminationCondition nth)
-    : Exec.t (machine_state nth) string {s : archState nth & archState.is_terminated term s} :=
-        (* run until out of fuel or conditions met *)
-        if fuel is S fuel then
-            step isem term;;
-            mstate ← mGet;
-            astate ← mget to_archState;
-            match astate with
-            | Some astate  => 
-                if decide (archState.is_terminated term astate) is left p then
-                    mret (existT astate p)
-                else run_to_term fuel isem term
-            | None => run_to_term fuel isem term
-            end
-        else
-            mthrow "Out of fuel".
+Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ())
+  (term : terminationCondition nth) :
+  Exec.t (machine_state nth) string {s : archState nth & archState.is_terminated term s} :=
+  (* run until out of fuel or conditions met *)
+  if fuel is S fuel then
+    step isem term;;
+    mstate ← mGet;
+    astate ← mget to_archState;
+    if astate is Some astate then
+      if decide (archState.is_terminated term astate) is left p then
+        mret (existT astate p)
+      else run_to_term fuel isem term
+    else run_to_term fuel isem term
+  else mthrow "Out of fuel".
 
 (** Top-level one-threaded model function that takes fuel (guaranteed
     termination) and an instruction monad, and returns a computational set of
     all possible final states. *)
 Definition x86_operational_modelc (fuel : nat) (isem : iMon ()) : (archModel.c ∅) :=
-    λ n term (initSt: archState n),
+  λ n term (initSt: archState n),
     from_archState term initSt
     |> archModel.Res.from_exec (run_to_term fuel isem term).
