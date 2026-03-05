@@ -1,6 +1,7 @@
 (lang dune 3.8)
 (name coq-archsem)
 (using coq 0.8)
+(using menhir 2.1)
 
 (source (github rems-project/archsem))
 (license "BSD-2-Clause")

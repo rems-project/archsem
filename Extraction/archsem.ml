@@ -31,6 +31,26 @@ module Reg = struct
     | 8 -> R_bitvector_64 R8
     | 9 -> R_bitvector_64 R9
     | 10 -> R_bitvector_64 R10
+    | 11 -> R_bitvector_64 R11
+    | 12 -> R_bitvector_64 R12
+    | 13 -> R_bitvector_64 R13
+    | 14 -> R_bitvector_64 R14
+    | 15 -> R_bitvector_64 R15
+    | 16 -> R_bitvector_64 R16
+    | 17 -> R_bitvector_64 R17
+    | 18 -> R_bitvector_64 R18
+    | 19 -> R_bitvector_64 R19
+    | 20 -> R_bitvector_64 R20
+    | 21 -> R_bitvector_64 R21
+    | 22 -> R_bitvector_64 R22
+    | 23 -> R_bitvector_64 R23
+    | 24 -> R_bitvector_64 R24
+    | 25 -> R_bitvector_64 R25
+    | 26 -> R_bitvector_64 R26
+    | 27 -> R_bitvector_64 R27
+    | 28 -> R_bitvector_64 R28
+    | 29 -> R_bitvector_64 R29
+    | 30 -> R_bitvector_64 R30
     | _ -> raise (Invalid_argument (Printf.sprintf "R%i doesn't exist" i))
 
   let sctlr i : t =

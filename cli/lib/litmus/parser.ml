@@ -146,7 +146,9 @@ let parse_mem_conds pairs =
 
 (** Parse all [[outcome]] blocks into final conditions *)
 let parse_test_finals toml =
-  Otoml.find toml get_list ["outcome"] |> List.filter_map (fun node ->
+  (match Otoml.find_opt toml (fun x -> x) ["outcome"] with
+   | Some v -> get_list v | None -> [])
+  |> List.filter_map (fun node ->
     match node with
     | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
       let parse_with_mem v =

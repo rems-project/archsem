@@ -22,11 +22,6 @@ let get_string keys default t =
   | Some s -> s
   | None -> default
 
-let of_config_section toml =
-  match Otoml.find_opt toml (fun x -> x) ["config"] with
-  | Some section -> section
-  | None -> empty
-
 let of_file path = Otoml.Parser.from_file path
 
 (** {1 Global config} *)

@@ -48,22 +48,8 @@ let get_string_tests = "get_string" >::: [
       (Config.get_string ["model"; "bbm"] "off" cfg));
 ]
 
-(** {1 of_config_section} *)
-
-let of_config_section_tests = "of_config_section" >::: [
-  "extracts config section" >:: (fun _ ->
-    let toml = Otoml.Parser.from_string
-      "arch = \"Arm\"\nname = \"T\"\n\n[config]\nfuel = 500\n" in
-    assert_equal 500
-      (Config.get_int ["fuel"] 0 (Config.of_config_section toml)));
-  "empty when no config section" >:: (fun _ ->
-    assert_equal Config.empty
-      (Config.of_config_section (Otoml.Parser.from_string "arch = \"Arm\"\n")));
-]
-
 let () = run_test_tt_main ("litmus_config" >::: [
   empty_tests;
   get_int_tests;
   get_string_tests;
-  of_config_section_tests;
 ])

@@ -4,7 +4,11 @@
  (libraries litmus otoml))
 
 (tests
- (names litmus_spec_test litmus_printer_test litmus_config_test)
- (modules litmus_spec_test litmus_printer_test litmus_config_test)
- (libraries archsem litmus utils otoml ounit2)
+ (names litmus_spec_test litmus_printer_test litmus_config_test
+        isla_symbols_test isla_input_test isla_assembler_test
+        isla_assertion_test isla_converter_test)
+ (modules litmus_spec_test litmus_printer_test litmus_config_test
+          isla_symbols_test isla_input_test isla_assembler_test
+          isla_assertion_test isla_converter_test)
+ (libraries archsem litmus isla utils otoml ounit2 unix)
  (deps ../arm.archsem.toml (glob_files ../seq/*.toml) (glob_files ../ump/*.toml) (glob_files ../vmp/*.toml)))
