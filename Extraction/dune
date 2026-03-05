@@ -223,7 +223,19 @@
   X86Inst.ml
   X86Inst.mli
   OperationalX86TSO.ml
-  OperationalX86TSO.mli))
+  OperationalX86TSO.mli
+  Bool.ml
+  Bool.mli
+  list_misc.ml
+  list_misc.mli
+  riscv_extras.ml
+  riscv_extras.mli
+  rv64d_types.ml
+  rv64d_types.mli
+  rv64d.ml
+  rv64d.mli
+  RiscVInst.ml
+  RiscVInst.mli))
 
 (library
  (name archsem)

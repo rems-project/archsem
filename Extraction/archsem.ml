@@ -76,6 +76,19 @@ module Arm = struct
     end)
 end
 
+module RiscV = struct
+  module Required = struct
+    module Arch = RiscVInst.Arch
+    include RiscVInst.RiscV
+
+    let default_address_space = ()
+  end
+
+  include ArchBuild.Build (Required)
+
+  let isa = RiscVInst.sail_riscv_sem true
+end
+
 module X86 = struct
   module Required = struct
     module Arch = X86Inst.Arch

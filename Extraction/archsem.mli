@@ -58,6 +58,14 @@ module Arm : sig
   module VMProm : OpModel.S with type config = bool
 end
 
+(** RISC-V (rv64d from sail-riscv). No concurrency model is extracted yet *)
+module RiscV : sig
+  include Arch.Arch
+
+  (** The full sail-riscv ISA semantics *)
+  val isa : iSem
+end
+
 module X86 : sig
   include Arch.Arch
 
