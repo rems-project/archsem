@@ -67,6 +67,11 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
   Definition memoryMap := gmap address (bv 8).
   #[global] Typeclasses Transparent memoryMap.
 
+  (** Lookup a single byte of memory *)
+  Definition mem_lookup_byte (addr : address) (mm : memoryMap) :
+    option (bv 8) :=
+    mm !! addr.
+
   (** Lookup a range of memory as a list of bytes.
       Returns [None] if any byte is missing *)
   Definition mem_lookup_bytes (addr : address) (n : N) (mm : memoryMap) :
@@ -78,6 +83,19 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
   Definition mem_lookup (addr : address) (n : N) (mm : memoryMap) :
       option (bv (8 * n)) :=
     bv_of_bytes _ <$> (mem_lookup_bytes addr n mm).
+
+  Fixpoint mem_present_nat (addr : address) (n : nat) (mm : memoryMap): bool :=
+    if n is S m then
+      (bool_decide (is_Some (mm !! addr)) && mem_present_nat (bv_succ addr) m mm)
+    else true.
+
+  Definition mem_present (addr : address) (n : N) (mm : memoryMap) : bool :=
+    mem_present_nat addr (N.to_nat n) mm.
+
+  (** Insert a single byte of memory *)
+  Definition mem_insert_byte (addr : address) (byte : bv 8) (mm : memoryMap) :
+    memoryMap :=
+    insert addr byte mm.
 
   (** Insert a sequence of bytes to memory (even if there were not there before).
       A normal memory write should check if bytes exists before writing them *)

@@ -50,6 +50,29 @@ module type Arch = sig
     (** address then size then data (little endian) *)
 
     val inserti : int -> int -> int -> t -> t
+
+    val insertb : int -> Bytes.t -> t -> t
+
+    val present : int -> int -> t -> bool
+    (** Check whether a range of memory is entirely present *)
+
+    val lookup_opt : int -> int -> t -> Z.t option
+    (** little-endian *)
+
+    val lookupi_opt : int -> int -> t -> int option
+    (** This will crash if the result doesn't fin the integer *)
+
+    val lookupb_opt : int -> int -> t -> Bytes.t option
+
+    val lookup : int -> int -> t -> Z.t
+    (** little-endian, raise Not_found if not all bytes are set *)
+
+    val lookupi : int -> int -> t -> int
+    (** This will crash if the result doesn't fin the integer
+        raise Not_found if not all bytes are set *)
+
+    val lookupb : int -> int -> t -> Bytes.t
+    (** raise Not_found if not all bytes are set *)
   end
 
   module ArchState : sig

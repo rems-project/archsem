@@ -12,6 +12,7 @@ end
 
 module Build (ArchReq : ArchRequired) = struct
   open ArchReq
+  open Stdlib
 
   module Reg = struct
     type t = Arch.reg
@@ -57,7 +58,7 @@ module Build (ArchReq : ArchRequired) = struct
       | Some rv -> Some (reg, rv)
       | None -> None
 
-    let get reg rm : RegVal.t = get_opt reg rm |> Stdlib.Option.get
+    let get reg rm : RegVal.t = get_opt reg rm |> Option.get
 
     let getZ reg rm : Z.t =
       match RegVal.to_gen (get reg rm) with
@@ -79,6 +80,50 @@ module Build (ArchReq : ArchRequired) = struct
       TM.mem_insert (Z.of_int addr) (Z.of_int size) (Z.extract data 0 (8 * size))
 
     let inserti addr size data = insert addr size (Z.of_int data)
+
+    let rec insertb_sub addr data pos len mm =
+      if len = 0 then mm
+      else
+        let mm =
+          TM.mem_insert_byte (Z.of_int addr)
+            (Bytes.get data pos |> Char.code |> Z.of_int) mm
+        in
+        insertb_sub (addr + 1) data (pos + 1) (len - 1) mm
+
+    let rec insertb addr data mm =
+      insertb_sub addr data 0 (Bytes.length data) mm
+
+    let rec present addr size mm =
+      if size < 0 then true
+      else
+        Option.is_some (TM.mem_lookup_byte (Z.of_int addr) mm) &&
+        present (addr + 1) (size - 1) mm
+
+    let lookup_opt addr size mm =
+      TM.mem_lookup (Z.of_int addr) (Z.of_int size) mm
+
+    let lookupi_opt addr size mm =
+      lookup_opt addr size mm |> Option.map Z.to_int
+
+    let lookup addr size mm =
+      match lookup_opt addr size mm with
+      | Some v -> v
+      | None -> raise Not_found
+
+    let lookupi addr size mm = lookup addr size mm |> Z.to_int
+
+    let lookupb addr size mm =
+      let res = Bytes.create size in
+      for i = 0 to size - 1 do
+        match TM.mem_lookup_byte (Z.of_int addr) mm with
+        | None -> raise Not_found
+        | Some byte -> Bytes.unsafe_set res i (Obj.magic byte)
+      done;
+      res
+
+    let lookupb_opt addr size mm =
+      try Some (lookupb addr size mm) with
+      | Not_found -> None
 
   end
 
