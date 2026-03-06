@@ -5,7 +5,6 @@
 
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
 
-open Archsem
 open Litmus
 open Runner
 
@@ -31,11 +30,11 @@ let get_all_tests paths =
   );
   files
 
-let run_tests model_name model files =
+let run_tests model_name files =
   Terminal.print_header model_name (List.length files);
 
   let results = List.map (fun file ->
-    let result = run_litmus_test model file in
+    let result = run_litmus_test model_name file in
     (file, result)
   ) files in
 
@@ -62,72 +61,36 @@ let run_tests model_name model files =
 open Cmdliner
 open Cmdliner.Term.Syntax
 
-(** Common positional argument for list of tests*)
+(** Common arguments *)
+
 let test_path_term =
   let doc = "The tests to run. Can be either single files or directories \
              containing test files" in
   Arg.(non_empty & pos_all file [] & info [] ~doc ~docv:"TESTS")
 
-(** The sequential model command *)
-let cmd_seq =
-  let run =
-    let+ paths = test_path_term in
-    let files = get_all_tests paths in
-    run_tests "seq" seq_model files
-  in
-  let info =
-    let doc = "Run sequential model" in
-    Cmd.(info "seq" ~doc)
-  in
-  Cmd.v info run
+let config_term =
+  let doc = "Path to a TOML configuration file" in
+  Arg.(required & opt (some file) None & info ["config"; "c"] ~doc ~docv:"FILE")
 
-(** The user-mode promising command *)
-let cmd_ump =
-  let run =
-    let+ paths = test_path_term in
-    let files = get_all_tests paths in
-    run_tests "ump" umProm_model files
-  in
-  let info =
-    let doc = "Run user-mode promising model" in
-    Cmd.(info "ump" ~doc)
-  in
-  Cmd.v info run
+(** Set the global config from the CLI --config flag. *)
+let init_config path =
+  Config.set (Config.of_file path)
 
-(** The virtual-memory promising command *)
-let cmd_vmp =
-  let bbm_mode =
-    let off_info =
-      let doc = "Turn BBM checking off" in
-      Arg.(info ["bbm-off"] ~doc)
-    in
-    let lax_info =
-      let doc = "Make BBM checking lax: if a page table entries is missing, it \
-                 just ignores it" in
-      Arg.(info ["bbm-lax"] ~doc)
-    in
-    let strict_info =
-      let doc = "Make BBM checking strict: if a page table entries is missing, \
-                 the model catches fire" in
-      Arg.(info ["bbm-strict"] ~doc)
-    in
-    Arg.(value &
-         vflag BBM.Off (* ← default is Off for now *)
-           [(BBM.Off, off_info); (BBM.Lax, lax_info); (BBM.Strict, strict_info)])
-  in
+(** Model subcommands *)
+
+let model_cmd model_name ~doc =
   let run =
     let+ paths = test_path_term
-    and+ bbm_param = bbm_mode in
+    and+ config = config_term in
+    init_config config;
     let files = get_all_tests paths in
-    run_tests "vmp" (vmProm_model ~bbm_param) files
+    run_tests model_name files
   in
-  let info =
-    let doc =
-      "Run virtual-memory promising model. Only one --bbm-* option can be active \
-       at the same time, the default is --bbm-off" in
-    Cmd.(info "vmp" ~doc)
-  in
-  Cmd.v info run
+  Cmd.v (Cmd.info model_name ~doc) run
+
+let cmd_seq = model_cmd "seq" ~doc:"Run sequential model"
+let cmd_ump = model_cmd "ump" ~doc:"Run user-mode promising model"
+let cmd_vmp = model_cmd "vmp" ~doc:"Run virtual-memory promising model"
 
 (** The main archsem command *)
 let cmd =

@@ -115,13 +115,28 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
-let default_fuel = 1000
+(** {1 Config-aware model constructors} *)
 
-let run_spec model (test : Spec.t) =
+let bbm_of_config () =
+  match Config.get_string_opt ["model"; "bbm"] (Config.get ()) with
+  | Some "lax" -> BBM.Lax
+  | Some "strict" -> BBM.Strict
+  | _ -> BBM.Off
+
+let make_model model_name =
+  match model_name with
+  | "seq" -> seq_model
+  | "ump" -> umProm_model
+  | "vmp" -> vmProm_model ~bbm_param:(bbm_of_config ())
+  | _ -> failwith ("unknown model: " ^ model_name)
+
+let run_spec model_name (test : Spec.t) =
+  let model = make_model model_name in
+  let fuel = Config.get_int ["execution"; "fuel"] 1000 (Config.get ()) in
   let init, term, finals = Archstate.spec_to_archstate test in
-  run_executions model init default_fuel term finals
+  run_executions model init fuel term finals
 
-let run_litmus_test model filename =
+let run_litmus_test model_name filename =
   let name = Filename.basename filename in
   if not (Sys.file_exists filename) then (
     Printf.printf "  %s✗%s %s  %sfile not found%s\n"
@@ -130,7 +145,7 @@ let run_litmus_test model filename =
   ) else try
     let toml = Otoml.Parser.from_file filename in
     let test = Parser.parse_to_spec toml in
-    let result, msgs = run_spec model test in
+    let result, msgs = run_spec model_name test in
     let icon, color = match result with
       | Expected -> Terminal.check, Terminal.green
       | Unexpected -> Terminal.cross, Terminal.yellow

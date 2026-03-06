@@ -202,7 +202,7 @@ let archstate_runner_tests = "spec_to_archstate / run_spec" >::: [
   "MP converts to ArchState" >:: (fun _ ->
     ignore (Archstate.spec_to_archstate mp));
   "EOR Expected with seq model" >:: (fun _ ->
-    let result, _msgs = Runner.run_spec seq_model eor in
+    let result, _msgs = Runner.run_spec "seq" eor in
     assert_equal Runner.Expected result);
 ]
 
