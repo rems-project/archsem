@@ -80,6 +80,9 @@ module MemMap : sig
   val insert_bytes : Z.t -> Byte.t list -> t -> t
   (** address then list of bytes *)
 
+  val lookup : Z.t -> int -> t -> Z.t option
+  (** [lookup addr size mm] reads [size] bytes at [addr] from [mm]. *)
+
 end
 
 module ArchState : sig

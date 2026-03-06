@@ -55,17 +55,35 @@ let termcond_to_toml regs =
   Otoml.TomlTable
     (List.map (fun (reg, rv) -> (Reg.to_string reg, gen_to_toml rv)) regs)
 
+let mem_cond_to_toml (mc : Spec.mem_cond) =
+  let default = Config.default_mem_size () in
+  match mc.req with
+  | Spec.MemEq v when mc.size = default ->
+    (mc.sym, Otoml.TomlInteger (Z.to_int v))
+  | _ ->
+    let pairs =
+      (match mc.req with
+       | Spec.MemEq v -> [("val", Otoml.TomlInteger (Z.to_int v))]
+       | Spec.MemNe v -> [("op", Otoml.TomlString "ne"); ("val", Otoml.TomlInteger (Z.to_int v))])
+      @ (if mc.size <> default then [("size", Otoml.TomlInteger mc.size)] else [])
+    in
+    (mc.sym, Otoml.TomlInlineTable pairs)
+
 let outcome_to_toml (fc : Spec.final_cond) =
-  let label, thread_conds = match fc with
-    | Spec.Observable tc -> "observable", tc
-    | Spec.Unobservable tc -> "unobservable", tc
+  let label, thread_conds, mem_conds = match fc with
+    | Spec.Observable (tc, mc) -> "observable", tc, mc
+    | Spec.Unobservable (tc, mc) -> "unobservable", tc, mc
   in
-  let entries = List.map (fun (tid, reqs) ->
+  let thread_entries = List.map (fun (tid, reqs) ->
     string_of_int tid,
     Otoml.TomlInlineTable
       (List.map (fun (reg, req) -> (Reg.to_string reg, req_to_toml req)) reqs)
   ) thread_conds in
-  Otoml.TomlTable [label, Otoml.TomlTable entries]
+  let mem_entries = match mem_conds with
+    | [] -> []
+    | _ -> ["mem", Otoml.TomlInlineTable (List.map mem_cond_to_toml mem_conds)]
+  in
+  Otoml.TomlTable [label, Otoml.TomlTable (thread_entries @ mem_entries)]
 
 (** {1 Public API} *)
 

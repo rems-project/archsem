@@ -106,15 +106,15 @@ let thread_cond_tests = "thread_cond_equal" >::: [
     assert_bool "" (not (thread_cond_equal tc (0, [(reg "R0", ReqEq (i 0))]))));
 ]
 
-let obs : final_cond = Observable [tc]
+let obs : final_cond = Observable ([tc], [])
 
 let final_cond_tests = "final_cond_equal" >::: [
   "same Observable" >:: (fun _ ->
     assert_bool "" (final_cond_equal obs obs));
   "Obs vs Unobs" >:: (fun _ ->
-    assert_bool "" (not (final_cond_equal obs (Unobservable [tc]))));
+    assert_bool "" (not (final_cond_equal obs (Unobservable ([tc], [])))));
   "different threads" >:: (fun _ ->
-    assert_bool "" (not (final_cond_equal obs (Observable [(1, snd tc)]))));
+    assert_bool "" (not (final_cond_equal obs (Observable ([(1, snd tc)], [])))));
 ]
 
 (** {1 equal (full test)} *)
@@ -128,7 +128,7 @@ let t : Spec.t = {
     name = None; kind = None;
   }];
   term_cond = [[(Reg.pc, i 0x504)]];
-  finals = [Observable [(0, [(reg "R0", ReqEq (i 0x110))])]];
+  finals = [Observable ([(0, [(reg "R0", ReqEq (i 0x110))])], [])];
 }
 
 let equal_tests = "equal" >::: [

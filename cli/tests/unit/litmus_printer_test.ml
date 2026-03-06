@@ -4,6 +4,10 @@ open OUnit2
 open Litmus
 open Utils
 
+let () =
+  let config_path = Filename.concat test_root "arm.archsem.toml" in
+  Config.set (Config.of_file config_path)
+
 (** {1 Helpers} *)
 
 let round_trip rel_path =

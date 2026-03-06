@@ -36,3 +36,8 @@ let global : t ref = ref empty
 let set config = global := config
 
 let get () = !global
+
+let default_mem_size () =
+  match Otoml.find_opt (get ()) (fun x -> x) ["arch"; "default_mem_size"] with
+  | Some (Otoml.TomlInteger i) -> i
+  | _ -> failwith "config: [arch] default_mem_size is required"

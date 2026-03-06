@@ -1,0 +1,5 @@
+[arch]
+default_mem_size = 4
+
+[execution]
+fuel = 1000
