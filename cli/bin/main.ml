@@ -6,8 +6,8 @@
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
 
 open Archsem
-open Archsem_test
-open Litmus_runner
+open Litmus
+open Runner
 
 (** {1 Running litmus tests} *)
 

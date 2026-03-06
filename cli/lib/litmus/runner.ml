@@ -28,8 +28,8 @@ let rec string_of_regval_gen = function
 
 let req_to_string (reg, req) =
   let op, v = match req with
-    | Litmus_parser.Eq v -> ("=", v)
-    | Litmus_parser.Neq v -> ("!=", v)
+    | Parser.Eq v -> ("=", v)
+    | Parser.Neq v -> ("!=", v)
   in
   Printf.sprintf "%s%s%s" (Reg.to_string reg) op (string_of_regval_gen v)
 
@@ -40,7 +40,7 @@ let cond_to_string cond =
 
 (** {1 Outcome Checking} *)
 
-let check_outcome (fs : ArchState.t) (cond : Litmus_parser.cond) : bool =
+let check_outcome (fs : ArchState.t) (cond : Parser.cond) : bool =
   List.for_all (fun (tid, reqs) ->
     let regs = ArchState.reg tid fs in
     List.for_all (fun (reg, req) ->
@@ -50,8 +50,8 @@ let check_outcome (fs : ArchState.t) (cond : Litmus_parser.cond) : bool =
       | Some rv ->
         let actual = RegVal.to_gen rv in
         (match req with
-         | Litmus_parser.Eq exp -> actual = exp
-         | Litmus_parser.Neq exp -> actual <> exp)
+         | Parser.Eq exp -> actual = exp
+         | Parser.Neq exp -> actual <> exp)
     ) reqs
   ) cond
 
@@ -63,9 +63,9 @@ let run_executions model init fuel term outcomes =
   let results = model fuel term init in
 
   let observable = List.filter_map
-    (function Litmus_parser.Observable c -> Some c | _ -> None) outcomes in
+    (function Parser.Observable c -> Some c | _ -> None) outcomes in
   let unobservable = List.filter_map
-    (function Litmus_parser.Unobservable c -> Some c | _ -> None) outcomes in
+    (function Parser.Unobservable c -> Some c | _ -> None) outcomes in
 
   let errors = List.filter_map (function
     | ArchModel.Res.Error e -> Some e
@@ -122,12 +122,12 @@ let run_litmus_test model filename =
     ParseError
   ) else try
     let toml = Otoml.Parser.from_file filename in
-    let fuel = Otoml.find_opt toml Litmus_parser.get_int ["fuel"] |> Option.value ~default:1000 in
-    let regs = Litmus_parser.parse_registers toml in
-    let mem = Litmus_parser.parse_memory toml in
+    let fuel = Otoml.find_opt toml Parser.get_int ["fuel"] |> Option.value ~default:1000 in
+    let regs = Parser.parse_registers toml in
+    let mem = Parser.parse_memory toml in
     let init = ArchState.make regs mem in
-    let term = Litmus_parser.parse_termCond (List.length regs) toml in
-    let outcomes = Litmus_parser.parse_outcomes toml in
+    let term = Parser.parse_termCond (List.length regs) toml in
+    let outcomes = Parser.parse_outcomes toml in
     let result, msgs = run_executions model init fuel term outcomes in
     let icon, color = match result with
       | Expected -> Terminal.check, Terminal.green
