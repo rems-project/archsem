@@ -63,7 +63,7 @@ jobs:
     - name: Install OPAM dependencies
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       run: |
-        opam install . --deps-only --locked --confirm-level=unsafe-yes
+        opam install . --deps-only --locked --with-test --confirm-level=unsafe-yes
 
     - name: Clean OPAM folder for caching
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
