@@ -89,11 +89,10 @@ module type Arch = sig
 
   type termCond = (RegMap.t -> bool) list
 
-  type iSem
   (** Instruction semantics, opaque for now *)
+  type iSem
 
   module ArchModel : sig
-
     module Res : sig
       type 'flag t =
         | FinalState of ArchState.t

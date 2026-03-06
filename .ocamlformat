@@ -1,0 +1,8 @@
+version=0.28.1
+profile=ocamlformat
+parens-tuple-patterns=always
+break-cases=fit
+sequence-style=terminator
+type-decl=sparse
+indicate-multiline-delimiters=no
+margin=82
