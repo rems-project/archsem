@@ -2,38 +2,40 @@
  (name ASCommon)
  (package coq-archsem-common)
  (modules
-   Common
-   CBase
-   CExtraction
-   Options
-   CSimp
-   CDestruct
-   CArith
-   CList
-   CVec
-   COption
-   CBool
-   CBitvector
-   CInduction
-   CMaps
-   CSets
-   CMonads
-   GRel
-   CResult
-   StateT
-   Effects
-   FMon
-   Exec
-   HVec
- )
+  Common
+  CBase
+  CExtraction
+  Options
+  CSimp
+  CDestruct
+  CArith
+  CList
+  CVec
+  COption
+  CBool
+  CBitvector
+  CInduction
+  CMaps
+  CSets
+  CMonads
+  GRel
+  CResult
+  StateT
+  Effects
+  FMon
+  Exec
+  HVec)
  (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2)
- (coqdoc_flags :standard --utf8
-               --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
-               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
- )
-)
+ (coqdoc_flags
+  :standard
+  --utf8
+  --external
+  https://plv.mpi-sws.org/coqdoc/stdpp/
+  stdpp
+  --coqlib_url
+  https://coq.inria.fr/doc/V8.20.1/stdlib))
 
 (alias
  (name coq)
- (deps (alias_rec all))
-)
+ (deps
+  (alias_rec all)))

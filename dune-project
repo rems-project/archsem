@@ -75,6 +75,7 @@
    coq-archsem-arm
   (otoml (>= 1.0))
   (cmdliner (>= 1.3))
+  (ocamlformat (and (>= 0.28) :with-dev-setup))
  )
 )
 

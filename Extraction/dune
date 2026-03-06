@@ -1,35 +1,133 @@
-(env (dev (flags (:standard -w -20-32-33-34-39-67))))
+(env
+ (dev
+  (flags
+   (:standard -w -20-32-33-34-39-67))))
 
 (coq.extraction
-  (prelude ArmInstExtr)
-  (theories Ltac2 Stdlib stdpp SailStdpp Hammer RecordUpdate Equations SailTinyArm
-            Riscv SailTinyX86 ASCommon ArchSem ArchSemArm ArchSemRiscV ArchSemX86)
-  (extracted_modules ArmInst SeqModel Ascii base Basics BinInt ZArith_dec CMonads
-                     BinNat BinNums NatDef BinPos PosDef CBase CBitvector CBool CArith
-                     CList CMaps COption Common CVec countable CResult CSets Datatypes
-                     decidable definitions Effects Exec fin0 finite fin_maps Fin
-                     FMon gmap HexString Interface list_monad list_relations
-                     ListDef List0 list_numbers listset mapset CRelationClasses GRel
-                     Nat numbers option propset RecordSet pretty
-                     sets Specif String0 strings Classes ArchInst CandidateExecutions
-                     Instances Values MachineWord FromSail ConcurrencyInterfaceV2
-                     System_types BinNatDef Compare_dec PeanoNat TypeCasts Sumbool
-                     ConcurrencyInterfaceBuiltinsV2
-                     ConcurrencyInterfaceTypesV2
-                     Rdefinitions ClassicalDedekindReals StateT ISAManip
-                     ConstructiveCauchyReals QArith_base Ring_theory QExtra Qabs
-                     Qreduction ConstructiveCauchyRealsMult String1 System
-                     BinaryString Operators_mwords GenPromising
-                     TermModels vector0 VectorDef Vector UMPromising
-                     VMPromising list_misc HVec
-                     fin_sets list_basics
-                     Tiny_x86 Tiny_x86_types X86Inst Zeuclid
-  )
-)
+ (prelude ArmInstExtr)
+ (theories
+  Ltac2
+  Stdlib
+  stdpp
+  SailStdpp
+  Hammer
+  RecordUpdate
+  Equations
+  SailTinyArm
+  Riscv
+  SailTinyX86
+  ASCommon
+  ArchSem
+  ArchSemArm
+  ArchSemRiscV
+  ArchSemX86)
+ (extracted_modules
+  ArmInst
+  SeqModel
+  Ascii
+  base
+  Basics
+  BinInt
+  ZArith_dec
+  CMonads
+  BinNat
+  BinNums
+  NatDef
+  BinPos
+  PosDef
+  CBase
+  CBitvector
+  CBool
+  CArith
+  CList
+  CMaps
+  COption
+  Common
+  CVec
+  countable
+  CResult
+  CSets
+  Datatypes
+  decidable
+  definitions
+  Effects
+  Exec
+  fin0
+  finite
+  fin_maps
+  Fin
+  FMon
+  gmap
+  HexString
+  Interface
+  list_monad
+  list_relations
+  ListDef
+  List0
+  list_numbers
+  listset
+  mapset
+  CRelationClasses
+  GRel
+  Nat
+  numbers
+  option
+  propset
+  RecordSet
+  pretty
+  sets
+  Specif
+  String0
+  strings
+  Classes
+  ArchInst
+  CandidateExecutions
+  Instances
+  Values
+  MachineWord
+  FromSail
+  ConcurrencyInterfaceV2
+  System_types
+  BinNatDef
+  Compare_dec
+  PeanoNat
+  TypeCasts
+  Sumbool
+  ConcurrencyInterfaceBuiltinsV2
+  ConcurrencyInterfaceTypesV2
+  Rdefinitions
+  ClassicalDedekindReals
+  StateT
+  ISAManip
+  ConstructiveCauchyReals
+  QArith_base
+  Ring_theory
+  QExtra
+  Qabs
+  Qreduction
+  ConstructiveCauchyRealsMult
+  String1
+  System
+  BinaryString
+  Operators_mwords
+  GenPromising
+  TermModels
+  vector0
+  VectorDef
+  Vector
+  UMPromising
+  VMPromising
+  list_misc
+  HVec
+  fin_sets
+  list_basics
+  Tiny_x86
+  Tiny_x86_types
+  X86Inst
+  Zeuclid))
 
 (library
  (name archsem)
  (package archsem)
  (modules_without_implementation arch)
- (libraries zarith)
-)
+ (libraries zarith))

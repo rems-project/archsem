@@ -7,7 +7,6 @@
     - [[outcome]]: Expected observable/unobservable outcomes *)
 
 open Archsem
-
 open Arm
 
 (** {1 Types} *)
@@ -27,7 +26,6 @@ type outcome =
   | Observable of cond
   | Unobservable of cond
 
-
 (** {1 TOML Helpers} *)
 
 let get_int = function
@@ -41,7 +39,6 @@ let get_list = function
 let get_table = function
   | Otoml.TomlTable table | Otoml.TomlInlineTable table -> table
   | _ -> failwith "Expected table"
-
 
 (** {1 Register Parsing} *)
 
@@ -57,17 +54,15 @@ let rec parse_reg_val : Otoml.t -> RegValGen.t = function
   | TomlInteger i -> Number (Z.of_int i)
   | TomlString s -> String s
   | TomlTable t | TomlInlineTable t ->
-    Struct (List.map (fun (k, v) -> (k, parse_reg_val v)) t)
+      Struct (List.map (fun (k, v) -> (k, parse_reg_val v)) t)
   | _ -> failwith "Unsupported value type"
 
 (** Parse a register key-value pair into (Reg.t, RegVal.gen) *)
-let parse_register name toml =
-  (parse_reg_name name, parse_reg_val toml)
+let parse_register name toml = (parse_reg_name name, parse_reg_val toml)
 
 (** Parse a register TOML table into a list of (Reg.t, RegVal.gen) *)
 let parse_reg_table toml =
   get_table toml |> List.map (fun (k, v) -> parse_register k v)
-
 
 (** {1 Register Requirements Parsing} *)
 
@@ -77,22 +72,21 @@ let parse_reg_table toml =
     - Explicit op: X0 = \{ op = "eq", val = 1 \} or \{ op = "ne", val = 1 \} *)
 let parse_requirement toml =
   match toml with
-  | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
-    (match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
-     | Some (Otoml.TomlString "eq"), Some v -> Eq (parse_reg_val v)
-     | Some (Otoml.TomlString "ne"), Some v -> Neq (parse_reg_val v)
-     | Some (Otoml.TomlString op), _ -> failwith ("Unknown op: " ^ op)
-     | _ -> Eq (parse_reg_val toml))  (* Table without op/val = struct value *)
-  | _ -> Eq (parse_reg_val toml)  (* Simple value = equality *)
+  | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs -> (
+    match (List.assoc_opt "op" pairs, List.assoc_opt "val" pairs) with
+    | (Some (Otoml.TomlString "eq"), Some v) -> Eq (parse_reg_val v)
+    | (Some (Otoml.TomlString "ne"), Some v) -> Neq (parse_reg_val v)
+    | (Some (Otoml.TomlString op), _) -> failwith ("Unknown op: " ^ op)
+    | _ -> Eq (parse_reg_val toml) (* Table without op/val = struct value *))
+  | _ -> Eq (parse_reg_val toml)
+(* Simple value = equality *)
 
 (** Parse a register key-value pair into (Reg.t, requirement) *)
-let parse_reg_req name toml =
-  (parse_reg_name name, parse_requirement toml)
+let parse_reg_req name toml = (parse_reg_name name, parse_requirement toml)
 
 (** Parse a table of register requirements into a list of (Reg.t, requirement) *)
 let parse_reg_req_table toml =
   get_table toml |> List.map (fun (k, v) -> parse_reg_req k v)
-
 
 (** {1 Section Parsing} *)
 
@@ -101,50 +95,61 @@ let parse_reg_req_table toml =
 let parse_registers toml =
   Otoml.find toml get_list ["registers"]
   |> List.map (fun t ->
-       parse_reg_table t |> List.fold_left (fun rm (reg, rv) ->
-         RegMap.insert (RegVal.of_gen reg rv |> Result.get_ok) rm
-       ) RegMap.empty)
+      parse_reg_table t
+      |> List.fold_left
+           (fun rm (reg, rv) ->
+             RegMap.insert (RegVal.of_gen reg rv |> Result.get_ok) rm)
+           RegMap.empty)
 
 (** Parse [[memory]] section into initial memory map.
     Each memory block has: base address, size, optional step, and data.
     Data can be a single integer or an array of values. *)
 let parse_memory toml =
   Otoml.find toml get_list ["memory"]
-  |> List.fold_left (fun mm table ->
-       match table with
-       | Otoml.TomlTable _ ->
-         let base = Otoml.find table get_int ["base"] in
-         let size = Otoml.find table get_int ["size"] in
-         let step = Otoml.find_opt table get_int ["step"] in
-         (match Otoml.find table (fun x -> x) ["data"] with
-          | Otoml.TomlArray data_list ->
-            let n = List.length data_list in
-            let step = Option.value step ~default:(if n > 0 then size / n else 0) in
-            List.fold_left (fun (addr, mm) v ->
-              (addr + step, MemMap.inserti addr step (get_int v) mm)
-            ) (base, mm) data_list |> snd
-          | Otoml.TomlInteger v -> MemMap.inserti base size v mm
-          | _ -> failwith "Invalid memory data format")
-       | _ -> mm
-     ) MemMap.empty
+  |> List.fold_left
+       (fun mm table ->
+         match table with
+         | Otoml.TomlTable _ -> (
+             let base = Otoml.find table get_int ["base"] in
+             let size = Otoml.find table get_int ["size"] in
+             let step = Otoml.find_opt table get_int ["step"] in
+             match Otoml.find table (fun x -> x) ["data"] with
+             | Otoml.TomlArray data_list ->
+                 let n = List.length data_list in
+                 let step =
+                   Option.value step ~default:(if n > 0 then size / n else 0)
+                 in
+                 List.fold_left
+                   (fun (addr, mm) v ->
+                     (addr + step, MemMap.inserti addr step (get_int v) mm))
+                   (base, mm) data_list
+                 |> snd
+             | Otoml.TomlInteger v -> MemMap.inserti base size v mm
+             | _ -> failwith "Invalid memory data format")
+         | _ -> mm)
+       MemMap.empty
 
 (** Parse [[termCond]] section into termination condition checkers.
     Returns a list of functions (one per thread) that check if termination
     conditions are met given the current register map. *)
 let parse_termCond num_threads toml =
-  let tables = Otoml.find toml get_list ["termCond"] |> List.map parse_reg_req_table in
+  let tables =
+    Otoml.find toml get_list ["termCond"] |> List.map parse_reg_req_table
+  in
   if List.length tables <> num_threads then
     failwith "termCond count must match thread count";
-  tables |> List.map (fun reg_reqs rm ->
-    List.for_all (fun (reg, req) ->
-      match RegMap.get_opt reg rm, req with
-      | Some rv, Eq exp -> Result.get_ok (RegVal.of_gen reg exp) = rv
-      | Some rv, Neq exp -> Result.get_ok (RegVal.of_gen reg exp) = rv
-      | None, _ ->
-        failwith ("Termination condition couldn't find register: " ^
-                  (Reg.to_string reg))
-    ) reg_reqs)
-
+  tables
+  |> List.map (fun reg_reqs rm ->
+      List.for_all
+        (fun (reg, req) ->
+          match (RegMap.get_opt reg rm, req) with
+          | (Some rv, Eq exp) -> Result.get_ok (RegVal.of_gen reg exp) = rv
+          | (Some rv, Neq exp) -> Result.get_ok (RegVal.of_gen reg exp) = rv
+          | (None, _) ->
+              failwith
+                ("Termination condition couldn't find register: "
+               ^ Reg.to_string reg))
+        reg_reqs)
 
 (** {1 Outcome Parsing} *)
 
@@ -153,23 +158,29 @@ let parse_termCond num_threads toml =
 let parse_cond toml =
   let pairs = get_table toml in
   (* Look for regs key; if not found, treat whole table as thread->regs mapping *)
-  let reg_pairs = match List.assoc_opt "regs" pairs with
+  let reg_pairs =
+    match List.assoc_opt "regs" pairs with
     | Some regs_table -> get_table regs_table
     | None -> pairs
   in
-  reg_pairs |> List.filter_map (fun (tid_str, regs) ->
-    match int_of_string_opt tid_str with
-    | None -> None  (* Skip non-thread keys like "mem" *)
-    | Some tid -> Some (tid, parse_reg_req_table regs))
+  reg_pairs
+  |> List.filter_map (fun (tid_str, regs) ->
+      match int_of_string_opt tid_str with
+      | None -> None (* Skip non-thread keys like "mem" *)
+      | Some tid -> Some (tid, parse_reg_req_table regs))
 
 (** Parse all [[outcome]] blocks from the TOML file. *)
 let parse_outcomes toml =
-  Otoml.find toml get_list ["outcome"] |> List.filter_map (fun node ->
-    match node with
-    | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs ->
-      (match List.assoc_opt "observable" pairs, List.assoc_opt "unobservable" pairs with
-       | Some v, None -> Some (Observable (parse_cond v))
-       | None, Some v -> Some (Unobservable (parse_cond v))
-       | Some _, Some _ -> failwith "Cannot have both observable and unobservable"
-       | None, None -> failwith "Outcome must have observable or unobservable")
-    | _ -> None)
+  Otoml.find toml get_list ["outcome"]
+  |> List.filter_map (fun node ->
+      match node with
+      | Otoml.TomlTable pairs | Otoml.TomlInlineTable pairs -> (
+        match
+          (List.assoc_opt "observable" pairs, List.assoc_opt "unobservable" pairs)
+        with
+        | (Some v, None) -> Some (Observable (parse_cond v))
+        | (None, Some v) -> Some (Unobservable (parse_cond v))
+        | (Some _, Some _) ->
+            failwith "Cannot have both observable and unobservable"
+        | (None, None) -> failwith "Outcome must have observable or unobservable")
+      | _ -> None)

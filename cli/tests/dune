@@ -1,19 +1,25 @@
 (rule
  (alias runtest)
- (deps (glob_files seq/*.toml))
- (action (concurrent
-  (run archsem seq seq)
-  (run archsem ump seq)
-  (run archsem vmp seq))))
+ (deps
+  (glob_files seq/*.toml))
+ (action
+  (concurrent
+   (run archsem seq seq)
+   (run archsem ump seq)
+   (run archsem vmp seq))))
 
 (rule
  (alias runtest)
- (deps (glob_files ump/*.toml))
- (action (concurrent
-  (run archsem ump ump)
-  (run archsem vmp ump))))
+ (deps
+  (glob_files ump/*.toml))
+ (action
+  (concurrent
+   (run archsem ump ump)
+   (run archsem vmp ump))))
 
 (rule
  (alias runtest)
- (deps (glob_files vmp/*.toml))
- (action (run archsem vmp vmp)))
+ (deps
+  (glob_files vmp/*.toml))
+ (action
+  (run archsem vmp vmp)))
