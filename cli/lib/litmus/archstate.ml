@@ -62,5 +62,4 @@ let spec_to_archstate (test : Spec.t) =
     failwith (Printf.sprintf
       "[[termCond]] count (%d) must match [[registers]] thread count (%d)"
       (List.length term) num_threads);
-  let finals = test.finals in
-  (init, term, finals)
+  (init, term, test.finals)

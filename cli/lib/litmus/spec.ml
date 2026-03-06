@@ -37,11 +37,22 @@ type reg_requirement =
   | ReqEq of RegVal.gen
   | ReqNe of RegVal.gen
 
+type mem_requirement =
+  | MemEq of Z.t
+  | MemNe of Z.t
+
 type thread_cond = int * (Reg.t * reg_requirement) list
 
+type mem_cond = {
+  sym : string;
+  addr : Z.t;
+  size : int;
+  req : mem_requirement;
+}
+
 type final_cond =
-  | Observable of thread_cond list
-  | Unobservable of thread_cond list
+  | Observable of thread_cond list * mem_cond list
+  | Unobservable of thread_cond list * mem_cond list
 
 (** {1 Test} *)
 
@@ -66,10 +77,21 @@ let thread_cond_equal (t1, reqs1) (t2, reqs2) =
   List.equal (fun (r1, req1) (r2, req2) ->
     r1 = r2 && reg_requirement_equal req1 req2) reqs1 reqs2
 
+let mem_requirement_equal a b =
+  match a, b with
+  | MemEq x, MemEq y | MemNe x, MemNe y -> Z.equal x y
+  | _ -> false
+
+let mem_cond_equal a b =
+  a.sym = b.sym && Z.equal a.addr b.addr && a.size = b.size &&
+  mem_requirement_equal a.req b.req
+
 let final_cond_equal a b =
   match a, b with
-  | Observable xs, Observable ys | Unobservable xs, Unobservable ys ->
-    List.equal thread_cond_equal xs ys
+  | Observable (ts1, ms1), Observable (ts2, ms2)
+  | Unobservable (ts1, ms1), Unobservable (ts2, ms2) ->
+    List.equal thread_cond_equal ts1 ts2 &&
+    List.equal mem_cond_equal ms1 ms2
   | _ -> false
 
 let reg_list_equal a b =

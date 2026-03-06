@@ -7,4 +7,4 @@
  (names litmus_spec_test litmus_printer_test litmus_config_test)
  (modules litmus_spec_test litmus_printer_test litmus_config_test)
  (libraries archsem litmus utils otoml ounit2)
- (deps (glob_files ../seq/*.toml) (glob_files ../ump/*.toml) (glob_files ../vmp/*.toml)))
+ (deps ../arm.archsem.toml (glob_files ../seq/*.toml) (glob_files ../ump/*.toml) (glob_files ../vmp/*.toml)))

@@ -1,0 +1,28 @@
+arch="Arm"
+name="NOP+mem"
+
+[[registers]]
+_PC = 0x500
+R0 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+[[memory]]
+name = "code"
+base = 0x500
+size = 4
+data = 0xd503201f
+
+[[memory]]
+name = "x"
+base = 0x600
+size = 4
+data = 42
+
+[[termCond]]
+_PC = 0x504
+
+[[outcome]]
+observable.0.R0 = 0
+[outcome.observable.mem]
+x = 42

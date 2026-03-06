@@ -122,6 +122,9 @@ module MemMap = struct
 
   let insert_bytes = TM.mem_insert_bytes
 
+  let lookup addr size mm =
+    TM.mem_lookup addr (Z.of_int size) mm
+
 end
 
 module ArchState = struct

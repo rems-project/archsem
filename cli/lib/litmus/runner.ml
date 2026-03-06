@@ -40,6 +40,31 @@ let cond_to_string cond =
 
 (** {1 Outcome Checking} *)
 
+let mem_cond_to_string mem_reqs =
+  List.map (fun (mc : Spec.mem_cond) ->
+    let op, v = match mc.req with
+      | Spec.MemEq v -> ("=", v)
+      | Spec.MemNe v -> ("!=", v)
+    in
+    Printf.sprintf "*0x%s[%d]%s0x%s"
+      (Z.format "%x" mc.addr) mc.size op (Z.format "%x" v)
+  ) mem_reqs |> String.concat " "
+
+(* TODO(vm): mem_cond.addr is currently used as PA directly.
+   For VM models, this will need VA-to-PA translation. *)
+let check_mem_outcome (fs : ArchState.t) (mem_conds : Spec.mem_cond list) : bool =
+  let mm = ArchState.mem fs in
+  List.for_all (fun (mc : Spec.mem_cond) ->
+    match MemMap.lookup mc.addr mc.size mm with
+    | None ->
+      failwith (Printf.sprintf "[[outcome]] memory not found at 0x%s"
+        (Z.format "%x" mc.addr))
+    | Some actual ->
+      match mc.req with
+      | Spec.MemEq expected -> Z.equal actual expected
+      | Spec.MemNe expected -> not (Z.equal actual expected)
+  ) mem_conds
+
 let check_outcome (fs : ArchState.t) (cond : Spec.thread_cond list) : bool =
   List.for_all (fun (tid, reqs) ->
     let regs = ArchState.reg tid fs in
@@ -63,9 +88,9 @@ let run_executions model init fuel term finals =
   let results = model fuel term init in
 
   let observable = List.filter_map
-    (function Spec.Observable c -> Some c | _ -> None) finals in
+    (function Spec.Observable (c, mc) -> Some (c, mc) | _ -> None) finals in
   let unobservable = List.filter_map
-    (function Spec.Unobservable c -> Some c | _ -> None) finals in
+    (function Spec.Unobservable (c, mc) -> Some (c, mc) | _ -> None) finals in
 
   let errors = List.filter_map (function
     | ArchModel.Res.Error e -> Some e
@@ -81,19 +106,25 @@ let run_executions model init fuel term finals =
     msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
   if flags <> [] then msg "Flagged";
 
-  let observable_ok = List.for_all (fun cond ->
-    let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
+  let observable_ok = List.for_all (fun (cond, mem_cond) ->
+    let matched = List.exists (fun fs ->
+      check_outcome fs cond && check_mem_outcome fs mem_cond
+    ) final_states in
     if not matched && final_states <> [] then
-      msg (Printf.sprintf "%sObservable not found%s: %s"
-        Terminal.red Terminal.reset (cond_to_string cond));
+      msg (Printf.sprintf "%sObservable not found%s: %s %s"
+        Terminal.red Terminal.reset (cond_to_string cond)
+        (mem_cond_to_string mem_cond));
     matched
   ) observable in
 
   let unobservable_ok = List.for_all Fun.id (List.mapi (fun i fs ->
-    match List.find_opt (fun c -> check_outcome fs c) unobservable with
-    | Some cond ->
-      msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
-        Terminal.red Terminal.reset (i+1) (cond_to_string cond));
+    match List.find_opt (fun (c, mc) ->
+      check_outcome fs c && check_mem_outcome fs mc
+    ) unobservable with
+    | Some (cond, mc) ->
+      msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s %s"
+        Terminal.red Terminal.reset (i+1) (cond_to_string cond)
+        (mem_cond_to_string mc));
       false
     | None -> true
   ) final_states) in
