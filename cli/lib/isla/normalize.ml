@@ -3,7 +3,8 @@
 open Assertion
 
 let register_renames () =
-  Otoml.find_or ~default:[] (Litmus.Config.get ()) (Otoml.get_table_values Otoml.get_string)
+  Otoml.find_or ~default:[] (Litmus.Config.get ())
+    (Otoml.get_table_values Otoml.get_string)
     ["isla"; "register_renames"]
 
 let normalize_reg reg =
@@ -28,14 +29,12 @@ let rec normalize_expr = function
   | False -> False
 
 let normalize_thread (thread : Ir.thread) =
-  {
-    thread with
-    init = List.map (fun (reg, value) -> (normalize_reg reg, value)) thread.init;
+  { thread with
+    init = List.map (fun (reg, value) -> (normalize_reg reg, value)) thread.init
   }
 
 let apply (ir : Ir.t) : Ir.t =
-  {
-    ir with
+  { ir with
     threads = List.map normalize_thread ir.threads;
-    assertion = normalize_expr ir.assertion;
+    assertion = normalize_expr ir.assertion
   }

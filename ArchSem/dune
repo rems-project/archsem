@@ -2,25 +2,38 @@
  (name ArchSem)
  (package coq-archsem)
  (modules
-   Interface
-   ISAManip
-   TermModels
-   CandidateExecutions
-   GenPromising
-   FromSail
-   SeqModel
-   ArchInst
- )
- (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon)
- (coqdoc_flags :standard --utf8
-               --external https://plv.mpi-sws.org/coqdoc/stdpp/ stdpp
-               --external ../../Common/ASCommon.html ASCommon
-               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
- )
-)
+  Interface
+  ISAManip
+  TermModels
+  CandidateExecutions
+  GenPromising
+  FromSail
+  SeqModel
+  ArchInst)
+ (theories
+  Stdlib
+  stdpp
+  Hammer
+  RecordUpdate
+  Equations
+  Ltac2
+  SailStdpp
+  ASCommon)
+ (coqdoc_flags
+  :standard
+  --utf8
+  --external
+  https://plv.mpi-sws.org/coqdoc/stdpp/
+  stdpp
+  --external
+  ../../Common/ASCommon.html
+  ASCommon
+  --coqlib_url
+  https://coq.inria.fr/doc/V8.20.1/stdlib))
 
 ; This alias is useful to build all the coq libaries without extraction
+
 (alias
  (name coq)
- (deps (alias_rec all))
-)
+ (deps
+  (alias_rec all)))

@@ -21,14 +21,13 @@ let string_of_memory_kind = function
   | Data -> "data"
   | PageTable -> "pagetable"
 
-type memory_block = {
-  addr : int;
-  step : int;
-  data : Bytes.t;
-  sym : string option;
-  kind : memory_kind;
-}
-
+type memory_block =
+  { addr : int;
+    step : int;
+    data : Bytes.t;
+    sym : string option;
+    kind : memory_kind
+  }
 
 (** {1 Outcome Types} *)
 
@@ -42,12 +41,12 @@ type mem_requirement =
 
 type thread_cond = int * (string * reg_requirement) list
 
-type mem_cond = {
-  sym : string;
-  addr : int;
-  size : int;
-  req : mem_requirement;
-}
+type mem_cond =
+  { sym : string;
+    addr : int;
+    size : int;
+    req : mem_requirement
+  }
 
 type final_cond =
   | Observable of thread_cond list * mem_cond list
@@ -55,15 +54,14 @@ type final_cond =
 
 (** {1 Test} *)
 
-type t = {
-  arch : string;
-  name : string;
-  registers : (string * Archsem.RegValGen.t) list list;
-  memory : memory_block list;
-  term_cond : (string * Archsem.RegValGen.t) list list;
-  finals : final_cond list;
-}
-
+type t =
+  { arch : string;
+    name : string;
+    registers : (string * Archsem.RegValGen.t) list list;
+    memory : memory_block list;
+    term_cond : (string * Archsem.RegValGen.t) list list;
+    finals : final_cond list
+  }
 
 (** {1 Helper functions} *)
 

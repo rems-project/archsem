@@ -1,20 +1,44 @@
 (coq.theory
  (name ArchSemRiscV)
  (package coq-archsem-riscv)
- (modules
-   RiscVInst
-   GenAxiomaticRiscV
-   UMAxRiscV
- )
- (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2 SailStdpp ASCommon ArchSem Riscv)
- (coqdoc_flags :standard --utf8
-               --external https://plv.mpi-sws.org/coqdoc/stdpp stdpp
-               --external ../../Common/ASCommon.html ASCommon
-               --external ../../ArchSem/ArchSem.html ArchSem
-               --coqlib_url https://coq.inria.fr/doc/V8.20.1/stdlib
- )
-)
+ (modules RiscVInst GenAxiomaticRiscV UMAxRiscV)
+ (theories
+  Stdlib
+  stdpp
+  Hammer
+  RecordUpdate
+  Equations
+  Ltac2
+  SailStdpp
+  ASCommon
+  ArchSem
+  Riscv)
+ (coqdoc_flags
+  :standard
+  --utf8
+  --external
+  https://plv.mpi-sws.org/coqdoc/stdpp
+  stdpp
+  --external
+  ../../Common/ASCommon.html
+  ASCommon
+  --external
+  ../../ArchSem/ArchSem.html
+  ArchSem
+  --coqlib_url
+  https://coq.inria.fr/doc/V8.20.1/stdlib))
 
-(alias (name riscv) (deps (alias all)))
-(alias (name coq) (deps (alias all)))
-(alias (name default) (deps (alias all)))
+(alias
+ (name riscv)
+ (deps
+  (alias all)))
+
+(alias
+ (name coq)
+ (deps
+  (alias all)))
+
+(alias
+ (name default)
+ (deps
+  (alias all)))

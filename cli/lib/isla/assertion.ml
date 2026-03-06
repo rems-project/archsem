@@ -4,7 +4,9 @@ type loc =
   | Reg of int * string
   | Mem of string
 
-type op = Eq | Ne
+type op =
+  | Eq
+  | Ne
 
 type atom =
   | CmpCst of loc * op * Z.t
@@ -20,9 +22,7 @@ type expr =
 
 module Testrepr = Litmus.Testrepr
 
-let negate_op = function
-  | Eq -> Ne
-  | Ne -> Eq
+let negate_op = function Eq -> Ne | Ne -> Eq
 
 let negate_atom = function
   | CmpCst (loc, op, value) -> CmpCst (loc, negate_op op, value)
@@ -43,6 +43,6 @@ let rec to_dnf = function
   | Not e -> to_dnf (negate e)
   | Or (a, b) -> to_dnf a @ to_dnf b
   | And (a, b) ->
-    let da = to_dnf a and db = to_dnf b in
-    (* Take the cartesian product of da and db to enumerate all the clauses *)
-    List.concat_map (fun ca -> List.map (fun cb -> ca @ cb) db) da
+      let da = to_dnf a and db = to_dnf b in
+      (* Take the cartesian product of da and db to enumerate all the clauses *)
+      List.concat_map (fun ca -> List.map (fun cb -> ca @ cb) db) da
