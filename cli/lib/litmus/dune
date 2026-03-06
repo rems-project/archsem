@@ -1,0 +1,4 @@
+(library
+ (name litmus)
+ (public_name archsem.litmus)
+ (libraries archsem otoml))
