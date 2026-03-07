@@ -89,7 +89,6 @@
   ConcurrencyInterfaceV2
   System_types
   BinNatDef
-  Compare_dec
   PeanoNat
   TypeCasts
   Sumbool

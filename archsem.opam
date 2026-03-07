@@ -24,7 +24,7 @@ depends: [
   "cmdliner" {>= "1.3"}
   "menhir" {>= "20231231"}
   "ounit2" {with-test & >= "2.2"}
-  "ocamlformat" {>= "0.28" & with-dev-setup}
+  "ocamlformat" {with-dev-setup & >= "0.28"}
   "odoc" {with-doc}
 ]
 build: [
