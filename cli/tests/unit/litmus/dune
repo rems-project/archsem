@@ -7,5 +7,5 @@
  (names testrepr_test printer_test config_test)
  (modules testrepr_test printer_test config_test)
  (libraries archsem litmus test_utils otoml ounit2)
- (deps (glob_files ../../seq/*.toml) (glob_files ../../ump/*.toml) (glob_files ../../vmp/*.toml)
-  ../../../../config/Arm.toml))
+ (deps (glob_files ../../seq/*.toml) (glob_files ../../ump/*.toml) (glob_files ../../vmp/*.toml) (glob_files ../../x86_tso/*.toml)
+  ../../../../config/Arm.toml ../../../../config/X86.toml))

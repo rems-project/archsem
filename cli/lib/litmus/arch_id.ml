@@ -2,9 +2,11 @@
 
 type t =
   | Arm
+  | X86
 
 let of_string_opt = function
   | "Arm" | "AArch64" | "arm" | "aarch64" -> Some Arm
+  | "X86" | "x86" -> Some X86
   | _ -> None
 
 let of_string arch =
@@ -14,6 +16,7 @@ let of_string arch =
 
 let to_string = function
   | Arm -> "Arm"
+  | X86 -> "X86"
 
 let of_toml toml = toml |> Otoml.get_string |> of_string
 

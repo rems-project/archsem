@@ -49,3 +49,6 @@ let get_arch () =
 
 let get_fuel () =
   Otoml.find_or ~default:1000 !global (Otoml.get_integer) ["execution"; "fuel"]
+
+let get_instruction_step () =
+  Otoml.find !global (Otoml.get_integer) ["assembler"; "instruction_step"]

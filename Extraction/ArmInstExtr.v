@@ -39,7 +39,7 @@
 
 Require Import ASCommon.CExtraction.
 From ArchSemArm Require Import ArmInst UMPromising VMPromising.
-From ArchSemX86 Require Import X86Inst.
+From ArchSemX86 Require Import X86Inst OperationalX86TSO.
 
 Unset Extraction SafeImplicits.
 
@@ -54,4 +54,4 @@ Set Extraction Output Directory ".".
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
 Separate Extraction
   Arm sail_tiny_arm_sem UMPromising_pf VMPromising_pf
-  X86Inst.X86 sail_tiny_x86_sem.
+  X86Inst.X86 sail_tiny_x86_sem x86_operational_modelc.

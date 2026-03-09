@@ -17,3 +17,8 @@
  (alias runtest)
  (deps (glob_files vmp/*.toml) ../../config/Arm.toml)
  (action (run archsem vmp vmp)))
+
+(rule
+ (alias runtest)
+ (deps (glob_files x86_tso/*.toml) ../../config/X86.toml)
+ (action (run archsem x86_tso x86_tso)))

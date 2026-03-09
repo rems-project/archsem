@@ -28,4 +28,6 @@ module X86 : sig
   include Arch.Arch
 
   val tiny_isa : iSem
+
+  val tso_model : empty ArchModel.t
 end

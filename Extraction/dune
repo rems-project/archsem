@@ -23,7 +23,7 @@
                      TermModels vector0 VectorDef Vector UMPromising
                      VMPromising list_misc HVec
                      fin_sets list_basics
-                     Tiny_x86 Tiny_x86_types X86Inst Zeuclid
+                     Tiny_x86 Tiny_x86_types X86Inst OperationalX86TSO Zeuclid
   )
 )
 
