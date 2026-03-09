@@ -1,8 +1,4 @@
-(** Litmus test runner.
-
-    Executes a model on parsed litmus tests and validates outcomes:
-    - Observable: Interesting relaxed behavior the test wants to capture
-    - Unobservable: Relaxed behavior the test does not expect to occur *)
+(** Litmus test runner. *)
 
 (** {1 Types} *)
 
@@ -157,15 +153,14 @@ module Make (Arch : Archsem.Arch) = struct
     let init, term = AS.testrepr_to_archstate test in
     run_executions model init fuel term test.finals
 
-  let run_litmus_test model filename =
+  let run_litmus_test ~parse model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
       Printf.printf "  %s✗%s %s  %sfile not found%s\n"
         Terminal.red Terminal.reset name Terminal.red Terminal.reset;
       ParseError
     ) else try
-      let toml = Otoml.Parser.from_file filename in
-      let test = Parser.parse_to_testrepr toml in
+      let test = parse filename in
       let result, msgs = run_testrepr model test in
       let icon, color = match result with
         | Expected -> Terminal.check, Terminal.green
@@ -177,17 +172,16 @@ module Make (Arch : Archsem.Arch) = struct
       result
     with
     | Otoml.Parse_error (pos, msg) ->
-      Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red Terminal.reset name
-        Terminal.red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
+      Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
+        Terminal.reset name Terminal.red (Option.fold ~none:"?" ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c) pos)
         msg Terminal.reset;
       ParseError
     | Failure msg ->
-      Printf.printf "  %s✗%s %s  %s%s%s\n"
-        Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
+      Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
+        Terminal.red msg Terminal.reset;
       ParseError
     | exn ->
       Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
         Terminal.red (Printexc.to_string exn) Terminal.reset;
       ParseError
-
 end

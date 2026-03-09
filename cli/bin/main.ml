@@ -1,6 +1,6 @@
 (** Litmus test runner CLI.
 
-    Usage: litmus_runner <model> <path ...>
+    Usage: archsem <model> [--format archsem|isla] <path ...>
     Models: seq (sequential), ump (UM Promising), vmp (VM Promising)
 
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
@@ -12,6 +12,32 @@ open Runner
 module ArmRunner = Runner.Make(Arm)
 
 (** {1 Running litmus tests} *)
+
+type format =
+  | Archsem
+  | Isla
+
+let parse_testfile fmt filename =
+  assert (Filename.extension filename = ".toml");
+  let fmt = match fmt with
+    | Some fmt -> fmt
+    | None ->
+      let name = Filename.remove_extension filename in
+      let ext = Filename.extension name in
+      match ext with
+      | ".litmus" -> Isla
+      | ".archsem" -> Archsem
+      | _ -> failwith "Could not guess test format from filename. Only \
+                       .archsem.toml and .litmus.toml are supported"
+  in
+  let toml = Otoml.Parser.from_file filename in
+  match fmt with
+  | Archsem -> Parser.parse_to_testrepr toml
+  | Isla ->
+      toml
+      |> Isla.Ir.of_toml
+      |> Isla.Normalize.apply
+      |> Isla.Converter.to_testrepr
 
 let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
@@ -94,12 +120,20 @@ let path_and_conf_term =
   Config.load conf;
   files
 
+let format_term =
+  let doc = "Input format: $(b,archsem) or $(b,isla). If not specified, it is \
+             guessed from extension .litmus.toml or .archsem.toml" in
+  let format_enum = Arg.enum ["archsem", Archsem; "isla", Isla] in
+  Arg.(value & opt (some format_enum) None & info ["format"; "f"] ~doc ~docv:"FMT")
+
 (** The sequential model command *)
 let cmd_seq =
   let run =
-    let+ files = path_and_conf_term in
+    let+ files = path_and_conf_term
+    and+ fmt = format_term in
+    let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "seq" (ArmRunner.run_litmus_test Arm.(seq_model tiny_isa)) files
+    run_tests "seq" (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa)) files
   in
   let info =
     let doc = "Run sequential model" in
@@ -110,9 +144,11 @@ let cmd_seq =
 (** The user-mode promising command *)
 let cmd_ump =
   let run =
-    let+ files = path_and_conf_term in
+    let+ files = path_and_conf_term
+    and+ fmt = format_term in
+    let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "ump" (ArmRunner.run_litmus_test Arm.(umProm_model tiny_isa)) files
+    run_tests "ump" (ArmRunner.run_litmus_test ~parse Arm.(umProm_model tiny_isa)) files
   in
   let info =
     let doc = "Run user-mode promising model" in
@@ -148,9 +184,11 @@ let cmd_vmp =
   in
   let run =
     let+ files = path_and_conf_term
-    and+ bbm_param = bbm_mode in
+    and+ bbm_param = bbm_mode
+    and+ fmt = format_term in
+    let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "vmp" (ArmRunner.run_litmus_test (vmProm_model ~bbm_param tiny_isa)) files
+    run_tests "vmp" (ArmRunner.run_litmus_test ~parse (vmProm_model ~bbm_param tiny_isa)) files
   in
   let info =
     let doc =
@@ -161,6 +199,7 @@ let cmd_vmp =
   Cmd.v info run
 
 (** The main archsem command *)
+
 let cmd =
   let info =
     let doc = "ArchSem model runner" in

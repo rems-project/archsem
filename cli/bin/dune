@@ -2,4 +2,4 @@
  (name main)
  (public_name archsem)
  (package archsem)
- (libraries archsem litmus otoml cmdliner))
+ (libraries archsem litmus isla otoml cmdliner))
