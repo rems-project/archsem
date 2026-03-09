@@ -1,0 +1,9 @@
+(library
+ (name isla)
+ (public_name archsem.isla)
+ (libraries archsem litmus otoml zarith unix))
+
+(ocamllex lexer)
+
+(menhir
+ (modules parser))

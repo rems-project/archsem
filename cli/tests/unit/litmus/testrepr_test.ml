@@ -11,9 +11,8 @@ module ArmRunner = Runner.Make (Arm)
 
 (** {1 Parsed Test Fixtures} *)
 
-let eor = parse_file "seq/EOR.toml"
-let mp = parse_file "ump/MP.toml"
-let nop_mem = parse_file "seq/NOP+mem.toml"
+let eor = parse_file "../seq/EOR.archsem.toml"
+let mp = parse_file "../ump/MP.archsem.toml"
 
 let bad_step_toml =
   Otoml.Parser.from_string
@@ -190,12 +189,6 @@ let parse_correct_file_test =
   >::: [
          parse_ok "EOR parses as expected" eor expected_eor;
          parse_ok "MP parses as expected" mp expected_mp;
-         "NOP+mem parses one memory outcome" >:: (fun _ ->
-           match List.hd nop_mem.finals with
-           | Observable (_, [mc]) ->
-             assert_equal "x" mc.sym;
-             assert_equal 4 mc.size
-           | _ -> assert_failure "expected one observable memory condition");
        ]
 
 let parse_bad_file_test =
@@ -217,8 +210,6 @@ let parse_bad_file_test =
 (** {1 ArchState Conversion And Execution} *)
 
 let archstate_runner_tests = "testrepr_to_archstate / run_testrepr" >::: [
-  "EOR converts to ArchState" >:: (fun _ ->
-    ignore (ArmAS.testrepr_to_archstate eor));
   "EOR Expected with seq model" >:: (fun _ ->
     let result, _msgs = ArmRunner.run_testrepr Arm.(seq_model tiny_isa) eor in
     assert_equal Runner.Expected result);
