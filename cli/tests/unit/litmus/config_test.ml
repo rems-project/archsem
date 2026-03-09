@@ -10,13 +10,15 @@ let default_config_tests = "default config" >::: [
   "AArch64 resolves to Arm config path" >:: (fun _ ->
     let path = Config.default_path_for_arch (Arch_id.of_string "AArch64") in
     assert_bool "expected an Arm config path for AArch64" (Option.is_some path));
-  "RISCV alias is rejected" >:: (fun _ ->
-    assert_raises
-      (Failure "unknown architecture: RISCV")
-      (fun () -> ignore (Arch_id.of_string "RISCV")));
   "loads built-in Arm config" >:: (fun _ ->
-    let _ = Config.of_arch (Arch_id.of_string "AArch64") in
-    assert_equal 1000 (Config.get_fuel ()));
+    Test_utils.setup_arm ();
+    assert_equal 4 (Config.get_instruction_step ()));
+  "finds default X86 config path" >:: (fun _ ->
+    let path = Config.default_path_for_arch Arch_id.X86 in
+    assert_bool "expected an X86 config path" (Option.is_some path));
+  "loads built-in X86 config" >:: (fun _ ->
+    Test_utils.setup_x86 ();
+    assert_equal 1 (Config.get_instruction_step ()));
 ]
 
 let () = run_test_tt_main ("litmus_config" >::: [

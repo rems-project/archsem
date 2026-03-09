@@ -1,0 +1,16 @@
+arch = "X86"
+
+[assembler]
+assemble = "llvm-mc -triple=x86_64 --assemble --filetype=obj"
+extract = "llvm-objcopy -O binary"
+instruction_step = 1
+
+[isla]
+default_memory_size = 8
+page_bits = 12
+
+[isla.symbols]
+base_address = 0x500
+
+[execution]
+fuel = 1000
