@@ -4,7 +4,7 @@
  (libraries litmus otoml))
 
 (tests
- (names litmus_testrepr_test)
- (modules litmus_testrepr_test)
+ (names litmus_testrepr_test litmus_printer_test)
+ (modules litmus_testrepr_test litmus_printer_test)
  (libraries archsem litmus test_utils otoml ounit2)
  (deps (glob_files ../seq/*.toml) (glob_files ../ump/*.toml) (glob_files ../vmp/*.toml)))
