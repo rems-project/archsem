@@ -1,6 +1,6 @@
 (rule
  (alias runtest)
- (deps (glob_files seq/*.toml))
+ (deps (glob_files seq/*.toml) ../../config/Arm.toml)
  (action (concurrent
   (run archsem seq seq)
   (run archsem ump seq)
@@ -8,12 +8,12 @@
 
 (rule
  (alias runtest)
- (deps (glob_files ump/*.toml))
+ (deps (glob_files ump/*.toml) ../../config/Arm.toml)
  (action (concurrent
   (run archsem ump ump)
   (run archsem vmp ump))))
 
 (rule
  (alias runtest)
- (deps (glob_files vmp/*.toml))
+ (deps (glob_files vmp/*.toml) ../../config/Arm.toml)
  (action (run archsem vmp vmp)))

@@ -70,11 +70,35 @@ let test_path_term =
              containing test files" in
   Arg.(non_empty & pos_all file [] & info [] ~doc ~docv:"TESTS")
 
+let config_term =
+  let doc = "Path to a TOML configuration file. Guessed from the first test in \
+             the list if not specified" in
+  Arg.(value & opt (some file) None & info ["config"; "c"] ~doc ~docv:"FILE")
+
+let path_and_conf_term =
+  let+ paths = test_path_term
+  and+ conf = config_term in
+  let files = get_all_tests paths in
+  let conf =
+    match conf with
+    | Some conf -> conf
+    | None ->
+      let file = List.hd files in
+      let arch = Arch_id.guess_from_test file in
+      match Config.default_path_for_arch arch with
+      | Some conf -> conf
+      | None ->
+        Printf.ksprintf failwith
+          "Unable to find %s.toml automatically" (Arch_id.to_string arch)
+  in
+  Config.load conf;
+  files
+
 (** The sequential model command *)
 let cmd_seq =
   let run =
-    let+ paths = test_path_term in
-    let files = get_all_tests paths in
+    let+ files = path_and_conf_term in
+    assert (Config.get_arch () = Arch_id.Arm);
     run_tests "seq" (ArmRunner.run_litmus_test Arm.(seq_model tiny_isa)) files
   in
   let info =
@@ -86,8 +110,8 @@ let cmd_seq =
 (** The user-mode promising command *)
 let cmd_ump =
   let run =
-    let+ paths = test_path_term in
-    let files = get_all_tests paths in
+    let+ files = path_and_conf_term in
+    assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump" (ArmRunner.run_litmus_test Arm.(umProm_model tiny_isa)) files
   in
   let info =
@@ -96,32 +120,36 @@ let cmd_ump =
   in
   Cmd.v info run
 
+let bbm_of_config () =
+  match Otoml.find_opt (Config.get ()) (Otoml.get_string) ["vmp"; "bbm"] with
+  | Some "lax" -> Arm.BBM.Lax
+  | Some "strict" -> Arm.BBM.Strict
+  | Some "off" -> Arm.BBM.Off
+  | Some s ->
+    Printf.ksprintf failwith
+      "Config key vmp.bbm contains %s which is not off, lax or strict" s
+  | _ ->
+    failwith
+      "Config key vmp.bbm is unspecified in config, please specify on CLI with --bbm"
+
 (** The virtual-memory promising command *)
 let cmd_vmp =
   let open Arm in
   let bbm_mode =
-    let off_info =
-      let doc = "Turn BBM checking off" in
-      Arg.(info ["bbm-off"] ~doc)
+    let doc = "Break-before-make mode: off, lax, or strict" in
+    let values =
+      [("off", Arm.BBM.Off); ("lax", Arm.BBM.Lax); ("strict", Arm.BBM.Strict)]
     in
-    let lax_info =
-      let doc = "Make BBM checking lax: if a page table entries is missing, it \
-                 just ignores it" in
-      Arg.(info ["bbm-lax"] ~doc)
-    in
-    let strict_info =
-      let doc = "Make BBM checking strict: if a page table entries is missing, \
-                 the model catches fire" in
-      Arg.(info ["bbm-strict"] ~doc)
-    in
-    Arg.(value &
-         vflag BBM.Off (* ← default is Off for now *)
-           [(BBM.Off, off_info); (BBM.Lax, lax_info); (BBM.Strict, strict_info)])
+    let+ bbm =
+      Arg.(value & opt (some (enum values)) None & info ["bbm"] ~doc ~docv:"MODE")
+    in match bbm with
+    | Some bbm -> bbm
+    | None -> bbm_of_config()
   in
   let run =
-    let+ paths = test_path_term
+    let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode in
-    let files = get_all_tests paths in
+    assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp" (ArmRunner.run_litmus_test (vmProm_model ~bbm_param tiny_isa)) files
   in
   let info =

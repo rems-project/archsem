@@ -117,8 +117,9 @@ module Make (Arch : Archsem.Arch) = struct
     (result, List.rev !msgs)
 
   let run_testrepr model (test : Testrepr.t) =
+    let fuel = Config.get_fuel () in
     let init, term = AS.testrepr_to_archstate test in
-    run_executions model init 1000 term test.finals
+    run_executions model init fuel term test.finals
 
   let run_litmus_test model filename =
     let name = Filename.basename filename in

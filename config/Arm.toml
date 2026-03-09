@@ -1,0 +1,7 @@
+arch = "Arm"
+
+[execution]
+fuel = 1000
+
+[vmp]
+bbm = "off"
