@@ -4,21 +4,18 @@
     - Observable: Interesting relaxed behavior the test wants to capture
     - Unobservable: Relaxed behavior the test does not expect to occur *)
 
-open Archsem
-open Arm
-
-(** {1 Result Types} *)
+(** {1 Types} *)
 
 type test_result =
   | Expected     (** Outcome matched test expectations *)
   | Unexpected   (** Outcome did not match test expectations *)
   | ModelError   (** Model produced errors during execution *)
-  | NoBehaviour   (** Model produces no behaviours (model bug) *)
+  | NoBehaviour  (** Model produces no behaviours (model bug) *)
   | ParseError   (** Parser or configuration error *)
 
-(** {1 Helpers} *)
+(** {1 Display Helpers} *)
 
-let rec string_of_regval_gen : RegValGen.t -> string = function
+let rec string_of_regval_gen : Archsem.RegValGen.t -> string = function
   | Number z -> Printf.sprintf "0x%s" (Z.format "%x" z)
   | String s -> Printf.sprintf "\"%s\"" s
   | Array vs ->
@@ -29,85 +26,15 @@ let rec string_of_regval_gen : RegValGen.t -> string = function
 
 let req_to_string (reg, req) =
   let op, v = match req with
-    | Parser.Eq v -> ("=", v)
-    | Parser.Neq v -> ("!=", v)
+    | Testrepr.ReqEq v -> ("=", v)
+    | Testrepr.ReqNe v -> ("!=", v)
   in
-  Printf.sprintf "%s%s%s" (Reg.to_string reg) op (string_of_regval_gen v)
+  Printf.sprintf "%s%s%s" reg op (string_of_regval_gen v)
 
 let cond_to_string cond =
   List.map (fun (tid, reqs) ->
     Printf.sprintf "%d:{%s}" tid (String.concat "," (List.map req_to_string reqs))
   ) cond |> String.concat " "
-
-(** {1 Outcome Checking} *)
-
-let check_outcome (fs : ArchState.t) (cond : Parser.cond) : bool =
-  List.for_all (fun (tid, reqs) ->
-    let regs = ArchState.reg tid fs in
-    List.for_all (fun (reg, req) ->
-      match RegMap.get_opt reg regs with
-      | None ->
-        failwith ("Outcome checker couldn't find register: " ^ (Reg.to_string reg))
-      | Some rv ->
-        let actual = RegVal.to_gen rv in
-        (match req with
-         | Parser.Eq exp -> actual = exp
-         | Parser.Neq exp -> actual <> exp)
-    ) reqs
-  ) cond
-
-(** {1 Test Execution} *)
-
-let run_executions model init fuel term outcomes =
-  let msgs = ref [] in
-  let msg s = msgs := s :: !msgs in
-  let results = model fuel term init in
-
-  let observable = List.filter_map
-    (function Parser.Observable c -> Some c | _ -> None) outcomes in
-  let unobservable = List.filter_map
-    (function Parser.Unobservable c -> Some c | _ -> None) outcomes in
-
-  let errors = List.filter_map (function
-    | ArchModel.Res.Error e -> Some e
-    | _ -> None) results in
-  let final_states = List.filter_map (function
-    | ArchModel.Res.FinalState fs -> Some fs
-    | _ -> None) results in
-  let flags = List.filter_map (function
-      | ArchModel.Res.Flagged x -> Some x
-      | _ -> None) results in
-
-  List.iter (fun e ->
-    msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
-  if flags <> [] then msg "Flagged";
-
-  let observable_ok = List.for_all (fun cond ->
-    let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
-    if not matched && final_states <> [] then
-      msg (Printf.sprintf "%sObservable not found%s: %s"
-        Terminal.red Terminal.reset (cond_to_string cond));
-    matched
-  ) observable in
-
-  let unobservable_ok = List.for_all Fun.id (List.mapi (fun i fs ->
-    match List.find_opt (fun c -> check_outcome fs c) unobservable with
-    | Some cond ->
-      msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
-        Terminal.red Terminal.reset (i+1) (cond_to_string cond));
-      false
-    | None -> true
-  ) final_states) in
-
-  let result =
-    if results = [] then NoBehaviour
-    else if errors <> [] then ModelError
-    else if observable_ok && unobservable_ok then Expected
-    else Unexpected
-  in
-  (result, List.rev !msgs)
-
-(** {1 Entry Point} *)
 
 let result_to_string = function
   | Expected -> Terminal.green ^ "EXPECTED" ^ Terminal.reset
@@ -116,38 +43,114 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
-let run_litmus_test model filename =
-  let name = Filename.basename filename in
-  if not (Sys.file_exists filename) then (
-    Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset name Terminal.red Terminal.reset;
-    ParseError
-  ) else try
-    let toml = Otoml.Parser.from_file filename in
-    let fuel = Otoml.find_opt toml Parser.get_int ["fuel"] |> Option.value ~default:1000 in
-    let regs = Parser.parse_registers toml in
-    let mem = Parser.parse_memory toml in
-    let init = ArchState.make regs mem in
-    let term = Parser.parse_termCond (List.length regs) toml in
-    let outcomes = Parser.parse_outcomes toml in
-    let result, msgs = run_executions model init fuel term outcomes in
-    let icon, color = match result with
-      | Expected -> Terminal.check, Terminal.green
-      | Unexpected -> Terminal.cross, Terminal.yellow
-      | _ -> Terminal.cross, Terminal.red
+(** {1 Arch-parameterized runner} *)
+
+module Make (Arch : Archsem.Arch) = struct
+  open Arch
+
+  module AS = ToArchState.Make (Arch)
+
+  let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
+    List.for_all
+      (fun (tid, reqs) ->
+        let regs = ArchState.reg tid fs in
+        List.for_all
+          (fun (name, req) ->
+            let reg = Reg.of_string name in
+            match RegMap.get_opt reg regs with
+            | None ->
+              failwith ("[[outcome]] register not found in final state: " ^ name)
+            | Some rv ->
+              match req with
+              | Testrepr.ReqEq exp -> rv = RegVal.of_gen reg exp
+              | Testrepr.ReqNe exp -> rv = RegVal.of_gen reg exp
+          ) reqs
+      ) cond
+
+  let run_executions model init fuel term finals =
+    let msgs = ref [] in
+    let msg s = msgs := s :: !msgs in
+    let results = model fuel term init in
+
+    let observable = List.filter_map
+      (function Testrepr.Observable c -> Some c | _ -> None) finals in
+    let unobservable = List.filter_map
+      (function Testrepr.Unobservable c -> Some c | _ -> None) finals in
+
+    let errors = List.filter_map (function
+      | ArchModel.Res.Error e -> Some e
+      | _ -> None) results in
+    let final_states = List.filter_map (function
+      | ArchModel.Res.FinalState fs -> Some fs
+      | _ -> None) results in
+    let flags = List.filter_map (function
+      | ArchModel.Res.Flagged x -> Some x
+      | _ -> None) results in
+
+    List.iter (fun e ->
+      msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)) errors;
+    if flags <> [] then msg "Flagged";
+
+    let observable_ok = List.for_all (fun cond ->
+      let matched = List.exists (fun fs -> check_outcome fs cond) final_states in
+      if not matched && final_states <> [] then
+        msg (Printf.sprintf "%sObservable not found%s: %s"
+          Terminal.red Terminal.reset (cond_to_string cond));
+      matched
+    ) observable in
+
+    let unobservable_ok = List.for_all Fun.id (List.mapi (fun i fs ->
+      match List.find_opt (fun c -> check_outcome fs c) unobservable with
+      | Some cond ->
+        msg (Printf.sprintf "%sUnobservable found%s in execution %d: %s"
+          Terminal.red Terminal.reset (i+1) (cond_to_string cond));
+        false
+      | None -> true
+    ) final_states) in
+
+    let result =
+      if results = [] then NoBehaviour
+      else if errors <> [] then ModelError
+      else if observable_ok && unobservable_ok then Expected
+      else Unexpected
     in
-    Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
-    List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
-    result
-  with
-  | Otoml.Parse_error (pos, msg) ->
-    Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red Terminal.reset name
-      Terminal.red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
-      msg Terminal.reset;
-    ParseError
-  | Failure msg ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
-    ParseError
-  | exn ->
-    Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
-      Terminal.red (Printexc.to_string exn) Terminal.reset;
-    ParseError
+    (result, List.rev !msgs)
+
+  let run_testrepr model (test : Testrepr.t) =
+    let init, term = AS.testrepr_to_archstate test in
+    run_executions model init 1000 term test.finals
+
+  let run_litmus_test model filename =
+    let name = Filename.basename filename in
+    if not (Sys.file_exists filename) then (
+      Printf.printf "  %s✗%s %s  %sfile not found%s\n"
+        Terminal.red Terminal.reset name Terminal.red Terminal.reset;
+      ParseError
+    ) else try
+      let toml = Otoml.Parser.from_file filename in
+      let test = Parser.parse_to_testrepr toml in
+      let result, msgs = run_testrepr model test in
+      let icon, color = match result with
+        | Expected -> Terminal.check, Terminal.green
+        | Unexpected -> Terminal.cross, Terminal.yellow
+        | _ -> Terminal.cross, Terminal.red
+      in
+      Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
+      List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
+      result
+    with
+    | Otoml.Parse_error (pos, msg) ->
+      Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red Terminal.reset name
+        Terminal.red (Option.fold ~none:"?" ~some:(fun (l,c) -> Printf.sprintf "%d:%d" l c) pos)
+        msg Terminal.reset;
+      ParseError
+    | Failure msg ->
+      Printf.printf "  %s✗%s %s  %s%s%s\n"
+        Terminal.red Terminal.reset name Terminal.red msg Terminal.reset;
+      ParseError
+    | exn ->
+      Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
+        Terminal.red (Printexc.to_string exn) Terminal.reset;
+      ParseError
+
+end

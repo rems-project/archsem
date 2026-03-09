@@ -27,25 +27,27 @@ PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 
 # Thread 1 Instructions
 [[memory]]
-base = 0x500
-size = 8
+addr = 0x500
+kind = "code"
+step = 4
 data = [0xf8206822, 0xf8236885]
 
 # Thread 2 Instructions
 [[memory]]
-base = 0x600
-size = 8
+addr = 0x600
+kind = "code"
+step = 4
 data = [0xf8636885, 0xf8606822]
 
 # Shared Data
 [[memory]]
-base = 0x1100
-size = 8
+addr = 0x1100
+step = 8
 data = 0
 
 [[memory]]
-base = 0x1200
-size = 8
+addr = 0x1200
+step = 8
 data = 0
 
 [[termCond]]
@@ -70,4 +72,3 @@ observable.1.R2 = { op = "eq", val = 0x0 }
 
 [[outcome]]
 observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
-

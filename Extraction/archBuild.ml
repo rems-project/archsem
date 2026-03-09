@@ -17,7 +17,12 @@ module Build (ArchReq : ArchRequired) = struct
   module Reg = struct
     type t = Arch.reg
 
-    let of_string = Arch.reg_of_string
+    let of_string_opt = Arch.reg_of_string
+
+    let of_string reg =
+      match of_string_opt reg with
+      | Some r -> r
+      | None -> failwith ("Unknown register: " ^ reg)
 
     let to_string = Arch.pretty_reg
 
@@ -27,10 +32,17 @@ module Build (ArchReq : ArchRequired) = struct
   module RegVal = struct
     type t = Arch.reg * Arch.reg_type
 
-    let of_gen reg gen =
+    let of_gen_res reg gen =
       match Arch.reg_type_of_gen reg gen with
       | Ok rv -> Ok (reg, rv)
       | Error s -> Error s
+
+    let of_gen reg gen =
+      match Arch.reg_type_of_gen reg gen with
+      | Ok rv -> (reg, rv)
+      | Error s -> failwith s
+
+    let of_string_gen reg gen = let reg = Reg.of_string reg in of_gen reg gen
 
     let reg (reg, _) = reg
 
@@ -44,10 +56,7 @@ module Build (ArchReq : ArchRequired) = struct
 
     let insert (reg, rv) rm = TM.reg_insert reg rv rm
 
-    let insertZ reg rv rm =
-      match RegVal.of_gen reg (Number rv) with
-      | Ok rv -> insert rv rm
-      | Error s -> raise (Failure s)
+    let insertZ reg rv rm = insert (RegVal.of_gen reg (Number rv)) rm
 
     let inserti reg rv rm = insertZ reg (Z.of_int rv) rm
 
@@ -64,8 +73,7 @@ module Build (ArchReq : ArchRequired) = struct
       match RegVal.to_gen (get reg rm) with
       | Number z -> z
       | _ ->
-        raise
-          (Failure (Printf.sprintf "Register %s was not a number" (Reg.to_string reg)))
+        failwith (Printf.sprintf "Register %s was not a number" (Reg.to_string reg))
 
     let geti reg rm : int = getZ reg rm |> Z.to_int
   end

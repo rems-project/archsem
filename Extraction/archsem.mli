@@ -2,6 +2,8 @@ module RegValGen = RegValGen
 
 module Utils = Utils
 
+module type Arch = Arch.Arch
+
 type empty = Utils.empty
 
 module Arm : sig

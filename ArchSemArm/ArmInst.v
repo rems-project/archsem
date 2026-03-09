@@ -66,14 +66,14 @@ Module ArchExtra <: FromSail.ArchExtra SA.
     set_ProcState_gen_field "SP" (RVNumber z) p :=
       Ok $ setv ProcState_SP (Z_to_bv 1 z) p;
     set_ProcState_gen_field field _ _ :=
-      Error ("error setting " ++ field ++ " in PSTATE")%string.
+      Error ("Error setting " ++ field ++ " in PSTATE")%string.
 
   Equations reg_type_of_gen (r : reg) (rv : reg_gen_val) :
     result string (reg_type r) :=
     reg_type_of_gen (R_bitvector_64 _) (RVNumber z) := Ok (Z_to_bv 64 z);
     reg_type_of_gen (R_ProcState _) (RVStruct l) :=
       foldlM (λ ps '(field, val), set_ProcState_gen_field field val ps) inhabitant l;
-    reg_type_of_gen r _ := Error ("error decoding " ++ pretty r)%string.
+    reg_type_of_gen r _ := Error ("Error decoding " ++ pretty r)%string.
 
   Equations reg_type_to_gen (r : reg) (rv : reg_type r) : reg_gen_val :=
     reg_type_to_gen (R_bitvector_64 _) bv := RVNumber (bv_unsigned bv);

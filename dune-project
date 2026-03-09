@@ -75,6 +75,7 @@
    coq-archsem-arm
   (otoml (>= 1.0))
   (cmdliner (>= 1.3))
+  (ounit2 (and :with-test (>= 2.2)))
  )
 )
 

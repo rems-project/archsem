@@ -20,8 +20,9 @@ PSTATE = { "EL" = 0b01, "SP" = 0b1 }
 
 # Instructions:
 [[memory]]
-base = 0x500
-size = 20
+addr = 0x500
+kind = "code"
+step = 4
 data = [
   0xf8226823, # STR X3, [X1, X2] - invalidate PTE
   0xd5033a9f, # DSB ISHST - store barrier
@@ -33,51 +34,51 @@ data = [
 
 # Data at PA 0x1000
 [[memory]]
-base = 0x1000
-size = 8
+addr = 0x1000
+step = 8
 data = 0x2a
 
 # L0 table base
 [[memory]]
-base = 0x80000
-size = 8
+addr = 0x80000
+step = 8
 data = 0
 
 # Page table hierarchy, cf LDRPT+NoBBM for explanations
 # L0[1] -> L1
 [[memory]]
-base = 0x80008
-size = 8
+addr = 0x80008
+step = 8
 data = 0x81803
 
 # L1[0] -> L2
 [[memory]]
-base = 0x81000
-size = 8
+addr = 0x81000
+step = 8
 data = 0x82003
 
 # L2[0] -> L3
 [[memory]]
-base = 0x82000
-size = 8
+addr = 0x82000
+step = 8
 data = 0x83003
 
 # L3[0]: code page (executable)
 [[memory]]
-base = 0x83000
-size = 8
+addr = 0x83000
+step = 8
 data = 0x40000000000783
 
 # L3[1]: data page (readable/writable)
 [[memory]]
-base = 0x83008
-size = 8
+addr = 0x83008
+step = 8
 data = 0x60000000001783
 
 # L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
 [[memory]]
-base = 0x83080
-size = 8
+addr = 0x83080
+step = 8
 data = 0x60000000083703
 
 [[termCond]]

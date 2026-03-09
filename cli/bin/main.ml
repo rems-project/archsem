@@ -9,6 +9,8 @@ open Archsem
 open Litmus
 open Runner
 
+module ArmRunner = Runner.Make(Arm)
+
 (** {1 Running litmus tests} *)
 
 let get_toml_files dir =
@@ -31,11 +33,11 @@ let get_all_tests paths =
   );
   files
 
-let run_tests model_name model files =
+let run_tests model_name run_test files =
   Terminal.print_header model_name (List.length files);
 
   let results = List.map (fun file ->
-    let result = run_litmus_test model file in
+    let result = run_test file in
     (file, result)
   ) files in
 
@@ -73,7 +75,7 @@ let cmd_seq =
   let run =
     let+ paths = test_path_term in
     let files = get_all_tests paths in
-    run_tests "seq" Arm.(seq_model tiny_isa) files
+    run_tests "seq" (ArmRunner.run_litmus_test Arm.(seq_model tiny_isa)) files
   in
   let info =
     let doc = "Run sequential model" in
@@ -86,7 +88,7 @@ let cmd_ump =
   let run =
     let+ paths = test_path_term in
     let files = get_all_tests paths in
-    run_tests "ump" Arm.(umProm_model tiny_isa) files
+    run_tests "ump" (ArmRunner.run_litmus_test Arm.(umProm_model tiny_isa)) files
   in
   let info =
     let doc = "Run user-mode promising model" in
@@ -120,7 +122,7 @@ let cmd_vmp =
     let+ paths = test_path_term
     and+ bbm_param = bbm_mode in
     let files = get_all_tests paths in
-    run_tests "vmp" (vmProm_model ~bbm_param tiny_isa) files
+    run_tests "vmp" (ArmRunner.run_litmus_test (vmProm_model ~bbm_param tiny_isa)) files
   in
   let info =
     let doc =

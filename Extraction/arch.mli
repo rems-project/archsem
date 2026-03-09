@@ -2,7 +2,9 @@ module type Arch = sig
   module Reg : sig
     type t
 
-    val of_string : string -> t option
+    val of_string_opt : string -> t option
+
+    val of_string : string -> t
 
     val to_string : t -> string
 
@@ -12,7 +14,11 @@ module type Arch = sig
   module RegVal : sig
     type t
 
-    val of_gen : Reg.t -> RegValGen.t -> (t, string) result
+    val of_gen_res : Reg.t -> RegValGen.t -> (t, string) result
+
+    val of_gen : Reg.t -> RegValGen.t -> t
+
+    val of_string_gen : string -> RegValGen.t -> t
 
     val reg : t -> Reg.t
 

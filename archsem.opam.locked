@@ -62,6 +62,7 @@ depends: [
   "odoc" {= "3.1.0" & with-doc}
   "odoc-parser" {= "3.1.0" & with-doc}
   "otoml" {= "1.0.5"}
+  "ounit2" {= "2.2.7" & with-test}
   "ppx_derivers" {= "1.2.1"}
   "ppx_optcomp" {= "v0.16.0"}
   "ppxlib" {= "0.35.0"}
