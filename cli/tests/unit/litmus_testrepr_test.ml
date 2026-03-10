@@ -13,6 +13,7 @@ module ArmRunner = Runner.Make (Arm)
 
 let eor = parse_file "seq/EOR.toml"
 let mp = parse_file "ump/MP.toml"
+let nop_mem = parse_file "seq/NOP+mem.toml"
 
 let bad_step_toml =
   Otoml.Parser.from_string
@@ -102,7 +103,7 @@ let expected_eor = {
     "_PC", i 0x504;
   ]];
   finals = [
-    Observable [0, ["_PC", ReqEq (i 0x504); "R0", ReqEq (i 0x110)]];
+    Observable ([0, ["_PC", ReqEq (i 0x504); "R0", ReqEq (i 0x110)]], []);
   ];
 }
 
@@ -168,10 +169,10 @@ let expected_mp = {
     ["_PC", i 0x608];
   ];
   finals = [
-    Observable [1, ["R5", ReqEq (i 0x0); "R2", ReqEq (i 0x2a)]];
-    Observable [1, ["R5", ReqEq (i 0x0); "R2", ReqEq (i 0x0)]];
-    Observable [1, ["R5", ReqEq (i 0x1); "R2", ReqEq (i 0x0)]];
-    Observable [1, ["R5", ReqEq (i 0x1); "R2", ReqEq (i 0x2a)]];
+    Observable ([1, ["R5", ReqEq (i 0x0); "R2", ReqEq (i 0x2a)]], []);
+    Observable ([1, ["R5", ReqEq (i 0x0); "R2", ReqEq (i 0x0)]], []);
+    Observable ([1, ["R5", ReqEq (i 0x1); "R2", ReqEq (i 0x0)]], []);
+    Observable ([1, ["R5", ReqEq (i 0x1); "R2", ReqEq (i 0x2a)]], []);
   ];
 }
 
@@ -189,6 +190,12 @@ let parse_correct_file_test =
   >::: [
          parse_ok "EOR parses as expected" eor expected_eor;
          parse_ok "MP parses as expected" mp expected_mp;
+         "NOP+mem parses one memory outcome" >:: (fun _ ->
+           match List.hd nop_mem.finals with
+           | Observable (_, [mc]) ->
+             assert_equal "x" mc.sym;
+             assert_equal 4 mc.size
+           | _ -> assert_failure "expected one observable memory condition");
        ]
 
 let parse_bad_file_test =
