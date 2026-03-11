@@ -136,7 +136,7 @@ Module EOR.
       archState.address_space := () |}.
 
   Definition test_results :=
-    x86_operational_modelc 2 x86_sem 1%nat termCond initState.
+    x86_operational_modelc 2 x86_sem true 1%nat termCond initState.
 
   Goal reg_extract RAX 0%fin <$> test_results = Listset [Ok 0x110%Z].
     Proof.
@@ -195,7 +195,7 @@ Module MP.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
   Eval vm_compute in (length (listset_car test_results)).
 
@@ -258,7 +258,7 @@ Module SB.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
   Eval vm_compute in (length (listset_car test_results)).
 
@@ -321,7 +321,7 @@ Module R_PO_MFENCE.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
   Eval vm_compute in (length (listset_car test_results)).
 
@@ -404,7 +404,7 @@ Module IRIW.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
   Eval vm_compute in (length (listset_car test_results)).
 
