@@ -51,18 +51,56 @@ let memory_block_to_toml (block : Testrepr.memory_block) : Otoml.t =
 let termcond_to_toml regs : Otoml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
 
-let outcome_to_toml (fc : Testrepr.final_cond) =
-  let label, thread_conds =
+let mem_cond_to_toml default_size (mc : Testrepr.mem_cond) =
+  match mc.req with
+  | Testrepr.MemEq v when mc.size = default_size ->
+    (mc.sym, Otoml.TomlInteger (Z.to_int v))
+  | _ ->
+    let pairs =
+      (match mc.req with
+       | Testrepr.MemEq v -> [("val", Otoml.TomlInteger (Z.to_int v))]
+       | Testrepr.MemNe v ->
+         [("op", Otoml.TomlString "ne"); ("val", Otoml.TomlInteger (Z.to_int v))])
+      @ (if mc.size <> default_size then [("size", Otoml.TomlInteger mc.size)] else [])
+    in
+    (mc.sym, Otoml.TomlInlineTable pairs)
+
+let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
+  let label, thread_conds, mem_conds =
     match fc with
-    | Testrepr.Observable tc -> "observable", tc
-    | Testrepr.Unobservable tc -> "unobservable", tc
+    | Testrepr.Observable (tc, mc) -> "observable", tc, mc
+    | Testrepr.Unobservable (tc, mc) -> "unobservable", tc, mc
   in
-  let entries = List.map (fun (tid, reqs) ->
+  let thread_entries = List.map (fun (tid, reqs) ->
     string_of_int tid,
     Otoml.TomlInlineTable
       (List.map (fun (reg, req) -> (reg, req_to_toml req)) reqs)
   ) thread_conds in
-  Otoml.TomlTable [label, Otoml.TomlTable entries]
+  let memory_sizes =
+    List.filter_map
+      (fun (block : Testrepr.memory_block) ->
+        Option.map (fun sym -> (sym, block.step)) block.sym)
+      test.memory
+  in
+  let mem_entries =
+    match mem_conds with
+    | [] -> []
+    | _ ->
+      [
+        "mem",
+        Otoml.TomlInlineTable
+          (List.map
+             (fun (mc : Testrepr.mem_cond) ->
+               let default_size =
+                 match List.assoc_opt mc.sym memory_sizes with
+                 | Some size -> size
+                 | None -> mc.size
+               in
+               mem_cond_to_toml default_size mc)
+             mem_conds);
+      ]
+  in
+  Otoml.TomlTable [label, Otoml.TomlTable (thread_entries @ mem_entries)]
 
 (** {1 Public API} *)
 
@@ -77,7 +115,7 @@ let to_toml (test : Testrepr.t) : Otoml.t =
     "termCond", TomlTableArray
       (List.map termcond_to_toml test.term_cond);
     "outcome", TomlTableArray
-      (List.map outcome_to_toml test.finals);
+      (List.map (outcome_to_toml test) test.finals);
   ]
 
 let to_string test =

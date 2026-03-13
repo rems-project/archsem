@@ -29,17 +29,29 @@ type memory_block = {
   kind : memory_kind;
 }
 
+
 (** {1 Outcome Types} *)
 
 type reg_requirement =
   | ReqEq of Archsem.RegValGen.t
   | ReqNe of Archsem.RegValGen.t
 
+type mem_requirement =
+  | MemEq of Z.t
+  | MemNe of Z.t
+
 type thread_cond = int * (string * reg_requirement) list
 
+type mem_cond = {
+  sym : string;
+  addr : int;
+  size : int;
+  req : mem_requirement;
+}
+
 type final_cond =
-  | Observable of thread_cond list
-  | Unobservable of thread_cond list
+  | Observable of thread_cond list * mem_cond list
+  | Unobservable of thread_cond list * mem_cond list
 
 (** {1 Test} *)
 
@@ -51,3 +63,11 @@ type t = {
   term_cond : (string * Archsem.RegValGen.t) list list;
   finals : final_cond list;
 }
+
+
+(** {1 Helper functions} *)
+
+let block_size (mb : memory_block) : int = Bytes.length mb.data
+
+let mem_by_sym (sym : string) =
+  List.find (fun (mb : memory_block) -> mb.sym = Some sym)
