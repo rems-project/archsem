@@ -136,7 +136,7 @@ Module EOR.
       archState.address_space := () |}.
 
   Definition test_results :=
-    x86_operational_modelc 2 x86_sem 1%nat termCond initState.
+    x86_operational_modelc 2 x86_sem true 1%nat termCond initState.
 
   Goal reg_extract RAX 0%fin <$> test_results = Listset [Ok 0x110%Z].
     Proof.
@@ -195,12 +195,14 @@ Module MP.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+
+  Eval vm_compute in (length (listset_car test_results)).
 
   Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
-    vm_compute (elements _).
+    Time vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 
@@ -256,12 +258,14 @@ Module SB.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+
+  Eval vm_compute in (length (listset_car test_results)).
 
   Goal elements (regs_extract [(0%fin, RAX); (1%fin, RAX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
-    vm_compute (elements _).
+    Time vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End SB.
@@ -317,7 +321,9 @@ Module R_PO_MFENCE.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+
+  Eval vm_compute in (length (listset_car test_results)).
 
   Definition result_extractions :=
     (λ test_result, [(reg_extract RAX 1%fin test_result); (mem_extract 0x1200 8 test_result)]) <$> test_results.
@@ -325,7 +331,7 @@ Module R_PO_MFENCE.
   Goal elements result_extractions ≡ₚ
     [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
   Proof.
-    vm_compute (elements _).
+    Time vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End R_PO_MFENCE.
@@ -398,7 +404,9 @@ Module IRIW.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem n_threads termCond initState.
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+
+  Eval vm_compute in (length (listset_car test_results)).
 
   Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX); (3%fin, RAX); (3%fin, RBX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x1%Z];
@@ -406,7 +414,7 @@ Module IRIW.
       Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x0%Z; 0x1%Z; 0x1%Z];
       Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x1%Z]].
   Proof.
-    vm_compute (elements _).
+    Time vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End IRIW.

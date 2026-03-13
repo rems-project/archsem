@@ -75,12 +75,15 @@ Record machine_state {threads: nat} := {
 
     (* Whether a thread is terminated, but not necessarily flushed *)
     termThreads : vec bool threads;
+
+    (* If it exists, a thread that is worth trying to run eagerly *)
+    eagerThread : option (fin threads);
   }.
 Arguments machine_state : clear implicits.
 
 (** * TSO Model *)
 Section Model.
-  Context {threads: nat}.
+  Context {threads : nat}.
 
   Notation mstate_threads := (machine_state threads).
 
@@ -108,7 +111,7 @@ Section Model.
   Definition buffer_empty (tid : fin threads) (m : mstate_threads) : bool :=
     if buf m !!! tid is [] then true else false.
 
-  Definition all_buffers_empty (state: mstate_threads): bool :=
+  Definition all_buffers_empty (state : mstate_threads) : bool :=
     bool_decide (∀ t : fin threads, buffer_empty t state).
 
   Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val)
@@ -240,11 +243,10 @@ Section Model.
     mSet (release_lock tid).
 
 
-
   (** ** Run outcomes *)
 
   Section RunOutcome.
-    Context (tid : fin threads).
+    Context (tid : fin threads) (eager : bool).
 
     Equations run_outcome (call : outcome) : Exec.t mstate_threads string (eff_ret call) :=
     | RegRead reg racc =>
@@ -266,6 +268,8 @@ Section Model.
           read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
           mret (Ok (read, 0%bv))
         else if is_explicit macc then
+          (* Cannot eagerly perform memory reads*)
+          guard_discard (negb eager);;
           (* Can't explicitly read from memory if we are blocked (some other
              thread has the lock) *)
           is_blocked ← mget (blocked tid);
@@ -285,11 +289,23 @@ Section Model.
         (* Add write to write buffer *)
         mSet (add_to_write_buffer tid addr size val);;
         (* Handle atomic case (release lock) *)
-        (if is_atomic_rmw macc then release_lock_conditional tid else mret ());;
+        (if is_atomic_rmw macc then 
+          if eager then
+            (* Must discard outcome if eager, as release_lock_conditional requires
+              the store buffer to be emptied to complete *)
+            mdiscard
+          else release_lock_conditional tid 
+        else mret ());;
         mret (Ok ())
     | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
-    | Barrier Barrier_LFENCE => mret ()
+    | Barrier Barrier_LFENCE => 
+        (* Cannot eagerly perform memory barriers*)
+        guard_discard (negb eager);;
+        mret ()
     | Barrier _ =>
+        (* Cannot eagerly perform memory barriers*)
+        guard_discard (negb eager);;
+
         (* Write buffer (of thread tid) must be emptied before this instruction
            can complete. *)
         is_blocked ← mget (blocked tid);
@@ -312,73 +328,174 @@ Section Model.
         msetv ((.!!! tid) ∘ buf) t
     end.
 
-  (** ** Top level transition *)
-  Definition step (isem : iMon ()) (term : terminationCondition threads):
-      Exec.t mstate_threads string () :=
-    (* The transition taken is either a flush to memory or a run_outcome call,
-     for a specific tid *)
-    tid ← mchoosef;
-    flush_transition ← mchoosef;
-    if (flush_transition : bool) then
-      (* This function discards if there is nothing to flush. *)
-      flush_one_item_buffer tid
-    else
+  Section InstructionLevel.
+    Context (isem : iMon ()) (term : terminationCondition threads).
+
+    (** ** Execution step transition *)
+    Definition execution_step (tid : fin threads) (eager : bool)
+      : Exec.t mstate_threads string () :=
       (* Check if the thread is already marked terminated, in which case there
-       is no transition to take. *)
+        is no transition to take. *)
       terminated ← mget ((.!!! tid) ∘ termThreads);
       guard_discard (negb terminated);;
 
       (* Run one instruction *)
-      cinterp (run_outcome tid) isem;;
+      cinterp (run_outcome tid eager) isem;;
       (* Check if the thread is actually terminated and mark it if so *)
       'regs ← mget ((.!!! tid) ∘ regs);
       if term tid regs then
         (* Mark it as terminated *)
         msetv ((.!!! tid) ∘ termThreads) true
-      else mret ().
-End Model.
+      else
+        (* Mark the thread for possible eager execution *)
+        msetv eagerThread (Some tid).
 
-(** * Lift to executable archModel *)
+    (** ** Top level transition *)
+    Definition step : Exec.t mstate_threads string () :=
+      (* The transition taken is either a flush to memory or a run_outcome call,
+      for a specific tid *)
+      tid ← mchoosef;
+      flush_transition ← mchoosef;
+      if (flush_transition : bool) then
+        (* This function discards if there is nothing to flush. *)
+        flush_one_item_buffer tid
+      else
+        execution_step tid false.
 
-Definition from_archState {nth} (term : terminationCondition nth)
-  (astate : archState nth) : machine_state nth :=
-  {|
-    regs := astate.(archState.regs);
-    mem := astate.(archState.memory);
-    buf := Vector.const [] nth;
-    lock := None;
-    memWritten := ∅;
-    termThreads := vimap term astate.(archState.regs)
-  |}.
 
-Definition to_archState {nth} (mstate : machine_state nth) : option (archState nth) :=
-  if all_buffers_empty mstate && bool_decide (lock mstate = None) then
-    Some {|
-        archState.regs := regs mstate;
-        archState.memory := mem mstate;
-        archState.address_space := ()
-      |}
-  else None.
 
-Fixpoint run_to_term {nth} (fuel : nat) (isem : iMon ())
-  (term : terminationCondition nth) :
-  Exec.t (machine_state nth) string {s : archState nth & archState.is_terminated term s} :=
-  (* run until out of fuel or conditions met *)
-  if fuel is S fuel then
-    step isem term;;
-    mstate ← mGet;
+    (** ** Eager transition functions *)
+
+    Definition run_eager_thread_step (tid : fin threads) :
+        Exec.t mstate_threads string bool :=
+      (* Eagerly run single thread instruction if possible.
+        The returned bool is true if the instruction runs successfully *)
+      '(terminated : bool) ← mget ((.!!! tid) ∘ termThreads);
+      if terminated then
+        mret false
+      else
+        (* Run instruction eagerly. Only bind new outcome if it is successful *)
+        let new_outcome := execution_step tid true in
+          st ← mGet;
+          if Exec.to_result_list (new_outcome st) is [] then
+            mret false
+          else
+            new_outcome;;
+            mret true.
+
+    Fixpoint run_eager_thread (fuel : nat) (tid : fin threads) :
+        Exec.t mstate_threads string nat :=
+      (* Run as many instructions as possible for this thread *)
+      if fuel is S fuel then
+        (* Run instruction eagerly if possible *)
+        '(instr_ran : bool) ← run_eager_thread_step tid;
+        if instr_ran then
+          run_eager_thread fuel tid
+        else mret (S fuel)
+      else mthrow "Out of fuel".
+
+    Definition run_eager_all (fuel : nat) : Exec.t mstate_threads string nat :=
+      (* For each thread, run as many instructions as possible *)
+      foldlM run_eager_thread fuel (enum (fin threads)).
+
+  End InstructionLevel.
+
+
+
+  (** * Lift to executable archModel *)
+
+  Definition from_archState (term : terminationCondition threads)
+    (astate : archState threads) : mstate_threads :=
+    {|
+      regs := astate.(archState.regs);
+      mem := astate.(archState.memory);
+      buf := Vector.const [] threads;
+      lock := None;
+      memWritten := ∅;
+      termThreads := vimap term astate.(archState.regs);
+      eagerThread := None
+    |}.
+
+  Definition to_archState (mstate : mstate_threads) : option (archState threads) :=
+    if all_buffers_empty mstate && bool_decide (lock mstate = None) then
+      Some {|
+          archState.regs := regs mstate;
+          archState.memory := mem mstate;
+          archState.address_space := ()
+        |}
+    else None.
+
+  (** * Terminate if an execution has reached its final state *)
+  Definition ret_if_terminated (term : terminationCondition threads)
+      (else_action : Exec.t (mstate_threads) string {s : archState threads & archState.is_terminated term s}) :
+      Exec.t (mstate_threads) string {s : archState threads & archState.is_terminated term s} :=
     astate ← mget to_archState;
+    (* Perform termination checks *)
     if astate is Some astate then
       if decide (archState.is_terminated term astate) is left p then
         mret (existT astate p)
-      else run_to_term fuel isem term
-    else run_to_term fuel isem term
-  else mthrow "Out of fuel".
+      else else_action
+    else else_action.
+
+    
+  (** * Run eager and non-eager steps (mutually recursive) until termination *)
+  Section RunModel.
+    Context (allow_eager : bool).
+
+    Fixpoint run_to_term_rec (fuel : nat) (isem : iMon ()) (term : terminationCondition threads) :
+      Exec.t (mstate_threads) string {s : archState threads & archState.is_terminated term s} :=
+      (* run until out of fuel or conditions met *)
+      if fuel is S fuel then
+        (* Run a non-eager execution step *)
+        step isem term;;
+        (* Check if we have reached a termination state. If not, keep executing *)
+        let else_action :=
+          (* If eager transitions are allowed, and if we just ran a thread instruction 
+            non-eagerly, then try to run the same thread eagerly*)
+          if allow_eager then
+            eager_thread ← mget eagerThread;
+            if eager_thread is Some tid then
+              run_eager_thread_rec tid fuel isem term
+            else run_to_term_rec fuel isem term
+          else run_to_term_rec fuel isem term
+        in
+        ret_if_terminated term else_action
+      else mthrow "Out of fuel"
+
+    with run_eager_thread_rec (tid : fin threads) (fuel : nat) (isem : iMon ()) (term : terminationCondition threads) :
+      Exec.t (mstate_threads) string {s : archState threads & archState.is_terminated term s} :=
+      if fuel is S fuel then
+        (* Try to do eager execution of a thread if possible *)
+        '(fuel_consumed : bool) ← run_eager_thread_step isem term tid;
+        if fuel_consumed then
+          run_eager_thread_rec tid fuel isem term
+        else
+          (* Check if we have reached a termination state. If not, execute non-eager step *)
+          msetv eagerThread None;;
+          ret_if_terminated term (run_to_term_rec fuel isem term)
+      else mthrow "Out of fuel".
+
+    Definition run_to_term (fuel : nat) (isem : iMon ()) (term : terminationCondition threads)
+    : Exec.t (mstate_threads) string {s : archState threads & archState.is_terminated term s} :=
+      if fuel is S fuel then
+        (* If eager transitions allowed, try to eagerly execute each thread,
+          as we are in the first iteration *)
+        new_fuel ← 
+          if allow_eager then 
+            run_eager_all isem term (S fuel) 
+          else mret (S fuel);
+        (* Check if termination condition met. If not, execute non-eager step *)
+        ret_if_terminated term (run_to_term_rec new_fuel isem term)
+      else mthrow "Out of fuel".
+
+  End RunModel.
+End Model.
 
 (** Top-level one-threaded model function that takes fuel (guaranteed
     termination) and an instruction monad, and returns a computational set of
     all possible final states. *)
-Definition x86_operational_modelc (fuel : nat) (isem : iMon ()) : (archModel.c ∅) :=
+Definition x86_operational_modelc (fuel : nat) (isem : iMon ()) (allow_eager : bool)
+  : (archModel.c ∅) :=
   λ n term (initSt: archState n),
     from_archState term initSt
-    |> archModel.Res.from_exec (run_to_term fuel isem term).
+    |> archModel.Res.from_exec (run_to_term allow_eager fuel isem term).
