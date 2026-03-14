@@ -179,12 +179,26 @@ let build_data_memory syms sym addr init_value =
   }
 
 let to_testrepr (ir : Ir.t) : Testrepr.t =
+  (* Assemble sections first and reserve their address ranges *)
+  let assembled_sections =
+    List.map
+      (fun (sec : Ir.section) ->
+        let enc = Assembler.assemble sec.code in
+        (sec, enc))
+      ir.sections
+  in
+  let syms =
+    List.fold_left
+      (fun syms (sec, enc) ->
+        Symbols.reserve syms sec.Ir.address (Bytes.length enc))
+      Symbols.empty assembled_sections
+  in
   let syms =
     List.fold_left
       (fun syms name -> fst (Symbols.alloc_data syms name))
-      Symbols.empty ir.symbolic
+      syms ir.symbolic
   in
-  let syms, encoded_threads =
+  let syms, assembled_threads =
     List.fold_left_map
       (fun syms (thread : Ir.thread) ->
         let enc = Assembler.assemble thread.code in
@@ -197,12 +211,17 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     List.map
       (fun (thread, _, code_addr) ->
         build_registers syms ~arch:ir.arch code_addr thread)
-      encoded_threads
+      assembled_threads
   in
   let code_memory =
     List.map
       (fun (_, enc, code_addr) -> build_code_memory ~step:code_step code_addr enc)
-      encoded_threads
+      assembled_threads
+  in
+  let section_memory =
+    List.map
+      (fun (sec, enc) -> build_code_memory ~step:code_step sec.Ir.address enc)
+      assembled_sections
   in
   let data_memory =
     List.map (fun sym ->
@@ -230,7 +249,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
       (fun (_, enc, code_addr) ->
         let end_pc = Z.of_int (code_addr + Bytes.length enc) in
         [(pc, RegValGen.Number end_pc)])
-      encoded_threads
+      assembled_threads
   in
   let finals =
     to_final_conds
@@ -243,7 +262,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
     registers;
-    memory = code_memory @ data_memory;
+    memory = code_memory @ section_memory @ data_memory;
     term_cond;
     finals;
   }

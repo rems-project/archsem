@@ -3,6 +3,7 @@
 type t = {
   next_addr : int option;
   table : (string * int) list;
+  reserved : (int * int) list;  (** (addr, size) pairs for reserved ranges *)
 }
 
 let page_bits () =
@@ -20,11 +21,24 @@ let base_addr () =
 let empty = {
   next_addr = None;
   table = [];
+  reserved = [];
 }
+
+let overlaps addr size (r_addr, r_size) =
+  addr < r_addr + r_size && r_addr < addr + size
+
+let reserve t addr size =
+  { t with reserved = (addr, size) :: t.reserved }
 
 let alloc_page t =
   let page_size = page_size () in
-  let addr = Option.value t.next_addr ~default:(base_addr ()) in
+  let rec find_free addr =
+    if List.exists (overlaps addr page_size) t.reserved then
+      find_free (addr + page_size)
+    else
+      addr
+  in
+  let addr = find_free (Option.value t.next_addr ~default:(base_addr ())) in
   ({ t with next_addr = Some (addr + page_size) }, addr)
 
 let alloc_data t name =

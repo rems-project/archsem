@@ -6,6 +6,12 @@ type thread = {
   init : (string * Value_expr.t) list;
 }
 
+type section = {
+  sec_name : string;
+  address : int;
+  code : string;
+}
+
 type expect =
   | Sat
   | Unsat
@@ -14,6 +20,7 @@ type t = {
   arch : Litmus.Arch_id.t;
   name : string;
   threads : thread list;
+  sections : section list;
   symbolic : string list;
   locations : (string * Value_expr.t) list;
   expect : expect;
@@ -66,6 +73,27 @@ let parse_threads toml =
   let table = Otoml.get_table toml in
   List.sort (fun a b -> compare a.tid b.tid) (List.map parse_thread table)
 
+let parse_address = function
+  | Otoml.TomlInteger i -> i
+  | Otoml.TomlString s ->
+    (try Z.to_int (Z.of_string s)
+     with Invalid_argument _ ->
+       raise (Otoml.Type_error ("invalid address: " ^ s)))
+  | v ->
+    raise (Otoml.Type_error
+      ("address must be integer or hex string, got: " ^
+       Otoml.Printer.to_string v))
+
+let parse_section (name, table) =
+  let _ = Otoml.get_table table in
+  let address = Otoml.find table parse_address ["address"] in
+  let code = Otoml.find table Otoml.get_string ["code"] |> String.trim in
+  { sec_name = name; address; code }
+
+let parse_sections toml =
+  let table = Otoml.get_table toml in
+  List.map parse_section table
+
 let parse_expect toml =
   match Otoml.get_string toml with
   | "sat" -> Sat
@@ -98,6 +126,8 @@ let of_toml toml =
     arch = Otoml.find toml parse_arch ["arch"];
     name = Otoml.find_or ~default:"unknown" toml Otoml.get_string ["name"];
     threads = Otoml.find toml parse_threads ["thread"];
+    sections =
+      Otoml.find_or ~default:[] toml parse_sections ["section"];
     symbolic =
       Otoml.find_or ~default:[] toml (Otoml.get_array Otoml.get_string) ["symbolic"];
     locations = Otoml.find_or ~default:[] toml (Otoml.get_table_values parse_value) ["locations"];

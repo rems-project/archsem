@@ -52,6 +52,30 @@ let tests =
       let _, code_addr = Isla.Symbols.alloc_code s1 16 in
       assert_equal 0x500 data_addr;
       assert_equal 0x1500 code_addr);
+    "alloc skips reserved range" >:: (fun _ ->
+      Test_utils.setup_arm ();
+      let s = Isla.Symbols.reserve s0 0x500 4 in
+      let _, addr = Isla.Symbols.alloc_data s "x" in
+      assert_equal 0x1500 addr);
+    "alloc skips multiple reserved ranges" >:: (fun _ ->
+      Test_utils.setup_arm ();
+      let s = Isla.Symbols.reserve s0 0x500 4 in
+      let s = Isla.Symbols.reserve s 0x1500 4 in
+      let _, addr = Isla.Symbols.alloc_data s "x" in
+      assert_equal 0x2500 addr);
+    "alloc skips reserved then continues normally" >:: (fun _ ->
+      Test_utils.setup_arm ();
+      let s = Isla.Symbols.reserve s0 0x500 4 in
+      let s, a1 = Isla.Symbols.alloc_data s "x" in
+      let _, a2 = Isla.Symbols.alloc_data s "y" in
+      assert_equal 0x1500 a1;
+      assert_equal 0x2500 a2);
+    "reserved range overlapping middle of page skips it" >:: (fun _ ->
+      Test_utils.setup_arm ();
+      (* reserve range that overlaps with the first page [0x500, 0x1500) *)
+      let s = Isla.Symbols.reserve s0 0x1000 0x100 in
+      let _, addr = Isla.Symbols.alloc_data s "x" in
+      assert_equal 0x1500 addr);
   ]
 
 let () = run_test_tt_main tests

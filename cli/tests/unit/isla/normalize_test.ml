@@ -16,6 +16,7 @@ let sample_ir arch : Isla.Ir.t =
           init = [ ("X0", LocVal (Mem "x")); ("W2", Const (Z.of_int 3)) ];
         };
       ];
+    sections = [{ sec_name = "handler"; address = 0x1400; code = "MOV X2, #1" }];
     symbolic = [ "x" ];
     locations = [ ("x", Const Z.zero) ];
     expect = Isla.Ir.Sat;
