@@ -2,6 +2,7 @@
 
 open OUnit2
 open Isla.Assertion
+open Isla.Value_expr
 
 let sample_ir arch : Isla.Ir.t =
   {
@@ -12,20 +13,20 @@ let sample_ir arch : Isla.Ir.t =
         {
           tid = 0;
           code = "MOV W1,#1";
-          init = [ ("X0", Isla.Ir.Sym "x"); ("W2", Isla.Ir.Int (Z.of_int 3)) ];
+          init = [ ("X0", LocVal (Mem "x")); ("W2", Const (Z.of_int 3)) ];
         };
       ];
     symbolic = [ "x" ];
-    locations = [ ("x", Isla.Ir.Int Z.zero) ];
+    locations = [ ("x", Const Z.zero) ];
     expect = Isla.Ir.Sat;
     assertion =
       And
-        (Atom (CmpCst (Reg (0, "X1"), Eq, Z.one)),
+        (Atom (Cmp (LocVal (Reg (0, "X1")), Eq, Const Z.one)),
          Or
-           (Atom (CmpLoc (Reg (0, "X3"), Eq, Mem "x")),
+           (Atom (Cmp (LocVal (Reg (0, "X3")), Eq, LocVal (Mem "x"))),
             And
-              (Atom (CmpCst (Reg (0, "W2"), Ne, Z.zero)),
-               Atom (CmpLoc (Reg (0, "W4"), Eq, Reg (1, "X5"))))));
+              (Atom (Cmp (LocVal (Reg (0, "W2")), Ne, Const Z.zero)),
+               Atom (Cmp (LocVal (Reg (0, "W4")), Eq, LocVal (Reg (1, "X5")))))));
   }
 
 let tests =
@@ -41,19 +42,19 @@ let tests =
               {
                 tid = 0;
                 code = "MOV W1,#1";
-                init = [ ("R0", Isla.Ir.Sym "x"); ("R2", Isla.Ir.Int (Z.of_int 3)) ];
+                init = [ ("R0", LocVal (Mem "x")); ("R2", Const (Z.of_int 3)) ];
               };
             ];
           assertion =
             Or
               (And
-                 (Atom (CmpCst (Reg (0, "R1"), Eq, Z.one)),
-                  Atom (CmpLoc (Reg (0, "R3"), Eq, Mem "x"))),
+                 (Atom (Cmp (LocVal (Reg (0, "R1")), Eq, Const Z.one)),
+                  Atom (Cmp (LocVal (Reg (0, "R3")), Eq, LocVal (Mem "x")))),
                And
-                 (Atom (CmpCst (Reg (0, "R1"), Eq, Z.one)),
+                 (Atom (Cmp (LocVal (Reg (0, "R1")), Eq, Const Z.one)),
                   And
-                    (Atom (CmpCst (Reg (0, "R2"), Ne, Z.zero)),
-                     Atom (CmpLoc (Reg (0, "R4"), Eq, Reg (1, "R5"))))));
+                    (Atom (Cmp (LocVal (Reg (0, "R2")), Ne, Const Z.zero)),
+                     Atom (Cmp (LocVal (Reg (0, "R4")), Eq, LocVal (Reg (1, "R5")))))));
         }
       in
       assert_equal expected normalized);

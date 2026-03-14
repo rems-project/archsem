@@ -11,6 +11,7 @@ rule token = parse
   | [' ' '\t' '\n']+ { token lexbuf }
   | '(' { LPAREN }
   | ')' { RPAREN }
+  | ',' { COMMA }
   | '&' { AND }
   | '|' { OR }
   | '~' { NOT }

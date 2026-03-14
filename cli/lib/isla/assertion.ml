@@ -1,14 +1,8 @@
 (** Boolean assertion parser for isla litmus tests. *)
 
-type loc =
-  | Reg of int * string
-  | Mem of string
-
 type op = Eq | Ne
 
-type atom =
-  | CmpCst of loc * op * Z.t
-  | CmpLoc of loc * op * loc
+type atom = Cmp of Value_expr.t * op * Value_expr.t
 
 type expr =
   | Atom of atom
@@ -18,15 +12,11 @@ type expr =
   | True
   | False
 
-module Testrepr = Litmus.Testrepr
-
 let negate_op = function
   | Eq -> Ne
   | Ne -> Eq
 
-let negate_atom = function
-  | CmpCst (loc, op, value) -> CmpCst (loc, negate_op op, value)
-  | CmpLoc (lhs, op, rhs) -> CmpLoc (lhs, negate_op op, rhs)
+let negate_atom (Cmp (lhs, op, rhs)) = Cmp (lhs, negate_op op, rhs)
 
 let rec negate = function
   | Atom atom -> Atom (negate_atom atom)

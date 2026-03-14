@@ -1,13 +1,9 @@
 (** Parse isla-format TOML into an intermediate representation. *)
 
-type value =
-  | Int of Z.t
-  | Sym of string
-
 type thread = {
   tid : int;
   code : string;
-  init : (string * value) list;
+  init : (string * Value_expr.t) list;
 }
 
 type expect =
@@ -19,7 +15,7 @@ type t = {
   name : string;
   threads : thread list;
   symbolic : string list;
-  locations : (string * value) list;
+  locations : (string * Value_expr.t) list;
   expect : expect;
   assertion : Assertion.expr;
 }
@@ -27,11 +23,29 @@ type t = {
 let type_error fmt = Printf.ksprintf (fun s -> raise (Otoml.Type_error s)) fmt
 
 let parse_value = function
-  | Otoml.TomlInteger i -> Int (Z.of_int i)
+  | Otoml.TomlInteger i -> Value_expr.Const (Z.of_int i)
   | Otoml.TomlString s ->
-    (try Int (Z.of_string s) with Invalid_argument _ -> Sym s)
+    (try Const (Z.of_string s) with Invalid_argument _ -> LocVal (Mem s))
   | value ->
     type_error "Value is invalid, should be int or string, but is: %s"
+      (Otoml.Printer.to_string value)
+
+let parse_value_expr_string s =
+  let lexbuf = Lexing.from_string s in
+  try Parser.final_value_expr Lexer.token lexbuf
+  with Parser.Error ->
+    type_error "value expression parse error at position %d in: %s"
+      lexbuf.lex_curr_p.pos_cnum s
+
+let parse_reset_value = function
+  | Otoml.TomlInteger i -> Value_expr.Const (Z.of_int i)
+  | Otoml.TomlString s ->
+    (try Value_expr.Const (Z.of_string s)
+     with Invalid_argument _ ->
+       let expr = parse_value_expr_string s in
+       Const (Value_expr.eval expr))
+  | value ->
+    type_error "reset value is invalid, should be int or string expression, but is: %s"
       (Otoml.Printer.to_string value)
 
 let parse_thread (tid, table) =
@@ -43,7 +57,10 @@ let parse_thread (tid, table) =
   let _ = Otoml.get_table table in
   let code = Otoml.find table Otoml.get_string ["code"] |> String.trim in
   let init = Otoml.find_or ~default:[] table (Otoml.get_table_values parse_value) ["init"] in
-  { tid; code; init }
+  let reset = Otoml.find_or ~default:[] table (Otoml.get_table_values parse_reset_value) ["reset"] in
+  let has_init name = List.exists (fun (k, _) -> k = name) init in
+  let merged = init @ List.filter (fun (k, _) -> not (has_init k)) reset in
+  { tid; code; init = merged }
 
 let parse_threads toml =
   let table = Otoml.get_table toml in

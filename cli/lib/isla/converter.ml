@@ -50,14 +50,19 @@ let mem_requirement op value =
   | Assertion.Eq -> Testrepr.MemEq value
   | Assertion.Ne -> Testrepr.MemNe value
 
+let resolve_value_expr expr =
+  match expr with
+  | Value_expr.LocVal loc -> `Loc loc
+  | _ -> `Const (Value_expr.eval expr)
+
 let atoms_to_conds ~resolve_sym ~memory_size atoms =
   let reg_atoms, mem_atoms =
     List.fold_left
-      (fun (reg_atoms, mem_atoms) atom ->
-        match atom with
-        | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
+      (fun (reg_atoms, mem_atoms) (Assertion.Cmp (lhs, op, rhs)) ->
+        match resolve_value_expr lhs, resolve_value_expr rhs with
+        | `Loc (Value_expr.Reg (tid, reg)), `Const value ->
           ((tid, reg, reg_requirement op value) :: reg_atoms, mem_atoms)
-        | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
+        | `Loc (Value_expr.Mem sym), `Const value ->
           let mem_cond =
             {
               Testrepr.sym = sym;
@@ -67,13 +72,15 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
             }
           in
           (reg_atoms, mem_cond :: mem_atoms)
-        | Assertion.CmpLoc (Assertion.Reg (tid, reg), op, Assertion.Mem sym) ->
+        | `Loc (Value_expr.Reg (tid, reg)), `Loc (Value_expr.Mem sym) ->
           let value = Z.of_int (resolve_sym sym) in
           ((tid, reg, reg_requirement op value) :: reg_atoms, mem_atoms)
-        | Assertion.CmpLoc (Assertion.Reg _, _, Assertion.Reg _) ->
+        | `Loc (Value_expr.Reg _), `Loc (Value_expr.Reg _) ->
           failwith "assertion: register-to-register comparisons are not supported"
-        | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-          failwith "assertion: memory-to-location comparisons are not supported")
+        | `Loc (Value_expr.Mem _), _ ->
+          failwith "assertion: memory-to-location comparisons are not supported"
+        | `Const _, _ ->
+          failwith "assertion: constant expression on LHS is not supported")
       ([], [])
       atoms
   in
@@ -128,9 +135,9 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
     dnf
 
 let z_of_value syms = function
-  | Ir.Int z -> z
-  | Ir.Sym sym ->
-    Z.of_int (Symbols.resolve syms sym)
+  | Value_expr.Const z -> z
+  | Value_expr.LocVal (Mem sym) -> Z.of_int (Symbols.resolve syms sym)
+  | expr -> Value_expr.eval expr
 
 let build_registers syms ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
@@ -201,7 +208,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     List.map (fun sym ->
       let addr = Symbols.resolve syms sym in
       let init_value =
-        List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
+        List.assoc_opt sym ir.locations |> Option.value ~default:(Value_expr.Const Z.zero)
       in
       build_data_memory syms sym addr init_value)
     ir.symbolic

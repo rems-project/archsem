@@ -1,12 +1,6 @@
-type loc =
-  | Reg of int * string
-  | Mem of string
-
 type op = Eq | Ne
 
-type atom =
-  | CmpCst of loc * op * Z.t
-  | CmpLoc of loc * op * loc
+type atom = Cmp of Value_expr.t * op * Value_expr.t
 
 type expr =
   | Atom of atom

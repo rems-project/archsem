@@ -2,6 +2,7 @@
 
 open OUnit2
 open Isla.Assertion
+open Isla.Value_expr
 
 let simple_toml =
   Otoml.Parser.from_string
@@ -44,25 +45,51 @@ let expected : Isla.Ir.t =
       [
         { tid = 0;
           code = "MOV W1,#1\n  STR W1,[X0]";
-          init = [ ("X0", Isla.Ir.Sym "x") ];
+          init = [ ("X0", LocVal (Mem "x")) ];
         };
         { tid = 1;
           code = "LDR W0,[X2]\n  STR W0,[X1]";
-          init = [ ("X1", Isla.Ir.Sym "y"); ("X2", Isla.Ir.Sym "x") ];
+          init = [ ("X1", LocVal (Mem "y")); ("X2", LocVal (Mem "x")) ];
         };
       ];
     symbolic = [ "x"; "y" ];
-    locations = [ ("x", Isla.Ir.Int Z.zero); ("y", Isla.Ir.Int Z.zero) ];
+    locations = [ ("x", Const Z.zero); ("y", Const Z.zero) ];
     expect = Isla.Ir.Sat;
     assertion =
       And
-        (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-         Atom (CmpCst (Mem "y", Eq, Z.one)));
+        (Atom (Cmp (LocVal (Reg (1, "X0")), Eq, Const Z.one)),
+         Atom (Cmp (LocVal (Mem "y"), Eq, Const Z.one)));
   }
+
+let reset_toml =
+  Otoml.Parser.from_string
+    {|
+arch = "AArch64"
+name = "ResetTest"
+
+[thread.0]
+code = "NOP"
+init = { X0 = 10 }
+
+[thread.0.reset]
+X0 = "bvand(0xFF, 0x0F)"
+X1 = "extz(42, 64)"
+|}
 
 let tests =
   "Isla.Ir" >::: [
     "parse" >:: (fun _ -> assert_equal expected t);
+    "reset: expressions evaluated and merged" >:: (fun _ ->
+      let ir = Isla.Ir.of_toml reset_toml in
+      let thread = List.hd ir.threads in
+      assert_equal
+        ~msg:"X0 from init takes precedence over reset"
+        (Some (Const (Z.of_int 10)))
+        (List.assoc_opt "X0" thread.init);
+      assert_equal
+        ~msg:"X1 from reset with extz evaluated"
+        (Some (Const (Z.of_int 42)))
+        (List.assoc_opt "X1" thread.init));
   ]
 
 let () = run_test_tt_main tests
