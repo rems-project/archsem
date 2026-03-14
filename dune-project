@@ -1,6 +1,7 @@
 (lang dune 3.8)
 (name coq-archsem)
 (using coq 0.8)
+(using menhir 2.1)
 
 (source (github rems-project/archsem))
 (license "BSD-2-Clause")
@@ -75,6 +76,7 @@
    coq-archsem-arm
   (otoml (>= 1.0))
   (cmdliner (>= 1.3))
+  (menhir (>= 20231231))
   (ounit2 (and :with-test (>= 2.2)))
  )
 )

@@ -9,6 +9,9 @@ let test_dirs = ["seq"; "ump"; "vmp"]
 
 let i n = Archsem.RegValGen.Number (Z.of_int n)
 
+let setup () =
+  Config.set (Config.of_arch Arch_id.Arm)
+
 let parse_file path =
   Parser.parse_to_testrepr
     (Otoml.Parser.from_file (Filename.concat test_root path))
