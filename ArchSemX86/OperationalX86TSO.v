@@ -288,13 +288,13 @@ Section Model.
         (if is_atomic_rmw macc then release_lock_conditional tid else mret ());;
         mret (Ok ())
     | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
-    | Barrier Barrier_LFENCE => mret ()
-    | Barrier _ =>
+    | Barrier Barrier_MFENCE =>
         (* Write buffer (of thread tid) must be emptied before this instruction
            can complete. *)
         is_blocked ← mget (blocked tid);
         guard_discard (negb is_blocked);;
         empty_write_buffer tid
+    | Barrier _ => mret ()
     | GenericFail msg => mthrow msg
     | _ => mthrow "Unsupported outcome".
   End RunOutcome.

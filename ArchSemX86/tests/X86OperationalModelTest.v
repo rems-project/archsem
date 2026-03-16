@@ -295,7 +295,7 @@ Module R_PO_MFENCE.
     |> mem_insert 0x506 6 0x0000000102c7  (* MOV [EDX], 0x1 = 0x00000001 @ 0b00_000_010 @ 0xC7 *)
     (* Thread 2 @ 0x600 *)
     |> mem_insert 0x600 6 0x0000000202c7  (* MOV [EDX], 0x2 = 0x00000002 @ 0b00_000_010 @ 0xC7 *)
-    |> mem_insert 0x606 3 0xF8ae0f  (* MFENCE = 0b11_111_??? @ 0xAE @ 0x0F *)
+    |> mem_insert 0x606 3 0xF0ae0f  (* MFENCE = 0b11_110_??? @ 0xAE @ 0x0F *)
     |> mem_insert 0x609 2 0x018b  (* MOV EAX, [ECX] = 0b00_000_001 @ 0x8B *)
     (* Backing memory so the addresses exist *)
     |> mem_insert 0x1100 8 0x0
