@@ -295,7 +295,7 @@ Section Model.
         mret (Ok ())
     | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
     | Barrier Barrier_MFENCE =>
-        (* Cannot eagerly perform memory barriers*)
+        (* Cannot eagerly perform memory barriers that do something*)
         guard_discard (negb eager);;
 
         (* Write buffer (of thread tid) must be emptied before this instruction
