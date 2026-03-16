@@ -197,12 +197,10 @@ Module MP.
   Definition test_results :=
     x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
-  Eval vm_compute in (length (listset_car test_results)).
-
   Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
-    Time vm_compute (elements _).
+    vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 
@@ -260,12 +258,10 @@ Module SB.
   Definition test_results :=
     x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
-  Eval vm_compute in (length (listset_car test_results)).
-
   Goal elements (regs_extract [(0%fin, RAX); (1%fin, RAX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
   Proof.
-    Time vm_compute (elements _).
+    vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End SB.
@@ -323,15 +319,13 @@ Module R_PO_MFENCE.
   Definition test_results :=
     x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
-  Eval vm_compute in (length (listset_car test_results)).
-
   Definition result_extractions :=
     (λ test_result, [(reg_extract RAX 1%fin test_result); (mem_extract 0x1200 8 test_result)]) <$> test_results.
 
   Goal elements result_extractions ≡ₚ
     [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
   Proof.
-    Time vm_compute (elements _).
+    vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End R_PO_MFENCE.
@@ -406,15 +400,13 @@ Module IRIW.
   Definition test_results :=
     x86_operational_modelc fuel x86_sem true n_threads termCond initState.
 
-  Eval vm_compute in (length (listset_car test_results)).
-
   Goal elements (regs_extract [(1%fin, RAX); (1%fin, RBX); (3%fin, RAX); (3%fin, RBX)] <$> test_results) ≡ₚ
     [Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x1%Z];
       Ok [0x0%Z; 0x1%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x1%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x1%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x1%Z; 0x1%Z; 0x1%Z];
       Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x0%Z; 0x1%Z; 0x1%Z];
       Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x0%Z; 0x1%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z; 0x1%Z; 0x1%Z]].
   Proof.
-    Time vm_compute (elements _).
+    vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End IRIW.

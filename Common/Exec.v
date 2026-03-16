@@ -187,6 +187,9 @@ Definition lift_res_set {St' St} (getter : St → St') `{Setter St St' getter}
     `(r : res (St' * E) (St' * A)) : t St E A :=
   lift_res_set_full (@setv _ _ getter _) r.
 
+Definition lift_res_st `(r : res (St * E) (St * A)) : t St E A :=
+  λ st, r.
+
 #[global] Instance elem_of_results {E A} : ElemOf A (res E A) :=
   λ x r, x ∈ r.(results).
 #[global] Typeclasses Opaque elem_of_results.
