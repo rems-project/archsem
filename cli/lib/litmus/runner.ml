@@ -218,22 +218,13 @@ module Make (Arch : Archsem.Arch) = struct
         Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
         List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
         result
-      with
-      | Otoml.Parse_error (pos, msg) ->
-          Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
-            Terminal.reset name Terminal.red
-            (Option.fold ~none:"?"
-               ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)
-               pos
-            )
-            msg Terminal.reset;
-          ParseError
-      | Failure msg ->
-          Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
-            Terminal.red msg Terminal.reset;
-          ParseError
-      | exn ->
-          Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
-            Terminal.red (Printexc.to_string exn) Terminal.reset;
-          ParseError
+      with Otoml.Parse_error (pos, msg) ->
+        Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
+          Terminal.reset name Terminal.red
+          (Option.fold ~none:"?"
+             ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)
+             pos
+          )
+          msg Terminal.reset;
+        ParseError
 end
