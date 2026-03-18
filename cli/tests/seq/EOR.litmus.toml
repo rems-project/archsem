@@ -1,0 +1,10 @@
+arch="Arm"
+name="EOR"
+
+[thread.0]
+init = { X1 = 0x11, X2 = 0x101 }
+code = "EOR X0, X1, X2"
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 0x110"

@@ -1,0 +1,21 @@
+arch = "AArch64"
+name = "MP"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { X0 = 1, X1 = "x", X2 = 1, X3 = "y" }
+code = """
+	STR X0,[X1]
+	STR X2,[X3]
+"""
+
+[thread.1]
+init = { X1 = "y", X3 = "x" }
+code = """
+	LDR X0,[X1]
+	LDR X2,[X3]
+"""
+
+[final]
+expect = "sat"
+assertion = "1:X0 = 1 & 1:X2 = 0"
