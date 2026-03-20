@@ -10,24 +10,26 @@ let get_assemble_cmd () =
 let get_extract_cmd () =
   Otoml.find (Config.get ()) Otoml.get_string ["assembler"; "extract"]
 
-(** Run a cmd specified by a format string. Raise [Failure] if the command
-    fails *)
+(** Run a cmd specified by a format string. Raise {!Litmus.Error.Cli_error}
+    if the command fails. *)
 let run_cmd fmt =
   let run cmd =
     let rc = Sys.command cmd in
     if rc != 0 then
-      Printf.ksprintf failwith "assember: %s failed with code %d" cmd rc
+      Litmus.Error.raise_error Assembler "%s failed with code %d" cmd rc
   in
   Printf.ksprintf run fmt
 
 (** Read a file into a [Byte.t] *)
 let read_file_bytes path : Bytes.t =
-  let ic = open_in_bin path in
-  let length = in_channel_length ic in
-  let buf = Bytes.create length in
-  really_input ic buf 0 length;
-  close_in ic;
-  buf
+  try
+    let ic = open_in_bin path in
+    let length = in_channel_length ic in
+    let buf = Bytes.create length in
+    really_input ic buf 0 length;
+    close_in ic;
+    buf
+  with Sys_error msg -> Litmus.Error.raise_error Assembler "%s" msg
 
 (** Assemble code into a [Bytes.t] *)
 let assemble (asm : string) : Bytes.t =

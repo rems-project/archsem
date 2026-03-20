@@ -22,11 +22,21 @@ let default_path_for_arch arch =
   let exec_dir = Filename.dirname Sys.argv.(0) in
   first_some [find_from (Sys.getcwd ()) relpath; find_from exec_dir relpath]
 
+let parse_toml_file path =
+  try Otoml.Parser.from_file path with
+  | Otoml.Parse_error (pos, msg) ->
+      let pos_str =
+        Option.fold ~none:"?" ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c) pos
+      in
+      Error.raise_error_ctx Config ~ctx:path "parse error at %s: %s" pos_str msg
+  | Sys_error msg -> Error.raise_error_ctx Config ~ctx:path "%s" msg
+
 let of_arch arch =
   match default_path_for_arch arch with
-  | Some path -> Otoml.Parser.from_file path
+  | Some path -> parse_toml_file path
   | None ->
-      failwith ("config: no default config for arch " ^ Arch_id.to_string arch)
+      Error.raise_error_ctx Config ~ctx:(Arch_id.to_string arch)
+        "no default config found"
 
 (** {1 Global config} *)
 
@@ -34,7 +44,7 @@ let global : t ref = ref empty
 
 let set config = global := config
 
-let load file = global := Otoml.Parser.from_file file
+let load file = global := parse_toml_file file
 
 let get () = !global
 

@@ -28,7 +28,7 @@ type t =
 
 (** {1 Isla test parsing } *)
 
-let type_error fmt = Printf.ksprintf (fun s -> raise (Otoml.Type_error s)) fmt
+let parse_error fmt = Litmus.Error.raise_error Parser fmt
 
 let parse_value = function
   | Otoml.TomlInteger i -> Int (Z.of_int i)
@@ -36,14 +36,14 @@ let parse_value = function
     try Int (Z.of_string s) with Invalid_argument _ -> Sym s
   )
   | value ->
-      type_error "Value is invalid, should be int or string, but is: %s"
+      parse_error "value is invalid, should be int or string, but is: %s"
         (Otoml.Printer.to_string value)
 
 let parse_thread (tid, table) =
   let tid =
     match int_of_string_opt tid with
     | Some tid -> tid
-    | None -> type_error "Thread table contained a non-number field: %s" tid
+    | None -> parse_error "thread table contained a non-number field: %s" tid
   in
   let _ = Otoml.get_table table in
   let code = Otoml.find table Otoml.get_string ["code"] |> String.trim in
@@ -60,13 +60,14 @@ let parse_expect toml =
   match Otoml.get_string toml with
   | "sat" -> Sat
   | "unsat" -> Unsat
-  | expect -> raise (Otoml.Type_error ("invalid expectation value: " ^ expect))
+  | expect ->
+      Litmus.Error.raise_error Parser "invalid expectation value: %s" expect
 
 let parse_assertion_expr s =
   let lexbuf = Lexing.from_string s in
   try Parser.assertion Lexer.token lexbuf
   with Parser.Error ->
-    type_error "assertion parse error at position %d in: %s"
+    parse_error "assertion parse error at position %d in: %s"
       lexbuf.lex_curr_p.pos_cnum s
 
 let parse_assertion toml =
@@ -76,8 +77,7 @@ let parse_assertion toml =
 
 let parse_arch toml =
   let arch_string = Otoml.get_string toml in
-  try Litmus.Arch_id.of_string arch_string
-  with Failure msg -> raise (Otoml.Type_error msg)
+  Litmus.Arch_id.of_string arch_string
 
 let of_toml toml =
   { arch = Otoml.find toml parse_arch ["arch"];

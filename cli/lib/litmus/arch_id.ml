@@ -9,7 +9,7 @@ let of_string_opt = function
 let of_string arch =
   match of_string_opt arch with
   | Some arch -> arch
-  | None -> failwith ("unknown architecture: " ^ arch)
+  | None -> Error.raise_error Parser "unknown architecture: %s" arch
 
 let to_string = function Arm -> "Arm"
 
@@ -22,5 +22,5 @@ let guess_from_test filename =
     let toml = Otoml.Parser.from_file filename in
     Otoml.find toml of_toml ["arch"]
   with exn ->
-    Printf.ksprintf failwith "Failed to guess architecture in %s with error : %s"
+    Error.raise_error Parser "failed to guess architecture in %s with error: %s"
       filename (Printexc.to_string exn)

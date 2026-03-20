@@ -24,7 +24,7 @@ let registers_to_toml regs : Otoml.t =
 
 let memory_block_to_toml (block : Testrepr.memory_block) : Otoml.t =
   let step = block.step in
-  if step <= 0 then failwith "memory block step must be positive";
+  if step <= 0 then Error.raise_error Printer "memory block step must be positive";
   let len = Bytes.length block.data in
   let n = len / step in
   assert (len = n * step);
@@ -137,6 +137,8 @@ let to_string test =
   Otoml.Printer.to_string ~force_table_arrays:true (to_toml test)
 
 let to_file path test =
-  let oc = open_out path in
-  output_string oc (to_string test);
-  close_out oc
+  try
+    let oc = open_out path in
+    output_string oc (to_string test);
+    close_out oc
+  with Sys_error msg -> Error.raise_error_ctx Printer ~ctx:path "%s" msg

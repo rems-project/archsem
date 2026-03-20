@@ -10,13 +10,15 @@ let resolve_opt t name = List.assoc_opt name t.table
 let resolve t name =
   match List.assoc_opt name t.table with
   | Some sym -> sym
-  | None -> failwith ("Unknown symbol: " ^ name)
+  | None -> Litmus.Error.raise_error_ctx Symbols ~ctx:name "unknown symbol"
 
 let page_bits () =
   let bits =
     Otoml.find (Litmus.Config.get ()) Otoml.get_integer ["isla"; "page_bits"]
   in
-  if bits < 0 then failwith "config: [isla] page_bits must be non-negative";
+  if bits < 0 then
+    Litmus.Error.raise_error_ctx Config ~ctx:"isla.page_bits"
+      "must be non-negative";
   bits
 
 let page_size () = 1 lsl page_bits ()

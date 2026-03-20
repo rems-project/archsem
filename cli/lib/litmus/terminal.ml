@@ -35,7 +35,7 @@ let print_summary
       ~expected
       ~unexpected
       ~model_error
-      ~parse_error
+      ~setup_error
       ~no_behaviour
       ~failures
   =
@@ -66,8 +66,8 @@ let print_summary
   if model_error > 0 then
     Printf.printf "  %s%s%s Model Error  %s%d%s\n" red cross reset red model_error
       reset;
-  if parse_error > 0 then
-    Printf.printf "  %s%s%s Parse Error  %s%d%s\n" red cross reset red parse_error
+  if setup_error > 0 then
+    Printf.printf "  %s%s%s Setup Error  %s%d%s\n" red cross reset red setup_error
       reset;
   if no_behaviour > 0 then
     Printf.printf "  %s%s%s No Behaviour  %s%d%s\n" red cross reset red
