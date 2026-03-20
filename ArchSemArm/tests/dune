@@ -1,11 +1,14 @@
 (coq.theory
  (name ArchSemArm.tests)
  (modules ArmSeqModelTest UMPromisingTest VMPromisingTest)
- (theories ArchSemArm)
-)
+ (theories ArchSemArm))
+
 ; Do not build this folder by default but do it when running @runtest
-(alias (name default))
+
+(alias
+ (name default))
+
 (alias
  (name runtest)
- (deps (alias all))
-)
+ (deps
+  (alias all)))

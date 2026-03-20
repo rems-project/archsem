@@ -1,5 +1,4 @@
 module RegValGen = RegValGen
-
 module Utils = Utils
 
 module type Arch = Arch.Arch
@@ -21,7 +20,6 @@ module Arm : sig
   end
 
   val vmProm_model : ?bbm_param:BBM.param -> empty ArchModel.t
-
 end
 
 module X86 : sig

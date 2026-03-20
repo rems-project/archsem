@@ -1,2 +1,6 @@
 ; By default build everything installable *)
-(alias (name default) (deps (alias_rec install)))
+
+(alias
+ (name default)
+ (deps
+  (alias_rec install)))

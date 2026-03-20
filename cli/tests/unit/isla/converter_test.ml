@@ -2,16 +2,15 @@
 
 open Litmus
 open OUnit2
-
 module Arm = Archsem.Arm
 module ArmRunner = Runner.Make (Arm)
-
 module RegValGen = Archsem.RegValGen
 
 let convert toml =
   toml |> Isla.Ir.of_toml |> Isla.Normalize.apply |> Isla.Converter.to_testrepr
 
 let n i = RegValGen.Number (Z.of_int i)
+
 let pc_reg = Isla.Converter.pc_reg Litmus.Arch_id.Arm
 
 let expected_regs ~pc overrides =
@@ -21,15 +20,14 @@ let expected_regs ~pc overrides =
       (fun (name, value) -> if has name then None else Some (name, value))
       (Isla.Converter.register_defaults ())
   in
-  (pc_reg, n pc) :: overrides @ defaults
+  ((pc_reg, n pc) :: overrides) @ defaults
 
 let data_block ~addr ~sym =
-  {
-    Testrepr.addr;
+  { Testrepr.addr;
     step = 8;
     data = Bytes.make 8 '\x00';
     sym = Some sym;
-    kind = Testrepr.Data;
+    kind = Testrepr.Data
   }
 
 let simple_toml =
@@ -81,74 +79,75 @@ assertion = "*x = 1 & 1:X1 = 1"
 |}
 
 let tests =
-  "Isla.Converter" >::: [
-    "SimpleStore" >:: (fun _ ->
-      Test_utils.setup ();
-      let enc = Isla.Assembler.assemble "MOV X1, #42\nSTR X1, [X0]" in
-      let expected =
-        {
-          Testrepr.arch = "Arm";
-          name = "SimpleStore";
-          registers = [expected_regs ~pc:0x1500 [("R0", n 0x500)]];
-          memory =
-            [
-              { addr = 0x1500; step = 4; data = enc;
-                sym = None; kind = Code };
-              data_block ~addr:0x500 ~sym:"x";
-            ];
-          term_cond = [[(pc_reg, n 0x1508)]];
-          finals = [];
-        }
-      in
-      assert_equal expected (convert simple_toml));
-    "MP" >:: (fun _ ->
-      Test_utils.setup ();
-      let enc0 = Isla.Assembler.assemble "MOV X1, #1\nSTR X1, [X0]" in
-      let enc1 = Isla.Assembler.assemble "LDR X1, [X0]" in
-      let expected =
-        {
-          Testrepr.arch = "Arm";
-          name = "MP";
-          registers =
-            [
-              expected_regs ~pc:0x2500 [("R0", n 0x500)];
-              expected_regs ~pc:0x3500 [("R0", n 0x500)];
-            ];
-          memory =
-            [
-              { addr = 0x2500; step = 4; data = enc0;
-                sym = None; kind = Code };
-              { addr = 0x3500; step = 4; data = enc1;
-                sym = None; kind = Code };
-              data_block ~addr:0x500 ~sym:"x";
-              data_block ~addr:0x1500 ~sym:"y";
-            ];
-          term_cond =
-            [[(pc_reg, n 0x2508)]; [(pc_reg, n 0x3504)]];
-          finals =
-            [
-              Testrepr.Observable
-                ( [(1, [("R1", Testrepr.ReqEq (RegValGen.Number Z.one))])],
-                  [{ sym = "x"; addr = 0x500; size = 8;
-                    req = Testrepr.MemEq Z.one }] );
-            ];
-        }
-      in
-      assert_equal expected (convert mp_toml));
-    "e2e: SimpleStore seq" >:: (fun _ ->
-      Test_utils.setup ();
-      let result, _msgs =
-        ArmRunner.run_testrepr Arm.(seq_model tiny_isa) (convert simple_toml)
-      in
-      assert_equal Runner.Expected result);
-    "e2e: MP ump" >:: (fun _ ->
-      Test_utils.setup ();
-      let result, _msgs =
-        ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) (convert mp_toml)
-      in
-      assert_equal Runner.Expected result);
-  ]
+  "Isla.Converter"
+  >::: [ ("SimpleStore"
+         >:: fun _ ->
+         Test_utils.setup ();
+         let enc = Isla.Assembler.assemble "MOV X1, #42\nSTR X1, [X0]" in
+         let expected =
+           { Testrepr.arch = "Arm";
+             name = "SimpleStore";
+             registers = [expected_regs ~pc:0x1500 [("R0", n 0x500)]];
+             memory =
+               [ {addr = 0x1500; step = 4; data = enc; sym = None; kind = Code};
+                 data_block ~addr:0x500 ~sym:"x"
+               ];
+             term_cond = [[(pc_reg, n 0x1508)]];
+             finals = []
+           }
+         in
+         assert_equal expected (convert simple_toml)
+         );
+         ("MP"
+         >:: fun _ ->
+         Test_utils.setup ();
+         let enc0 = Isla.Assembler.assemble "MOV X1, #1\nSTR X1, [X0]" in
+         let enc1 = Isla.Assembler.assemble "LDR X1, [X0]" in
+         let expected =
+           { Testrepr.arch = "Arm";
+             name = "MP";
+             registers =
+               [ expected_regs ~pc:0x2500 [("R0", n 0x500)];
+                 expected_regs ~pc:0x3500 [("R0", n 0x500)]
+               ];
+             memory =
+               [ {addr = 0x2500; step = 4; data = enc0; sym = None; kind = Code};
+                 {addr = 0x3500; step = 4; data = enc1; sym = None; kind = Code};
+                 data_block ~addr:0x500 ~sym:"x";
+                 data_block ~addr:0x1500 ~sym:"y"
+               ];
+             term_cond = [[(pc_reg, n 0x2508)]; [(pc_reg, n 0x3504)]];
+             finals =
+               [ Testrepr.Observable
+                   ( [(1, [("R1", Testrepr.ReqEq (RegValGen.Number Z.one))])],
+                     [ { sym = "x";
+                         addr = 0x500;
+                         size = 8;
+                         req = Testrepr.MemEq Z.one
+                       }
+                     ]
+                   )
+               ]
+           }
+         in
+         assert_equal expected (convert mp_toml)
+         );
+         ("e2e: SimpleStore seq"
+         >:: fun _ ->
+         Test_utils.setup ();
+         let (result, _msgs) =
+           ArmRunner.run_testrepr Arm.(seq_model tiny_isa) (convert simple_toml)
+         in
+         assert_equal Runner.Expected result
+         );
+         ("e2e: MP ump"
+         >:: fun _ ->
+         Test_utils.setup ();
+         let (result, _msgs) =
+           ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) (convert mp_toml)
+         in
+         assert_equal Runner.Expected result
+         )
+       ]
 
-let () =
-  Test_utils.setup ();
-  run_test_tt_main tests
+let () = Test_utils.setup (); run_test_tt_main tests

@@ -52,33 +52,33 @@ module type Arch = sig
 
     val empty : t
 
-    val insert : int -> int -> Z.t -> t -> t
     (** address then size then data (little endian) *)
+    val insert : int -> int -> Z.t -> t -> t
 
     val inserti : int -> int -> int -> t -> t
 
     val insertb : int -> Bytes.t -> t -> t
 
-    val present : int -> int -> t -> bool
     (** Check whether a range of memory is entirely present *)
+    val present : int -> int -> t -> bool
 
-    val lookup_opt : int -> int -> t -> Z.t option
     (** little-endian *)
+    val lookup_opt : int -> int -> t -> Z.t option
 
-    val lookupi_opt : int -> int -> t -> int option
     (** This will crash if the result doesn't fin the integer *)
+    val lookupi_opt : int -> int -> t -> int option
 
     val lookupb_opt : int -> int -> t -> Bytes.t option
 
-    val lookup : int -> int -> t -> Z.t
     (** little-endian, raise Not_found if not all bytes are set *)
+    val lookup : int -> int -> t -> Z.t
 
-    val lookupi : int -> int -> t -> int
     (** This will crash if the result doesn't fin the integer
         raise Not_found if not all bytes are set *)
+    val lookupi : int -> int -> t -> int
 
-    val lookupb : int -> int -> t -> Bytes.t
     (** raise Not_found if not all bytes are set *)
+    val lookupb : int -> int -> t -> Bytes.t
   end
 
   module ArchState : sig
@@ -95,11 +95,10 @@ module type Arch = sig
 
   type termCond = (RegMap.t -> bool) list
 
-  type iSem
   (** Instruction semantics, opaque for now *)
+  type iSem
 
   module ArchModel : sig
-
     module Res : sig
       type 'flag t =
         | FinalState of ArchState.t
