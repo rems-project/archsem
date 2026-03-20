@@ -25,7 +25,7 @@ rule token = parse
   | alpha alnum* as s { IDENT s }
   | eof { EOF }
   | _ as c {
-      failwith (Printf.sprintf
+      Litmus.Error.raise_error Parser
         "assertion lexer: unexpected character '%c' at position %d"
-        c (Lexing.lexeme_start lexbuf))
+        c (Lexing.lexeme_start lexbuf)
     }

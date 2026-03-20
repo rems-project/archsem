@@ -32,7 +32,7 @@ let rec toml_to_gen : Otoml.t -> RegValGen.t = function
   | TomlArray l -> Array (List.map toml_to_gen l)
   | TomlTable t | TomlInlineTable t ->
     Struct (List.map (fun (k, v) -> (k, toml_to_gen v)) t)
-  | v -> failwith ("Unsupported register value type: " ^ toml_type_name v)
+  | v -> Error.raise_error Parser "unsupported register value type: %s" (toml_type_name v)
 
 (** Parse [[registers]] into register lists with string keys *)
 let parse_test_registers toml =
@@ -47,7 +47,7 @@ let parse_test_memory toml : Testrepr.memory_block list =
     let values = Otoml.find table (Otoml.get_array ~strict:false Otoml.get_integer) ["data"] in
     let n = List.length values in
     let step = Otoml.find table Otoml.get_integer ["step"] in
-    if step <= 0 then failwith "Memory block step must be positive";
+    if step <= 0 then Error.raise_error Parser "memory block step must be positive";
     let data = Bytes.create (n * step) in
     List.iteri (fun i v ->
         for j = 0 to step - 1 do
@@ -59,7 +59,7 @@ let parse_test_memory toml : Testrepr.memory_block list =
       |> Option.fold ~none:Testrepr.Data ~some:Testrepr.memory_kind_of_string
     in
     if kind = Code && sym <> None then
-      failwith "[[memory]] code blocks must not have sym";
+      Error.raise_error_ctx Parser ~ctx:"memory" "code blocks must not have sym";
     { addr; step; data; sym; kind }
   in
   Otoml.find toml (Otoml.get_array parse_memory_block) ["memory"]
@@ -79,7 +79,7 @@ let parse_reg_requirement (toml : Otoml.t) : Testrepr.reg_requirement =
     (match List.assoc_opt "op" pairs, List.assoc_opt "val" pairs with
      | Some (TomlString "eq"), Some v -> Testrepr.ReqEq (toml_to_gen v)
      | Some (TomlString "ne"), Some v -> Testrepr.ReqNe (toml_to_gen v)
-     | Some (TomlString op), _ -> failwith ("[[outcome]] unknown requirement op: " ^ op)
+     | Some (TomlString op), _ -> Error.raise_error_ctx Parser ~ctx:"outcome" "unknown requirement op: %s" op
      | _ -> Testrepr.ReqEq (toml_to_gen toml))
   | _ -> Testrepr.ReqEq (toml_to_gen toml)
 
@@ -109,15 +109,16 @@ let parse_mem_requirement (toml : Otoml.t) : Testrepr.mem_requirement =
      | Some (TomlString "ne"), Some v ->
        MemNe (Z.of_int @@ Otoml.get_integer v)
      | _, _ ->
-       failwith ("[[outcome]] unknown memory requirement: " ^
-                 Otoml.Printer.to_string toml))
+       Error.raise_error_ctx Parser ~ctx:"outcome.mem" "unknown memory requirement: %s"
+                 (Otoml.Printer.to_string toml))
   | _ -> MemEq (Z.of_int @@ Otoml.get_integer toml)
 
 let parse_mem_entry mem sym toml : Testrepr.mem_cond =
   let block =
-    try Testrepr.mem_by_sym sym mem with
-    | Not_found ->
-      failwith ("[[outcome]].mem." ^ sym ^ " not found in memory")
+    try Testrepr.mem_by_sym sym mem
+    with Not_found ->
+      Error.raise_error_ctx Parser ~ctx:("outcome.mem." ^ sym)
+        "not found in memory blocks"
   in
   let req = parse_mem_requirement toml in
   { sym;addr=block.addr;size=Testrepr.block_size block;req }
@@ -140,8 +141,8 @@ let parse_test_finals mem toml : Testrepr.final_cond list =
           Otoml.find_opt toml parse_with_mem ["unobservable"] with
     | Some (regs, mem), None -> Testrepr.Observable (regs, mem)
     | None, Some (regs, mem) -> Testrepr.Unobservable (regs, mem)
-    | Some _, Some _ -> failwith "[[outcome]] cannot have both observable and unobservable"
-    | None, None -> failwith "[[outcome]] must have observable or unobservable key"
+    | Some _, Some _ -> Error.raise_error_ctx Parser ~ctx:"outcome" "cannot have both observable and unobservable"
+    | None, None -> Error.raise_error_ctx Parser ~ctx:"outcome" "must have observable or unobservable key"
   in
   Otoml.find toml (Otoml.get_array parse_test_final) ["outcome"]
 
@@ -158,7 +159,7 @@ let resolve_mem_conds memory (mcs : Testrepr.mem_cond list) =
         match List.assoc_opt mc.sym sym_table with
         | Some (addr, step) ->
           (addr, if mc.size = 0 then step else mc.size)
-        | None -> failwith ("[[outcome]] unknown memory symbol: " ^ mc.sym)
+        | None -> Error.raise_error_ctx Parser ~ctx:("outcome.mem." ^ mc.sym) "unknown memory symbol"
       in
       { mc with addr; size })
     mcs

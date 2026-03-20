@@ -12,9 +12,9 @@ let regval_of_toml = function
         (fun (k, v) ->
           match v with
           | Otoml.TomlInteger i -> (k, RegValGen.Number (Z.of_int i))
-          | _ -> failwith ("config: register field " ^ k ^ " must be integer"))
+          | _ -> Litmus.Error.raise_error_ctx Config ~ctx:("registers.defaults." ^ k) "must be integer")
         fields)
-  | _ -> failwith "config: register default must be integer or inline table"
+  | _ -> Litmus.Error.raise_error_ctx Config ~ctx:"registers.defaults" "must be integer or inline table"
 
 let pc_reg arch =
   match arch with
@@ -29,13 +29,13 @@ let instruction_step () =
   let width =
     Otoml.find (Config.get ()) Otoml.get_integer ["assembler"; "instruction_step"]
   in
-  if width <= 0 then failwith "config: [assembler] instruction_step must be positive";
+  if width <= 0 then Litmus.Error.raise_error_ctx Config ~ctx:"assembler.instruction_step" "must be positive";
   width
 
 let default_memory_size () =
   let size =
     Otoml.find_or ~default:8 (Config.get ()) Otoml.get_integer ["isla"; "default_memory_size"] in
-  if size <= 0 then failwith "config: [isla] default_memory_size must be positive";
+  if size <= 0 then Litmus.Error.raise_error_ctx Config ~ctx:"isla.default_memory_size" "must be positive";
   size
 
 let reg_requirement op value =
@@ -67,9 +67,9 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
           in
           (reg_atoms, mem_cond :: mem_atoms)
         | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
-          failwith "assertion: register-to-location comparisons are not supported"
+          Litmus.Error.raise_error_ctx Converter ~ctx:"final.assertion" "register-to-location comparisons are not supported"
         | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-          failwith "assertion: memory-to-location comparisons are not supported")
+          Litmus.Error.raise_error_ctx Converter ~ctx:"final.assertion" "memory-to-location comparisons are not supported")
       ([], [])
       atoms
   in
@@ -141,7 +141,7 @@ let build_data_memory syms sym addr init_value =
   let mem_size = default_memory_size () in
   let value = z_of_value syms init_value in
   if Z.numbits value > (mem_size * 8) then
-    failwith ("Number doesn't fit in symbol " ^ sym);
+    Litmus.Error.raise_error_ctx Converter ~ctx:("locations." ^ sym) "number doesn't fit in %d bytes" mem_size;
   let data = Bytes.make mem_size '\x00' in
   let bits = Z.to_bits value in
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
@@ -194,7 +194,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let memory_size sym =
     match List.assoc_opt sym mem_sizes with
     | Some size -> size
-    | None -> failwith ("isla: unknown memory size for symbol: " ^ sym)
+    | None -> Litmus.Error.raise_error_ctx Converter ~ctx:sym "unknown memory size"
   in
   let term_cond =
     let pc = pc_reg ir.arch in
