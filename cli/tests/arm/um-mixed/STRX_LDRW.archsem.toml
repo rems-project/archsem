@@ -1,0 +1,33 @@
+arch="Arm"
+name="STRX_LDRW"
+
+# Single thread: STR X2, [X1, X0]; LDR W0, [X1, X0]
+# 8-byte write then 4-byte read at same address
+[[registers]]
+_PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x200000001
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xf8206822, # STR X2, [X1, X0] — 8-byte write of 0x200000001
+  0xb8606820] # LDR W0, [X1, X0] — 4-byte read (low word)
+
+# Backing memory
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+[[termCond]]
+_PC = 0x508
+
+# 4-byte read gets the low 4 bytes of 0x200000001 = 0x1 (little-endian)
+[[outcome]]
+observable.0.R0 = 0x1

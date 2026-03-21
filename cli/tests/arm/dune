@@ -26,3 +26,11 @@
   ../../../config/Arm.toml)
  (action
   (run archsem vmp vm)))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files um-mixed/*.toml)
+  ../../../config/Arm.toml)
+ (action
+  (run archsem ump um-mixed)))

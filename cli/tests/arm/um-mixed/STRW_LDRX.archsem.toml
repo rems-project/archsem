@@ -1,0 +1,33 @@
+arch="Arm"
+name="STRW_LDRX"
+
+# Single thread: STR W2, [X1, X0]; LDR X0, [X1, X0]
+# 4-byte write then 8-byte read at same address
+[[registers]]
+_PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x2a
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xb8206822, # STR W2, [X1, X0] — 4-byte write
+  0xf8606820] # LDR X0, [X1, X0] — 8-byte read
+
+# 8 bytes backing at 0x1100 (zero-init covers the upper 4 bytes)
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+[[termCond]]
+_PC = 0x508
+
+# 8-byte read sees zero-extended 4-byte write (upper bytes are zero from init)
+[[outcome]]
+observable.0.R0 = 0x2a
