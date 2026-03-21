@@ -1,0 +1,78 @@
+arch="Arm"
+name="MPmixed+dmbs"
+
+# Thread 0: STR W2, [X1, X0]; DMB SY; STR X5, [X4, X3]
+# Thread 1: LDR X5, [X4, X3]; DMB SY; LDR X2, [X1, X0]
+# Thread 0 writes data as 4 bytes (W), Thread 1 reads data as 8 bytes (X)
+
+# Thread 0
+[[registers]]
+_PC = 0x500
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x2a
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x1
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 1
+[[registers]]
+_PC = 0x600
+R0 = 0x1000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x1000
+R4 = 0x200
+R5 = 0x0
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 0 Instructions
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xb8206822, # STR W2, [X1, X0] — 4-byte data write
+  0xd5033fbf, # DMB SY
+  0xf8236885] # STR X5, [X4, X3] — 8-byte flag write
+
+# Thread 1 Instructions
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 4
+data = [
+  0xf8636885, # LDR X5, [X4, X3] — 8-byte flag read
+  0xd5033fbf, # DMB SY
+  0xf8606822] # LDR X2, [X1, X0] — 8-byte data read
+
+# Shared Data (8 bytes backing for 8-byte reads)
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+# Shared Flag
+[[memory]]
+addr = 0x1200
+step = 8
+data = 0
+
+[[termCond]]
+_PC = 0x50C
+
+[[termCond]]
+_PC = 0x60C
+
+# With barriers, the reordered outcome (flag=1, data=0) is forbidden
+[[outcome]]
+observable.1 = { R5 = 0x0, R2 = 0x2a }
+
+[[outcome]]
+observable.1 = { R5 = 0x0, R2 = 0x0 }
+
+[[outcome]]
+observable.1 = { R5 = 0x1, R2 = 0x2a }
