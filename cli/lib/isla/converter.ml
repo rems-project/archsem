@@ -58,6 +58,9 @@ let rec eval_pgt ~resolve ~table_data = function
   | Term.LocVal (Reg (tid, reg)) ->
     failwith (Printf.sprintf
       "term: cannot evaluate register reference %d:%s" tid reg)
+  | Term.LocVal (Label name) ->
+    failwith (Printf.sprintf
+      "term: cannot evaluate label %s outside register init" name)
   | Term.Deref loc ->
     failwith (Printf.sprintf
       "term: cannot evaluate deref *%s" (Term.string_of_loc loc))
@@ -174,6 +177,8 @@ let atoms_to_conds ~resolve_sym ~va_pa_map ~table_data ~memory_size atoms =
           failwith "assertion: register-to-location comparisons are not supported"
         | `Loc (Term.Mem _), _ ->
           failwith "assertion: memory-to-location comparisons are not supported"
+        | `Loc (Term.Label _), _ | _, `Loc (Term.Label _) ->
+          failwith "assertion: labels in assertions are not supported"
         | _, `Deref _ ->
           failwith "assertion: deref (*x) on RHS is not supported"
         | `Deref sym, `Const value ->
@@ -232,12 +237,20 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~va_pa_map ~table_data ~memory_si
 let z_of_value ~resolve ~table_data expr =
   eval_pgt ~resolve ~table_data expr
 
-let build_registers ~resolve ~table_data ~arch pc (thread : Ir.thread) =
+let build_registers ~resolve ~table_data ~label_env ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
   let used_regs =
     List.map
       (fun (reg, value) ->
-        (reg, RegValGen.Number (z_of_value ~resolve ~table_data value)))
+        match value with
+        | Term.LocVal (Label name) ->
+          let addr = match List.assoc_opt name label_env with
+            | Some a -> a
+            | None -> failwith ("converter: unresolved label " ^ name)
+          in
+          (reg, RegValGen.Number (Z.of_int addr))
+        | _ ->
+          (reg, RegValGen.Number (z_of_value ~resolve ~table_data value)))
       thread.init
   in
   let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
@@ -293,9 +306,11 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let assembled_threads =
     List.map
       (fun (thread : Ir.thread) ->
-        let enc = Assembler.assemble thread.code in
+        let enc, labels = Assembler.assemble thread.code in
         let code_addr = Symbols.alloc_page syms in
-        (thread, enc, code_addr))
+        let label_env =
+          List.map (fun (name, off) -> (name, code_addr + off)) labels in
+        (thread, enc, code_addr, label_env))
       ir.threads
   in
   let code_step = instruction_step () in
@@ -306,7 +321,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   (* Auto-add identity mappings for code pages when page tables are present *)
   (match l0_addr with
    | Some base ->
-     List.iter (fun (_, _, code_addr) ->
+     List.iter (fun (_, _, code_addr, _) ->
        Pgtable.add_identity_code_entry ~table_data ~base code_addr)
        assembled_threads
    | None -> ());
@@ -316,16 +331,16 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   in
   let registers =
     List.map
-      (fun (thread, _, code_addr) ->
+      (fun (thread, _, code_addr, label_env) ->
         let regs =
-          build_registers ~resolve ~table_data ~arch:ir.arch code_addr thread in
+          build_registers ~resolve ~table_data ~label_env ~arch:ir.arch code_addr thread in
         let has name = List.exists (fun (k, _) -> k = name) regs in
         regs @ List.filter (fun (k, _) -> not (has k)) pgt_auto_regs)
       assembled_threads
   in
   let code_memory =
     List.map
-      (fun (_, enc, code_addr) -> build_code_memory ~step:code_step code_addr enc)
+      (fun (_, enc, code_addr, _) -> build_code_memory ~step:code_step code_addr enc)
       assembled_threads
   in
   (* Merge page table mem inits: DSL overrides ir.locations *)
@@ -366,7 +381,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let term_cond =
     let pc = pc_reg ir.arch in
     List.map
-      (fun (_, enc, code_addr) ->
+      (fun (_, enc, code_addr, _) ->
         let end_pc = Z.of_int (code_addr + Bytes.length enc) in
         [(pc, RegValGen.Number end_pc)])
       assembled_threads

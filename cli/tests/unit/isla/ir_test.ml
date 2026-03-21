@@ -91,6 +91,41 @@ let tests =
         ~msg:"X1 from reset with extz evaluated"
         (Some (Const (Z.of_int 42)))
         (List.assoc_opt "X1" thread.init));
+    "reset: label parsed as Label loc" >:: (fun _ ->
+      let toml = Otoml.Parser.from_string {|
+arch = "AArch64"
+name = "LabelTest"
+[thread.0]
+code = "NOP"
+[thread.0.reset]
+ELR_EL1 = "L0:"
+|} in
+      let ir = Isla.Ir.of_toml toml in
+      let thread = List.hd ir.threads in
+      assert_equal
+        ~msg:"ELR_EL1 parsed as Label"
+        (Some (LocVal (Label "L0")))
+        (List.assoc_opt "ELR_EL1" thread.init));
+    "reset: __isla metadata ignored" >:: (fun _ ->
+      let toml = Otoml.Parser.from_string {|
+arch = "AArch64"
+name = "MetaTest"
+[thread.0]
+code = "NOP"
+[thread.0.reset]
+X0 = 42
+"__isla_monomorphize_writes" = "true"
+|} in
+      let ir = Isla.Ir.of_toml toml in
+      let thread = List.hd ir.threads in
+      assert_equal
+        ~msg:"X0 present"
+        (Some (Const (Z.of_int 42)))
+        (List.assoc_opt "X0" thread.init);
+      assert_equal
+        ~msg:"__isla key filtered out"
+        None
+        (List.assoc_opt "__isla_monomorphize_writes" thread.init));
   ]
 
 let () = run_test_tt_main tests

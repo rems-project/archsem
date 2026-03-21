@@ -84,7 +84,7 @@ let tests =
   "Isla.Converter" >::: [
     "SimpleStore" >:: (fun _ ->
       Test_utils.setup ();
-      let enc = Isla.Assembler.assemble "MOV X1, #42\nSTR X1, [X0]" in
+      let enc, _ = Isla.Assembler.assemble "MOV X1, #42\nSTR X1, [X0]" in
       let expected =
         {
           Testrepr.arch = "Arm";
@@ -103,8 +103,8 @@ let tests =
       assert_equal expected (convert simple_toml));
     "MP" >:: (fun _ ->
       Test_utils.setup ();
-      let enc0 = Isla.Assembler.assemble "MOV X1, #1\nSTR X1, [X0]" in
-      let enc1 = Isla.Assembler.assemble "LDR X1, [X0]" in
+      let enc0, _ = Isla.Assembler.assemble "MOV X1, #1\nSTR X1, [X0]" in
+      let enc1, _ = Isla.Assembler.assemble "LDR X1, [X0]" in
       let expected =
         {
           Testrepr.arch = "Arm";

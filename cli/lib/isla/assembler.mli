@@ -1,4 +1,4 @@
 
-val assemble : string -> Bytes.t
-(** Assemble code into a machine code byte sequence
-    use configuration to figure out the toolchain *)
+val assemble : string -> Bytes.t * (string * int) list
+(** Assemble code into a machine code byte sequence and a label map.
+    Uses configuration to determine the toolchain. *)

@@ -15,6 +15,7 @@ let normalize_reg reg =
 let normalize_loc = function
   | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
   | Mem _ as loc -> loc
+  | Label _ as loc -> loc
 
 let rec normalize_term = function
   | Const _ as c -> c

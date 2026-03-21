@@ -284,6 +284,7 @@ let make_env ctx = function
        | Some addr -> Some (Z.of_int addr)
        | None -> None)
   | Term.Reg _ -> None
+  | Term.Label _ -> None
 
 let resolve_source ctx (src : mapping_source) =
   match src with

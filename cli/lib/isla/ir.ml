@@ -52,11 +52,20 @@ let parse_term_string s =
     type_error "term parse error at position %d in: %s"
       lexbuf.lex_curr_p.pos_cnum s
 
+let is_label s =
+  let n = String.length s in
+  n >= 2 && s.[n - 1] = ':'
+  && String.for_all (fun c -> c = '_' || c = ':' || (c >= 'A' && c <= 'Z')
+                              || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) s
+
 let parse_reset_value = function
   | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
   | Otoml.TomlString s ->
     (try Term.Const (Z.of_string s)
      with Invalid_argument _ ->
+       if is_label s then
+         Term.LocVal (Label (String.sub s 0 (String.length s - 1)))
+       else
        let expr = parse_term_string s in
        match Term.eval ~env:(fun _ -> None) expr with
        | z -> Const z
