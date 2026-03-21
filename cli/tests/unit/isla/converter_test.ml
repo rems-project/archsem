@@ -135,6 +135,27 @@ let tests =
         }
       in
       assert_equal expected (convert mp_toml));
+    "section: assembled at explicit address" >:: (fun _ ->
+      Test_utils.setup ();
+      let toml = Otoml.Parser.from_string {|
+arch = "AArch64"
+name = "WithSection"
+symbolic = ["x"]
+
+[thread.0]
+init = { X0 = "x" }
+code = "NOP"
+
+[section.handler]
+address = "0x1400"
+code = "MOV X2, #1"
+|} in
+      let repr = convert toml in
+      let sec_block =
+        List.find (fun (b : Testrepr.memory_block) -> b.addr = 0x1400) repr.memory
+      in
+      assert_equal Testrepr.Code sec_block.kind;
+      assert_equal 4 (Bytes.length sec_block.data));
     "e2e: SimpleStore seq" >:: (fun _ ->
       Test_utils.setup ();
       let result, _msgs =

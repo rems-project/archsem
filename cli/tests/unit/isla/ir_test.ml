@@ -28,6 +28,13 @@ code = """
   STR W0,[X1]
 """
 
+[section.el1_handler]
+address = "0x1400"
+code = """
+  MOV X2, #1
+  ERET
+"""
+
 [final]
 expect = "sat"
 assertion = "1:X0 = 1 & *y = 1"
@@ -51,6 +58,8 @@ let expected : Isla.Ir.t =
           init = [ ("X1", Isla.Ir.Sym "y"); ("X2", Isla.Ir.Sym "x") ];
         };
       ];
+    sections =
+      [{ sec_name = "el1_handler"; address = 0x1400; code = "MOV X2, #1\n  ERET" }];
     symbolic = [ "x"; "y" ];
     locations = [ ("x", Isla.Ir.Int Z.zero); ("y", Isla.Ir.Int Z.zero) ];
     expect = Isla.Ir.Sat;

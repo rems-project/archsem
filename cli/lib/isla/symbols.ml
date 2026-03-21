@@ -3,6 +3,7 @@
 type t = {
   mutable next_addr : int;
   mutable table : (string * int) list;
+  mutable reserved : (int * int) list;  (** (addr, size) pairs for reserved ranges *)
 }
 
 let resolve_opt t name = List.assoc_opt name t.table
@@ -26,12 +27,25 @@ let base_addr () =
 let empty () = {
   next_addr = base_addr ();
   table = [];
+  reserved = [];
 }
+
+let overlaps addr size (r_addr, r_size) =
+  addr < r_addr + r_size && r_addr < addr + size
+
+let reserve t addr size =
+  t.reserved <- (addr, size) :: t.reserved
 
 let alloc_page t =
   let page_size = page_size () in
-  let addr = t.next_addr in
-  t.next_addr <- (addr + page_size);
+  let rec find_free addr =
+    if List.exists (overlaps addr page_size) t.reserved then
+      find_free (addr + page_size)
+    else
+      addr
+  in
+  let addr = find_free t.next_addr in
+  t.next_addr <- addr + page_size;
   addr
 
 let alloc_sym t name =
