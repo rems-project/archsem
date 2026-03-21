@@ -16,7 +16,8 @@ default_memory_size = 8
 page_bits = 12
 
 [isla.symbols]
-base_address = 0x500
+pa_base_address = 0x500
+va_base_address = 0x40000
 
 [isla.register_renames]
 X0 = "R0"
