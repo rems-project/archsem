@@ -180,6 +180,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       (** The type of memory event, any communication between threads must go here *)
       mEvent : Type;
       mEvent_eq_dec : EqDecision mEvent;
+      (** Boolean equality for events, using only computable
+          integer comparisons.  Unlike [mEvent_eq_dec] this never
+          gets stuck under [vm_compute] on opaque bitvector proofs. *)
+      mEvent_eqb : mEvent → mEvent → bool;
       (** Give the tid that initiated that event *)
       mEvent_tid : mEvent → nat;
       (** The address space this model is built against, we expect non-secure
@@ -373,6 +377,16 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     Let mEvent_eq_dec := prom.(mEvent_eq_dec).
     Local Existing Instance mEvent_eq_dec.
 
+    (** [remove_dups] using a boolean equality, avoiding opaque
+        proof terms that block [vm_compute]. *)
+    Fixpoint remove_dups_by {A} (eqb : A → A → bool) (l : list A) : list A :=
+      match l with
+      | [] => []
+      | x :: l' =>
+        if existsb (eqb x) l' then remove_dups_by eqb l'
+        else x :: remove_dups_by eqb l'
+      end.
+
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated prom term x }.
 
@@ -438,7 +452,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         let success_states := Exec.success_state_list res in
         let out_of_fuel := bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
         (* let out_of_fuel := true in *)
-        let promises := List.concat (success_states.*1) |> remove_dups in
+        let promises := remove_dups_by prom.(Promising.mEvent_eqb) (List.concat (success_states.*1)) in
         let tstates :=
           success_states
           |> omap (λ '(new_proms, st),
