@@ -1,4 +1,4 @@
 (tests
- (names assembler_test assertion_test converter_test ir_test normalize_test pgt_parser_test symbols_test)
+ (names assembler_test assertion_test converter_test ir_test normalize_test pgt_eval_test pgt_parser_test symbols_test)
  (libraries archsem litmus isla test_utils otoml ounit2 unix)
  (deps ../../../../config/Arm.toml))
