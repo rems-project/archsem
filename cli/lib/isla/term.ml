@@ -17,7 +17,7 @@ let string_of_loc = function
   | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
   | Mem sym -> sym
 
-let rec eval ~env = function
+let rec eval ?(td=[]) ~env = function
   | Const z -> z
   | LocVal loc ->
     (match env loc with
@@ -26,8 +26,8 @@ let rec eval ~env = function
   | Deref loc ->
     failwith (Printf.sprintf "term: cannot evaluate deref *%s statically" (string_of_loc loc))
   | Fn (name, args) ->
-    let evaluated = List.map (eval ~env) args in
-    Function.eval_fn name evaluated
+    let evaluated = List.map (eval ~td ~env) args in
+    Function.eval_fn ~td name evaluated
   | KwFn (name, kwargs) ->
-    let evaluated = List.map (fun (k, v) -> (k, eval ~env v)) kwargs in
-    Function.eval_kwfn name evaluated
+    let evaluated = List.map (fun (k, v) -> (k, eval ~td ~env v)) kwargs in
+    Function.eval_kwfn ~td name evaluated
