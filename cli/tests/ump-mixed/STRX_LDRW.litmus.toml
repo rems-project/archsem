@@ -1,0 +1,17 @@
+arch = "AArch64"
+name = "STRX_LDRW"
+symbolic = ["x"]
+
+[thread.0]
+init = { X1 = "x", X2 = 0x200000001 }
+code = """
+STR X2, [X1]
+LDR W0, [X1]
+"""
+
+[locations]
+x = 0
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 1"

@@ -1,0 +1,36 @@
+(rule
+ (alias runtest)
+ (deps
+  (glob_files seq/*.toml)
+  ../../config/Arm.toml)
+ (action
+  (concurrent
+   (run archsem seq seq)
+   (run archsem ump seq)
+   (run archsem vmp seq))))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files ump/*.toml)
+  ../../config/Arm.toml)
+ (action
+  (concurrent
+   (run archsem ump ump)
+   (run archsem vmp ump))))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files ump-mixed/*.toml)
+  ../../config/Arm.toml)
+ (action
+  (run archsem ump ump-mixed)))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files vmp/*.toml)
+  ../../config/Arm.toml)
+ (action
+  (run archsem vmp vmp)))

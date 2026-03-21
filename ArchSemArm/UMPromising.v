@@ -39,108 +39,74 @@
 
 From ASCommon Require Import Options.
 From ASCommon Require Import Common Exec FMon StateT.
+From Stdlib Require Import Eqdep_dec.
 
 From ArchSem Require Import GenPromising.
 Require Import ArmInst.
 
 #[local] Open Scope stdpp.
 
-(** The goal of this module is to define an User-mode promising model,
-    without mixed-size on top of the new interface *)
-
-(** This model only works for 8-bytes aligned location, as there
-    in no support for mixed-sizes yet. Also all location are
-    implicitly in the non-secure world.
-
-    So in order to get the physical address you need to append 3 zeros. *)
-Module Loc.
-  Definition t := bv 53.
-  #[export] Typeclasses Transparent t.
-  #[export] Hint Transparent t : bv_unfold_db.
-
-  #[global] Instance dec : EqDecision t.
-  Proof. unfold t. solve_decision. Defined.
-
-  (** Convert a location into an ARM physical address *)
-  Definition to_addr (loc : t) : address := bv_concat 56 loc (bv_0 3).
+(** The goal of this module is to define an User-mode promising model
+    with mixed-size support on top of the new interface *)
 
 
-  (** Recover a location from an ARM physical address. *)
-  Definition from_addr (addr : address) : option t :=
-    if bv_extract 0 3 addr =? bv_0 3 then
-      Some (bv_extract 3 53 addr)
-    else None.
-
-  Lemma to_from_addr (addr : address) (loc : t) :
-    from_addr addr = Some loc → to_addr loc = addr.
-  Proof.
-    unfold from_addr,to_addr in *.
-    cdestruct addr,loc |- *** #CDestrMatch.
-    bv_solve'.
-  Qed.
-
-  Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
-    unfold t in *.
-    unfold from_addr, to_addr.
-    cdestruct |- *** #CDestrMatch; bv_solve'.
-  Qed.
-
-  (** Convert a location to a list of covered physical addresses *)
-  Definition to_addrs (loc : t) : list address := addr_range (to_addr loc) 8.
-
-  (** Give the location containing a addr *)
-  Definition from_addr_in (addr : address) : t := bv_extract 3 53 addr.
-
-  (** Give the index of a addr inside its containing 8-bytes word *)
-  Definition addr_index (addr : address) : bv 3 := bv_extract 0 3 addr.
-
-  Lemma from_addr_addr_in addr loc :
-    from_addr addr = Some loc → from_addr_in addr = loc.
-  Proof. unfold from_addr,from_addr_in. cdestruct |- *** #CDestrMatch. Qed.
-
-  Lemma from_addr_in_to_addrs loc :
-    ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
-  Proof.
-    unfold from_addr_in, to_addrs, addr_range, addr_addN, to_addr.
-    set_unfold.
-    cdestruct |- ***.
-    unfold t, addr_size in *.
-    bv_solve.
-  Qed.
-
-  (** Convert a physical address back to a 64 bits "virtual" address *)
-  Definition to_va (loc : t) : bv 64 :=
-    bv_concat 64 (bv_0 8) $ bv_concat 52 loc (bv_0 3).
-
-  Definition from_va (addr : bv 64) : option t :=
-    if bv_extract 0 3 addr =? bv_0 3 then
-      Some (bv_extract 3 53 addr)
-    else None.
-
-End Loc.
-Export (hints) Loc.
-
-
-(** Register and memory values (all memory access are 8 bytes aligned *)
-Definition val := bv 64.
-#[export] Typeclasses Transparent val.
-
-(** This is an message in the promising model memory. The location is a physical
-    address as virtual memory is ignored by this model *)
+(** A message in the promising model memory.  [size] is a field (not a
+    parameter) so that [Ev.t = Msg.t] is a plain [Set] and all messages
+    can live in one list. *)
 Module Msg.
-  Record t := make { tid : nat; loc : Loc.t; val : val }.
+  Record t :=
+    make {
+      size : N;
+      tid : nat;
+      addr : address;
+      val : bv (8 * size);
+    }.
 
-  #[global] Instance dec : EqDecision t.
-  solve_decision.
-  Defined.
-
-  #[global] Instance count : Countable t.
+  (** Warning: this instance does not reduce under [vm_compute] because
+      the dependent [val] field requires proof terms that get stuck on
+      opaque bitvector lemmas.  Use [Ev.eqb] instead for computation. *)
+  #[global] Instance eq_dec : EqDecision t.
   Proof.
-    eapply (inj_countable' (fun msg => (tid msg, loc msg, val msg))
-                      (fun x => make x.1.1 x.1.2 x.2)).
-    abstract sauto.
+    intros [s1 t1 l1 v1] [s2 t2 l2 v2].
+    destruct (decide (s1 = s2)) as [<- | Hne];
+      [| right; intros H; apply Hne; exact (f_equal size H)].
+    destruct (decide (t1 = t2)) as [<- | Hne];
+      [| right; intros H; apply Hne; exact (f_equal tid H)].
+    destruct (decide (l1 = l2)) as [<- | Hne];
+      [| right; intros H; apply Hne; exact (f_equal addr H)].
+    destruct (decide (v1 = v2)) as [<- | Hne].
+    - left. reflexivity.
+    - right. intros H. apply Hne. injection H.
+      exact (Eqdep_dec.inj_pair2_eq_dec N (decide_rel (=)) _ s1 v1 v2).
   Defined.
 End Msg.
+
+(** Events are just messages — no sigma type wrapper. *)
+Module Ev.
+  Definition t := Msg.t.
+  Definition size : t -> N := Msg.size.
+  Definition tid : t -> nat := Msg.tid.
+  Definition addr : t -> address := Msg.addr.
+  Definition val (ev : t) : bv (8 * size ev) := Msg.val ev.
+
+  #[global] Instance eq_dec : EqDecision t := Msg.eq_dec.
+
+  Definition is_addr_in (l : address) (ev : t) : Prop :=
+    let base := addr ev in
+    (bv_unsigned base ≤ bv_unsigned l)%Z ∧
+    (bv_unsigned l < bv_unsigned base + Z.of_N (size ev))%Z.
+  #[global] Instance Decision_is_addr_in (l : address) (ev : t) : Decision (is_addr_in l ev).
+  Proof. unfold_decide. Defined.
+
+  (** Boolean equality for use in [vm_compute] paths. *)
+  Definition eqb (e1 e2 : t) : bool :=
+    (size e1 =? size e2)%N &&
+    (tid e1 =? tid e2)%nat &&
+    (bv_unsigned (addr e1) =? bv_unsigned (addr e2))%Z &&
+    (bv_unsigned (val e1) =? bv_unsigned (val e2))%Z.
+
+End Ev.
+#[export] Typeclasses Transparent Ev.t.
 
 (* TODO make naming match current latex definition *)
 
@@ -154,116 +120,124 @@ Global Hint Unfold view : core.
 Module Memory.
   Import PromMemory.
 
-  (** Representation of initial memory, this is representation
-      optimized for the internals of this model, so it not a plain
-      memoryMap *)
-  Definition initial := gmap Loc.t val.
+  (** Initial memory is now byte-granular, same as memoryMap *)
+  Definition initial := memoryMap.
   #[export] Typeclasses Transparent initial.
 
-  (** Convert from a memoryMap to the internal representation: initial *)
-  Definition initial_from_memMap (mem : memoryMap) : initial :=
-    mem
-    |> dom
-    |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
-    |> set_fold (λ loc map,
-        let base := Loc.to_addr loc in
-        let lo :=
-          for addr in addr_range base 4 do mem !! addr end
-          |$> bv_of_bytes 32
-        in
-        let hi :=
-          for addr in addr_range (addr_addN base 4) 4 do mem !! addr end
-          |$> bv_of_bytes 32
-        in
-        let val :=
-          match lo, hi with
-          | Some lo, Some hi => Some (bv_concat 64 hi lo)
-          | Some lo, None => Some (bv_concat 64 (bv_0 32) lo)
-          | None, Some hi => Some (bv_concat 64 hi (bv_0 32))
-          | None, None => None
-          end
-        in
-        partial_alter (λ _, val) loc map) ∅.
+  (** Identity conversion: initial memory is already a memoryMap *)
+  Definition initial_from_memMap (mem : memoryMap) : initial := mem.
 
   (** The promising memory: a list of events *)
-  Definition t : Type := t Msg.t.
+  Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
-  Definition cut_after : nat -> t -> t := @cut_after Msg.t.
-  Definition cut_before : nat -> t -> t := @cut_before Msg.t.
+  Definition cut_after : nat -> t -> t := @cut_after Ev.t.
+  Definition cut_before : nat -> t -> t := @cut_before Ev.t.
 
+  (** Extract a byte from an event *)
+  Definition read_byte (addr : address) (ev : Ev.t) : option (bv 8) :=
+    if decide (Ev.is_addr_in addr ev) then
+      let offset := Z.to_N (bv_unsigned addr - bv_unsigned (Ev.addr ev)) in
+      Some (bv_get_byte 8 offset (Ev.val ev))
+    else None.
 
-
- (** Reads the last write to a location in some memory. Gives the value and the
-     timestamp of the write that it read from.
-     The timestamp is 0 if reading from initial memory. *)
-  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : option (val * nat) :=
+ (** Reads the last write covering a byte location. Returns the byte value
+      and the timestamp of the write. Timestamp is 0 if reading from initial
+      memory. *)
+  Fixpoint read_last (addr : address) (init : initial) (mem : t)
+      : option (bv 8 * nat) :=
     match mem with
-    | [] => init !! loc |$> (., 0%nat)
-    | msg :: mem' =>
-        if Msg.loc msg =? loc then
-          Some (Msg.val msg, List.length mem)
-        else read_last loc init mem'
+    | [] =>
+      v ← (init : memoryMap) !! (addr : address);
+      Some (v, 0%nat)
+    | ev :: mem' =>
+        match read_byte addr ev with
+        | Some byte => Some (byte, List.length mem)
+        | None => read_last addr init mem'
+        end
     end.
 
   (** Reads from initial memory and fail, if the memory has been overwritten
       this will fail.
 
       This is mainly for instruction fetching in this model *)
-  Definition read_initial (loc : Loc.t) (init : initial) (mem : t) : option val :=
-    match read_last loc init mem with
+  Definition read_initial (addr : address) (init : initial) (mem : t) : option (bv 8) :=
+    match read_last addr init mem with
     | Some (v, 0%nat) => Some v
     | _ => None
     end.
 
   (** Transform a promising initial memory and memory history back to a
       TermModel memoryMap *)
-  Definition to_memMap (init : initial) (mem : t) : memoryMap:=
-    let final :=
-      foldl (λ nmem ev, insert ev.(Msg.loc) ev.(Msg.val) nmem) init mem
-    in
-    map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
+  Definition to_memMap (init : initial) (mem : t) : memoryMap :=
+    foldl (λ mm ev, mem_insert_bv (Ev.addr ev) (Ev.val ev) mm) init mem.
 
-  (** Returns the list of possible reads at a location restricted by a certain
-      view. The list is never empty as one can always read from at least the
-      initial value. Returns [None] if the address is not mapped in initial
-      memory *)
-  Definition read (loc : Loc.t) (v : view) (init : initial) (mem : t)
-    : option (list (val * view)) :=
-    first ← mem |> cut_before v |> read_last loc init;
-    let lasts := mem |> cut_after_with_timestamps v
-                     |> filter (fun '(msg, v) => Msg.loc msg =? loc)
-                     |> map (fun '(msg, v) => (Msg.val msg, v))
+  (** Read each byte in a list of locations via read_last.
+      Returns None if any byte is unmapped in initial memory and has no
+      covering write. *)
+  Definition read_bytes_at (addrs : list address) (init : initial) (mem : t) :
+      option (list (bv 8 * nat)) :=
+    for a in addrs do
+      read_last a init mem
+    end.
+
+  (** Check whether an event overlaps with the address range [addr, addr+size) *)
+  Definition ev_overlaps_range (addr : address) (size : N) (ev : Ev.t) : bool :=
+    let ev_end := (bv_unsigned (Ev.addr ev) + Z.of_N (Ev.size ev))%Z in
+    let addr_end := (bv_unsigned addr + Z.of_N size)%Z in
+    negb ((ev_end <=? bv_unsigned addr)%Z || (addr_end <=? bv_unsigned (Ev.addr ev))%Z).
+
+  (** Returns the list of possible multi-byte reads at a location range
+      restricted by a certain view.
+
+      Picks a single timestamp, then reads all bytes from the memory
+      snapshot at that time.  The candidate timestamps are [v] itself
+      plus every overlapping write after [v].
+      Each snapshot is a list of per-byte (value, write_timestamp) pairs.
+      Returns None if any byte is not mapped in initial memory. *)
+  Definition read_size (addr : address) (size : N) (v : view) (init : initial)
+      (mem : t) : option (list (list (bv 8 * nat))) :=
+    let addrs := addr_range addr size in
+    (* Timestamps of writes after v that overlap with the read range *)
+    let overlapping :=
+      mem |> cut_after_with_timestamps v
+          |> omap (λ '(ev, t),
+              if ev_overlaps_range addr size ev then Some t else None)
     in
-    Some (lasts ++ [first])%list.
+    (* Candidate timestamps: v plus all overlapping writes, deduplicated *)
+    let candidates := remove_dups (v :: overlapping)%list in
+    for t in candidates do
+      read_bytes_at addrs init (cut_before t mem)
+    end.
 
   (** Promise a write and add it at the end of memory *)
-  Definition promise (msg : Msg.t) (mem : t) : view * t :=
-    let nmem := msg :: mem in (List.length nmem, nmem).
+  Definition promise (ev : Ev.t) (mem : t) : view * t :=
+    let nmem := ev :: mem in (List.length nmem, nmem).
 
   (** Returns a view among a promise set that correspond to a message. The
       oldest matching view is taken. This is because it can be proven that
       taking a more recent view, will make the previous promises unfulfillable
       and thus the corresponding executions would be discarded. TODO prove it.
       *)
-  Definition fulfill (msg : Msg.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (λ t, mem !! t = Some msg)
+  Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
+    prom |> List.filter (λ t,
+              match mem !! t with
+              | Some ev' => Ev.eqb ev ev'
+              | None => false
+              end)
          |> reverse
          |> head.
 
-  (** Check that the write at the provided timestamp is indeed to that location
-      and that no write to that location have been made by any other thread *)
-  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool:=
-    match mem !! v with
-    | None => false
-    | Some msg =>
-        if Msg.loc msg =? loc then
-          let tid := Msg.tid msg in
-          mem |> cut_after v
-              |> forallb (fun msg => (Msg.tid msg =? tid)
-                                  || negb (Msg.loc msg =? loc))
-        else false
-    end.
+  (** Check that no write overlapping [addr, addr+size) has been made by any
+      thread other than [tid] since view [v].  This is the exclusive-monitor
+      interference check: if another thread wrote to any byte in the monitored
+      range between the load-exclusive and store-exclusive, the exclusive
+      must fail. *)
+  Definition exclusive (tid : nat) (addr : address) (size : N)
+      (v : view) (mem : t) : bool :=
+    mem |> cut_after v
+        |> forallb (λ ev, (Ev.tid ev =? tid)
+                          || negb (ev_overlaps_range addr size ev)).
 
 End Memory.
 Import (hints) Memory.
@@ -291,7 +265,7 @@ Module TState.
         regs : dmap reg (λ reg, reg_type reg * view)%type;
 
         (* The coherence views *)
-        coh : gmap Loc.t view;
+        coh : gmap address view;
 
 
         vrd : view; (* The maximum output view of a read  *)
@@ -306,12 +280,12 @@ Module TState.
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
            of the write. The boolean marks if the store was an exclusive*)
-        fwdb : gmap Loc.t FwdItem.t;
+        fwdb : gmap address FwdItem.t;
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
-           the timestamp and post-view of the load exclusive*)
-        xclb : option (nat * view);
+           the timestamp, post-view, size, and address of the load exclusive *)
+        xclb : option (nat * view * N * address);
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -346,27 +320,27 @@ Module TState.
       Some $ set regs (dmap_insert reg rv) ts
     else None.
 
-  (** Sets the coherence view of a location *)
-  Definition set_coh (loc : Loc.t) (v : view) : t -> t :=
-    set coh (insert loc v).
+  (** Sets the coherence view of an address *)
+  Definition set_coh (addr : address) (v : view) : t -> t :=
+    set coh (insert addr v).
 
-  (** Updates the coherence view of a location by taking the max of the new
+  (** Updates the coherence view of an address by taking the max of the new
       view and of the existing value *)
-  Definition update_coh (loc : Loc.t) (v : view) (ts : t) : t :=
-    set_coh loc (max v (ts.(coh) !!! loc)) ts.
+  Definition update_coh (addr : address) (v : view) (ts : t) : t :=
+    set_coh addr (max v (ts.(coh) !!! addr)) ts.
 
-  (** Updates the forwarding database for a location. *)
-  Definition set_fwdb (loc : Loc.t) (fi : FwdItem.t) : t -> t :=
-    set fwdb (insert loc fi).
+  (** Updates the forwarding database for an address. *)
+  Definition set_fwdb (addr : address) (fi : FwdItem.t) : t -> t :=
+    set fwdb (insert addr fi).
 
   (** Set the exclusive database to the timestamp and view of the latest
       load exclusive *)
-  Definition set_xclb (vs : view * view) : t -> t :=
-    set xclb (fun _ => Some vs).
+  Definition set_xclb (vs : view * view * N * address) : t -> t :=
+    set xclb (λ _, Some vs).
 
   (** Clear the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t -> t :=
-    set xclb (fun _ => None).
+    set xclb (λ _, None).
 
   (** Updates a view that from the state, by taking the max of new value and
       the current value.
@@ -382,7 +356,7 @@ Module TState.
     (update acc1 v) ∘ (update acc2 v).
 
   (** Add a promise to the promise set *)
-  Definition promise (v : view) : t -> t := set prom (fun p => v :: p).
+  Definition promise (v : view) : t -> t := set prom (v ::.).
 End TState.
 
 (*** Instruction semantics ***)
@@ -394,69 +368,99 @@ Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
   if f.(FwdItem.xcl) && is_rel_acq macc
   then f.(FwdItem.time) else f.(FwdItem.view).
 
-(** Performs a memory read at a location with a view and return possible output
-    states with the timestamp and value of the read *)
-Definition read_mem (loc : Loc.t) (vaddr : view) (macc : mem_acc)
+(** Per-byte forwarding view: if this byte was forwarded from a local
+    store (fwdb entry timestamp matches the byte's read timestamp), use
+    the forwarding view; otherwise use the write's timestamp directly.
+    This supports partial forwarding: some bytes may forward from a local
+    store while others are read from memory. *)
+Definition byte_fwd_view (macc : mem_acc) (ts : TState.t) (a : address)
+    (time_i : nat) : view :=
+  match ts.(TState.fwdb) !! a with
+  | Some fwd_i =>
+      if fwd_i.(FwdItem.time) =? time_i
+      then read_fwd_view macc fwd_i
+      else time_i
+  | None => time_i
+  end.
+
+(** Reads a 4-byte instruction from initial memory.
+    Fails if any byte has been overwritten (no self-modifying code). *)
+Definition read_imem (addr : address)
            (init : Memory.initial) (mem : Memory.t) :
-    Exec.t TState.t string (view * val) :=
+    Exec.t TState.t string (bv 32) :=
+  bytes ← othrow "Modified instruction memory" $
+    for a in addr_range addr 4 do Memory.read_initial a init mem end;
+  mret (bv_of_bytes 32 bytes).
+
+(** Performs a multi-byte memory read.  Picks a single timestamp
+    t >= vread, then reads each byte from the most recent write
+    covering it at or before t. *)
+Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
+           (init : Memory.initial) (mem : Memory.t) :
+    Exec.t TState.t string (view * bv (8 * size)) :=
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  let addrs := addr_range addr size in
   ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
-  let vread := vpre ⊔ (ts.(TState.coh) !!! loc) in
-  reads ← othrow "Reading from unmapped memory" $
-            Memory.read loc vread init mem;
-  '(res, time) ← mchoosel reads;
+  (* Per-byte coherence: vread = vpre ⊔ max(coh[byte] for byte in range) *)
+  let vread := fold_right max vpre (map (λ l : address, ts.(TState.coh) !!! l) addrs) in
+  (* Non-deterministically choose a snapshot *)
+  snapshots ← othrow "Reading from unmapped memory" $
+    Memory.read_size addr size vread init mem;
+  byte_reads ← mchoosel snapshots;
+  let byte_vals := map fst byte_reads in
+  let byte_times := map snd byte_reads in
+  let res : bv (8 * size) := bv_of_bytes (8 * size) byte_vals in
+  let max_time := fold_right max 0%nat byte_times in
+  (* Per-byte forwarding: each byte independently checks its fwdb entry.
+     Partial forwarding is allowed — forwarded bytes contribute their
+     forwarding view, non-forwarded bytes contribute their timestamp. *)
   let read_view :=
-    if (ts.(TState.fwdb) !! loc) is Some fwd then
-      if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
-    else time in
+    fold_right max 0%nat
+      (map (λ '(a, time_i), byte_fwd_view macc ts a time_i)
+           (zip addrs byte_times)) in
   let vpost := vpre ⊔ read_view in
-  mSet $ TState.update_coh loc time;;
+  (* Update per-byte coherence *)
+  mapM (λ '(a, (_, time_i)), mSet $ TState.update_coh a time_i)
+       (zip addrs byte_reads);;
   mSet $ TState.update TState.vrd vpost;;
   mSet $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mSet $ TState.update TState.vcap vaddr;;
   ( if is_exclusive macc
-    then mSet $ TState.set_xclb (time, vpost)
+    then mSet $ TState.set_xclb (max_time, vpost, size, addr)
     else mret ());;
   mret (vpost, res).
 
-Definition read_mem4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
-    Exec.t Memory.t string (bv 32) :=
-  if is_ifetch macc then
-    let aligned_addr := bv_unset_bit 2 addr in
-    let bit2 := bv_get_bit 2 addr in
-    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
-    mem ← mGet;
-    block ← othrow "Modified instruction memory" (Memory.read_initial loc init mem);
-    mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-  else mthrow "Non-ifetch 4 bytes access".
-
-(** Performs a memory write for a thread tid at a location loc with view
+(** Performs a memory write for a thread tid at address addr with view
     vaddr and vdata. Return the new state.
 
     This may mutate memory if no existing promise can be fullfilled *)
-Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
+Definition write_mem (tid : nat) (addr : address) (size : N) (vdata : view)
            (macc : mem_acc) (mem : Memory.t)
-           (data : val) :
+           (data : bv (8 * size)) :
           Exec.t TState.t string (Memory.t * view * option view):=
-  let msg := Msg.make tid loc data in
+  let ev : Ev.t := Msg.make size tid addr data in
   let is_release := is_rel_acq macc in
+  let addrs := addr_range addr size in
   ts ← mGet;
   let '(time, mem, new_promise) :=
-    match Memory.fulfill msg (TState.prom ts) mem with
+    match Memory.fulfill ev (TState.prom ts) mem with
     | Some t => (t, mem, false)
-    | None => (Memory.promise msg mem, true)
+    | None => (Memory.promise ev mem, true)
     end in
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
-  guard_discard (vpre ⊔ (ts.(TState.coh) !!! loc) < time)%nat;;
+  (* Per-byte coherence check *)
+  let max_coh := fold_right max 0%nat (map (λ l : address, ts.(TState.coh) !!! l) addrs) in
+  guard_discard (vpre ⊔ max_coh < time)%nat;;
   mset TState.prom (filter (λ t, t ≠ time));;
-  mSet $ TState.update_coh loc time;;
+  (* Update per-byte coherence *)
+  for a in addrs do mSet $ TState.update_coh a time end;;
   mSet $ TState.update TState.vwr time;;
   mSet $ TState.update TState.vrel (view_if is_release time);;
   mret (mem, time, (if new_promise then Some vpre else None)).
@@ -469,26 +473,48 @@ Definition write_mem (tid : nat) (loc : Loc.t) (vdata : view)
 
     If the store is exclusive the write may succeed or fail and the third
     return value indicate the success (true for success, false for error) *)
-Definition write_mem_xcl (tid : nat) (loc : Loc.t)
+Definition write_mem_xcl (tid : nat) (addr : address) (size : N)
            (vdata : view) (macc : mem_acc)
-           (mem : Memory.t) (data : val)
+           (mem : Memory.t) (data : bv (8 * size))
   : Exec.t TState.t string (Memory.t * option view) :=
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let xcl := is_exclusive macc in
+  let addrs := addr_range addr size in
   if xcl then
-    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
+    '(mem, time, vpre_opt) ← write_mem tid addr size vdata macc mem data;
     ts ← mGet;
     match TState.xclb ts with
     | None => mdiscard
-    | Some (xtime, xview) =>
-        guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
+    | Some (xtime, xview, xsize, xaddr) =>
+        if decide (addr = xaddr ∧ size = xsize) then
+          (* Address and size match: enforce exclusive monitor ordering.
+             The exclusive check uses the LDXR's size because the ARM
+             exclusive monitor tracks the range from the load-exclusive. *)
+          guard_discard' (Memory.exclusive tid addr xsize xtime (Memory.cut_after time mem));;
+          (* Update per-byte fwdb — exclusive forwarding semantics *)
+          for a in addrs do
+            mSet $ TState.set_fwdb a (FwdItem.make time vdata true)
+          end
+        else
+          (* Address or size mismatch: STXR may succeed or fail
+             non-deterministically. Success carries no ordering guarantee
+             (behaves like a plain store).  See ARM ARM B2.12. *)
+          b ← mchoosef;
+          if (b : bool) then
+            (* Update per-byte fwdb — plain store semantics (no xcl ordering) *)
+            for a in addrs do
+              mSet $ TState.set_fwdb a (FwdItem.make time vdata false)
+            end
+          else mdiscard
     end;;
-    mSet $ TState.set_fwdb loc (FwdItem.make time vdata true);;
     mSet TState.clear_xclb;;
     mret (mem, vpre_opt)
   else
-    '(mem, time, vpre_opt) ← write_mem tid loc vdata macc mem data;
-    mSet $ TState.set_fwdb loc (FwdItem.make time vdata false);;
+    '(mem, time, vpre_opt) ← write_mem tid addr size vdata macc mem data;
+    (* Update per-byte fwdb *)
+    for a in addrs do
+      mSet $ TState.set_fwdb a (FwdItem.make time vdata false)
+    end;;
     mret (mem, vpre_opt).
 
 (** Intra instruction state for propagating views inside an instruction *)
@@ -518,7 +544,7 @@ Section RunOutcome.
   Context (tid : nat) (initmem : memoryMap).
 
   Equations run_outcome (out : outcome) :
-      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
+      Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out * option view) :=
   | RegWrite reg racc val =>
       guard_or "Non trivial reg access types unsupported" (racc = None);;
       vreg ← mget (IIS.strict ∘ PPState.iis);
@@ -540,41 +566,43 @@ Section RunOutcome.
           dmap_lookup reg ts.(TState.regs);
     mset PPState.iis $ IIS.add view;;
     mret (val, None)
-  | MemRead (MemReq.make macc addr addr_space 8 0) =>
+  | MemRead (MemReq.make macc addr addr_space size 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      loc ← othrow "PA not supported" $ Loc.from_addr addr;
+      let initmem := Memory.initial_from_memMap initmem in
       if is_ifetch macc then
-        mthrow "TODO ifetch"
+        match size as s return
+          Exec.t _ string (result abort (bv (8 * s) * bv 0) * option view) with
+        | 4%N =>
+          mem ← mget PPState.mem;
+          opcode ← Exec.liftSt
+            PPState.state (read_imem addr initmem mem);
+          mret (Ok (opcode, 0%bv), None)
+        | _ => mthrow "Ifetch of size other than 4"
+        end
       else if is_explicit macc then
-        let initmem := Memory.initial_from_memMap initmem in
         vaddr ← mget (IIS.strict ∘ PPState.iis);
         mem ← mget PPState.mem;
         '(view, val) ← Exec.liftSt
-          PPState.state (read_mem loc vaddr macc initmem mem);
+          PPState.state (read_mem addr size vaddr macc initmem mem);
         mset PPState.iis $ IIS.add view;;
-        mret (Ok (val, bv_0 0), None)
+        mret (Ok (val, bv_0 _), None)
       else mthrow "Read is not explicit or ifetch"
-  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      let initmem := Memory.initial_from_memMap initmem in
-      opcode ← Exec.liftSt PPState.mem $ read_mem4 addr macc initmem;
-      mret (Ok (opcode, 0%bv), None)
-  | MemRead _ => mthrow "Memory read of size other than 8 and 4"
+  | MemRead _ => mthrow "Memory read with tags unsupported"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vcap vaddr;;
       mret ((), None)
-  | MemWrite (MemReq.make macc addr addr_space 8 0) val tags =>
+  | MemWrite (MemReq.make macc addr addr_space size 0) val tags =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← othrow "PA not supported" $ Loc.from_addr addr;
       if is_explicit macc then
         mem ← mget PPState.mem;
         vdata ← mget (IIS.strict ∘ PPState.iis);
         '(mem, vpre_opt) ← Exec.liftSt PPState.state
-                $ write_mem_xcl tid addr vdata macc mem val;
+                $ write_mem_xcl tid addr size vdata macc mem val;
         msetv PPState.mem mem;;
         mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
+  | MemWrite _ _ _ => mthrow "Memory write with tags unsupported"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
       match dmb.(DxB_types) with
@@ -594,11 +622,10 @@ Section RunOutcome.
   | _ => mthrow "Unsupported outcome".
 
   Definition run_outcome' (out : outcome) :
-      Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
+      Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
     run_outcome out |$> fst.
 
 End RunOutcome.
-
 
 (** * Implement GenPromising ***)
 
@@ -612,10 +639,11 @@ Definition UMPromising : Promising.Model :=
     iis := IIS.t;
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
-    mEvent := Msg.t;
-    mEvent_tid := Msg.tid;
+    mEvent := Ev.t;
+    mEvent_eqb := Ev.eqb;
+    mEvent_tid := Ev.tid;
     handle_outcome := run_outcome;
-    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    emit_promise := λ tid initmem mem ev, TState.promise (length mem);
     check_valid_end := λ _ _ _ _, [];
     memory_snapshot :=
       λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
