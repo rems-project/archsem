@@ -1,7 +1,7 @@
 (** Litmus test runner CLI.
 
     Usage: archsem <model> [--format archsem|isla] <path ...>
-    Models: seq (sequential), ump (UM Promising), vmp (VM Promising)
+    Models: seq (sequential), ump (UM Promising), vmp (VM Promising), x86_tso (X86 TSO)
 
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
 
@@ -9,7 +9,8 @@ open Archsem
 open Litmus
 open Runner
 
-module ArmRunner = Runner.Make(Arm)
+module ArmRunner = Runner.Make (Arm)
+module X86Runner = Runner.Make (X86)
 
 (** {1 Running litmus tests} *)
 
@@ -202,12 +203,26 @@ let cmd_vmp =
   in
   Cmd.v info run
 
+let cmd_x86_tso =
+  let run =
+    let+ files = path_and_conf_term
+    and+ fmt = format_term in
+    let parse = parse_testfile fmt in
+    assert (Config.get_arch () = Arch_id.X86);
+    run_tests "x86_tso" (X86Runner.run_litmus_test ~parse X86.(tso_model tiny_isa)) files
+  in
+  let info =
+    let doc = "Run sequential model" in
+    Cmd.(info "x86_tso" ~doc)
+  in
+  Cmd.v info run
+
 (** The main archsem command *)
 let cmd =
   let info =
     let doc = "ArchSem model runner" in
     Cmd.(info "archsem" ~doc)
   in
-  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp]
+  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp; cmd_x86_tso]
 
 let () = exit (Cmd.eval cmd)

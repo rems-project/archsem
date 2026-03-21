@@ -19,6 +19,7 @@ let regval_of_toml = function
 let pc_reg arch =
   match arch with
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
+  | Litmus.Arch_id.X86 -> Archsem.X86.Reg.to_string Archsem.X86.Reg.pc
 
 let register_defaults () =
   let config = Config.get () in

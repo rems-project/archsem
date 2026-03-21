@@ -1,0 +1,21 @@
+name = "x86-EOR"
+arch = "x86"
+
+[[registers]]
+RIP = 0x500
+RAX = 0x11
+RCX = 0x101
+RFLAGS = 0x3000
+
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 1
+data = [0x48, 0x33, 0xc1]
+
+[[termCond]]
+RIP = 0x503
+
+[[outcome]]
+[outcome.observable]
+0 = {RAX = 0x110}

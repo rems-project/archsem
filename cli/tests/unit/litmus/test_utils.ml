@@ -9,8 +9,9 @@ let test_dirs = ["../seq"; "../ump"; "../vmp"]
 
 let i n = Archsem.RegValGen.Number (Z.of_int n)
 
-let setup () =
-  Config.set (Config.of_arch Arch_id.Arm)
+let setup_arm () = Litmus.Config.set (Config.of_arch Arch_id.Arm)
+let setup_x86 () = Litmus.Config.set (Config.of_arch Arch_id.X86)
+
 
 let parse_file path =
   Parser.parse_to_testrepr
