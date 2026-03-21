@@ -49,14 +49,24 @@ let mem_requirement op value =
   | Assertion.Eq -> Testrepr.MemEq value
   | Assertion.Ne -> Testrepr.MemNe value
 
+let resolve_term ~env expr =
+  match expr with
+  | Term.LocVal loc -> `Loc loc
+  | Term.Deref (Mem sym) -> `Deref sym
+  | _ -> `Const (Term.eval ~env expr)
+
 let atoms_to_conds ~resolve_sym ~memory_size atoms =
+  let env = function
+    | Term.Mem sym -> Some (Z.of_int (resolve_sym sym))
+    | Term.Reg _ -> None
+  in
   let reg_atoms, mem_atoms =
     List.fold_left
-      (fun (reg_atoms, mem_atoms) atom ->
-        match atom with
-        | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
+      (fun (reg_atoms, mem_atoms) (Assertion.Cmp (lhs, op, rhs)) ->
+        match resolve_term ~env lhs, resolve_term ~env rhs with
+        | `Loc (Term.Reg (tid, reg)), `Const value ->
           ((tid, reg, reg_requirement op value) :: reg_atoms, mem_atoms)
-        | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
+        | `Loc (Term.Mem sym), `Const value ->
           let mem_cond : Testrepr.mem_cond =
             {
               sym;
@@ -66,10 +76,26 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
             }
           in
           (reg_atoms, mem_cond :: mem_atoms)
-        | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
+        | `Loc (Term.Reg _), `Loc _ ->
           failwith "assertion: register-to-location comparisons are not supported"
-        | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-          failwith "assertion: memory-to-location comparisons are not supported")
+        | `Loc (Term.Mem _), _ ->
+          failwith "assertion: memory-to-location comparisons are not supported"
+        | _, `Deref _ ->
+          failwith "assertion: deref (*x) on RHS is not supported"
+        | `Deref sym, `Const value ->
+          let mem_cond =
+            {
+              Testrepr.sym = sym;
+              addr = resolve_sym sym;
+              size = memory_size sym;
+              req = mem_requirement op value;
+            }
+          in
+          (reg_atoms, mem_cond :: mem_atoms)
+        | `Deref _, _ ->
+          failwith "assertion: deref (*x) on LHS requires constant RHS"
+        | `Const _, _ ->
+          failwith "assertion: constant expression on LHS is not supported")
       ([], [])
       atoms
   in
@@ -109,10 +135,15 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
           Some (Testrepr.Unobservable (thread_conds, mem_conds)))
     dnf
 
-let z_of_value syms = function
-  | Ir.Int z -> z
-  | Ir.Sym sym ->
-    Z.of_int (Symbols.resolve syms sym)
+let sym_env syms = function
+  | Term.Mem sym ->
+    (match Symbols.resolve_opt syms sym with
+     | Some addr -> Some (Z.of_int addr)
+     | None -> None)
+  | Term.Reg _ -> None
+
+let z_of_value syms expr =
+  Term.eval ~env:(sym_env syms) expr
 
 let build_registers syms ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
@@ -180,7 +211,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     List.map (fun sym ->
       let addr = Symbols.resolve syms sym in
       let init_value =
-        List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
+        List.assoc_opt sym ir.locations |> Option.value ~default:(Term.Const Z.zero)
       in
       build_data_memory syms sym addr init_value)
     ir.symbolic

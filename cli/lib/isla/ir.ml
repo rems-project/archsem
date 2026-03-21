@@ -2,14 +2,10 @@
 
 (** {1 Isla test internal representation } *)
 
-type value =
-  | Int of Z.t
-  | Sym of string
-
 type thread = {
   tid : int;
   code : string;
-  init : (string * value) list;
+  init : (string * Term.t) list;
 }
 
 type expect =
@@ -21,7 +17,7 @@ type t = {
   name : string;
   threads : thread list;
   symbolic : string list;
-  locations : (string * value) list;
+  locations : (string * Term.t) list;
   expect : expect;
   assertion : Assertion.expr;
 }
@@ -30,12 +26,42 @@ type t = {
 
 let type_error fmt = Printf.ksprintf (fun s -> raise (Otoml.Type_error s)) fmt
 
+(** Key prefixes treated as tool-internal metadata and silently ignored
+    when parsing [thread.N.reset] tables. *)
+let meta_key_prefixes = ["__isla"]
+
+let is_meta_key k =
+  List.exists (fun prefix ->
+    String.length k >= String.length prefix
+    && String.sub k 0 (String.length prefix) = prefix)
+  meta_key_prefixes
+
 let parse_value = function
-  | Otoml.TomlInteger i -> Int (Z.of_int i)
+  | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
   | Otoml.TomlString s ->
-    (try Int (Z.of_string s) with Invalid_argument _ -> Sym s)
+    (try Const (Z.of_string s) with Invalid_argument _ -> LocVal (Mem s))
   | value ->
     type_error "Value is invalid, should be int or string, but is: %s"
+      (Otoml.Printer.to_string value)
+
+let parse_term_string s =
+  let lexbuf = Lexing.from_string s in
+  try Parser.binding Lexer.token lexbuf
+  with Parser.Error ->
+    type_error "term parse error at position %d in: %s"
+      lexbuf.lex_curr_p.pos_cnum s
+
+let parse_reset_value = function
+  | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
+  | Otoml.TomlString s ->
+    (try Term.Const (Z.of_string s)
+     with Invalid_argument _ ->
+       let expr = parse_term_string s in
+       match Term.eval ~env:(fun _ -> None) expr with
+       | z -> Const z
+       | exception Failure _ -> expr)
+  | value ->
+    type_error "reset value is invalid, should be int or string expression, but is: %s"
       (Otoml.Printer.to_string value)
 
 let parse_thread (tid, table) =
@@ -47,7 +73,16 @@ let parse_thread (tid, table) =
   let _ = Otoml.get_table table in
   let code = Otoml.find table Otoml.get_string ["code"] |> String.trim in
   let init = Otoml.find_or ~default:[] table (Otoml.get_table_values parse_value) ["init"] in
-  { tid; code; init }
+  let parse_reset_table toml =
+    List.filter_map (fun (k, v) ->
+      if is_meta_key k then None
+      else Some (k, parse_reset_value v))
+    (Otoml.get_table toml)
+  in
+  let reset = Otoml.find_or ~default:[] table parse_reset_table ["reset"] in
+  let has_init name = List.exists (fun (k, _) -> k = name) init in
+  let merged = init @ List.filter (fun (k, _) -> not (has_init k)) reset in
+  { tid; code; init = merged }
 
 let parse_threads toml =
   let table = Otoml.get_table toml in

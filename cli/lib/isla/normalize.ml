@@ -1,6 +1,7 @@
 (** Normalize architecture-specific register aliases in the IR. *)
 
 open Assertion
+open Term
 
 let register_renames () =
   Otoml.find_or ~default:[] (Litmus.Config.get ()) (Otoml.get_table_values Otoml.get_string)
@@ -15,9 +16,15 @@ let normalize_loc = function
   | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
   | Mem _ as loc -> loc
 
-let normalize_atom = function
-  | CmpCst (loc, op, value) -> CmpCst (normalize_loc loc, op, value)
-  | CmpLoc (lhs, op, rhs) -> CmpLoc (normalize_loc lhs, op, normalize_loc rhs)
+let rec normalize_term = function
+  | Const _ as c -> c
+  | LocVal loc -> LocVal (normalize_loc loc)
+  | Deref loc -> Deref (normalize_loc loc)
+  | Fn (name, args) -> Fn (name, List.map normalize_term args)
+  | KwFn (name, kw) -> KwFn (name, List.map (fun (k, v) -> (k, normalize_term v)) kw)
+
+let normalize_atom (Cmp (lhs, op, rhs)) =
+  Cmp (normalize_term lhs, op, normalize_term rhs)
 
 let rec normalize_expr = function
   | Atom atom -> Atom (normalize_atom atom)

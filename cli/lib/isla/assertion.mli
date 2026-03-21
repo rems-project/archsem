@@ -1,13 +1,6 @@
-type loc =
-  | Reg of int * string
-  | Mem of string
-(** A location to get data from. [Mem] mean the data at that location in memory *)
-
 type op = Eq | Ne
 
-type atom =
-  | CmpCst of loc * op * Z.t
-  | CmpLoc of loc * op * loc
+type atom = Cmp of Term.t * op * Term.t
 
 type expr =
   | Atom of atom

@@ -1,11 +1,13 @@
 %{
   open Assertion
+  open Term
 %}
 
 %token <Z.t> NUM
 %token <string> IDENT
 %token LPAREN "("
 %token RPAREN ")"
+%token COMMA ","
 %token AND "&"
 %token OR "|"
 %token NOT "~"
@@ -20,11 +22,15 @@
 %nonassoc NOT
 
 %start <Assertion.expr> assertion
+%start <Term.t> binding
 
 %%
 
 assertion:
   | e = prop; EOF { e }
+
+binding:
+  | v = term; EOF { v }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or (e1, e2) }
@@ -36,14 +42,15 @@ prop:
   | FALSE { False }
 
 atom:
-  | l = loc; "="; v = NUM {
-      match l with
-      | Reg _ -> CmpCst (l, Eq, v)
-      | Mem _ -> failwith "assertion: use *sym = value for memory comparisons"
-    }
-  | l1 = loc; "="; l2 = loc { CmpLoc (l1, Eq, l2) }
-  | "*"; s = IDENT; "="; v = NUM { CmpCst (Mem s, Eq, v) }
+  | lhs = term; "="; rhs = term { Cmp (lhs, Eq, rhs) }
 
-loc:
-  | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | s = IDENT { Mem s }
+term:
+  | v = NUM { Const v }
+  | tid = NUM; ":"; r = IDENT { LocVal (Reg (Z.to_int tid, r)) }
+  | "*"; s = IDENT { Deref (Mem s) }
+  | f = IDENT; "("; args = separated_list(",", term); ")" { Fn (f, args) }
+  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { KwFn (f, kw) }
+  | s = IDENT { LocVal (Mem s) }
+
+kw_arg:
+  | k = IDENT; "="; v = term { (k, v) }
