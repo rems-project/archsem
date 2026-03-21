@@ -112,7 +112,7 @@ Definition common_init_regs :=
 Definition x86_sem := sail_tiny_x86_sem true.
 
 (* Run XOR EAX, ECX at RIP address 0x500, which can have opcode 0b11_000_001 @ 0x33 @ 0x48 = 0xc13348 *)
-Module EOR.
+Module XOR.
 
   Definition init_reg : registerMap :=
     common_init_regs
@@ -152,7 +152,7 @@ Module EOR.
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
-End EOR.
+End XOR.
 
 Module MP.
   (* Message Passing litmus test

@@ -6,11 +6,13 @@ open Litmus
 
 let test_root = Filename.concat (Filename.dirname Sys.argv.(0)) ".."
 
-let test_dirs = ["../seq"; "../ump"; "../vmp"]
+let test_dirs = ["../arm/seq"; "../arm/um"; "../arm/vm"; "../x86/seq"; "../x86/um"]
 
 let i n = Archsem.RegValGen.Number (Z.of_int n)
 
-let setup () = Config.set (Config.of_arch Arch_id.Arm)
+let setup_arm () = Config.set (Config.of_arch Arch_id.Arm)
+
+let setup_x86 () = Config.set (Config.of_arch Arch_id.X86)
 
 let parse_file path =
   Parser.parse_to_testrepr
@@ -28,6 +30,6 @@ let collect_archsem_files () =
          |> List.map (fun f ->
            (Filename.chop_suffix f suffix, Filename.concat sub f)
          )
-       else []
+       else Printf.ksprintf failwith "Folder doesn't exist %s" dir
      )
     test_dirs

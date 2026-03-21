@@ -10,9 +10,9 @@ module ArmRunner = Runner.Make (Arm)
 
 (** {1 Parsed Test Fixtures} *)
 
-let eor = parse_file "../seq/EOR.archsem.toml"
+let eor = parse_file "../arm/seq/EOR.archsem.toml"
 
-let mp = parse_file "../ump/MP.archsem.toml"
+let mp = parse_file "../arm/um/MP.archsem.toml"
 
 let bad_step_toml =
   Otoml.Parser.from_string

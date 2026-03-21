@@ -26,4 +26,6 @@ module X86 : sig
   include Arch.Arch
 
   val tiny_isa : iSem
+
+  val op_model : ?allow_eager:bool -> empty ArchModel.t
 end

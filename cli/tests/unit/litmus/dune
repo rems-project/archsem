@@ -8,7 +8,6 @@
  (modules testrepr_test printer_test config_test)
  (libraries archsem litmus test_utils otoml ounit2)
  (deps
-  (glob_files ../../seq/*.toml)
-  (glob_files ../../ump/*.toml)
-  (glob_files ../../vmp/*.toml)
-  ../../../../config/Arm.toml))
+  (source_tree ../../arm)
+  (source_tree ../../x86)
+  (source_tree ../../../../config)))

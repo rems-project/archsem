@@ -1,0 +1,60 @@
+arch = "x86"
+name = "SB"
+
+# Store Buffer litmus test (2 threads)
+# Thread 0: MOV [ECX], 0x1; MOV EAX, [EDX]
+# Thread 1: MOV [EDX], 0x1; MOV EAX, [ECX]
+# Observable: both EAX=0 (store buffer reordering)
+
+[[registers]]
+RIP = 0x500
+RAX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x600
+RAX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+# Thread 0 code: MOV [ECX],1 (C7 01 01000000) + MOV EAX,[EDX] (8B 02)
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 1
+data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00, 0x8B, 0x02]
+
+# Thread 1 code: MOV [EDX],1 (C7 02 01000000) + MOV EAX,[ECX] (8B 01)
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 1
+data = [0xC7, 0x02, 0x01, 0x00, 0x00, 0x00, 0x8B, 0x01]
+
+# Backing memory for shared locations
+[[memory]]
+addr = 0x1100
+kind = "data"
+step = 8
+data = 0
+
+[[memory]]
+addr = 0x1200
+kind = "data"
+step = 8
+data = 0
+
+[[termCond]]
+RIP = 0x508
+
+[[termCond]]
+RIP = 0x608
+
+# SB allows both threads to read 0 (store buffer reordering)
+[[outcome]]
+[outcome.observable]
+0 = {RAX = 0}
+1 = {RAX = 0}

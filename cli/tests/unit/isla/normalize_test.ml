@@ -32,7 +32,7 @@ let tests =
   "Isla.Normalize"
   >::: [ ("AArch64 init and assertion regs normalized"
          >:: fun _ ->
-         Test_utils.setup ();
+         Test_utils.setup_arm ();
          let normalized = Isla.Normalize.apply (sample_ir Litmus.Arch_id.Arm) in
          let expected : Isla.Ir.t =
            { (sample_ir Litmus.Arch_id.Arm) with

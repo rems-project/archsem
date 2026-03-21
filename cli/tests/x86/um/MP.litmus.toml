@@ -1,0 +1,25 @@
+arch = "x86"
+name = "MP"
+symbolic = ["x", "y"]
+
+# Message Passing: thread 0 writes x then y; thread 1 reads y then x.
+# Forbidden: 1:EAX=1 (saw y=1) yet 1:RBX=0 (didn't see x=1).
+# TSO preserves store order, so this cannot happen.
+
+[thread.0]
+init = { RCX = "x", RDX = "y" }
+code = """
+movl $1, (%rcx)
+movl $1, (%rdx)
+"""
+
+[thread.1]
+init = { RCX = "x", RDX = "y" }
+code = """
+movl (%rdx), %eax
+movl (%rcx), %ebx
+"""
+
+[final]
+expect = "unsat"
+assertion = "1:RAX = 1 & 1:RBX = 0"

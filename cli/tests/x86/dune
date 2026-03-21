@@ -1,0 +1,17 @@
+(rule
+ (alias runtest)
+ (deps
+  (glob_files seq/*.toml)
+  ../../../config/X86.toml)
+ (action
+  (concurrent
+   (run archsem seq seq)
+   (run archsem tso seq))))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files um/*.toml)
+  ../../../config/X86.toml)
+ (action
+  (run archsem tso um)))

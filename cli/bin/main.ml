@@ -1,7 +1,8 @@
 (** Litmus test runner CLI.
 
     Usage: archsem <model> [--format archsem|isla] <path ...>
-    Models: seq (sequential), ump (UM Promising), vmp (VM Promising)
+    Models: seq (sequential), ump (Arm UM Promising), vmp (Arm VM Promising),
+            tso (X86 TSO)
 
     Each path can be a directory (scanned for .toml files) or a .toml file. *)
 
@@ -9,6 +10,7 @@ open Archsem
 open Litmus
 open Runner
 module ArmRunner = Runner.Make (Arm)
+module X86Runner = Runner.Make (X86)
 
 (** {1 Running litmus tests} *)
 
@@ -146,13 +148,18 @@ let cmd_seq =
   let run =
     let+ files = path_and_conf_term and+ fmt = format_term in
     let parse = parse_testfile fmt in
-    assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "seq"
-      (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa))
-      files
+    match Config.get_arch () with
+    | Arm ->
+        run_tests "arm-seq"
+          (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa))
+          files
+    | X86 ->
+        run_tests "x86-seq"
+          (X86Runner.run_litmus_test ~parse X86.(seq_model tiny_isa))
+          files
   in
   let info =
-    let doc = "Run sequential model" in
+    let doc = "Run sequential model (any supported architecture)" in
     Cmd.(info "seq" ~doc)
   in
   Cmd.v info run
@@ -168,7 +175,7 @@ let cmd_ump =
       files
   in
   let info =
-    let doc = "Run user-mode promising model" in
+    let doc = "Run user-mode promising model (Arm only)" in
     Cmd.(info "ump" ~doc)
   in
   Cmd.v info run
@@ -211,10 +218,32 @@ let cmd_vmp =
   in
   let info =
     let doc =
-      "Run virtual-memory promising model. Only one --bbm-* option can be active \
-       at the same time, the default is --bbm-off"
+      "Run virtual-memory promising model (Arm only). Only one --bbm-* option \
+       can be active at the same time, the default is --bbm-off"
     in
     Cmd.(info "vmp" ~doc)
+  in
+  Cmd.v info run
+
+let cmd_tso =
+  let no_eager =
+    let doc = "Disable eager transitions (eager is enabled by default)" in
+    Arg.(value & flag & info ["no-eager"] ~doc)
+  in
+  let run =
+    let+ files = path_and_conf_term
+    and+ fmt = format_term
+    and+ no_eager = no_eager in
+    let allow_eager = not no_eager in
+    let parse = parse_testfile fmt in
+    assert (Config.get_arch () = Arch_id.X86);
+    run_tests "tso"
+      (X86Runner.run_litmus_test ~parse X86.(op_model ~allow_eager tiny_isa))
+      files
+  in
+  let info =
+    let doc = "Run X86-TSO operational model" in
+    Cmd.(info "tso" ~doc)
   in
   Cmd.v info run
 
@@ -224,6 +253,6 @@ let cmd =
     let doc = "ArchSem model runner" in
     Cmd.(info "archsem" ~doc)
   in
-  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp]
+  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp; cmd_tso]
 
 let () = exit (Cmd.eval cmd)

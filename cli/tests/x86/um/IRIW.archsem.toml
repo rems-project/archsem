@@ -1,0 +1,164 @@
+arch = "x86"
+name = "IRIW"
+
+# Independent Reads of Independent Writes (4 threads)
+# Thread 0: MOV [ECX], 0x1
+# Thread 1: MOV EAX, [ECX]; MOV EBX, [EDX]
+# Thread 2: MOV [EDX], 0x1
+# Thread 3: MOV EAX, [EDX]; MOV EBX, [ECX]
+# Forbidden: 1:EAX=1 ∧ 1:EBX=0 ∧ 3:EAX=1 ∧ 3:EBX=0 (TSO is multi-copy atomic)
+
+[[registers]]
+RIP = 0x500
+RCX = 0x1100
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x600
+RAX = 0x0
+RBX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x700
+RDX = 0x1200
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x800
+RAX = 0x0
+RBX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+# Thread 0: MOV [ECX],1 (C7 01 01000000)
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 1
+data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00]
+
+# Thread 1: MOV EAX,[ECX] (8B 01) + MOV EBX,[EDX] (8B 1A)
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 1
+data = [0x8B, 0x01, 0x8B, 0x1A]
+
+# Thread 2: MOV [EDX],1 (C7 02 01000000)
+[[memory]]
+addr = 0x700
+kind = "code"
+step = 1
+data = [0xC7, 0x02, 0x01, 0x00, 0x00, 0x00]
+
+# Thread 3: MOV EAX,[EDX] (8B 02) + MOV EBX,[ECX] (8B 19)
+[[memory]]
+addr = 0x800
+kind = "code"
+step = 1
+data = [0x8B, 0x02, 0x8B, 0x19]
+
+[[memory]]
+addr = 0x1100
+kind = "data"
+step = 8
+data = 0
+
+[[memory]]
+addr = 0x1200
+kind = "data"
+step = 8
+data = 0
+
+[[termCond]]
+RIP = 0x506
+
+[[termCond]]
+RIP = 0x604
+
+[[termCond]]
+RIP = 0x706
+
+[[termCond]]
+RIP = 0x804
+
+# TSO forbids (1:EAX=1,1:EBX=0,3:EAX=1,3:EBX=0)
+# All other 15 combinations of {0,1}^4 are allowed
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 0}
+3 = {RAX = 0, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 0}
+3 = {RAX = 0, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 0}
+3 = {RAX = 1, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 0}
+3 = {RAX = 1, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 1}
+3 = {RAX = 0, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 1}
+3 = {RAX = 0, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 1}
+3 = {RAX = 1, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 1}
+3 = {RAX = 1, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 0}
+3 = {RAX = 0, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 0}
+3 = {RAX = 0, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 0}
+3 = {RAX = 1, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 1}
+3 = {RAX = 0, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 1}
+3 = {RAX = 0, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 1}
+3 = {RAX = 1, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 1}
+3 = {RAX = 1, RBX = 1}

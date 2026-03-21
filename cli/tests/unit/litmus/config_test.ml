@@ -10,13 +10,18 @@ let default_config_tests =
          let path = Config.default_path_for_arch Arch_id.Arm in
          assert_bool "expected an Arm config path" (Option.is_some path)
          );
+         ("finds default X86 config path"
+         >:: fun _ ->
+         let path = Config.default_path_for_arch Arch_id.X86 in
+         assert_bool "expected an X86 config path" (Option.is_some path)
+         );
          ("AArch64 resolves to Arm config path"
          >:: fun _ ->
          let path = Config.default_path_for_arch (Arch_id.of_string "AArch64") in
          assert_bool "expected an Arm config path for AArch64"
            (Option.is_some path)
          );
-         ("RISCV alias is rejected"
+         ("unknown architecture is rejected"
          >:: fun _ ->
          assert_raises (Failure "unknown architecture: RISCV") (fun () ->
            ignore (Arch_id.of_string "RISCV")
@@ -24,7 +29,12 @@ let default_config_tests =
          );
          ("loads built-in Arm config"
          >:: fun _ ->
-         let _ = Config.of_arch (Arch_id.of_string "AArch64") in
+         Test_utils.setup_arm ();
+         assert_equal 1000 (Config.get_fuel ())
+         );
+         ("loads built-in X86 config"
+         >:: fun _ ->
+         Test_utils.setup_x86 ();
          assert_equal 1000 (Config.get_fuel ())
          )
        ]

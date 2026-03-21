@@ -47,4 +47,14 @@ module X86 = struct
   include ArchBuild.Build (Required)
 
   let tiny_isa = X86Inst.sail_tiny_x86_sem true
+
+  let termCond_to_coq (term : termCond) tid rm =
+    let tc = List.nth term (Z.to_int tid) in
+    tc rm
+
+  let op_model ?(allow_eager = true) isem fuel term initState =
+    OperationalX86TSO.x86_operational_modelc (Z.of_int fuel) isem allow_eager
+      (ArchState.num_thread initState |> Z.of_int)
+      (termCond_to_coq term) initState
+    |> Obj.magic
 end

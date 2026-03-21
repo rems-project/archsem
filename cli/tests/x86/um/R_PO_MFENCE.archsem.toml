@@ -1,0 +1,73 @@
+arch = "x86"
+name = "R_PO_MFENCE"
+
+# Read + Program Order + MFENCE litmus test
+# Thread 0: MOV [ECX], 0x1; MOV [EDX], 0x1
+# Thread 1: MOV [EDX], 0x2; MFENCE; MOV EAX, [ECX]
+# Tests that MFENCE prevents store-buffer reordering
+
+[[registers]]
+RIP = 0x500
+RAX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x600
+RAX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+# Thread 0: MOV [ECX],1 (C7 01 01000000) + MOV [EDX],1 (C7 02 01000000)
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 1
+data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x02, 0x01, 0x00, 0x00, 0x00]
+
+# Thread 1: MOV [EDX],2 (C7 02 02000000) + MFENCE (0F AE F0) + MOV EAX,[ECX] (8B 01)
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 1
+data = [0xC7, 0x02, 0x02, 0x00, 0x00, 0x00, 0x0F, 0xAE, 0xF0, 0x8B, 0x01]
+
+[[memory]]
+addr = 0x1100
+kind = "data"
+step = 8
+data = 0
+
+[[memory]]
+addr = 0x1200
+kind = "data"
+step = 8
+data = 0
+
+[[termCond]]
+RIP = 0x50c
+
+[[termCond]]
+RIP = 0x60b
+
+# [EDX]=2 ∧ EAX=0 is forbidden (MFENCE prevents this)
+# Allowed final states for (1:EAX, mem[0x1200]):
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0}
+[outcome.mem]
+"0x1200" = {size = 8, value = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1}
+[outcome.mem]
+"0x1200" = {size = 8, value = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1}
+[outcome.mem]
+"0x1200" = {size = 8, value = 2}

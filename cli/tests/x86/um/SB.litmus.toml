@@ -1,0 +1,24 @@
+arch = "x86"
+name = "SB"
+symbolic = ["x", "y"]
+
+# Store Buffer: both threads store then load the other's location.
+# TSO allows both reads to see 0 (store buffering).
+
+[thread.0]
+init = { RCX = "x", RDX = "y" }
+code = """
+movl $1, (%rcx)
+movl (%rdx), %eax
+"""
+
+[thread.1]
+init = { RCX = "x", RDX = "y" }
+code = """
+movl $1, (%rdx)
+movl (%rcx), %eax
+"""
+
+[final]
+expect = "sat"
+assertion = "0:RAX = 0 & 1:RAX = 0"

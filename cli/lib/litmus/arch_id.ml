@@ -1,9 +1,12 @@
 (** Architecture management *)
 
-type t = Arm
+type t =
+  | Arm
+  | X86
 
 let of_string_opt = function
   | "Arm" | "AArch64" | "arm" | "aarch64" -> Some Arm
+  | "X86" | "x86" | "X86_64" | "x86_64" -> Some X86
   | _ -> None
 
 let of_string arch =
@@ -11,7 +14,7 @@ let of_string arch =
   | Some arch -> arch
   | None -> failwith ("unknown architecture: " ^ arch)
 
-let to_string = function Arm -> "Arm"
+let to_string = function Arm -> "Arm" | X86 -> "X86"
 
 let of_toml toml = toml |> Otoml.get_string |> of_string
 

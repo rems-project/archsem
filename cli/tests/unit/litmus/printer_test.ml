@@ -11,7 +11,7 @@ let round_trip rel_path =
   original = reparsed
 
 let round_trip_tests =
-  Test_utils.setup ();
+  Test_utils.setup_arm ();
   let tests = collect_archsem_files () in
   "round-trip"
   >::: List.map

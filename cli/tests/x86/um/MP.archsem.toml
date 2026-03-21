@@ -1,0 +1,66 @@
+arch = "x86"
+name = "MP"
+
+# Message Passing litmus test
+# Thread 0: MOV [ECX], 0x1; MOV [EDX], 0x1
+# Thread 1: MOV EAX, [EDX]; MOV EBX, [ECX]
+# Forbidden under SC: EAX=1, EBX=0
+
+[[registers]]
+RIP = 0x500
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+[[registers]]
+RIP = 0x600
+RAX = 0x0
+RBX = 0x0
+RCX = 0x1100
+RDX = 0x1200
+RFLAGS = 0x3000
+
+# Thread 0: MOV [ECX],1 (C7 01 01000000) + MOV [EDX],1 (C7 02 01000000)
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 1
+data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x02, 0x01, 0x00, 0x00, 0x00]
+
+# Thread 1: MOV EAX,[EDX] (8B 02) + MOV EBX,[ECX] (8B 19)
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 1
+data = [0x8B, 0x02, 0x8B, 0x19]
+
+[[memory]]
+addr = 0x1100
+kind = "data"
+step = 8
+data = 0
+
+[[memory]]
+addr = 0x1200
+kind = "data"
+step = 8
+data = 0
+
+[[termCond]]
+RIP = 0x50c
+
+[[termCond]]
+RIP = 0x604
+
+# TSO allows: (0,0), (0,1), (1,1) but NOT (1,0)
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 0}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 0, RBX = 1}
+
+[[outcome]]
+[outcome.observable]
+1 = {RAX = 1, RBX = 1}
