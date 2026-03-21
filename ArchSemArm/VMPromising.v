@@ -44,8 +44,6 @@ From ASCommon Require Import Common GRel Exec FMon StateT HVec.
 From ArchSem Require Import GenPromising.
 Require Import ArmInst.
 
-Require UMPromising.
-Import (hints) UMPromising.
 
 #[local] Open Scope list.
 #[local] Open Scope nat.
@@ -54,14 +52,67 @@ Import (hints) UMPromising.
 (** The goal of this module is to define an Virtual memory promising model,
     without mixed-size on top of the new interface *)
 
-(** This model only works for 8-bytes aligned locations, as there
-    in no support for mixed-sizes yet. Also all location are
-    implicitly in the non-secure world.
+(** VM uses its own 8-byte-aligned Loc (bv 53), decoupled from
+    UMPromising.Loc which is now byte-granular for mixed-size. *)
+Module Loc.
+  Definition t := bv 53.
+  #[export] Typeclasses Transparent t.
+  #[export] Hint Transparent t : bv_unfold_db.
 
-    So in order to get the physical address you need to append 3 zeros.
+  #[global] Instance dec : EqDecision t.
+  Proof. unfold t. solve_decision. Defined.
 
-    We reuse the location setup from the User-Mode promising model. *)
-Module Loc := UMPromising.Loc.
+  Definition to_addr (loc : t) : address := bv_concat 56 loc (bv_0 3).
+
+  Definition from_addr (addr : address) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 53 addr)
+    else None.
+
+  Lemma to_from_addr (addr : address) (loc : t) :
+    from_addr addr = Some loc → to_addr loc = addr.
+  Proof.
+    unfold from_addr,to_addr in *.
+    cdestruct addr,loc |- *** #CDestrMatch.
+    bv_solve'.
+  Qed.
+
+  Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
+    unfold t in *.
+    unfold from_addr, to_addr.
+    cdestruct |- *** #CDestrMatch; bv_solve'.
+  Qed.
+
+  Definition to_addrs (loc : t) : list address := addr_range (to_addr loc) 8.
+
+  Definition from_addr_in (addr : address) : t := bv_extract 3 53 addr.
+
+  Definition addr_index (addr : address) : bv 3 := bv_extract 0 3 addr.
+
+  Lemma from_addr_addr_in addr loc :
+    from_addr addr = Some loc → from_addr_in addr = loc.
+  Proof. unfold from_addr,from_addr_in. cdestruct |- *** #CDestrMatch. Qed.
+
+  Lemma from_addr_in_to_addrs loc :
+    ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
+  Proof.
+    unfold from_addr_in, to_addrs, addr_range, addr_addN, to_addr.
+    set_unfold.
+    cdestruct |- ***.
+    unfold t, addr_size in *.
+    bv_solve.
+  Qed.
+
+  Definition to_va (loc : t) : bv 64 :=
+    bv_concat 64 (bv_0 8) $ bv_concat 52 loc (bv_0 3).
+
+  Definition from_va (addr : bv 64) : option t :=
+    if bv_extract 0 3 addr =? bv_0 3 then
+      Some (bv_extract 3 53 addr)
+    else None.
+
+End Loc.
+Export (hints) Loc.
 
 (** Register and memory values (all memory access are 8 bytes aligned *)
 Definition val := bv 64.
@@ -70,8 +121,27 @@ Definition val := bv 64.
 Definition val_to_address (v : val) : address :=
   bv_extract 0 56 v.
 
-(** We also reuse the Msg object from the User-Mode Promising Model. *)
-Module Msg := UMPromising.Msg.
+(** VM uses its own fixed-size Msg (8-byte aligned, no mixed-size).
+    Decoupled from UMPromising.Msg which supports mixed-size access. *)
+Module Msg.
+  Record t :=
+    make {
+      tid : nat;
+      loc : Loc.t;
+      val : val;
+    }.
+  Arguments make : clear implicits.
+
+  #[global] Instance eq_dec : EqDecision t.
+  Proof. solve_decision. Defined.
+
+  #[global] Instance count : Countable t.
+  Proof.
+    apply (inj_countable' (λ msg, (tid msg, loc msg, val msg))
+                      (λ x, make x.1.1 x.1.2 x.2)).
+    by intros [].
+  Defined.
+End Msg.
 
 Module TLBI.
   Inductive t :=
@@ -143,6 +213,8 @@ Module Ev.
   #[global] Instance dec : EqDecision t.
   solve_decision.
   Defined.
+
+  Definition eqb (e1 e2 : t) : bool := bool_decide (e1 = e2).
 
   Definition tid (ev : t) :=
     match ev with
@@ -217,8 +289,8 @@ Module Memory.
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
-  Definition cut_after : nat -> t -> t := @cut_after Ev.t.
-  Definition cut_before : nat -> t -> t := @cut_before Ev.t.
+  Definition cut_after : nat → t → t := @cut_after Ev.t.
+  Definition cut_before : nat → t → t := @cut_before Ev.t.
 
  (** Reads the last write to a location in some memory. Gives the value and the
      timestamp of the write that it read from.
@@ -334,7 +406,15 @@ Module Memory.
 End Memory.
 Import (hints) Memory.
 
-Module FwdItem := UMPromising.FwdItem.
+Module FwdItem.
+  Record t :=
+    make {
+      time : nat;
+      view : view;
+      xcl : bool
+    }.
+  Definition init := make 0 0 false.
+End FwdItem.
 
 
 Definition EL := (fin 4).
@@ -344,7 +424,7 @@ Definition ELp := (fin 3).
 #[export] Typeclasses Transparent ELp.
 Bind Scope fin_scope with ELp.
 
-Definition ELp_to_EL : ELp -> EL := FS.
+Definition ELp_to_EL : ELp → EL := FS.
 
 
 (** * Register classification
@@ -663,10 +743,10 @@ Module TState.
     (update acc1 v) ∘ (update acc2 v).
 
   (** Add a promise to the promise set *)
-  Definition promise (v : view) : t -> t := set prom (v ::.).
+  Definition promise (v : view) : t → t := set prom (v ::.).
 
   (** Perform a context synchronization event *)
-  Definition cse (v : view) : t -> t :=
+  Definition cse (v : view) : t → t :=
     (update vcse v) ∘ (set levs (LEv.Cse v ::.)).
 End TState.
 
@@ -862,7 +942,7 @@ Module TLB.
 
   Module Ctxt.
     Definition t := {lvl : Level & NDCtxt.t lvl}.
-    Definition lvl : t -> Level := projT1.
+    Definition lvl : t → Level := projT1.
     Definition nd (ctxt : t) : NDCtxt.t (lvl ctxt) := projT2 ctxt.
     Definition upper (ctxt : t) : bool := NDCtxt.upper (nd ctxt).
     Definition va (ctxt : t) : prefix (lvl ctxt) := NDCtxt.va (nd ctxt).
@@ -1735,7 +1815,11 @@ Module IIS.
 
 End IIS.
 
-Import UMPromising(view_if, read_fwd_view).
+Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
+
+Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
+  if f.(FwdItem.xcl) && is_rel_acq macc
+  then f.(FwdItem.time) else f.(FwdItem.view).
 
 (** Perform an explicit memory read.
 

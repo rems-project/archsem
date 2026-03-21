@@ -539,3 +539,106 @@ Module LBDMBS.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End LBDMBS.
+
+(** * Mixed-size tests *)
+
+Module STRW_LDRX. (* STR W2, [X1, X0]; LDR X0, [X1, X0] — 4-byte write, 8-byte read *)
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R0 0x1000
+    |> reg_insert R1 0x100
+    |> reg_insert R2 0x2a
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xb8206822 (* STR W2, [X1, X0] *)
+    |> mem_insert 0x504 4 0xf8606820 (* LDR X0, [X1, X0] *)
+    |> mem_insert 0x1100 8 0x0. (* 8 bytes backing for LDR X *)
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 4%nat.
+
+  Definition test_results_pf :=
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
+
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
+    vm_compute (_ <$> _).
+    set_solver.
+  Qed.
+End STRW_LDRX.
+
+Module CoWWRmixed.
+  (* Cross-thread mixed-size tearing:
+     T0: STR X2, [X1]              (8B = 0x1111111111111111)
+     T1: STR W3, [X1]; LDR X0, [X1] (4B = 0x22222222, then 8B read)
+
+     The two writes are on different threads, so [t_X] and [t_W] can be
+     ordered either way.  T1's R0 may take:
+       - 0x1111111111111111   — t_W < t_X, tread ≥ t_X (X overwrites W)
+       - 0x1111111122222222   — t_W > t_X (torn: W on top, X for upper 4B)
+       - 0x0000000022222222   — t_W < t_X, tread = t_W (W seen, X not yet)
+  *)
+
+  Definition init_reg_t0 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R1 0x1100
+    |> reg_insert R2 0x1111111111111111
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_reg_t1 : registerMap :=
+    ∅
+    |> reg_insert _PC 0x600
+    |> reg_insert R0 0x0
+    |> reg_insert R1 0x1100
+    |> reg_insert R3 0x22222222
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xf9000022  (* STR X2, [X1] *)
+    |> mem_insert 0x600 4 0xb9000023  (* STR W3, [X1] *)
+    |> mem_insert 0x604 4 0xf9400020  (* LDR X0, [X1] *)
+    |> mem_insert 0x1100 8 0x0.        (* 8-byte backing *)
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x504 : bv 64); Some (0x608 : bv 64)].
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t0; init_reg_t1];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 5%nat.
+
+  Definition test_results_pf :=
+    UMPromising_pf arm_sem fuel n_threads termCond initState.
+
+  Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
+    [Ok [0x1111111111111111%Z];
+     Ok [0x1111111122222222%Z];
+     Ok [0x0000000022222222%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End CoWWRmixed.
+

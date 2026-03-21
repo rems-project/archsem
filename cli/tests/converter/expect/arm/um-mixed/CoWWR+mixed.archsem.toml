@@ -1,0 +1,49 @@
+arch = "Arm"
+name = "CoWWR+mixed"
+
+[[registers]]
+  _PC = 1280
+  "R1" = 4352
+  "R2" = 1229782938247303441
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0}
+
+[[registers]]
+  _PC = 1536
+  "R0" = 0
+  "R1" = 4352
+  "R3" = 572662306
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = 4177526818
+
+[[memory]]
+  kind = "code"
+  addr = 1536
+  step = 4
+  data = [3103784995, 4181721120]
+
+[[memory]]
+  addr = 4352
+  step = 8
+  data = 0
+
+[[termCond]]
+  _PC = 1284
+
+[[termCond]]
+  _PC = 1544
+
+[[outcome]]
+  observable = {"1" = {"R0" = 1229782938247303441}}
+
+[[outcome]]
+  observable = {"1" = {"R0" = 1229782938533634594}}
+
+[[outcome]]
+  observable = {"1" = {"R0" = 572662306}}

@@ -1,0 +1,29 @@
+arch = "AArch64"
+name = "CoWWR+mixed"
+symbolic = ["x"]
+
+# Cross-thread mixed-size tearing.
+# T0 writes 8B, T1 writes 4B (overlapping low half) and reads 8B.
+# Because the two writes are on different threads, t_X and t_W can be
+# ordered either way — exposing a torn outcome where T1 sees its own W
+# but the upper 4B remain at init (X not yet propagated).
+
+[thread.0]
+init = { X1 = "x", X2 = 0x1111111111111111 }
+code = """
+STR X2, [X1]
+"""
+
+[thread.1]
+init = { X1 = "x", X3 = 0x22222222 }
+code = """
+STR W3, [X1]
+LDR X0, [X1]
+"""
+
+[locations]
+x = 0x0
+
+[final]
+expect = "sat"
+assertion = "1:X0 = 0x0000000022222222"

@@ -1,0 +1,27 @@
+arch = "Arm"
+name = "STRW_LDRX"
+
+[[registers]]
+  _PC = 1280
+  "R0" = 4096
+  "R1" = 256
+  "R2" = 42
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = [3089131554, 4167067680]
+
+[[memory]]
+  addr = 4352
+  step = 8
+  data = 0
+
+[[termCond]]
+  _PC = 1288
+
+[[outcome]]
+  observable = {"0" = {"R0" = 42}}
