@@ -18,6 +18,7 @@ let sample_ir arch : Isla.Ir.t =
       ];
     symbolic = [ "x" ];
     locations = [ ("x", Const Z.zero) ];
+    page_table_setup = [];
     expect = Isla.Ir.Sat;
     assertion =
       And

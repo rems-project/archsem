@@ -18,6 +18,7 @@ type t = {
   threads : thread list;
   symbolic : string list;
   locations : (string * Term.t) list;
+  page_table_setup : Pgtable.stmt list;
   expect : expect;
   assertion : Assertion.expr;
 }
@@ -115,6 +116,16 @@ let parse_arch toml =
   try Litmus.Arch_id.of_string arch_string
   with Failure msg -> raise (Otoml.Type_error msg)
 
+let parse_page_table_setup toml =
+  let s = Otoml.get_string toml |> String.trim in
+  if s = "" then []
+  else
+    let lexbuf = Lexing.from_string s in
+    try Pgtable_parser.program Pgtable_lexer.token lexbuf
+    with Pgtable_parser.Error ->
+      type_error "page_table_setup parse error at position %d in: %s"
+        lexbuf.lex_curr_p.pos_cnum s
+
 let of_toml toml =
   {
     arch = Otoml.find toml parse_arch ["arch"];
@@ -123,6 +134,8 @@ let of_toml toml =
     symbolic =
       Otoml.find_or ~default:[] toml (Otoml.get_array Otoml.get_string) ["symbolic"];
     locations = Otoml.find_or ~default:[] toml (Otoml.get_table_values parse_value) ["locations"];
+    page_table_setup =
+      Otoml.find_or ~default:[] toml parse_page_table_setup ["page_table_setup"];
     expect = Otoml.find_or ~default:Sat toml parse_expect ["final"; "expect"];
     assertion =
       Otoml.find_or ~default:Assertion.True toml parse_assertion ["final"; "assertion"]

@@ -54,6 +54,7 @@ let expected : Isla.Ir.t =
       ];
     symbolic = [ "x"; "y" ];
     locations = [ ("x", Const Z.zero); ("y", Const Z.zero) ];
+    page_table_setup = [];
     expect = Isla.Ir.Sat;
     assertion =
       And

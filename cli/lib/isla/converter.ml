@@ -49,28 +49,122 @@ let mem_requirement op value =
   | Assertion.Eq -> Testrepr.MemEq value
   | Assertion.Ne -> Testrepr.MemNe value
 
-let resolve_term ~env expr =
+(** Evaluate a term with page table context.
+    Handles [pteN], [descN], [mkdescN], [s2mkdesc3] by dispatching to
+    {!Pgtable} query helpers; other functions fall back to {!Term.eval_fn}. *)
+let rec eval_pgt ~resolve ~table_data = function
+  | Term.Const z -> z
+  | Term.LocVal (Mem sym) -> Z.of_int (resolve sym)
+  | Term.LocVal (Reg (tid, reg)) ->
+    failwith (Printf.sprintf
+      "term: cannot evaluate register reference %d:%s" tid reg)
+  | Term.Deref loc ->
+    failwith (Printf.sprintf
+      "term: cannot evaluate deref *%s" (Term.string_of_loc loc))
+  | Term.Fn (name, args) ->
+    let evaled = List.map (eval_pgt ~resolve ~table_data) args in
+    eval_pgt_fn ~table_data name evaled
+  | Term.KwFn (name, kw_args) ->
+    let evaled =
+      List.map (fun (k, v) -> (k, eval_pgt ~resolve ~table_data v)) kw_args in
+    eval_pgt_kw_fn name evaled
+
+and eval_pgt_fn ~table_data name args =
+  let parse_level prefix name =
+    let n = String.length prefix in
+    if String.length name = n + 1 && String.sub name 0 n = prefix then
+      Some (Char.code name.[n] - Char.code '0')
+    else None
+  in
+  match parse_level "pte" name with
+  | Some level ->
+    (match args with
+     | [va; base] ->
+       Z.of_int (Function.lookup_pte_addr ~table_data
+         ~base:(Z.to_int base) (Z.to_int va) level)
+     | _ -> failwith (name ^ " requires 2 arguments: (va, base)"))
+  | None ->
+  match parse_level "desc" name with
+  | Some level ->
+    (match args with
+     | [va; base] ->
+       Z.of_int (Function.lookup_desc_value ~table_data
+         ~base:(Z.to_int base) (Z.to_int va) level)
+     | _ -> failwith (name ^ " requires 2 arguments: (va, base)"))
+  | None ->
+  if name = "asid" then
+    (match args with
+     | [v] -> Z.shift_left v 48
+     | _ -> failwith "asid requires 1 argument")
+  else
+    Term.eval_fn name args
+
+and eval_pgt_kw_fn name evaled_kw =
+  let parse_mkdesc name =
+    let prefix = "mkdesc" in
+    let n = String.length prefix in
+    if String.length name = n + 1 && String.sub name 0 n = prefix then
+      Some (Char.code name.[n] - Char.code '0')
+    else if name = "s2mkdesc3" then Some 3
+    else None
+  in
+  match parse_mkdesc name with
+  | Some level ->
+    (match List.assoc_opt "table" evaled_kw with
+     | Some table_addr ->
+       Z.of_int (Function.table_descriptor (Z.to_int table_addr))
+     | None ->
+       let oa = match List.assoc_opt "oa" evaled_kw with
+         | Some v -> Z.to_int v
+         | None -> failwith (name ^ " requires oa= or table= argument")
+       in
+       let extra_bits = List.fold_left (fun acc (k, v) ->
+         if k = "oa" then acc else acc lor Z.to_int v)
+         0 evaled_kw in
+       let attrs = Function.default_data_attrs lor extra_bits in
+       Z.of_int (Function.make_desc ~level ~oa ~attrs))
+  | None ->
+    if name = "ttbr" then begin
+      let base = match List.assoc_opt "base" evaled_kw with
+        | Some v -> v
+        | None -> failwith "ttbr requires base= argument"
+      in
+      let id_val =
+        match List.assoc_opt "asid" evaled_kw, List.assoc_opt "vmid" evaled_kw with
+        | Some v, _ | _, Some v -> v
+        | None, None -> Z.zero
+      in
+      Z.logor (Z.shift_left id_val 48) base
+    end else
+      failwith (Printf.sprintf "term: unknown keyword function %s" name)
+
+let resolve_term ~resolve ~table_data expr =
   match expr with
   | Term.LocVal loc -> `Loc loc
   | Term.Deref (Mem sym) -> `Deref sym
-  | _ -> `Const (Term.eval ~env expr)
+  | _ -> `Const (eval_pgt ~resolve ~table_data expr)
 
-let atoms_to_conds ~resolve_sym ~memory_size atoms =
-  let env = function
-    | Term.Mem sym -> Some (Z.of_int (resolve_sym sym))
-    | Term.Reg _ -> None
+let atoms_to_conds ~resolve_sym ~va_pa_map ~table_data ~memory_size atoms =
+  let resolve_ve expr =
+    resolve_term ~resolve:resolve_sym ~table_data expr
+  in
+  let resolve_mem_addr sym =
+    let va_addr = resolve_sym sym in
+    match List.assoc_opt sym va_pa_map with
+    | Some pa -> pa
+    | None -> va_addr
   in
   let reg_atoms, mem_atoms =
     List.fold_left
       (fun (reg_atoms, mem_atoms) (Assertion.Cmp (lhs, op, rhs)) ->
-        match resolve_term ~env lhs, resolve_term ~env rhs with
+        match resolve_ve lhs, resolve_ve rhs with
         | `Loc (Term.Reg (tid, reg)), `Const value ->
           ((tid, reg, reg_requirement op value) :: reg_atoms, mem_atoms)
         | `Loc (Term.Mem sym), `Const value ->
           let mem_cond : Testrepr.mem_cond =
             {
               sym;
-              addr = resolve_sym sym;
+              addr = resolve_mem_addr sym;
               size = memory_size sym;
               req = mem_requirement op value;
             }
@@ -86,7 +180,7 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
           let mem_cond =
             {
               Testrepr.sym = sym;
-              addr = resolve_sym sym;
+              addr = resolve_mem_addr sym;
               size = memory_size sym;
               req = mem_requirement op value;
             }
@@ -115,7 +209,7 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
   in
   (thread_conds, mem_atoms)
 
-let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
+let to_final_conds ~expect_is_sat ~resolve_sym ~va_pa_map ~table_data ~memory_size assertion =
   let is_observable, dnf =
     match assertion with
     | Assertion.Not e -> (not expect_is_sat, Assertion.to_dnf e)
@@ -127,7 +221,7 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
         None
       else
         let thread_conds, mem_conds =
-          atoms_to_conds ~resolve_sym ~memory_size conj
+          atoms_to_conds ~resolve_sym ~va_pa_map ~table_data ~memory_size conj
         in
         if is_observable then
           Some (Testrepr.Observable (thread_conds, mem_conds))
@@ -135,21 +229,15 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
           Some (Testrepr.Unobservable (thread_conds, mem_conds)))
     dnf
 
-let sym_env syms = function
-  | Term.Mem sym ->
-    (match Symbols.resolve_opt syms sym with
-     | Some addr -> Some (Z.of_int addr)
-     | None -> None)
-  | Term.Reg _ -> None
+let z_of_value ~resolve ~table_data expr =
+  eval_pgt ~resolve ~table_data expr
 
-let z_of_value syms expr =
-  Term.eval ~env:(sym_env syms) expr
-
-let build_registers syms ~arch pc (thread : Ir.thread) =
+let build_registers ~resolve ~table_data ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
   let used_regs =
     List.map
-      (fun (reg, value) -> (reg, RegValGen.Number (z_of_value syms value)))
+      (fun (reg, value) ->
+        (reg, RegValGen.Number (z_of_value ~resolve ~table_data value)))
       thread.init
   in
   let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
@@ -168,9 +256,9 @@ let build_code_memory ~step addr data =
     kind = Testrepr.Code;
   }
 
-let build_data_memory syms sym addr init_value =
+let build_data_memory ~resolve ~table_data sym addr init_value =
   let mem_size = default_memory_size () in
-  let value = z_of_value syms init_value in
+  let value = z_of_value ~resolve ~table_data init_value in
   if Z.numbits value > (mem_size * 8) then
     failwith ("Number doesn't fit in symbol " ^ sym);
   let data = Bytes.make mem_size '\x00' in
@@ -186,8 +274,23 @@ let build_data_memory syms sym addr init_value =
 
 let to_testrepr (ir : Ir.t) : Testrepr.t =
   let syms = Symbols.empty () in
-  List.iter (Symbols.alloc_sym syms) ir.symbolic;
-  let encoded_threads =
+  (* Evaluate page table setup DSL *)
+  let _syms, pgt_memory, _walks, pgt_mem_inits, l0_addr, va_pa_map, pgt_addrs =
+    Pgtable.evaluate ~arch:ir.arch ~symbolic:ir.symbolic syms
+      ir.page_table_setup
+  in
+  (* Collect all data symbols: ir.symbolic + pgt-declared virtual/physical names *)
+  let all_data_syms =
+    let from_pgt =
+      List.filter_map (fun (name, _) ->
+        if List.mem name ir.symbolic then None else Some name)
+        pgt_addrs
+    in
+    ir.symbolic @ from_pgt
+  in
+  (* Ensure all data symbols are allocated *)
+  List.iter (fun name -> ignore (Symbols.alloc_data syms name)) all_data_syms;
+  let assembled_threads =
     List.map
       (fun (thread : Ir.thread) ->
         let enc = Assembler.assemble thread.code in
@@ -196,25 +299,58 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
       ir.threads
   in
   let code_step = instruction_step () in
+  let resolve = Symbols.resolve syms in
+  let table_data =
+    List.map (fun (b : Testrepr.memory_block) -> (b.addr, b.data)) pgt_memory
+  in
+  (* Auto-add identity mappings for code pages when page tables are present *)
+  (match l0_addr with
+   | Some base ->
+     List.iter (fun (_, _, code_addr) ->
+       Pgtable.add_identity_code_entry ~table_data ~base code_addr)
+       assembled_threads
+   | None -> ());
+  let pgt_auto_regs = match l0_addr with
+    | Some l0 -> [("TTBR0_EL1", RegValGen.Number (Z.of_int l0))]
+    | None -> []
+  in
   let registers =
     List.map
       (fun (thread, _, code_addr) ->
-        build_registers syms ~arch:ir.arch code_addr thread)
-      encoded_threads
+        let regs =
+          build_registers ~resolve ~table_data ~arch:ir.arch code_addr thread in
+        let has name = List.exists (fun (k, _) -> k = name) regs in
+        regs @ List.filter (fun (k, _) -> not (has k)) pgt_auto_regs)
+      assembled_threads
   in
   let code_memory =
     List.map
       (fun (_, enc, code_addr) -> build_code_memory ~step:code_step code_addr enc)
-      encoded_threads
+      assembled_threads
+  in
+  (* Merge page table mem inits: DSL overrides ir.locations *)
+  let locations =
+    let pgt_locs = List.rev pgt_mem_inits in
+    let overridden name = List.exists (fun (k, _) -> k = name) pgt_locs in
+    List.filter (fun (k, _) -> not (overridden k)) ir.locations @ pgt_locs
   in
   let data_memory =
-    List.map (fun sym ->
-      let addr = Symbols.resolve syms sym in
-      let init_value =
-        List.assoc_opt sym ir.locations |> Option.value ~default:(Term.Const Z.zero)
+    let seen_addrs = Hashtbl.create 16 in
+    List.filter_map (fun sym ->
+      let va_addr = Symbols.resolve syms sym in
+      let addr = match List.assoc_opt sym va_pa_map with
+        | Some pa -> pa
+        | None -> va_addr
       in
-      build_data_memory syms sym addr init_value)
-    ir.symbolic
+      if Hashtbl.mem seen_addrs addr then None
+      else begin
+        Hashtbl.replace seen_addrs addr true;
+        let init_value =
+          List.assoc_opt sym locations |> Option.value ~default:(Term.Const Z.zero)
+        in
+        Some (build_data_memory ~resolve ~table_data sym addr init_value)
+      end)
+    all_data_syms
   in
   let mem_sizes =
     List.filter_map
@@ -233,12 +369,14 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
       (fun (_, enc, code_addr) ->
         let end_pc = Z.of_int (code_addr + Bytes.length enc) in
         [(pc, RegValGen.Number end_pc)])
-      encoded_threads
+      assembled_threads
   in
   let finals =
     to_final_conds
       ~expect_is_sat:(ir.expect = Ir.Sat)
       ~resolve_sym:(Symbols.resolve syms)
+      ~va_pa_map
+      ~table_data
       ~memory_size
       ir.assertion
   in
@@ -246,7 +384,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
     registers;
-    memory = code_memory @ data_memory;
+    memory = code_memory @ Pgtable.to_sparse_blocks table_data @ data_memory;
     term_cond;
     finals;
   }
