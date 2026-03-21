@@ -1,0 +1,38 @@
+arch = "AArch64"
+name = "MP+pos"
+symbolic = ["x", "y"]
+
+page_table_setup = """
+    physical pa1 pa2;
+    x |-> pa1 with default;
+    y |-> pa2 with default;
+    *pa1 = 0;
+    *pa2 = 0;
+"""
+
+[thread.0]
+init = {}
+code = """
+    STR X0,[X1]
+    STR X2,[X3]
+"""
+
+[thread.0.reset]
+R0 = "extz(0x1, 64)"
+R1 = "x"
+R2 = "extz(0x1, 64)"
+R3 = "y"
+
+[thread.1]
+init = {}
+code = """
+    LDR X0,[X1]
+    LDR X2,[X3]
+"""
+
+[thread.1.reset]
+R1 = "y"
+R3 = "x"
+
+[final]
+assertion = "1:X0 = 1 & 1:X2 = 0"

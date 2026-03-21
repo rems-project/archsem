@@ -6,6 +6,11 @@ fuel = 1000
 [vmp]
 bbm = "off"
 
+[vmp.registers.defaults]
+SCTLR_EL1 = 1
+TCR_EL1 = 0
+ID_AA64MMFR1_EL1 = 0
+
 [assembler]
 assemble = "llvm-mc -triple=aarch64 -mattr=+lse,+rcpc --assemble --filetype=obj"
 extract = "llvm-objcopy -O binary"
@@ -116,4 +121,6 @@ R28 = 0
 R29 = 0
 R30 = 0
 SCTLR_EL1 = 0
+TCR_EL1 = 0
+ID_AA64MMFR1_EL1 = 0
 PSTATE = { EL = 0, SP = 0 }

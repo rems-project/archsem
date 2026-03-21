@@ -1,0 +1,24 @@
+arch = "AArch64"
+name = "STRLDR+VM-isla"
+symbolic = ["x"]
+
+page_table_setup = """
+    physical pa_x;
+    x |-> pa_x with default;
+    *pa_x = 0;
+"""
+
+[thread.0]
+code = """
+    STR X2,[X1]
+    LDR X0,[X1]
+"""
+
+[thread.0.reset]
+R0 = "extz(0x0, 64)"
+R1 = "x"
+R2 = "extz(0x2a, 64)"
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 0x2a"

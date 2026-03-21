@@ -21,7 +21,7 @@ type format =
     Recognised extensions are:
     - .archsem.toml for ArchSem format TOML tests
     - .litmus.toml for Isla-style litmus tests *)
-let parse_testfile fmt filename =
+let parse_testfile ~mode fmt filename =
   assert (Filename.extension filename = ".toml");
   let fmt = match fmt with
     | Some fmt -> fmt
@@ -38,10 +38,8 @@ let parse_testfile fmt filename =
   match fmt with
   | Archsem -> Parser.parse_to_testrepr toml
   | Isla ->
-      toml
-      |> Isla.Ir.of_toml
-      |> Isla.Normalize.apply
-      |> Isla.Converter.to_testrepr
+      let ir = toml |> Isla.Ir.of_toml |> Isla.Normalize.apply in
+      Isla.Converter.to_testrepr ~mode ir
 
 let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
@@ -132,12 +130,13 @@ let format_term =
 
 (** The sequential model command *)
 let cmd_seq =
+  let mode = "seq" in
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "seq" (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa)) files
+    run_tests mode (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa)) files
   in
   let info =
     let doc = "Run sequential model" in
@@ -147,12 +146,13 @@ let cmd_seq =
 
 (** The user-mode promising command *)
 let cmd_ump =
+  let mode = "ump" in
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "ump" (ArmRunner.run_litmus_test ~parse Arm.(umProm_model tiny_isa)) files
+    run_tests mode (ArmRunner.run_litmus_test ~parse Arm.(umProm_model tiny_isa)) files
   in
   let info =
     let doc = "Run user-mode promising model" in
@@ -175,6 +175,7 @@ let bbm_of_config () =
 (** The virtual-memory promising command *)
 let cmd_vmp =
   let open Arm in
+  let mode = "vmp" in
   let bbm_mode =
     let doc = "Break-before-make mode: off, lax, or strict" in
     let values =
@@ -190,9 +191,9 @@ let cmd_vmp =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
     and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode fmt in
     assert (Config.get_arch () = Arch_id.Arm);
-    run_tests "vmp" (ArmRunner.run_litmus_test ~parse (vmProm_model ~bbm_param tiny_isa)) files
+    run_tests mode (ArmRunner.run_litmus_test ~parse (vmProm_model ~bbm_param tiny_isa)) files
   in
   let info =
     let doc =

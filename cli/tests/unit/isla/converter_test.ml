@@ -8,8 +8,9 @@ module ArmRunner = Runner.Make (Arm)
 
 module RegValGen = Archsem.RegValGen
 
-let convert toml =
-  toml |> Isla.Ir.of_toml |> Isla.Normalize.apply |> Isla.Converter.to_testrepr
+let convert ?(mode = "vmp") toml =
+  let ir = toml |> Isla.Ir.of_toml |> Isla.Normalize.apply in
+  Isla.Converter.to_testrepr ~mode ir
 
 let n i = RegValGen.Number (Z.of_int i)
 let pc_reg = Isla.Converter.pc_reg Litmus.Arch_id.Arm
@@ -138,13 +139,13 @@ let tests =
     "e2e: SimpleStore seq" >:: (fun _ ->
       Test_utils.setup ();
       let result, _msgs =
-        ArmRunner.run_testrepr Arm.(seq_model tiny_isa) (convert simple_toml)
+        ArmRunner.run_testrepr Arm.(seq_model tiny_isa) (convert ~mode:"seq" simple_toml)
       in
       assert_equal Runner.Expected result);
     "e2e: MP ump" >:: (fun _ ->
       Test_utils.setup ();
       let result, _msgs =
-        ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) (convert mp_toml)
+        ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) (convert ~mode:"ump" mp_toml)
       in
       assert_equal Runner.Expected result);
     "page table setup produces PageTable blocks" >:: (fun _ ->
@@ -275,6 +276,36 @@ assertion = "true"
       let regs = List.hd repr.registers in
       let ttbr0 = List.assoc_opt "TTBR0_EL1" regs in
       assert_equal None ttbr0 ~msg:"no TTBR0_EL1 without page tables");
+    "dot-separated registers grouped into struct" >:: (fun _ ->
+      Test_utils.setup ();
+      let toml = Otoml.Parser.from_string {|
+arch = "AArch64"
+name = "DottedRegTest"
+symbolic = ["x"]
+page_table_setup = """
+    physical pa; x |-> pa; *pa = 0;
+"""
+[thread.0]
+code = "LDR X0,[X1]"
+[thread.0.reset]
+R1 = "x"
+"PSTATE.EL" = "0b00"
+"PSTATE.SP" = "0b0"
+[final]
+expect = "sat"
+assertion = "true"
+|} in
+      let repr = convert toml in
+      let regs = List.hd repr.registers in
+      let pstate = List.assoc_opt "PSTATE" regs in
+      assert_bool "PSTATE present" (pstate <> None);
+      (match pstate with
+       | Some (RegValGen.Struct fields) ->
+         let el = List.assoc_opt "EL" fields in
+         let sp = List.assoc_opt "SP" fields in
+         assert_bool "EL field present" (el <> None);
+         assert_bool "SP field present" (sp <> None)
+       | _ -> assert_failure "PSTATE should be a Struct"));
   ]
 
 let () =

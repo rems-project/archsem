@@ -20,10 +20,18 @@ let pc_reg arch =
   match arch with
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
 
-let register_defaults () =
+let register_defaults ~mode () =
   let config = Config.get () in
-  Otoml.find_or ~default:[] config (Otoml.get_table_values regval_of_toml)
-    ["registers"; "defaults"]
+  let base =
+    Otoml.find_or ~default:[] config (Otoml.get_table_values regval_of_toml)
+      ["registers"; "defaults"]
+  in
+  let overlay =
+    Otoml.find_or ~default:[] config (Otoml.get_table_values regval_of_toml)
+      [mode; "registers"; "defaults"]
+  in
+  let has name = List.exists (fun (k, _) -> k = name) overlay in
+  List.filter (fun (k, _) -> not (has k)) base @ overlay
 
 let instruction_step () =
   let width =
@@ -237,7 +245,37 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~va_pa_map ~table_data ~memory_si
 let z_of_value ~resolve ~table_data expr =
   eval_pgt ~resolve ~table_data expr
 
-let build_registers ~resolve ~table_data ~label_env ~arch pc (thread : Ir.thread) =
+(** Group dot-separated register names into struct values.
+
+    E.g. [("PSTATE.EL", Number 1); ("PSTATE.SP", Number 0); ("R0", Number 42)]
+    becomes [("PSTATE", Struct [("EL", Number 1); ("SP", Number 0)]); ("R0", Number 42)]. *)
+let group_dotted_regs (regs : (string * RegValGen.t) list) =
+  let plain = ref [] in
+  let groups : (string, (string * RegValGen.t) list ref) Hashtbl.t =
+    Hashtbl.create 4 in
+  let order = ref [] in
+  List.iter (fun (name, value) ->
+    match String.index_opt name '.' with
+    | Some i ->
+      let prefix = String.sub name 0 i in
+      let field = String.sub name (i + 1) (String.length name - i - 1) in
+      (match Hashtbl.find_opt groups prefix with
+       | Some fields -> fields := (field, value) :: !fields
+       | None ->
+         let fields = ref [(field, value)] in
+         Hashtbl.add groups prefix fields;
+         order := prefix :: !order)
+    | None -> plain := (name, value) :: !plain)
+    regs;
+  let structs =
+    List.rev_map (fun prefix ->
+      let fields = List.rev !(Hashtbl.find groups prefix) in
+      (prefix, RegValGen.Struct fields))
+      !order
+  in
+  List.rev !plain @ structs
+
+let build_registers ~resolve ~table_data ~label_env ~arch ~mode pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
   let used_regs =
     List.map
@@ -253,10 +291,11 @@ let build_registers ~resolve ~table_data ~label_env ~arch pc (thread : Ir.thread
           (reg, RegValGen.Number (z_of_value ~resolve ~table_data value)))
       thread.init
   in
+  let used_regs = group_dotted_regs used_regs in
   let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
   let default_regs =
     List.filter_map (fun (reg, value) ->
-      if has reg then None else Some (reg, value)) (register_defaults ())
+      if has reg then None else Some (reg, value)) (register_defaults ~mode ())
   in
   pc_entry :: used_regs @ default_regs
 
@@ -285,7 +324,7 @@ let build_data_memory ~resolve ~table_data sym addr init_value =
     kind = Testrepr.Data;
   }
 
-let to_testrepr (ir : Ir.t) : Testrepr.t =
+let to_testrepr ~mode (ir : Ir.t) : Testrepr.t =
   let syms = Symbols.empty () in
   (* Evaluate page table setup DSL *)
   let _syms, pgt_memory, _walks, pgt_mem_inits, l0_addr, va_pa_map, pgt_addrs =
@@ -333,7 +372,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     List.map
       (fun (thread, _, code_addr, label_env) ->
         let regs =
-          build_registers ~resolve ~table_data ~label_env ~arch:ir.arch code_addr thread in
+          build_registers ~resolve ~table_data ~label_env ~arch:ir.arch ~mode code_addr thread in
         let has name = List.exists (fun (k, _) -> k = name) regs in
         regs @ List.filter (fun (k, _) -> not (has k)) pgt_auto_regs)
       assembled_threads
