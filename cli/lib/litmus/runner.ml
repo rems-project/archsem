@@ -7,7 +7,7 @@ type test_result =
   | Unexpected   (** Outcome did not match test expectations *)
   | ModelError   (** Model produced errors during execution *)
   | NoBehaviour  (** Model produces no behaviours (model bug) *)
-  | ParseError   (** Parser or configuration error *)
+  | SetupError   (** Pre-execution error: parsing, config, conversion, assembly *)
 
 (** {1 Display Helpers} *)
 let rec string_of_regval_gen : Archsem.RegValGen.t -> string = function
@@ -46,12 +46,20 @@ let mem_cond_to_string mem_reqs =
     mem_reqs
   |> String.concat " "
 
-let result_to_string = function
-  | Expected -> Terminal.green ^ "EXPECTED" ^ Terminal.reset
-  | Unexpected -> Terminal.yellow ^ "UNEXPECTED" ^ Terminal.reset
-  | ModelError -> Terminal.red ^ "MODEL ERROR" ^ Terminal.reset
-  | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
-  | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
+let string_of_result = function
+  | Expected -> "EXPECTED"
+  | Unexpected -> "UNEXPECTED"
+  | ModelError -> "MODEL ERROR"
+  | NoBehaviour -> "NO BEHAVIOUR"
+  | SetupError -> "SETUP ERROR"
+
+let styled_result r =
+  let color = match r with
+    | Expected -> Terminal.green
+    | Unexpected -> Terminal.yellow
+    | _ -> Terminal.red
+  in
+  color ^ string_of_result r ^ Terminal.reset
 
 module Make (Arch : Archsem.Arch) = struct
   open Arch
@@ -67,7 +75,7 @@ module Make (Arch : Archsem.Arch) = struct
             let reg = Reg.of_string name in
             match RegMap.get_opt reg regs with
             | None ->
-              failwith ("[[outcome]] register not found in final state: " ^ name)
+              Error.raise_error_ctx Runner ~ctx:("outcome." ^ name) "register not found in final state"
             | Some rv ->
               match req with
               | Testrepr.ReqEq exp -> rv = RegVal.of_gen reg exp
@@ -82,8 +90,8 @@ module Make (Arch : Archsem.Arch) = struct
       (fun (mc : Testrepr.mem_cond) ->
         match MemMap.lookup_opt mc.addr mc.size mem with
         | None ->
-          failwith
-            (Printf.sprintf "[[outcome]] memory not found at 0x%x" mc.addr)
+          Error.raise_error_ctx Runner ~ctx:(Printf.sprintf "outcome.*0x%x" mc.addr)
+            "memory not found at address"
         | Some actual ->
           (match mc.req with
           | Testrepr.MemEq expected -> Z.equal actual expected
@@ -153,35 +161,48 @@ module Make (Arch : Archsem.Arch) = struct
     let init, term = AS.testrepr_to_archstate test in
     run_executions model init fuel term test.finals
 
+  let print_error name origin msg =
+    Printf.printf "  %s%s%s %s  %s[%s] %s%s\n"
+      Terminal.red Terminal.cross Terminal.reset name Terminal.red origin msg Terminal.reset
+
   let run_litmus_test ~parse model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
-      Printf.printf "  %s✗%s %s  %sfile not found%s\n"
-        Terminal.red Terminal.reset name Terminal.red Terminal.reset;
-      ParseError
+      print_error name "config" "file not found";
+      SetupError
     ) else try
       let test = parse filename in
-      let result, msgs = run_testrepr model test in
-      let icon, color = match result with
-        | Expected -> Terminal.check, Terminal.green
-        | Unexpected -> Terminal.cross, Terminal.yellow
-        | _ -> Terminal.cross, Terminal.red
-      in
-      Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
-      List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
-      result
+      (* Inner try: exceptions here are model crashes, not parse errors *)
+      (try
+        let result, msgs = run_testrepr model test in
+        let icon, color = match result with
+          | Expected -> Terminal.check, Terminal.green
+          | Unexpected -> Terminal.cross, Terminal.yellow
+          | _ -> Terminal.cross, Terminal.red
+        in
+        Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
+        List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
+        result
+      with
+      | Error.Cli_error (origin, msg) ->
+        print_error name (Error.string_of_origin origin) msg;
+        ModelError
+      | exn ->
+        print_error name "model" (Printexc.to_string exn);
+        ModelError)
     with
+    | Error.Cli_error (origin, msg) ->
+      print_error name (Error.string_of_origin origin) msg;
+      SetupError
     | Otoml.Parse_error (pos, msg) ->
-      Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
-        Terminal.reset name Terminal.red (Option.fold ~none:"?" ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c) pos)
-        msg Terminal.reset;
-      ParseError
+      let pos_str = Option.fold ~none:"?"
+        ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c) pos in
+      print_error name "parser" (Printf.sprintf "parse error at %s: %s" pos_str msg);
+      SetupError
     | Failure msg ->
-      Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
-        Terminal.red msg Terminal.reset;
-      ParseError
+      print_error name "setup" msg;
+      SetupError
     | exn ->
-      Printf.printf "  %s✗%s %s  %s%s%s\n" Terminal.red Terminal.reset name
-        Terminal.red (Printexc.to_string exn) Terminal.reset;
-      ParseError
+      print_error name "setup" (Printexc.to_string exn);
+      SetupError
 end

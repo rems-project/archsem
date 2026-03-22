@@ -29,9 +29,8 @@ module Make (Arch : Archsem.Arch) = struct
           match RegMap.get_opt reg rm with
           | Some actual -> rv = actual
           | None ->
-            failwith
-              ("[[termCond]] register not found in thread state: "
-             ^ Reg.to_string reg))
+            Error.raise_error_ctx Runner ~ctx:("termCond." ^ Reg.to_string reg)
+              "register not found in thread state")
         parsed
 
   let term_conds_of_testrepr term_cond =
@@ -40,10 +39,9 @@ module Make (Arch : Archsem.Arch) = struct
   let validate_thread_count regs term =
     let num_threads = List.length regs in
     if List.length term <> num_threads then
-      failwith
-        (Printf.sprintf
-           "[[termCond]] count (%d) must match [[registers]] thread count (%d)"
-           (List.length term) num_threads)
+      Error.raise_error_ctx Runner ~ctx:"termCond"
+           "count (%d) must match registers thread count (%d)"
+           (List.length term) num_threads
 
   (** Convert Testrepr.t into ArchState.t and termination conditions. *)
   let testrepr_to_archstate (test : Testrepr.t) =

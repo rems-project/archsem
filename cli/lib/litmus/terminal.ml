@@ -23,7 +23,7 @@ let print_header model_name count =
   Printf.printf "\n%s%s%s%s  %d test(s)\n\n" bold cyan model_name reset count
 
 let print_summary ~model_name ~total ~expected ~unexpected
-    ~model_error ~parse_error ~no_behaviour ~failures =
+    ~model_error ~setup_error ~no_behaviour ~failures =
   let all_pass = expected = total in
   let status_color = if all_pass then green else red in
   let repeat n s = String.concat "" (List.init n (fun _ -> s)) in
@@ -48,8 +48,8 @@ let print_summary ~model_name ~total ~expected ~unexpected
     Printf.printf "  %s%s%s Unexpected   %s%d%s\n" yellow cross reset yellow unexpected reset;
   if model_error > 0 then
     Printf.printf "  %s%s%s Model Error  %s%d%s\n" red cross reset red model_error reset;
-  if parse_error > 0 then
-    Printf.printf "  %s%s%s Parse Error  %s%d%s\n" red cross reset red parse_error reset;
+  if setup_error > 0 then
+    Printf.printf "  %s%s%s Setup Error  %s%d%s\n" red cross reset red setup_error reset;
   if no_behaviour > 0 then
     Printf.printf "  %s%s%s No Behaviour  %s%d%s\n" red cross reset red no_behaviour reset;
 

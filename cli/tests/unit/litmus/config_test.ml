@@ -12,7 +12,7 @@ let default_config_tests = "default config" >::: [
     assert_bool "expected an Arm config path for AArch64" (Option.is_some path));
   "RISCV alias is rejected" >:: (fun _ ->
     assert_raises
-      (Failure "unknown architecture: RISCV")
+      (Error.Cli_error (Parser, "unknown architecture: RISCV"))
       (fun () -> ignore (Arch_id.of_string "RISCV")));
   "loads built-in Arm config" >:: (fun _ ->
     let _ = Config.of_arch (Arch_id.of_string "AArch64") in
