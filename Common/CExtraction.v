@@ -208,14 +208,14 @@ Extraction Blacklist String.
 
 From Stdlib Require BinaryString.
 
-Extract Inlined Constant BinaryString.Raw.to_N => "Utils.bin_str_to_N".
-Extract Inlined Constant HexString.Raw.to_N => "Utils.hex_str_to_N".
-Extract Inlined Constant HexString.of_Z => "Utils.hex_str_of_Z".
+Extract Inlined Constant BinaryString.Raw.to_N => "Support.bin_str_to_N".
+Extract Inlined Constant HexString.Raw.to_N => "Support.hex_str_to_N".
+Extract Inlined Constant HexString.of_Z => "Support.hex_str_of_Z".
 
 (** * Lists *)
 
 Extract Inlined Constant map => "Stdlib.List.map".
-Extract Inlined Constant length => "Utils.lengthZ".
+Extract Inlined Constant length => "Support.lengthZ".
 
 Extraction Blacklist List.
 
