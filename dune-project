@@ -78,6 +78,7 @@
   (cmdliner (>= 1.3))
   (menhir (>= 20231231))
   (ounit2 (and :with-test (>= 2.2)))
+  (ocamlformat (and :with-dev-setup (>= 0.28)))
  )
 )
 

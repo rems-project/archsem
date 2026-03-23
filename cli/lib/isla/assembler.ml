@@ -38,14 +38,12 @@ let assemble (asm : string) : Bytes.t =
   Fun.protect
     ~finally:(fun () ->
       (try Sys.remove obj_path with _ -> ());
-      (try Sys.remove bin_path with _ -> ()))
+      try Sys.remove bin_path with _ -> ()
+    )
     (fun () ->
-       run_cmd "echo %s | %s -o %s"
-         (Filename.quote asm)
-         assemble_cmd
+       run_cmd "echo %s | %s -o %s" (Filename.quote asm) assemble_cmd
          (Filename.quote obj_path);
-       run_cmd "%s %s %s"
-         extract_cmd
-         (Filename.quote obj_path)
+       run_cmd "%s %s %s" extract_cmd (Filename.quote obj_path)
          (Filename.quote bin_path);
-       read_file_bytes bin_path)
+       read_file_bytes bin_path
+     )

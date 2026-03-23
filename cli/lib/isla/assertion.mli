@@ -1,9 +1,11 @@
 type loc =
   | Reg of int * string
   | Mem of string
-(** A location to get data from. [Mem] mean the data at that location in memory *)
+  (** A location to get data from. [Mem] mean the data at that location in memory *)
 
-type op = Eq | Ne
+type op =
+  | Eq
+  | Ne
 
 type atom =
   | CmpCst of loc * op * Z.t
@@ -15,8 +17,7 @@ type expr =
   | Or of expr * expr
   | Not of expr
   | True
-  | False
-(** Boolean expression for a final assertion *)
+  | False  (** Boolean expression for a final assertion *)
 
-val to_dnf : expr -> atom list list
 (** Convert expression to Disjunctive Normal Form *)
+val to_dnf : expr -> atom list list

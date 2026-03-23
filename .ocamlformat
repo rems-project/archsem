@@ -1,0 +1,13 @@
+version=0.28.1
+profile=ocamlformat
+margin=82
+ocp-indent-compat=true
+parens-tuple-patterns=always
+type-decl=sparse
+indicate-multiline-delimiters=closing-on-separate-line
+break-cases=fit
+sequence-style=terminator
+sequence-blank-line=preserve-one
+break-separators=after
+field-space=loose
+doc-comments=before
