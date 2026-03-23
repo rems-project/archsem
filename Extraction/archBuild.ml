@@ -131,8 +131,7 @@ module Build (ArchReq : ArchRequired) = struct
     type t = TM.Coq_archState.t
 
     let make regs memory : t =
-      (* {regs; memory; address_space = default_address_space} *)
-      {regs; memory; address_space = Obj.magic ()}
+      {regs; memory; address_space = default_address_space}
 
     let regs (st : t) = st.regs
 
