@@ -32,8 +32,8 @@ let parse_testfile fmt filename =
         | ".litmus" -> Isla
         | ".archsem" -> Archsem
         | _ ->
-            failwith
-              "Could not guess test format from filename. Only .archsem.toml and \
+            Error.raise_error Config
+              "could not guess test format from filename. Only .archsem.toml and \
                .litmus.toml are supported"
       )
   in
@@ -81,17 +81,17 @@ let run_tests model_name run_test files =
   let num_unexpected = count (fun r -> r = Unexpected) in
   let num_model_error = count (fun r -> r = ModelError) in
   let num_no_behaviour = count (fun r -> r = NoBehaviour) in
-  let num_parse_error = count (fun r -> r = ParseError) in
+  let num_setup_error = count (fun r -> r = SetupError) in
   let total = List.length results in
 
   let failures =
     List.filter (fun (_, r) -> r <> Expected) results
-    |> List.map (fun (f, r) -> (Filename.basename f, result_to_string r))
+    |> List.map (fun (f, r) -> (Filename.basename f, styled_result r))
   in
 
   Terminal.print_summary ~model_name ~total ~expected:num_expected
     ~unexpected:num_unexpected ~model_error:num_model_error
-    ~parse_error:num_parse_error ~no_behaviour:num_no_behaviour ~failures;
+    ~setup_error:num_setup_error ~no_behaviour:num_no_behaviour ~failures;
 
   if num_expected <> total then exit 1
 
@@ -122,12 +122,16 @@ let path_and_conf_term =
     match conf with
     | Some conf -> conf
     | None -> (
-        let file = List.hd files in
+        let file =
+          match files with
+          | f :: _ -> f
+          | [] -> Error.raise_error Config "no test files found"
+        in
         let arch = Arch_id.guess_from_test file in
         match Config.default_path_for_arch arch with
         | Some conf -> conf
         | None ->
-            Printf.ksprintf failwith "Unable to find %s.toml automatically"
+            Error.raise_error Config "unable to find %s.toml automatically"
               (Arch_id.to_string arch)
       )
   in
@@ -179,12 +183,11 @@ let bbm_of_config () =
   | Some "strict" -> Arm.BBM.Strict
   | Some "off" -> Arm.BBM.Off
   | Some s ->
-      Printf.ksprintf failwith
-        "Config key vmp.bbm contains %s which is not off, lax or strict" s
+      Error.raise_error Config
+        "vmp.bbm contains %s which is not off, lax or strict" s
   | _ ->
-      failwith
-        "Config key vmp.bbm is unspecified in config, please specify on CLI with \
-         --bbm"
+      Error.raise_error Config
+        "vmp.bbm is unspecified in config, please specify on CLI with --bbm"
 
 (** The virtual-memory promising command *)
 let cmd_vmp =

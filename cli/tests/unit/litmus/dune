@@ -4,8 +4,8 @@
  (libraries litmus otoml))
 
 (tests
- (names testrepr_test printer_test config_test)
- (modules testrepr_test printer_test config_test)
+ (names testrepr_test printer_test config_test error_test)
+ (modules testrepr_test printer_test config_test error_test)
  (libraries archsem litmus test_utils otoml ounit2)
  (deps
   (glob_files ../../seq/*.toml)

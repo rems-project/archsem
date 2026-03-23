@@ -187,7 +187,8 @@ let parse_bad_file_test =
   in
   "parse_bad_file"
   >::: [ parse_fails "non-positive memory step fails"
-           (Failure "Memory block step must be positive") bad_step_toml;
+           (Error.Cli_error (Parser, "memory block step must be positive"))
+           bad_step_toml;
          parse_fails "size-only memory blocks fail"
            (Otoml.Key_error
               "Failed to retrieve a value at step: field step not found"

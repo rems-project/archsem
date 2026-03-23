@@ -18,9 +18,9 @@ let default_config_tests =
          );
          ("RISCV alias is rejected"
          >:: fun _ ->
-         assert_raises (Failure "unknown architecture: RISCV") (fun () ->
-           ignore (Arch_id.of_string "RISCV")
-         )
+         assert_raises
+           (Error.Cli_error (Parser, "unknown architecture: RISCV"))
+           (fun () -> ignore (Arch_id.of_string "RISCV"))
          );
          ("loads built-in Arm config"
          >:: fun _ ->

@@ -39,7 +39,7 @@ atom:
   | l = loc; "="; v = NUM {
       match l with
       | Reg _ -> CmpCst (l, Eq, v)
-      | Mem _ -> failwith "assertion: use *sym = value for memory comparisons"
+      | Mem _ -> Litmus.Error.raise_error Parser "assertion: use *sym = value for memory comparisons"
     }
   | l1 = loc; "="; l2 = loc { CmpLoc (l1, Eq, l2) }
   | "*"; s = IDENT; "="; v = NUM { CmpCst (Mem s, Eq, v) }
