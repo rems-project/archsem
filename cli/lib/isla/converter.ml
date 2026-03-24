@@ -187,7 +187,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let mem_sizes =
     List.filter_map
       (fun (block : Testrepr.memory_block) ->
-         Option.map (fun sym -> (sym, block.step)) block.sym
+         Option.map (fun sym -> (sym, Testrepr.block_size block)) block.sym
        )
       data_memory
   in
