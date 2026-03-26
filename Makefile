@@ -24,6 +24,7 @@ DIRS+=ArchSemArm
 DIRS+=ArchSemRiscV
 DIRS+=ArchSemX86
 DIRS+=Extraction
+DIRS+=cli
 
 TARFILES=$(DIRS)
 TARFILES+=dune-project Makefile LICENSE
@@ -36,7 +37,7 @@ $(TARBALL): $(TARFILES)
 
 archive: $(TARBALL)
 
-BSD2-SRC=$(foreach dir, $(DIRS), $(wildcard $(dir)/*.v $(dir)/tests/*.v))
+BSD2-SRC=$(shell find $(DIRS) -name '*.v' -o -name '*.ml' -o -name '*.mli' -o -name '*.mll' -o -name '*.mly')
 
 headers:
 	headache -c etc/head_config -h etc/header ${BSD2-SRC}
