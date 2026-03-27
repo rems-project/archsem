@@ -1,0 +1,64 @@
+arch = "Arm"
+name = "MP"
+
+[[registers]]
+  _PC = 1280
+  "R0" = 4096
+  "R1" = 256
+  "R2" = 42
+  "R3" = 4096
+  "R4" = 512
+  "R5" = 1
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
+
+[[registers]]
+  _PC = 1536
+  "R0" = 4096
+  "R1" = 256
+  "R2" = 0
+  "R3" = 4096
+  "R4" = 512
+  "R5" = 0
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = [4162873378, 4163070085]
+
+[[memory]]
+  kind = "code"
+  addr = 1536
+  step = 4
+  data = [4167264389, 4167067682]
+
+[[memory]]
+  addr = 4352
+  step = 8
+  data = 0
+
+[[memory]]
+  addr = 4608
+  step = 8
+  data = 0
+
+[[termCond]]
+  _PC = 1288
+
+[[termCond]]
+  _PC = 1544
+
+[[outcome]]
+  observable = {"1" = {"R5" = 0, "R2" = 42}}
+
+[[outcome]]
+  observable = {"1" = {"R5" = 0, "R2" = 0}}
+
+[[outcome]]
+  observable = {"1" = {"R5" = 1, "R2" = 0}}
+
+[[outcome]]
+  observable = {"1" = {"R5" = 1, "R2" = 42}}
