@@ -102,11 +102,12 @@ module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
 
-(* Allow conversion of an iterable structure of ArchStates into a set*)
-module ArchStateSet = Set.Make(struct
-  type t = Arch.ArchState.t
-  let compare = Stdlib.compare
-end)
+  (* Allow conversion of an iterable structure of ArchStates into a set*)
+  module ArchStateSet = Set.Make (struct
+      type t = Arch.ArchState.t
+
+      let compare = Stdlib.compare
+    end)
 
   let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
     List.for_all
@@ -147,32 +148,36 @@ end)
        )
       mem_conds
 
-  let print_final_regs (fs : ArchState.t) (cond : Testrepr.thread_cond list) : string =
-    String.concat " " (
-    List.concat_map
-      (fun (tid, reqs) ->
-         let regs = ArchState.reg tid fs in
-         List.map
-           (fun (req_name, _) ->
-              let reg = Reg.of_string req_name in
-              let value = RegMap.geti reg regs in
-              Printf.sprintf "%d:%s=%d;" tid req_name value
-            )
-           reqs
-       )
-      cond
-    )
+  let print_final_regs (fs : ArchState.t) (cond : Testrepr.thread_cond list) :
+    string
+    =
+    String.concat " "
+      (List.concat_map
+         (fun (tid, reqs) ->
+            let regs = ArchState.reg tid fs in
+            List.map
+              (fun (req_name, _) ->
+                 let reg = Reg.of_string req_name in
+                 let value = RegMap.geti reg regs in
+                 Printf.sprintf "%d:%s=%d;" tid req_name value
+               )
+              reqs
+          )
+         cond
+      )
 
-  let print_final_mem (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) : string =
+  let print_final_mem (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
+    string
+    =
     let mem = ArchState.mem fs in
-    String.concat " " (
-    List.map
-      (fun (mc : Testrepr.mem_cond) ->
-         let value = MemMap.lookupi mc.addr mc.size mem in
-          Printf.sprintf "[%d]=%d;" mc.addr value
-       )
-      mem_conds
-    )
+    String.concat " "
+      (List.map
+         (fun (mc : Testrepr.mem_cond) ->
+            let value = MemMap.lookupi mc.addr mc.size mem in
+            Printf.sprintf "[%d]=%d;" mc.addr value
+          )
+         mem_conds
+      )
 
   let run_executions ?(print_final_states = false) model init fuel term finals =
     let msgs = ref [] in
@@ -207,16 +212,21 @@ end)
     in
 
     (* Print all observable states if the flag is set *)
-    if print_final_states then
+    if print_final_states then (
       let final_states_set = ArchStateSet.of_list final_states in
-        (* Print number of distinct observed states *)
-        msg(Printf.sprintf "States %d" (ArchStateSet.cardinal final_states_set));
-        let (reg_cond, mem_cond) = List.hd (observable @ unobservable) in
-          ArchStateSet.iter
-            (fun fs -> msg (Printf.sprintf "%s %s" 
-              (print_final_regs fs reg_cond) 
-              (print_final_mem fs mem_cond)))
-            final_states_set
+      (* Print number of distinct observed states *)
+      msg (Printf.sprintf "States %d" (ArchStateSet.cardinal final_states_set));
+      let (reg_cond, mem_cond) = List.hd (observable @ unobservable) in
+      ArchStateSet.iter
+        (fun fs ->
+           msg
+             (Printf.sprintf "%s %s"
+                (print_final_regs fs reg_cond)
+                (print_final_mem fs mem_cond)
+             )
+         )
+        final_states_set
+    )
     else ();
 
     List.iter

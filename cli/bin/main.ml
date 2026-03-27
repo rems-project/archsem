@@ -269,8 +269,11 @@ let cmd_tso =
     let doc = "Disable eager transitions (eager is enabled by default)" in
     Arg.(value & flag & info ["no-eager"] ~doc)
   in
-  let print_final_states = (* propagate this to run_executions. Maybe define new functions to "propagate" to*)
-    let doc = "Print all possible final states of relevant registers / memory locations" in
+  let print_final_states =
+    (* propagate this to run_executions. Maybe define new functions to "propagate" to*)
+    let doc =
+      "Print all possible final states of relevant registers / memory locations"
+    in
     Arg.(value & flag & info ["print-final-states"] ~doc)
   in
   let run =
@@ -282,7 +285,9 @@ let cmd_tso =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
-      (X86Runner.run_litmus_test ~parse ~print_final_states X86.(op_model ~allow_eager tiny_isa))
+      (X86Runner.run_litmus_test ~parse ~print_final_states
+         X86.(op_model ~allow_eager tiny_isa)
+      )
       files
   in
   let info =
