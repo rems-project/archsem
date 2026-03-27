@@ -39,6 +39,8 @@
 
 (** Litmus test runner. *)
 
+open Testrepr
+
 (** {1 Types} *)
 
 type test_result =
@@ -102,6 +104,13 @@ module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
 
+  (* Allow conversion of an iterable structure of ArchStates into a set*)
+  module ArchStateSet = Set.Make (struct
+      type t = Arch.ArchState.t
+
+      let compare = Stdlib.compare
+    end)
+
   let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
     List.for_all
       (fun (tid, reqs) ->
@@ -141,7 +150,59 @@ module Make (Arch : Archsem.Arch) = struct
        )
       mem_conds
 
-  let run_executions model init fuel term finals =
+  let print_final_regs (fs : ArchState.t) (cond : Testrepr.thread_cond list) :
+    string
+    =
+    String.concat " "
+      (List.concat_map
+         (fun (tid, reqs) ->
+            let regs = ArchState.reg tid fs in
+            List.map
+              (fun (req_name, _) ->
+                 let reg = Reg.of_string req_name in
+                 let value = RegMap.geti reg regs in
+                 (* Note that we are making the register name lowercase *)
+                 Printf.sprintf "%d:%s=%d;" tid
+                   (String.lowercase_ascii req_name)
+                   value
+               )
+              reqs
+          )
+         cond
+      )
+
+  (* Convert memory address to corresponding symbol. Returns "?" if symbol is None. *)
+  let mem_addr_to_symbol (addr : int) (mem_blocks : memory_block list) : string =
+    let mem_block =
+      List.find (fun (mb : memory_block) -> mb.addr = addr) mem_blocks
+    in
+    match mem_block.sym with Some symbol -> symbol | None -> "?"
+
+  let print_final_mem
+        (fs : ArchState.t)
+        (mem_conds : Testrepr.mem_cond list)
+        (mem_blocks : memory_block list) : string
+    =
+    let mem = ArchState.mem fs in
+    String.concat " "
+      (List.map
+         (fun (mc : Testrepr.mem_cond) ->
+            let mem_symbol = mem_addr_to_symbol mc.addr mem_blocks in
+            let value = MemMap.lookupi mc.addr mc.size mem in
+            Printf.sprintf "[%s]=%d;" mem_symbol value
+          )
+         mem_conds
+      )
+
+  let run_executions
+        ?(print_final_states = false)
+        model
+        init
+        fuel
+        term
+        finals
+        mem_blocks
+    =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -172,6 +233,24 @@ module Make (Arch : Archsem.Arch) = struct
         (function ArchModel.Res.Flagged x -> Some x | _ -> None)
         results
     in
+
+    (* Print all observable states if the flag is set *)
+    if print_final_states then (
+      let final_states_set = ArchStateSet.of_list final_states in
+      (* Print number of distinct observed states *)
+      msg (Printf.sprintf "States %d" (ArchStateSet.cardinal final_states_set));
+      let (reg_cond, mem_cond) = List.hd (observable @ unobservable) in
+      ArchStateSet.iter
+        (fun fs ->
+           msg
+             (Printf.sprintf "%s %s"
+                (print_final_regs fs reg_cond)
+                (print_final_mem fs mem_cond mem_blocks)
+             )
+         )
+        final_states_set
+    )
+    else ();
 
     List.iter
       (fun e ->
@@ -232,12 +311,13 @@ module Make (Arch : Archsem.Arch) = struct
     in
     (result, List.rev !msgs)
 
-  let run_testrepr model (test : Testrepr.t) =
+  let run_testrepr ?(print_final_states = false) model (test : Testrepr.t) =
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
-    run_executions model init fuel term test.finals
+    run_executions ~print_final_states model init fuel term test.finals
+      test.memory
 
-  let run_litmus_test ~parse model filename =
+  let run_litmus_test ~parse ?(print_final_states = false) model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
       Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset
@@ -247,18 +327,19 @@ module Make (Arch : Archsem.Arch) = struct
     else
       try
         let test = parse filename in
-        let (result, msgs) = run_testrepr model test in
+        let (result, msgs) = run_testrepr ~print_final_states model test in
         let (icon, color) =
           match result with
           | Expected -> (Terminal.check, Terminal.green)
           | Unexpected -> (Terminal.cross, Terminal.yellow)
           | _ -> (Terminal.cross, Terminal.red)
         in
-        Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
-        List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
+        Printf.printf "%s%s%s %s\n" color icon Terminal.reset name;
+        Printf.printf "Test %s Allowed\n" test.name;
+        List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
       with Otoml.Parse_error (pos, msg) ->
-        Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
+        Printf.printf "%s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
           Terminal.reset name Terminal.red
           (Option.fold ~none:"?"
              ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)
