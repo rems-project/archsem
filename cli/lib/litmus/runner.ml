@@ -39,6 +39,8 @@
 
 (** Litmus test runner. *)
 
+open Testrepr
+
 (** {1 Types} *)
 
 type test_result =
@@ -159,27 +161,48 @@ module Make (Arch : Archsem.Arch) = struct
               (fun (req_name, _) ->
                  let reg = Reg.of_string req_name in
                  let value = RegMap.geti reg regs in
-                 Printf.sprintf "%d:%s=%d;" tid req_name value
+                 (* Note that we are making the register name lowercase *)
+                 Printf.sprintf "%d:%s=%d;" tid
+                   (String.lowercase_ascii req_name)
+                   value
                )
               reqs
           )
          cond
       )
 
-  let print_final_mem (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
-    string
+  (* Convert memory address to corresponding symbol. Returns "?" if symbol is None. *)
+  let mem_addr_to_symbol (addr : int) (mem_blocks : memory_block list) : string =
+    let mem_block =
+      List.find (fun (mb : memory_block) -> mb.addr = addr) mem_blocks
+    in
+    match mem_block.sym with Some symbol -> symbol | None -> "?"
+
+  let print_final_mem
+        (fs : ArchState.t)
+        (mem_conds : Testrepr.mem_cond list)
+        (mem_blocks : memory_block list) : string
     =
     let mem = ArchState.mem fs in
     String.concat " "
       (List.map
          (fun (mc : Testrepr.mem_cond) ->
+            let mem_symbol = mem_addr_to_symbol mc.addr mem_blocks in
             let value = MemMap.lookupi mc.addr mc.size mem in
-            Printf.sprintf "[%d]=%d;" mc.addr value
+            Printf.sprintf "[%s]=%d;" mem_symbol value
           )
          mem_conds
       )
 
-  let run_executions ?(print_final_states = false) model init fuel term finals =
+  let run_executions
+        ?(print_final_states = false)
+        model
+        init
+        fuel
+        term
+        finals
+        mem_blocks
+    =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -222,7 +245,7 @@ module Make (Arch : Archsem.Arch) = struct
            msg
              (Printf.sprintf "%s %s"
                 (print_final_regs fs reg_cond)
-                (print_final_mem fs mem_cond)
+                (print_final_mem fs mem_cond mem_blocks)
              )
          )
         final_states_set
@@ -292,6 +315,7 @@ module Make (Arch : Archsem.Arch) = struct
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
     run_executions ~print_final_states model init fuel term test.finals
+      test.memory
 
   let run_litmus_test ~parse ?(print_final_states = false) model filename =
     let name = Filename.basename filename in
@@ -311,6 +335,7 @@ module Make (Arch : Archsem.Arch) = struct
           | _ -> (Terminal.cross, Terminal.red)
         in
         Printf.printf "%s%s%s %s\n" color icon Terminal.reset name;
+        Printf.printf "Test %s Allowed\n" test.name;
         List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
       with Otoml.Parse_error (pos, msg) ->

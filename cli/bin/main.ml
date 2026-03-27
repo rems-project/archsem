@@ -270,7 +270,6 @@ let cmd_tso =
     Arg.(value & flag & info ["no-eager"] ~doc)
   in
   let print_final_states =
-    (* propagate this to run_executions. Maybe define new functions to "propagate" to*)
     let doc =
       "Print all possible final states of relevant registers / memory locations"
     in
