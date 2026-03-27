@@ -174,7 +174,7 @@ end)
       mem_conds
     )
 
-  let run_executions model init fuel term finals print_final_states =
+  let run_executions ?(print_final_states = false) model init fuel term finals =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -278,10 +278,10 @@ end)
     in
     (result, List.rev !msgs)
 
-  let run_testrepr model (test : Testrepr.t) print_final_states =
+  let run_testrepr ?(print_final_states = false) model (test : Testrepr.t) =
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
-    run_executions model init fuel term test.finals print_final_states
+    run_executions ~print_final_states model init fuel term test.finals
 
   let run_litmus_test ~parse ?(print_final_states = false) model filename =
     let name = Filename.basename filename in
@@ -293,7 +293,7 @@ end)
     else
       try
         let test = parse filename in
-        let (result, msgs) = run_testrepr model test print_final_states in
+        let (result, msgs) = run_testrepr ~print_final_states model test in
         let (icon, color) =
           match result with
           | Expected -> (Terminal.check, Terminal.green)
