@@ -53,6 +53,8 @@ module X86Runner = Runner.Make (X86)
 
 (** {1 Running litmus tests} *)
 
+(** {2 Running litmus tests utilities} *)
+
 type format =
   | Archsem
   | Isla
@@ -136,7 +138,7 @@ let run_tests model_name run_test files =
 
   if num_expected <> total then exit 1
 
-(** {1 CLI } *)
+(** {2 Running litmus tests cli } *)
 
 open Cmdliner
 open Cmdliner.Term.Syntax
@@ -286,12 +288,77 @@ let cmd_tso =
   in
   Cmd.v info run
 
+(** {1 converter subcommand} *)
+
+(** Compute the target filename from the source filename and the content of the
+    [-o] option *)
+let convert_output filename =
+  let open Filename in
+  function
+  | Some s ->
+      (* If it's a target file, use as-is, otherwise assume it's a directory*)
+      if check_suffix s ".toml" then s
+      else if Sys.is_directory s then
+        let base = filename |> basename |> remove_extension |> remove_extension in
+        concat s (base ^ ".archsem.toml")
+      else Printf.ksprintf failwith "Can't find target directory %s" s
+  | None ->
+      let name = filename |> remove_extension |> remove_extension in
+      name ^ ".archsem.toml"
+
+let convert files parse output =
+  (* TODO error handling *)
+  let open Filename in
+  if
+    List.length files != 1
+    && match output with None -> false | Some o -> check_suffix o ".toml"
+  then (
+    Printf.eprintf
+      "Received more than one file as arguments, but target is a single toml file";
+    exit 1
+  );
+  List.iter
+    (fun filename ->
+       let output = convert_output filename output in
+       if Sys.file_exists output then
+         Printf.ksprintf failwith "Target file already exists: %s" output;
+       let t = parse filename in
+       Litmus.Printer.to_file output t
+     )
+    files
+
+let cmd_convert =
+  let output_term =
+    let doc =
+      "Output file (if ending in .toml) or folder otherwise. By default add the \
+       result of conversion next to the input file"
+    in
+    Arg.(value & opt (some string) None & info ["o"; "output"] ~doc)
+  in
+  let run =
+    let+ files = path_and_conf_term
+    and+ fmt = format_term
+    and+ output = output_term in
+    let parse = parse_testfile fmt in
+    convert files parse output
+  in
+  let info =
+    let doc =
+      "Convert isla tests to archsem test (Can also convert archsem test to \
+       archsem test to get a canonical representation or for debugging)"
+    in
+    Cmd.(info "convert" ~doc)
+  in
+  Cmd.v info run
+
+(** {1 Top level} *)
+
 (** The main archsem command *)
 let cmd =
   let info =
     let doc = "ArchSem model runner" in
     Cmd.(info "archsem" ~doc)
   in
-  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp; cmd_tso]
+  Cmd.group info [cmd_seq; cmd_ump; cmd_vmp; cmd_tso; cmd_convert]
 
 let () = exit (Cmd.eval cmd)
