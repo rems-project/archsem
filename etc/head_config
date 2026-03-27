@@ -1,1 +1,4 @@
     | ".*\\.v"         -> frame open:"(*" line:"*" close:"*)"
+    | ".*\\.mll?"      -> frame open:"(*" line:"*" close:"*)"
+    | ".*\\.mly"       -> frame open:"(*" line:"*" close:"*)"
+    | ".*\\.mli"       -> frame open:"(*" line:"*" close:"*)"
