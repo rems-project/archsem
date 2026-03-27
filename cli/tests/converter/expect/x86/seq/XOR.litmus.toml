@@ -1,0 +1,34 @@
+arch = "X86"
+name = "x86-XOR"
+
+[[registers]]
+  rip = 1280
+  rax = 17
+  rcx = 257
+  rflags = 12288
+  rdx = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 1
+  data = [72, 49, 200]
+
+[[termCond]]
+  rip = 1283
+
+[[outcome]]
+  observable = {"0" = {rax = 272}}

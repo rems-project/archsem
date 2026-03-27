@@ -1,0 +1,66 @@
+arch = "Arm"
+name = "BBMSuccess"
+
+[[registers]]
+  _PC = 549755815168
+  "R0" = 549755817984
+  "R1" = 0
+  "R2" = 549755879432
+  "R3" = 0
+  "TTBR0_EL1" = 524288
+  "TCR_EL1" = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0
+  PSTATE = {EL = 1, SP = 1}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = [4163004451, 3573758623, 3574104864, 3573758879, 3573759967]
+
+[[memory]]
+  addr = 4096
+  step = 8
+  data = 42
+
+[[memory]]
+  addr = 524288
+  step = 8
+  data = 0
+
+[[memory]]
+  addr = 524296
+  step = 8
+  data = 530435
+
+[[memory]]
+  addr = 528384
+  step = 8
+  data = 532483
+
+[[memory]]
+  addr = 532480
+  step = 8
+  data = 536579
+
+[[memory]]
+  addr = 536576
+  step = 8
+  data = 18014398509483907
+
+[[memory]]
+  addr = 536584
+  step = 8
+  data = 27021597764228995
+
+[[memory]]
+  addr = 536704
+  step = 8
+  data = 27021597764761347
+
+[[termCond]]
+  _PC = 549755815188
+
+[[outcome]]
+  observable = {"0" = {"R3" = 0}}

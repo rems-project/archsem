@@ -18,7 +18,7 @@ license: "BSD-2-Clause"
 homepage: "https://github.com/rems-project/archsem"
 bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
-  "dune" {>= "3.8"}
+  "dune" {>= "3.14"}
   "coq" {>= "9.0"}
   "coq-stdlib"
   "coq-equations" {>= "1.3"}

@@ -1,0 +1,119 @@
+arch = "x86"
+name = "IRIW"
+
+[[registers]]
+  rip = 1280
+  rcx = 4352
+  rflags = 12288
+
+[[registers]]
+  rip = 1536
+  rax = 0
+  rbx = 0
+  rcx = 4352
+  rdx = 4608
+  rflags = 12288
+
+[[registers]]
+  rip = 1792
+  rdx = 4608
+  rflags = 12288
+
+[[registers]]
+  rip = 2048
+  rax = 0
+  rbx = 0
+  rcx = 4352
+  rdx = 4608
+  rflags = 12288
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 1
+  data = [199, 1, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 1536
+  step = 1
+  data = [139, 1, 139, 26]
+
+[[memory]]
+  kind = "code"
+  addr = 1792
+  step = 1
+  data = [199, 2, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 2048
+  step = 1
+  data = [139, 2, 139, 25]
+
+[[memory]]
+  addr = 4352
+  step = 8
+  data = 0
+
+[[memory]]
+  addr = 4608
+  step = 8
+  data = 0
+
+[[termCond]]
+  rip = 1286
+
+[[termCond]]
+  rip = 1540
+
+[[termCond]]
+  rip = 1798
+
+[[termCond]]
+  rip = 2052
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 0}, "3" = {rax = 0, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 0}, "3" = {rax = 0, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 0}, "3" = {rax = 1, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 0}, "3" = {rax = 1, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 1}, "3" = {rax = 0, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 1}, "3" = {rax = 0, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 1}, "3" = {rax = 1, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 0, rbx = 1}, "3" = {rax = 1, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 0, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 0, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 1, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 1}, "3" = {rax = 0, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 1}, "3" = {rax = 0, rbx = 1}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 1}, "3" = {rax = 1, rbx = 0}}
+
+[[outcome]]
+  observable = {"1" = {rax = 1, rbx = 1}, "3" = {rax = 1, rbx = 1}}

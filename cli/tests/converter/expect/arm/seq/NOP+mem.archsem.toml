@@ -1,0 +1,26 @@
+arch = "Arm"
+name = "NOP+mem"
+
+[[registers]]
+  _PC = 1280
+  "R0" = 0
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = 3573751839
+
+[[memory]]
+  sym = "x"
+  addr = 1536
+  step = 4
+  data = 42
+
+[[termCond]]
+  _PC = 1284
+
+[[outcome]]
+  observable = {"0" = {"R0" = 0}, mem = {x = 42}}
