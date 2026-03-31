@@ -220,7 +220,7 @@ Module Memory.
       TermModel memoryMap *)
   Definition to_memMap (init : initial) (mem : t) : memoryMap:=
     let final :=
-      foldl (λ nmem ev, insert ev.(Msg.loc) ev.(Msg.val) nmem) init mem
+      foldr (λ ev nmem, insert ev.(Msg.loc) ev.(Msg.val) nmem) init mem
     in
     map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
 
