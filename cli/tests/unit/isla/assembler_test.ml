@@ -40,51 +40,91 @@
 (** Unit tests for Isla.Assembler. *)
 
 open OUnit2
+open Isla.Assembler
+
+let make_input ?(symbols = []) sections : assembly_input = {sections; symbols}
+
+let section ?(fixed_addr = None) name code : section = {name; code; fixed_addr}
+
+let sym name size : data_symbol = {name; init_bytes = Bytes.make size '\x00'}
+
+let find_section name (result : assembly_result) =
+  List.find (fun (s : linked_section) -> s.name = name) result.sections
+
+let test_assemble_single_thread _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input ~symbols:[sym "x" 8] [section "thread0" "\tMOV W1, #42\n"]
+  in
+  let result = assemble input in
+  let x_addr = resolve_symbol result "x" in
+  assert_bool "x address > 0" (x_addr > 0);
+  let thread0 = find_section "thread0" result in
+  assert_equal ~printer:string_of_int 4 (Bytes.length thread0.data)
+
+let test_assemble_multiple_threads _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input
+      [ section "thread0" "\tMOV W1, #1\n";
+        section "thread1" "\tMOV W2, #2\n\tMOV W3, #3\n"
+      ]
+  in
+  let result = assemble input in
+  let t0 = find_section "thread0" result in
+  let t1 = find_section "thread1" result in
+  assert_equal ~printer:string_of_int ~msg:"thread0 size" 4 (Bytes.length t0.data);
+  assert_equal ~printer:string_of_int ~msg:"thread1 size" 8 (Bytes.length t1.data);
+  assert_bool "different addresses" (t0.addr <> t1.addr)
+
+let test_assemble_multiple_symbols _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input ~symbols:[sym "x" 8; sym "y" 8] [section "thread0" "\tNOP\n"]
+  in
+  let result = assemble input in
+  let x_addr = resolve_symbol result "x" in
+  let y_addr = resolve_symbol result "y" in
+  assert_bool "different addresses" (x_addr <> y_addr)
+
+let test_assemble_no_symbols _ =
+  Test_utils.setup_arm ();
+  let input = make_input [section "thread0" "\tNOP\n"] in
+  let result = assemble input in
+  assert_equal ~msg:"0 symbols" 0 (List.length result.symbols);
+  let t0 = find_section "thread0" result in
+  assert_equal ~printer:string_of_int ~msg:"NOP = 4 bytes" 4 (Bytes.length t0.data)
+
+let test_assemble_fixed_addr _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input
+      [ section ~fixed_addr:(Some 0x10000) "handler0" "\tRET\n";
+        section "thread0" "\tMOV W1, #1\n"
+      ]
+  in
+  let result = assemble input in
+  let handler = find_section "handler0" result in
+  assert_equal ~printer:string_of_int ~msg:"handler0 addr" 0x10000 handler.addr;
+  assert_equal ~printer:string_of_int ~msg:"handler0 size" 4
+    (Bytes.length handler.data)
+
+let test_resolve_unknown_raises _ =
+  Test_utils.setup_arm ();
+  let input = make_input [section "thread0" "\tNOP\n"] in
+  let result = assemble input in
+  assert_raises (Failure "assembler: symbol \"nonexistent\" not found") (fun () ->
+    resolve_symbol result "nonexistent"
+  )
 
 let tests =
   "Isla.Assembler"
-  >::: [ ("assemble ARM: 4 bytes"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let result = Isla.Assembler.assemble "MOV W1, #42" in
-         assert_equal 4 (Bytes.length result)
-         );
-         ("assemble ARM: MOV W1,#42 bytes"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let result = Isla.Assembler.assemble "MOV W1, #42" in
-         assert_equal (Bytes.of_string "\x41\x05\x80\x52") result
-         );
-         ("assemble ARM: branch with label resolves"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let result = Isla.Assembler.assemble "\tCBNZ W0,LC00\nLC00:\n\tISB" in
-         assert_equal (Bytes.of_string "\x20\x00\x00\x35\xdf\x3f\x03\xd5") result
-         );
-         ("assemble ARM: 2 instructions bytes"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let result = Isla.Assembler.assemble "MOV X0, #1\nSTR X0, [X1]" in
-         assert_equal (Bytes.of_string "\x20\x00\x80\xd2\x20\x00\x00\xf9") result
-         );
-         ("assemble X86: nop"
-         >:: fun _ ->
-         Test_utils.setup_x86 ();
-         let result = Isla.Assembler.assemble "nop" in
-         assert_equal (Bytes.of_string "\x90") result
-         );
-         ("assemble X86: xorq bytes"
-         >:: fun _ ->
-         Test_utils.setup_x86 ();
-         let result = Isla.Assembler.assemble "xorq %rcx, %rax" in
-         assert_equal (Bytes.of_string "\x48\x31\xc8") result
-         );
-         ("assemble X86: 2 instructions"
-         >:: fun _ ->
-         Test_utils.setup_x86 ();
-         let result = Isla.Assembler.assemble "nop\nretq" in
-         assert_equal (Bytes.of_string "\x90\xc3") result
-         )
+  >::: [ "single thread + symbol" >:: test_assemble_single_thread;
+         "multiple threads" >:: test_assemble_multiple_threads;
+         "multiple symbols" >:: test_assemble_multiple_symbols;
+         "no symbols" >:: test_assemble_no_symbols;
+         "fixed-addr section" >:: test_assemble_fixed_addr;
+         "resolve unknown raises" >:: test_resolve_unknown_raises
        ]
 
 let () = run_test_tt_main tests

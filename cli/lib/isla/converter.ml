@@ -37,10 +37,18 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Orchestrate isla-to-Litmus.Testrepr.t conversion. *)
+(** Convert isla IR to Testrepr.t.
+
+    Pipeline: IR -> assembly_input -> Assembler.assemble -> Testrepr.t
+    1. Config: arch-specific defaults (PC register, instruction step, memory size)
+    2. IR -> assembly_input: thread code -> sections, symbolic vars -> data symbols
+    3. Assembler.assemble: .s + .ld -> clang+lld -> linksem -> assembly_result
+    4. assembly_result -> Testrepr.t: memory blocks, registers, termination, finals *)
 
 open Litmus
 module RegValGen = Archsem.RegValGen
+
+(* {1 Step 1: Config helpers} *)
 
 let regval_of_toml = function
   | Otoml.TomlInteger i -> RegValGen.Number (Z.of_int i)
@@ -77,11 +85,141 @@ let instruction_step () =
 
 let default_memory_size () =
   let size =
-    Otoml.find_or ~default:8 (Config.get ()) Otoml.get_integer
-      ["isla"; "default_memory_size"]
+    Otoml.find (Config.get ()) Otoml.get_integer ["isla"; "default_memory_size"]
   in
   if size <= 0 then failwith "config: [isla] default_memory_size must be positive";
   size
+
+(* {1 Step 2: IR -> assembly_input} *)
+
+let z_of_value asm_result = function
+  | Ir.Int z -> z
+  | Ir.Sym sym -> Z.of_int (Assembler.resolve_symbol asm_result sym)
+
+let init_bytes_of_value mem_size sym value =
+  if Z.numbits value > mem_size * 8 then
+    failwith ("Number doesn't fit in symbol " ^ sym);
+  let data = Bytes.make mem_size '\x00' in
+  let bits = Z.to_bits value in
+  Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
+  data
+
+let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
+  let mem_size = default_memory_size () in
+  let code_sections =
+    List.mapi
+      (fun i (thread : Ir.thread) ->
+         { Assembler.name = Printf.sprintf "thread%d" i;
+           code = thread.code;
+           fixed_addr = None
+         }
+       )
+      ir.threads
+  in
+  let data_symbols =
+    List.map
+      (fun sym ->
+         let init_value =
+           List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
+         in
+         let value =
+           match init_value with
+           | Ir.Int z -> z
+           | Ir.Sym s ->
+               failwith
+                 ("symbol-valued location initializer not supported (cannot \
+                   resolve " ^ s ^ " before linking)"
+                 )
+         in
+         { Assembler.name = sym;
+           init_bytes = init_bytes_of_value mem_size sym value
+         }
+       )
+      ir.symbolic
+  in
+  {sections = code_sections; symbols = data_symbols}
+
+(* {1 Step 4: assembly_result -> Testrepr.t (memory, registers, termination)} *)
+
+(** Convert linked sections and symbols into Testrepr memory blocks. *)
+let build_memory (asm_result : Assembler.assembly_result) =
+  let code_step = instruction_step () in
+  let mem_size = default_memory_size () in
+  let code_memory =
+    List.map
+      (fun (sec : Assembler.linked_section) ->
+         { Testrepr.addr = sec.addr;
+           step = code_step;
+           data = sec.data;
+           sym = None;
+           kind = Testrepr.Code
+         }
+       )
+      asm_result.sections
+  in
+  let data_memory =
+    List.map
+      (fun (lsym : Assembler.linked_symbol) ->
+         { Testrepr.addr = lsym.addr;
+           step = mem_size;
+           data = lsym.sym.init_bytes;
+           sym = Some lsym.sym.name;
+           kind = Testrepr.Data
+         }
+       )
+      asm_result.symbols
+  in
+  code_memory @ data_memory
+
+let find_section name (asm_result : Assembler.assembly_result) =
+  List.find
+    (fun (s : Assembler.linked_section) -> s.name = name)
+    asm_result.sections
+
+(** Build per-thread initial register maps: PC + user init + config defaults. *)
+let build_registers
+      ~arch
+      (asm_result : Assembler.assembly_result)
+      (threads : Ir.thread list)
+  =
+  List.mapi
+    (fun i (thread : Ir.thread) ->
+       let sec = find_section (Printf.sprintf "thread%d" i) asm_result in
+       let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int sec.addr)) in
+       let used_regs =
+         List.map
+           (fun (reg, value) ->
+              (reg, RegValGen.Number (z_of_value asm_result value))
+            )
+           thread.init
+       in
+       let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
+       let default_regs =
+         List.filter_map
+           (fun (reg, value) -> if has reg then None else Some (reg, value))
+           (register_defaults ())
+       in
+       (pc_entry :: used_regs) @ default_regs
+     )
+    threads
+
+(** Build per-thread termination conditions (PC at end of code).
+    TODO: support additional conditions (e.g. exceptions, watchpoints). *)
+let build_term_cond
+      ~arch
+      (asm_result : Assembler.assembly_result)
+      (threads : Ir.thread list)
+  =
+  let pc = pc_reg arch in
+  List.mapi
+    (fun i _thread ->
+       let sec = find_section (Printf.sprintf "thread%d" i) asm_result in
+       let end_pc = Z.of_int (sec.addr + Bytes.length sec.data) in
+       [(pc, RegValGen.Number end_pc)]
+     )
+    threads
+
+(* {1 Step 4: assembly_result -> Testrepr.t (final conditions)} *)
 
 let reg_requirement op value =
   let value = RegValGen.Number value in
@@ -94,50 +232,59 @@ let mem_requirement op value =
   | Assertion.Eq -> Testrepr.MemEq value
   | Assertion.Ne -> Testrepr.MemNe value
 
-let atoms_to_conds ~resolve_sym ~memory_size atoms =
-  let (reg_atoms, mem_atoms) =
-    List.fold_left
-      (fun (reg_atoms, mem_atoms) atom ->
-         match atom with
-         | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
-             ((tid, reg, reg_requirement op value) :: reg_atoms, mem_atoms)
-         | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
-             let mem_cond : Testrepr.mem_cond =
-               { sym;
-                 addr = resolve_sym sym;
-                 size = memory_size sym;
-                 req = mem_requirement op value
-               }
-             in
-             (reg_atoms, mem_cond :: mem_atoms)
-         | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
-             failwith
-               "assertion: register-to-location comparisons are not supported"
-         | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-             failwith
-               "assertion: memory-to-location comparisons are not supported"
+(** Convert a single assertion atom into a register or memory condition. *)
+let atom_to_cond (asm_result : Assembler.assembly_result) atom =
+  match atom with
+  | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
+      `Reg (tid, reg, reg_requirement op value)
+  | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
+      let lsym =
+        List.find
+          (fun (s : Assembler.linked_symbol) -> s.sym.name = sym)
+          asm_result.symbols
+      in
+      `Mem
+        ( { Testrepr.sym;
+            addr = lsym.addr;
+            size = Bytes.length lsym.sym.init_bytes;
+            req = mem_requirement op value
+          }
+         : Testrepr.mem_cond
+         )
+  | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
+      failwith "assertion: register-to-location comparisons are not supported"
+  | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
+      failwith "assertion: memory-to-location comparisons are not supported"
+
+(** Partition atoms into per-thread register conditions and memory conditions. *)
+let atoms_to_conds (asm_result : Assembler.assembly_result) atoms =
+  let (reg_conds, mem_conds) =
+    List.partition_map
+      (fun atom ->
+         match atom_to_cond asm_result atom with
+         | `Reg (t, r, req) -> Left (t, r, req)
+         | `Mem m -> Right m
        )
-      ([], []) atoms
-  in
-  let reg_atoms = List.rev reg_atoms and mem_atoms = List.rev mem_atoms in
-  let tids =
-    List.sort_uniq compare (List.map (fun (tid, _, _) -> tid) reg_atoms)
+      atoms
   in
   let thread_conds =
-    List.map
-      (fun tid ->
-         let reqs =
-           List.filter_map
-             (fun (tid', reg, req) -> if tid' = tid then Some (reg, req) else None)
-             reg_atoms
-         in
-         (tid, reqs)
+    let sorted =
+      List.sort (fun (t1, _, _) (t2, _, _) -> compare t1 t2) reg_conds
+    in
+    List.fold_left
+      (fun acc (tid, reg, req) ->
+         match acc with
+         | (tid', reqs) :: rest when tid' = tid ->
+             (tid', reqs @ [(reg, req)]) :: rest
+         | _ -> (tid, [(reg, req)]) :: acc
        )
-      tids
+      [] sorted
+    |> List.rev
   in
-  (thread_conds, mem_atoms)
+  (thread_conds, mem_conds)
 
-let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
+let build_finals ~expect_is_sat (asm_result : Assembler.assembly_result) assertion
+  =
   let (is_observable, dnf) =
     match assertion with
     | Assertion.Not e -> (not expect_is_sat, Assertion.to_dnf e)
@@ -147,111 +294,27 @@ let to_final_conds ~expect_is_sat ~resolve_sym ~memory_size assertion =
     (fun conj ->
        if conj = [] then None
        else
-         let (thread_conds, mem_conds) =
-           atoms_to_conds ~resolve_sym ~memory_size conj
-         in
+         let (thread_conds, mem_conds) = atoms_to_conds asm_result conj in
          if is_observable then Some (Testrepr.Observable (thread_conds, mem_conds))
          else Some (Testrepr.Unobservable (thread_conds, mem_conds))
      )
     dnf
 
-let z_of_value syms = function
-  | Ir.Int z -> z
-  | Ir.Sym sym -> Z.of_int (Symbols.resolve syms sym)
-
-let build_registers syms ~arch pc (thread : Ir.thread) =
-  let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
-  let used_regs =
-    List.map
-      (fun (reg, value) -> (reg, RegValGen.Number (z_of_value syms value)))
-      thread.init
-  in
-  let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
-  let default_regs =
-    List.filter_map
-      (fun (reg, value) -> if has reg then None else Some (reg, value))
-      (register_defaults ())
-  in
-  (pc_entry :: used_regs) @ default_regs
-
-let build_code_memory ~step addr data =
-  {Testrepr.addr; step; data; sym = None; kind = Testrepr.Code}
-
-let build_data_memory syms sym addr init_value =
-  let mem_size = default_memory_size () in
-  let value = z_of_value syms init_value in
-  if Z.numbits value > mem_size * 8 then
-    failwith ("Number doesn't fit in symbol " ^ sym);
-  let data = Bytes.make mem_size '\x00' in
-  let bits = Z.to_bits value in
-  Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
-  {Testrepr.addr; step = mem_size; data; sym = Some sym; kind = Testrepr.Data}
+(* {1 Orchestration: to_testrepr} *)
 
 let to_testrepr (ir : Ir.t) : Testrepr.t =
-  let syms = Symbols.empty () in
-  List.iter (Symbols.alloc_sym syms) ir.symbolic;
-  let encoded_threads =
-    List.map
-      (fun (thread : Ir.thread) ->
-         let enc = Assembler.assemble thread.code in
-         let code_addr = Symbols.alloc_page syms in
-         (thread, enc, code_addr)
-       )
-      ir.threads
-  in
-  let code_step = instruction_step () in
-  let registers =
-    List.map
-      (fun (thread, _, code_addr) ->
-         build_registers syms ~arch:ir.arch code_addr thread
-       )
-      encoded_threads
-  in
-  let code_memory =
-    List.map
-      (fun (_, enc, code_addr) -> build_code_memory ~step:code_step code_addr enc)
-      encoded_threads
-  in
-  let data_memory =
-    List.map
-      (fun sym ->
-         let addr = Symbols.resolve syms sym in
-         let init_value =
-           List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
-         in
-         build_data_memory syms sym addr init_value
-       )
-      ir.symbolic
-  in
-  let mem_sizes =
-    List.filter_map
-      (fun (block : Testrepr.memory_block) ->
-         Option.map (fun sym -> (sym, Testrepr.block_size block)) block.sym
-       )
-      data_memory
-  in
-  let memory_size sym =
-    match List.assoc_opt sym mem_sizes with
-    | Some size -> size
-    | None -> failwith ("isla: unknown memory size for symbol: " ^ sym)
-  in
-  let term_cond =
-    let pc = pc_reg ir.arch in
-    List.map
-      (fun (_, enc, code_addr) ->
-         let end_pc = Z.of_int (code_addr + Bytes.length enc) in
-         [(pc, RegValGen.Number end_pc)]
-       )
-      encoded_threads
-  in
+  let asm_input = to_assembly_input ir in
+  let asm_result = Assembler.assemble asm_input in
+  let registers = build_registers ~arch:ir.arch asm_result ir.threads in
+  let memory = build_memory asm_result in
+  let term_cond = build_term_cond ~arch:ir.arch asm_result ir.threads in
   let finals =
-    to_final_conds ~expect_is_sat:(ir.expect = Ir.Sat)
-      ~resolve_sym:(Symbols.resolve syms) ~memory_size ir.assertion
+    build_finals ~expect_is_sat:(ir.expect = Ir.Sat) asm_result ir.assertion
   in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
     registers;
-    memory = code_memory @ data_memory;
+    memory;
     term_cond;
     finals
   }
