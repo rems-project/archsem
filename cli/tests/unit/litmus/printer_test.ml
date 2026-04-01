@@ -37,7 +37,7 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Round-trip tests for Litmus_printer. *)
+(** Round-trip tests for {!Litmus.Printer}. *)
 
 open OUnit2
 open Litmus

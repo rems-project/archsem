@@ -41,43 +41,33 @@
 
 open OUnit2
 
+let with_empty f =
+  Test_utils.setup_arm ();
+  f (Isla.Symbols.empty ())
+
+let case label f = label >:: fun _ -> with_empty f
+
 let tests =
   "Isla.Symbols"
-  >::: [ ("empty table resolves nothing"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let s0 = Isla.Symbols.empty () in
-         assert_equal None (Isla.Symbols.resolve_opt s0 "x")
+  >::: [ case "empty table resolves nothing" (fun s0 ->
+           assert_equal None (Isla.Symbols.resolve_opt s0 "x")
          );
-         ("alloc_data returns address"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let s0 = Isla.Symbols.empty () in
-         let addr = Isla.Symbols.resolve_or_alloc s0 "x" in
-         assert_equal 0x500 addr
+         case "alloc_data returns address" (fun s0 ->
+           assert_equal 0x500 (Isla.Symbols.resolve_or_alloc s0 "x")
          );
-         ("resolve after alloc"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let s0 = Isla.Symbols.empty () in
-         Isla.Symbols.alloc_sym s0 "x";
-         assert_equal 0x500 (Isla.Symbols.resolve s0 "x")
+         case "resolve after alloc" (fun s0 ->
+           Isla.Symbols.alloc_sym s0 "x";
+           assert_equal 0x500 (Isla.Symbols.resolve s0 "x")
          );
-         ("first alloc unchanged after second"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let s0 = Isla.Symbols.empty () in
-         let a1 = Isla.Symbols.resolve_or_alloc s0 "x" in
-         Isla.Symbols.alloc_sym s0 "y";
-         assert_equal a1 (Isla.Symbols.resolve s0 "x")
+         case "first alloc unchanged after second" (fun s0 ->
+           let a1 = Isla.Symbols.resolve_or_alloc s0 "x" in
+           Isla.Symbols.alloc_sym s0 "y";
+           assert_equal a1 (Isla.Symbols.resolve s0 "x")
          );
-         ("duplicate alloc returns same address"
-         >:: fun _ ->
-         Test_utils.setup_arm ();
-         let s0 = Isla.Symbols.empty () in
-         let a1 = Isla.Symbols.resolve_or_alloc s0 "x" in
-         let a2 = Isla.Symbols.resolve_or_alloc s0 "x" in
-         assert_equal a1 a2
+         case "duplicate alloc returns same address" (fun s0 ->
+           let a1 = Isla.Symbols.resolve_or_alloc s0 "x" in
+           let a2 = Isla.Symbols.resolve_or_alloc s0 "x" in
+           assert_equal a1 a2
          )
        ]
 
