@@ -37,66 +37,64 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Unit tests for Isla.Input. *)
+(** Unit tests for Isla.Ir — verify IR parsing from existing test files. *)
 
 open OUnit2
 open Isla.Assertion
 
-let simple_toml =
-  Otoml.Parser.from_string
-    {|
-arch = "AArch64"
-name = "MP"
-symbolic = ["x", "y"]
+let find_init reg (thread : Isla.Ir.thread) = List.assoc reg thread.init
 
-[locations]
-"x" = "0"
-"y" = "0"
+let arm_mp = Isla.Ir.of_toml (Otoml.Parser.from_file "../../arm/um/MP.litmus.toml")
 
-[thread.0]
-init = { X0 = "x" }
-code = """
-  MOV W1,#1
-  STR W1,[X0]
-"""
-
-[thread.1]
-init = { X1 = "y", X2 = "x" }
-code = """
-  LDR W0,[X2]
-  STR W0,[X1]
-"""
-
-[final]
-expect = "sat"
-assertion = "1:X0 = 1 & *y = 1"
-|}
-
-let t = Isla.Ir.of_toml simple_toml
-
-let expected : Isla.Ir.t =
-  { arch = Litmus.Arch_id.Arm;
-    name = "MP";
-    threads =
-      [ { tid = 0;
-          code = "MOV W1,#1\n  STR W1,[X0]";
-          init = [("X0", Isla.Ir.Sym "x")]
-        };
-        { tid = 1;
-          code = "LDR W0,[X2]\n  STR W0,[X1]";
-          init = [("X1", Isla.Ir.Sym "y"); ("X2", Isla.Ir.Sym "x")]
-        }
-      ];
-    symbolic = ["x"; "y"];
-    locations = [("x", Isla.Ir.Int Z.zero); ("y", Isla.Ir.Int Z.zero)];
-    expect = Isla.Ir.Sat;
-    assertion =
-      And
-        ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-          Atom (CmpCst (Mem "y", Eq, Z.one))
-        )
-  }
-
-let tests = "Isla.Ir" >::: [("parse" >:: fun _ -> assert_equal expected t)]
+let tests =
+  "Isla.Ir"
+  >::: [ ("ARM MP: arch, name, expect"
+         >:: fun _ ->
+         let t = arm_mp in
+         assert_equal Litmus.Arch_id.Arm t.arch;
+         assert_equal "MP" t.name;
+         assert_equal Isla.Ir.Sat t.expect
+         );
+         ("ARM MP: symbolic"
+         >:: fun _ ->
+         let t = arm_mp in
+         assert_equal ["x"; "y"] t.symbolic
+         );
+         ("ARM MP: thread0 init registers"
+         >:: fun _ ->
+         let t = arm_mp in
+         let t0 = List.nth t.threads 0 in
+         assert_equal 0 t0.tid;
+         assert_equal (Isla.Ir.Int (Z.of_int 1)) (find_init "X0" t0);
+         assert_equal (Isla.Ir.Sym "x") (find_init "X1" t0);
+         assert_equal (Isla.Ir.Int (Z.of_int 1)) (find_init "X2" t0);
+         assert_equal (Isla.Ir.Sym "y") (find_init "X3" t0)
+         );
+         ("ARM MP: thread1 init registers"
+         >:: fun _ ->
+         let t = arm_mp in
+         let t1 = List.nth t.threads 1 in
+         assert_equal 1 t1.tid;
+         assert_equal (Isla.Ir.Sym "y") (find_init "X1" t1);
+         assert_equal (Isla.Ir.Sym "x") (find_init "X3" t1)
+         );
+         ("ARM MP: thread code"
+         >:: fun _ ->
+         assert_equal "STR X0,[X1]\n\tSTR X2,[X3]"
+           (List.nth arm_mp.threads 0).code;
+         assert_equal "LDR X0,[X1]\n\tLDR X2,[X3]"
+           (List.nth arm_mp.threads 1).code
+         );
+         ("ARM MP: assertion = 1:X0 = 1 & 1:X2 = 0"
+         >:: fun _ ->
+         match arm_mp.assertion with
+         | And
+             ( Atom (CmpCst (Reg (1, "X0"), Eq, v1)),
+               Atom (CmpCst (Reg (1, "X2"), Eq, v2))
+             ) ->
+             assert_equal Z.one v1; assert_equal Z.zero v2
+         | _ -> assert_failure "expected 1:X0 = 1 & 1:X2 = 0"
+         )
+       ]
 
 let () = run_test_tt_main tests

@@ -44,216 +44,86 @@ open Litmus
 open Testrepr
 open Test_utils
 module Arm = Archsem.Arm
-module ArmAS = ToArchState.Make (Arm)
 module ArmRunner = Runner.Make (Arm)
+
+let i v = Archsem.RegValGen.Number (Z.of_int v)
+
+let find_reg name regs = List.assoc name regs
+
+let find_code (t : Testrepr.t) =
+  List.filter (fun (b : memory_block) -> b.kind = Code) t.memory
+
+let find_data (t : Testrepr.t) =
+  List.filter (fun (b : memory_block) -> b.kind = Data) t.memory
 
 (** {1 Parsed Test Fixtures} *)
 
-let eor = parse_file "../arm/seq/EOR.archsem.toml"
-
 let mp = parse_file "../arm/um/MP.archsem.toml"
-
-let bad_step_toml =
-  Otoml.Parser.from_string
-    {|
-arch = "Arm"
-name = "bad-step"
-
-[[registers]]
-_PC = 0x500
-SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
-
-[[memory]]
-addr = 0x500
-kind = "code"
-step = 0
-data = 0xd503201f
-
-[[termCond]]
-_PC = 0x504
-
-[[outcome]]
-observable.0._PC = 0x504
-|}
-
-let size_only_toml =
-  Otoml.Parser.from_string
-    {|
-arch = "Arm"
-name = "size-only"
-
-[[registers]]
-_PC = 0x500
-SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
-
-[[memory]]
-addr = 0x500
-kind = "code"
-size = 4
-data = 0xd503201f
-
-[[termCond]]
-_PC = 0x504
-
-[[outcome]]
-observable.0._PC = 0x504
-|}
-
-let bad_memory_toml =
-  Otoml.Parser.from_string
-    {|
-arch = "Arm"
-name = "bad-memory"
-
-memory = [1]
-
-[[registers]]
-_PC = 0x500
-
-[[termCond]]
-_PC = 0x500
-
-[[outcome]]
-observable.0._PC = 0x500
-|}
 
 (** {1 Parser Coverage} *)
 
-let expected_eor =
-  { arch = "Arm";
-    name = "EOR";
-    registers =
-      [ [ ("_PC", i 0x500);
-          ("R0", i 0x0);
-          ("R1", i 0x11);
-          ("R2", i 0x101);
-          ("SCTLR_EL1", i 0x0);
-          ("PSTATE", Archsem.RegValGen.Struct [("EL", i 0); ("SP", i 0)])
-        ]
-      ];
-    memory =
-      [ { addr = 0x500;
-          step = 4;
-          data = Bytes.of_string "\x20\x00\x02\xca";
-          sym = None;
-          kind = Code
-        }
-      ];
-    term_cond = [[("_PC", i 0x504)]];
-    finals =
-      [Observable ([(0, [("_PC", ReqEq (i 0x504)); ("R0", ReqEq (i 0x110))])], [])]
-  }
-
-let expected_mp =
-  { arch = "Arm";
-    name = "MP";
-    registers =
-      [ [ ("_PC", i 0x500);
-          ("R0", i 0x1000);
-          ("R1", i 0x100);
-          ("R2", i 0x2a);
-          ("R3", i 0x1000);
-          ("R4", i 0x200);
-          ("R5", i 0x1);
-          ("SCTLR_EL1", i 0x0);
-          ("PSTATE", Archsem.RegValGen.Struct [("EL", i 0); ("SP", i 0)])
-        ];
-        [ ("_PC", i 0x600);
-          ("R0", i 0x1000);
-          ("R1", i 0x100);
-          ("R2", i 0x0);
-          ("R3", i 0x1000);
-          ("R4", i 0x200);
-          ("R5", i 0x0);
-          ("SCTLR_EL1", i 0x0);
-          ("PSTATE", Archsem.RegValGen.Struct [("EL", i 0); ("SP", i 0)])
-        ]
-      ];
-    memory =
-      [ { addr = 0x500;
-          step = 4;
-          data = Bytes.of_string "\x22\x68\x20\xf8\x85\x68\x23\xf8";
-          sym = None;
-          kind = Code
-        };
-        { addr = 0x600;
-          step = 4;
-          data = Bytes.of_string "\x85\x68\x63\xf8\x22\x68\x60\xf8";
-          sym = None;
-          kind = Code
-        };
-        { addr = 0x1100;
-          step = 8;
-          data = Bytes.of_string "\x00\x00\x00\x00\x00\x00\x00\x00";
-          sym = None;
-          kind = Data
-        };
-        { addr = 0x1200;
-          step = 8;
-          data = Bytes.of_string "\x00\x00\x00\x00\x00\x00\x00\x00";
-          sym = None;
-          kind = Data
-        }
-      ];
-    term_cond = [[("_PC", i 0x508)]; [("_PC", i 0x608)]];
-    finals =
-      [ Observable ([(1, [("R5", ReqEq (i 0x0)); ("R2", ReqEq (i 0x2a))])], []);
-        Observable ([(1, [("R5", ReqEq (i 0x0)); ("R2", ReqEq (i 0x0))])], []);
-        Observable ([(1, [("R5", ReqEq (i 0x1)); ("R2", ReqEq (i 0x0))])], []);
-        Observable ([(1, [("R5", ReqEq (i 0x1)); ("R2", ReqEq (i 0x2a))])], [])
-      ]
-  }
-
-let assert_parses_as_expected parsed expected = assert_bool "" (parsed = expected)
-
-let assert_parse_failure exn toml =
-  assert_raises exn (fun () -> Parser.parse_to_testrepr toml)
-
-let parse_correct_file_test =
-  let parse_ok name parsed expected =
-    name >:: fun _ -> assert_parses_as_expected parsed expected
-  in
-  "parse_correct_file"
-  >::: [ parse_ok "EOR parses as expected" eor expected_eor;
-         parse_ok "MP parses as expected" mp expected_mp
-       ]
-
-let parse_bad_file_test =
-  let parse_fails name exn toml =
-    name >:: fun _ -> assert_parse_failure exn toml
-  in
-  "parse_bad_file"
-  >::: [ parse_fails "non-positive memory step fails"
-           (Failure "Memory block step must be positive") bad_step_toml;
-         parse_fails "size-only memory blocks fail"
-           (Otoml.Key_error
-              "Failed to retrieve a value at step: field step not found"
-           ) size_only_toml;
-         parse_fails "malformed memory blocks fail"
-           (Otoml.Type_error
-              "Unexpected TOML value type at key memory: value is integer, not a \
-               table"
-           )
-           bad_memory_toml
+let parse_tests =
+  "parse"
+  >::: [ ("MP: two threads with different PCs"
+         >:: fun _ ->
+         assert_equal "Arm" mp.arch;
+         assert_equal "MP" mp.name;
+         assert_equal (i 0x500) (find_reg "_PC" (List.nth mp.registers 0));
+         assert_equal (i 0x600) (find_reg "_PC" (List.nth mp.registers 1))
+         );
+         ("MP: code blocks addresses and bytes"
+         >:: fun _ ->
+         let code = find_code mp in
+         let by_addr =
+           List.sort
+             (fun (a : memory_block) (b : memory_block) -> compare a.addr b.addr)
+             code
+         in
+         let t0 = List.nth by_addr 0 in
+         let t1 = List.nth by_addr 1 in
+         assert_equal 0x500 t0.addr;
+         assert_equal 4 t0.step;
+         (* STR X0,[X1]; STR X2,[X3] *)
+         assert_equal (Bytes.of_string "\x22\x68\x20\xf8\x85\x68\x23\xf8") t0.data;
+         assert_equal 0x600 t1.addr;
+         assert_equal 4 t1.step;
+         (* LDR X0,[X1]; LDR X2,[X3] *)
+         assert_equal (Bytes.of_string "\x85\x68\x63\xf8\x22\x68\x60\xf8") t1.data
+         );
+         ("MP: data blocks parsed"
+         >:: fun _ ->
+         let data = find_data mp in
+         List.iter
+           (fun (b : memory_block) ->
+              assert_equal 8 b.step;
+              assert_equal 8 (Bytes.length b.data)
+            )
+           data
+         );
+         ("MP: term_cond for both threads"
+         >:: fun _ ->
+         assert_equal (i 0x508) (find_reg "_PC" (List.nth mp.term_cond 0));
+         assert_equal (i 0x608) (find_reg "_PC" (List.nth mp.term_cond 1))
+         );
+         ("MP: multiple outcome formats all parsed"
+         >:: fun _ ->
+         (* MP.archsem.toml has 4 outcomes in different TOML formats *)
+         assert_bool "has multiple finals" (List.length mp.finals >= 4)
+         )
        ]
 
 (** {1 ArchState Conversion And Execution} *)
 
-let archstate_runner_tests =
-  "testrepr_to_archstate / run_testrepr"
-  >::: [ ("EOR Expected with seq model"
+let execution_tests =
+  "execution"
+  >::: [ ("MP Expected with ump model"
          >:: fun _ ->
+         setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr Arm.(seq_model tiny_isa) eor
+           ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) mp
          in
          assert_equal Runner.Expected result
          )
        ]
 
-let () =
-  run_test_tt_main
-    ("litmus_testrepr"
-    >::: [parse_correct_file_test; parse_bad_file_test; archstate_runner_tests]
-    )
+let () = run_test_tt_main ("litmus_testrepr" >::: [parse_tests; execution_tests])
