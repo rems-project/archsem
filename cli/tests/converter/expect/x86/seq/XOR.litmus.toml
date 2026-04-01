@@ -2,7 +2,7 @@ arch = "X86"
 name = "x86-XOR"
 
 [[registers]]
-  rip = 1280
+  rip = 4096
   rax = 17
   rcx = 257
   rflags = 12288
@@ -23,12 +23,12 @@ name = "x86-XOR"
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 4096
   step = 1
   data = [72, 49, 200]
 
 [[termCond]]
-  rip = 1283
+  rip = 4099
 
 [[outcome]]
   observable = {"0" = {rax = 272}}

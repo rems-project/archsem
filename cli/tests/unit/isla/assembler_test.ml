@@ -41,40 +41,90 @@
 (** Unit tests for Isla.Assembler. *)
 
 open OUnit2
+open Isla.Assembler
 
-let arm_cases =
-  [ ("MOV W1,#42", "MOV W1, #42", "\x41\x05\x80\x52");
-    ( "branch with label resolves",
-      "\tCBNZ W0,LC00\nLC00:\n\tISB",
-      "\x20\x00\x00\x35\xdf\x3f\x03\xd5"
-    );
-    ( "2 instructions",
-      "MOV X0, #1\nSTR X0, [X1]",
-      "\x20\x00\x80\xd2\x20\x00\x00\xf9"
-    )
-  ]
+let make_input ?(symbols = []) sections : assembly_input = {sections; symbols}
 
-let x86_cases =
-  [ ("nop", "nop", "\x90");
-    ("xorq", "xorq %rcx, %rax", "\x48\x31\xc8");
-    ("2 instructions", "nop\nretq", "\x90\xc3")
-  ]
+let section ?(fixed_addr = None) name code : section = {name; code; fixed_addr}
 
-let cases ~name ~setup xs =
-  name
-  >::: List.map
-         (fun (label, input, expected) ->
-            label
-            >:: fun _ ->
-            setup ();
-            assert_equal (Bytes.of_string expected) (Isla.Assembler.assemble input)
-          )
-         xs
+let sym name size : data_symbol = {name; init_bytes = Bytes.make size '\x00'}
 
-let () =
-  run_test_tt_main
-    ("Isla.Assembler"
-    >::: [ cases ~name:"ARM" ~setup:Test_utils.setup_arm arm_cases;
-           cases ~name:"X86" ~setup:Test_utils.setup_x86 x86_cases
-         ]
-    )
+let find_section name (result : assembly_result) =
+  List.find (fun (s : linked_section) -> s.name = name) result.sections
+
+let test_assemble_single_thread _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input ~symbols:[sym "x" 8] [section "thread0" "\tMOV W1, #42\n"]
+  in
+  let result = assemble input in
+  let x_addr = resolve_symbol result "x" in
+  assert_bool "x address > 0" (x_addr > 0);
+  let thread0 = find_section "thread0" result in
+  assert_equal ~printer:string_of_int 4 (Bytes.length thread0.data)
+
+let test_assemble_multiple_threads _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input
+      [ section "thread0" "\tMOV W1, #1\n";
+        section "thread1" "\tMOV W2, #2\n\tMOV W3, #3\n"
+      ]
+  in
+  let result = assemble input in
+  let t0 = find_section "thread0" result in
+  let t1 = find_section "thread1" result in
+  assert_equal ~printer:string_of_int ~msg:"thread0 size" 4 (Bytes.length t0.data);
+  assert_equal ~printer:string_of_int ~msg:"thread1 size" 8 (Bytes.length t1.data);
+  assert_bool "different addresses" (t0.addr <> t1.addr)
+
+let test_assemble_multiple_symbols _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input ~symbols:[sym "x" 8; sym "y" 8] [section "thread0" "\tNOP\n"]
+  in
+  let result = assemble input in
+  let x_addr = resolve_symbol result "x" in
+  let y_addr = resolve_symbol result "y" in
+  assert_bool "different addresses" (x_addr <> y_addr)
+
+let test_assemble_no_symbols _ =
+  Test_utils.setup_arm ();
+  let input = make_input [section "thread0" "\tNOP\n"] in
+  let result = assemble input in
+  let t0 = find_section "thread0" result in
+  assert_equal ~printer:string_of_int ~msg:"NOP = 4 bytes" 4 (Bytes.length t0.data)
+
+let test_assemble_fixed_addr _ =
+  Test_utils.setup_arm ();
+  let input =
+    make_input
+      [ section ~fixed_addr:(Some 0x10000) "handler0" "\tRET\n";
+        section "thread0" "\tMOV W1, #1\n"
+      ]
+  in
+  let result = assemble input in
+  let handler = find_section "handler0" result in
+  assert_equal ~printer:string_of_int ~msg:"handler0 addr" 0x10000 handler.addr;
+  assert_equal ~printer:string_of_int ~msg:"handler0 size" 4
+    (Bytes.length handler.data)
+
+let test_resolve_unknown_raises _ =
+  Test_utils.setup_arm ();
+  let input = make_input [section "thread0" "\tNOP\n"] in
+  let result = assemble input in
+  assert_raises (Failure "assembler: symbol \"nonexistent\" not found") (fun () ->
+    resolve_symbol result "nonexistent"
+  )
+
+let tests =
+  "Isla.Assembler"
+  >::: [ "single thread + symbol" >:: test_assemble_single_thread;
+         "multiple threads" >:: test_assemble_multiple_threads;
+         "multiple symbols" >:: test_assemble_multiple_symbols;
+         "no symbols" >:: test_assemble_no_symbols;
+         "fixed-addr section" >:: test_assemble_fixed_addr;
+         "resolve unknown raises" >:: test_resolve_unknown_raises
+       ]
+
+let () = run_test_tt_main tests

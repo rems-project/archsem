@@ -50,10 +50,10 @@ let generate_rules file =
   Printf.printf
     {|
 (rule
- (deps ../../%s)
+ (deps (:input ../../%s) (source_tree ../../../../config))
  (targets %s)
  (action
-  (run archsem convert %%{deps} -o %%{targets})))
+  (run archsem convert %%{input} -o %%{targets})))
 
 (rule
  (alias runtest)

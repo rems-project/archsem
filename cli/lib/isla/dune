@@ -1,7 +1,7 @@
 (library
  (name isla)
  (public_name archsem.isla)
- (libraries archsem litmus otoml zarith unix))
+ (libraries archsem litmus otoml zarith unix linksem))
 
 (ocamllex lexer)
 

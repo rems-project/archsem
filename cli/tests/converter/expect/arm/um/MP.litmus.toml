@@ -2,11 +2,11 @@ arch = "Arm"
 name = "MP"
 
 [[registers]]
-  _PC = 9472
+  _PC = 12288
   "R0" = 1
-  "R1" = 1280
+  "R1" = 4096
   "R2" = 1
-  "R3" = 5376
+  "R3" = 8192
   "R4" = 0
   "R5" = 0
   "R6" = 0
@@ -38,9 +38,9 @@ name = "MP"
   PSTATE = {EL = 0, SP = 0}
 
 [[registers]]
-  _PC = 13568
-  "R1" = 5376
-  "R3" = 1280
+  _PC = 12296
+  "R1" = 8192
+  "R3" = 4096
   "R0" = 0
   "R2" = 0
   "R4" = 0
@@ -75,33 +75,33 @@ name = "MP"
 
 [[memory]]
   kind = "code"
-  addr = 9472
+  addr = 12288
   step = 4
   data = [4177526816, 4177526882]
 
 [[memory]]
   kind = "code"
-  addr = 13568
+  addr = 12296
   step = 4
   data = [4181721120, 4181721186]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 5376
+  addr = 8192
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 9480
+  _PC = 12296
 
 [[termCond]]
-  _PC = 13576
+  _PC = 12304
 
 [[outcome]]
   observable = {"1" = {"R0" = 1, "R2" = 0}}
