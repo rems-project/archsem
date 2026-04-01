@@ -24,13 +24,10 @@ jobs:
     - name: Install system dependencies (ubuntu)
       run: |
         sudo apt update
-        sudo apt install -y build-essential z3 cmake pkg-config llvm-18
-        sudo update-alternatives --install /usr/bin/llvm-mc llvm-mc /usr/bin/llvm-mc-18 180
-        sudo update-alternatives --install /usr/bin/llvm-objcopy llvm-objcopy /usr/bin/llvm-objcopy-18 180
-        sudo update-alternatives --set llvm-mc /usr/bin/llvm-mc-18
-        sudo update-alternatives --set llvm-objcopy /usr/bin/llvm-objcopy-18
-        llvm-mc --version
-        llvm-objcopy --version
+        sudo apt install -y build-essential z3 cmake pkg-config clang-18 lld-18
+        sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 180
+        sudo update-alternatives --set clang /usr/bin/clang-18
+        clang --version
 
     - name: Get up-to-date OPAM
       run: |

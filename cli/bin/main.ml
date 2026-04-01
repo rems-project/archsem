@@ -192,12 +192,21 @@ let print_final_states_term =
   in
   Arg.(value & flag & info ["print-final-states"] ~doc)
 
+(** Optional CLI flag to dump assembler intermediates (.s, .ld, .elf) to DIR. *)
+let asm_dump =
+  let doc = "Dump assembler intermediate artifacts (.s, .ld, .elf) to DIR" in
+  let+ d =
+    Arg.(value & opt (some dir) None & info ["asm-dump"] ~doc ~docv:"DIR")
+  in
+  Isla.Assembler.set_dump_dir d
+
 (** The sequential model command *)
 let cmd_seq =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ print_final_states = print_final_states_term in
+    and+ print_final_states = print_final_states_term
+    and+ () = asm_dump in
     let parse = parse_testfile fmt in
     match Config.get_arch () with
     | Arm ->
@@ -224,7 +233,8 @@ let cmd_ump =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ print_final_states = print_final_states_term in
+    and+ print_final_states = print_final_states_term
+    and+ () = asm_dump in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
@@ -269,7 +279,8 @@ let cmd_vmp =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
     and+ fmt = format_term
-    and+ print_final_states = print_final_states_term in
+    and+ print_final_states = print_final_states_term
+    and+ () = asm_dump in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
@@ -296,7 +307,8 @@ let cmd_tso =
     let+ files = path_and_conf_term
     and+ fmt = format_term
     and+ no_eager = no_eager
-    and+ print_final_states = print_final_states_term in
+    and+ print_final_states = print_final_states_term
+    and+ () = asm_dump in
     let allow_eager = not no_eager in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
@@ -362,7 +374,8 @@ let cmd_convert =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ output = output_term in
+    and+ output = output_term
+    and+ () = asm_dump in
     let parse = parse_testfile fmt in
     convert files parse output
   in

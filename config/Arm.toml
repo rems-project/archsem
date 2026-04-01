@@ -7,16 +7,12 @@ fuel = 1000
 bbm = "off"
 
 [assembler]
-assemble = "llvm-mc -triple=aarch64 -mattr=+lse,+rcpc --assemble --filetype=obj"
-extract = "llvm-objcopy -O binary"
+command = "clang --target=aarch64-unknown-linux-elf -march=armv8-a+lse+rcpc -fuse-ld=lld"
 instruction_step = 4
 
 [isla]
 default_memory_size = 8
 page_bits = 12
-
-[isla.symbols]
-base_address = 0x500
 
 [isla.register_renames]
 X0 = "R0"
