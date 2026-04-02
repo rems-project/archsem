@@ -1,8 +1,7 @@
 arch = "X86"
 
 [assembler]
-assemble = "llvm-mc -triple=x86_64 --assemble --filetype=obj"
-extract = "llvm-objcopy -O binary"
+command = "clang --target=x86_64-unknown-linux-elf -fuse-ld=lld"
 instruction_step = 1
 
 [isla]
@@ -10,7 +9,7 @@ default_memory_size = 8
 page_bits = 12
 
 [isla.symbols]
-base_address = 0x500
+base_address = 0x1000
 
 [execution]
 fuel = 1000

@@ -37,6 +37,48 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Assemble code into a machine code byte sequence
-    use configuration to figure out the toolchain *)
-val assemble : string -> Bytes.t
+(** Assembler pipeline: .s generation → clang (assemble+link) → linksem ELF parsing *)
+
+(** A code section to assemble *)
+type section =
+  { name : string;
+    code : string;
+    fixed_addr : int option
+  }
+
+(** Data symbol to allocate in .data *)
+type data_symbol =
+  { name : string;
+    init_bytes : Bytes.t
+  }
+
+(** Input to the assembler pipeline *)
+type assembly_input =
+  { sections : section list;
+    symbols : data_symbol list
+  }
+
+(** A resolved section with its address and machine code *)
+type linked_section =
+  { name : string;
+    addr : int;
+    data : Bytes.t
+  }
+
+(** A data symbol resolved with its linker-assigned address *)
+type linked_symbol =
+  { sym : data_symbol;
+    addr : int
+  }
+
+(** Output of the assembler pipeline *)
+type assembly_result =
+  { sections : linked_section list;
+    symbols : linked_symbol list
+  }
+
+(** Assemble, link, and parse ELF. Uses config for toolchain commands. *)
+val assemble : assembly_input -> assembly_result
+
+(** Look up a data symbol address by name. Raises [Failure] if not found. *)
+val resolve_symbol : assembly_result -> string -> int
