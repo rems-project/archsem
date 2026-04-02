@@ -7,18 +7,18 @@ name = "SB"
 # Observable: both EAX=0 (store buffer reordering)
 
 [[registers]]
-RIP = 0x500
-RAX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x500
+rax = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x600
-RAX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x600
+rax = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 # Thread 0 code: MOV [ECX],1 (C7 01 01000000) + MOV EAX,[EDX] (8B 02)
 [[memory]]
@@ -48,13 +48,13 @@ step = 8
 data = 0
 
 [[termCond]]
-RIP = 0x508
+rip = 0x508
 
 [[termCond]]
-RIP = 0x608
+rip = 0x608
 
 # SB allows both threads to read 0 (store buffer reordering)
 [[outcome]]
 [outcome.observable]
-0 = {RAX = 0}
-1 = {RAX = 0}
+0 = {rax = 0}
+1 = {rax = 0}

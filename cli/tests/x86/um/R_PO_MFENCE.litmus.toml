@@ -8,14 +8,14 @@ symbolic = ["x", "y"]
 # Forbidden: y=2 (thread 1's write won) yet 1:EAX=0 (thread 1 didn't see x=1)
 
 [thread.0]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl $1, (%rcx)
 movl $1, (%rdx)
 """
 
 [thread.1]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl $2, (%rdx)
 mfence
@@ -24,4 +24,4 @@ movl (%rcx), %eax
 
 [final]
 expect = "unsat"
-assertion = "*y = 2 & 1:RAX = 0"
+assertion = "*y = 2 & 1:rax = 0"

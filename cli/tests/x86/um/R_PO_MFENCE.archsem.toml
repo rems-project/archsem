@@ -7,18 +7,18 @@ name = "R_PO_MFENCE"
 # Tests that MFENCE prevents store-buffer reordering
 
 [[registers]]
-RIP = 0x500
-RAX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x500
+rax = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x600
-RAX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x600
+rax = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 # Thread 0: MOV [ECX],1 (C7 01 01000000) + MOV [EDX],1 (C7 02 01000000)
 [[memory]]
@@ -47,27 +47,27 @@ step = 8
 data = 0
 
 [[termCond]]
-RIP = 0x50c
+rip = 0x50c
 
 [[termCond]]
-RIP = 0x60b
+rip = 0x60b
 
 # [EDX]=2 ∧ EAX=0 is forbidden (MFENCE prevents this)
 # Allowed final states for (1:EAX, mem[0x1200]):
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0}
+1 = {rax = 0}
 [outcome.mem]
 "0x1200" = {size = 8, value = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1}
+1 = {rax = 1}
 [outcome.mem]
 "0x1200" = {size = 8, value = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1}
+1 = {rax = 1}
 [outcome.mem]
 "0x1200" = {size = 8, value = 2}

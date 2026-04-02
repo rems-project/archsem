@@ -1,12 +1,12 @@
-# Single-threaded XOR: xorq %rcx, %rax → RAX = 0x11 XOR 0x101 = 0x110
+# Single-threaded XOR: xorq %rcx, %rax → rax = 0x11 XOR 0x101 = 0x110
 name = "x86-XOR"
 arch = "x86"
 
 [[registers]]
-RIP = 0x500
-RAX = 0x11
-RCX = 0x101
-RFLAGS = 0x3000
+rip = 0x500
+rax = 0x11
+rcx = 0x101
+rflags = 0x3000
 
 [[memory]]
 addr = 0x500
@@ -15,8 +15,8 @@ step = 1
 data = [0x48, 0x33, 0xc1]
 
 [[termCond]]
-RIP = 0x503
+rip = 0x503
 
 [[outcome]]
 [outcome.observable]
-0 = {RAX = 0x110}
+0 = {rax = 0x110}

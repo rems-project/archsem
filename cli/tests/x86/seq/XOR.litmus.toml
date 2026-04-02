@@ -1,14 +1,14 @@
 arch = "x86"
 name = "x86-XOR"
 
-# Single-threaded XOR: RAX = 0x11 XOR 0x101 = 0x110
+# Single-threaded XOR: rax = 0x11 XOR 0x101 = 0x110
 
 [thread.0]
-init = { RAX = "0x11", RCX = "0x101", RFLAGS = "0x3000" }
+init = { rax = "0x11", rcx = "0x101", rflags = "0x3000" }
 code = """
 xorq %rcx, %rax
 """
 
 [final]
 expect = "sat"
-assertion = "0:RAX = 0x110"
+assertion = "0:rax = 0x110"

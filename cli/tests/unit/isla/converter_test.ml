@@ -125,14 +125,14 @@ arch = "x86"
 name = "X86Xor"
 
 [thread.0]
-init = { RAX = "0x11", RCX = "0x101", RFLAGS = "0x3000" }
+init = { rax = "0x11", rcx = "0x101", rflags = "0x3000" }
 code = """
 xorq %rcx, %rax
 """
 
 [final]
 expect = "sat"
-assertion = "0:RAX = 0x110"
+assertion = "0:rax = 0x110"
 |}
 
 let tests =
@@ -204,9 +204,9 @@ let tests =
              name = "X86Xor";
              registers =
                [ expected_regs ~arch:x86 ~pc:0x500
-                   [ ("RAX", RegValGen.Number (Z.of_string "0x11"));
-                     ("RCX", RegValGen.Number (Z.of_string "0x101"));
-                     ("RFLAGS", RegValGen.Number (Z.of_string "0x3000"))
+                   [ ("rax", RegValGen.Number (Z.of_string "0x11"));
+                     ("rcx", RegValGen.Number (Z.of_string "0x101"));
+                     ("rflags", RegValGen.Number (Z.of_string "0x3000"))
                    ]
                ];
              memory =
@@ -215,7 +215,7 @@ let tests =
              finals =
                [ Testrepr.Observable
                    ( [ ( 0,
-                         [ ( "RAX",
+                         [ ( "rax",
                              Testrepr.ReqEq
                                (RegValGen.Number (Z.of_string "0x110"))
                            )

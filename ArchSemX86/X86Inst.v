@@ -55,7 +55,7 @@ Module SI := Tiny_x86_types.Interface.
 Module ArchExtra <: FromSail.ArchExtra SA.
   Import SA.
 
-  Definition pc_reg : reg := RIP.
+  Definition pc_reg : reg := rip.
   Definition reg_of_string := register_of_string.
 
   Equations reg_type_of_gen (r : reg) (rv : reg_gen_val) :

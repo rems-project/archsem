@@ -7,18 +7,18 @@ name = "MP"
 # Forbidden under SC: EAX=1, EBX=0
 
 [[registers]]
-RIP = 0x500
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x500
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x600
-RAX = 0x0
-RBX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x600
+rax = 0x0
+rbx = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 # Thread 0: MOV [ECX],1 (C7 01 01000000) + MOV [EDX],1 (C7 02 01000000)
 [[memory]]
@@ -47,20 +47,20 @@ step = 8
 data = 0
 
 [[termCond]]
-RIP = 0x50c
+rip = 0x50c
 
 [[termCond]]
-RIP = 0x604
+rip = 0x604
 
 # TSO allows: (0,0), (0,1), (1,1) but NOT (1,0)
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 0}
+1 = {rax = 0, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 1}
+1 = {rax = 0, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 1}
+1 = {rax = 1, rbx = 1}

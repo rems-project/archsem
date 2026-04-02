@@ -6,14 +6,14 @@ symbolic = ["x", "y"]
 # TSO allows both reads to see 0 (store buffering).
 
 [thread.0]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl $1, (%rcx)
 movl (%rdx), %eax
 """
 
 [thread.1]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl $1, (%rdx)
 movl (%rcx), %eax
@@ -21,4 +21,4 @@ movl (%rcx), %eax
 
 [final]
 expect = "sat"
-assertion = "0:RAX = 0 & 1:RAX = 0"
+assertion = "0:rax = 0 & 1:rax = 0"

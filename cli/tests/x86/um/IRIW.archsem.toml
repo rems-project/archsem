@@ -9,30 +9,30 @@ name = "IRIW"
 # Forbidden: 1:EAX=1 ∧ 1:EBX=0 ∧ 3:EAX=1 ∧ 3:EBX=0 (TSO is multi-copy atomic)
 
 [[registers]]
-RIP = 0x500
-RCX = 0x1100
-RFLAGS = 0x3000
+rip = 0x500
+rcx = 0x1100
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x600
-RAX = 0x0
-RBX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x600
+rax = 0x0
+rbx = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x700
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x700
+rdx = 0x1200
+rflags = 0x3000
 
 [[registers]]
-RIP = 0x800
-RAX = 0x0
-RBX = 0x0
-RCX = 0x1100
-RDX = 0x1200
-RFLAGS = 0x3000
+rip = 0x800
+rax = 0x0
+rbx = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
 
 # Thread 0: MOV [ECX],1 (C7 01 01000000)
 [[memory]]
@@ -75,90 +75,90 @@ step = 8
 data = 0
 
 [[termCond]]
-RIP = 0x506
+rip = 0x506
 
 [[termCond]]
-RIP = 0x604
+rip = 0x604
 
 [[termCond]]
-RIP = 0x706
+rip = 0x706
 
 [[termCond]]
-RIP = 0x804
+rip = 0x804
 
 # TSO forbids (1:EAX=1,1:EBX=0,3:EAX=1,3:EBX=0)
 # All other 15 combinations of {0,1}^4 are allowed
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 0}
-3 = {RAX = 0, RBX = 0}
+1 = {rax = 0, rbx = 0}
+3 = {rax = 0, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 0}
-3 = {RAX = 0, RBX = 1}
+1 = {rax = 0, rbx = 0}
+3 = {rax = 0, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 0}
-3 = {RAX = 1, RBX = 0}
+1 = {rax = 0, rbx = 0}
+3 = {rax = 1, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 0}
-3 = {RAX = 1, RBX = 1}
+1 = {rax = 0, rbx = 0}
+3 = {rax = 1, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 1}
-3 = {RAX = 0, RBX = 0}
+1 = {rax = 0, rbx = 1}
+3 = {rax = 0, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 1}
-3 = {RAX = 0, RBX = 1}
+1 = {rax = 0, rbx = 1}
+3 = {rax = 0, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 1}
-3 = {RAX = 1, RBX = 0}
+1 = {rax = 0, rbx = 1}
+3 = {rax = 1, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 0, RBX = 1}
-3 = {RAX = 1, RBX = 1}
+1 = {rax = 0, rbx = 1}
+3 = {rax = 1, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 0}
-3 = {RAX = 0, RBX = 0}
+1 = {rax = 1, rbx = 0}
+3 = {rax = 0, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 0}
-3 = {RAX = 0, RBX = 1}
+1 = {rax = 1, rbx = 0}
+3 = {rax = 0, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 0}
-3 = {RAX = 1, RBX = 1}
+1 = {rax = 1, rbx = 0}
+3 = {rax = 1, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 1}
-3 = {RAX = 0, RBX = 0}
+1 = {rax = 1, rbx = 1}
+3 = {rax = 0, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 1}
-3 = {RAX = 0, RBX = 1}
+1 = {rax = 1, rbx = 1}
+3 = {rax = 0, rbx = 1}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 1}
-3 = {RAX = 1, RBX = 0}
+1 = {rax = 1, rbx = 1}
+3 = {rax = 1, rbx = 0}
 
 [[outcome]]
 [outcome.observable]
-1 = {RAX = 1, RBX = 1}
-3 = {RAX = 1, RBX = 1}
+1 = {rax = 1, rbx = 1}
+3 = {rax = 1, rbx = 1}
