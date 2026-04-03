@@ -1,5 +1,5 @@
 arch = "x86"
-name = "R_PO_MFENCE"
+name = "R+po+mfence"
 
 # Read + Program Order + MFENCE litmus test
 # Thread 0: MOV [ECX], 0x1; MOV [EDX], 0x1
