@@ -186,7 +186,8 @@ let format_term =
 
 let print_final_states_term =
   let doc =
-    "Print all possible final states of relevant registers / memory locations. Output for x86 is compatible with mcompare"
+    "Print all possible final states of relevant registers / memory locations. \
+     Output for x86 is compatible with mcompare"
   in
   Arg.(value & flag & info ["print-final-states"] ~doc)
 
