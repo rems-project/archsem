@@ -1,5 +1,5 @@
 arch = "x86"
-name = "R_PO_MFENCE"
+name = "R+po+mfence"
 symbolic = ["x", "y"]
 
 # MFENCE prevents store-buffer reordering.
