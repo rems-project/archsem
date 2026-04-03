@@ -184,12 +184,18 @@ let format_term =
   let format_enum = Arg.enum [("archsem", Archsem); ("isla", Isla)] in
   Arg.(value & opt (some format_enum) None & info ["format"; "f"] ~doc ~docv:"FMT")
 
+let print_final_states_term =
+  let doc =
+    "Print all possible final states of relevant registers / memory locations. Output for x86 is compatible with mcompare"
+  in
+  Arg.(value & flag & info ["print-final-states"] ~doc)
+
 (** The sequential model command *)
-let cmd_seq print_final_states =
+let cmd_seq =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ print_final_states = print_final_states in
+    and+ print_final_states = print_final_states_term in
     let parse = parse_testfile fmt in
     match Config.get_arch () with
     | Arm ->
@@ -212,11 +218,11 @@ let cmd_seq print_final_states =
   Cmd.v info run
 
 (** The user-mode promising command *)
-let cmd_ump print_final_states =
+let cmd_ump =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ print_final_states = print_final_states in
+    and+ print_final_states = print_final_states_term in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
@@ -245,7 +251,7 @@ let bbm_of_config () =
          --bbm"
 
 (** The virtual-memory promising command *)
-let cmd_vmp print_final_states =
+let cmd_vmp =
   let open Arm in
   let bbm_mode =
     let doc = "Break-before-make mode: off, lax, or strict" in
@@ -261,7 +267,7 @@ let cmd_vmp print_final_states =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
     and+ fmt = format_term
-    and+ print_final_states = print_final_states in
+    and+ print_final_states = print_final_states_term in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
@@ -279,7 +285,7 @@ let cmd_vmp print_final_states =
   in
   Cmd.v info run
 
-let cmd_tso print_final_states =
+let cmd_tso =
   let no_eager =
     let doc = "Disable eager transitions (eager is enabled by default)" in
     Arg.(value & flag & info ["no-eager"] ~doc)
@@ -288,7 +294,7 @@ let cmd_tso print_final_states =
     let+ files = path_and_conf_term
     and+ fmt = format_term
     and+ no_eager = no_eager
-    and+ print_final_states = print_final_states in
+    and+ print_final_states = print_final_states_term in
     let allow_eager = not no_eager in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);

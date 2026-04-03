@@ -165,7 +165,6 @@ module Make (Arch : Archsem.Arch) = struct
   let final_regs_to_string
         (fs : ArchState.t)
         (cond : Testrepr.thread_cond list)
-        (arch : string) : string
     =
     String.concat " "
       (List.concat_map
@@ -175,14 +174,7 @@ module Make (Arch : Archsem.Arch) = struct
               (fun (req_name, _) ->
                  let reg = Reg.of_string req_name in
                  let value = RegMap.geti reg regs in
-                 (* Note that we are making the register name lowercase *)
-                 let reg_name =
-                   if
-                     String.starts_with ~prefix:"x86" (String.lowercase_ascii arch)
-                   then String.lowercase_ascii req_name
-                   else req_name
-                 in
-                 Printf.sprintf "%d:%s=%d;" tid reg_name value
+                 Printf.sprintf "%d:%s=%d;" tid req_name value
                )
               reqs
           )
@@ -192,15 +184,13 @@ module Make (Arch : Archsem.Arch) = struct
   let final_mem_to_string
         (fs : ArchState.t)
         (mem_conds : Testrepr.mem_cond list)
-        (mem_blocks : Testrepr.memory_block list) : string
     =
     let mem = ArchState.mem fs in
     String.concat " "
       (List.map
          (fun (mc : Testrepr.mem_cond) ->
-            let mem_symbol = Testrepr.mem_addr_to_symbol mc.addr mem_blocks in
             let value = MemMap.lookupi mc.addr mc.size mem in
-            Printf.sprintf "[%s]=%d;" mem_symbol value
+            Printf.sprintf "[%s]=%d;" mc.sym value
           )
          mem_conds
       )
@@ -282,8 +272,8 @@ module Make (Arch : Archsem.Arch) = struct
           (fun fs ->
              msg
                (Printf.sprintf "%s %s"
-                  (final_regs_to_string fs reg_cond test.arch)
-                  (final_mem_to_string fs mem_cond test.memory)
+                  (final_regs_to_string fs reg_cond)
+                  (final_mem_to_string fs mem_cond)
                )
            )
           final_states_set;
