@@ -44,56 +44,60 @@ open Isla.Assertion
 
 let n = Z.of_int
 
-let parse_string s =
-  let toml =
-    Otoml.Parser.from_string
-      (Printf.sprintf
-         {|
-arch = "AArch64"
-
-[thread.0]
-code = "NOP"
-
-[final]
-assertion = %S
-|} s
-      )
-  in
-  (Isla.Ir.of_toml toml).assertion
-
-let assert_parses_as source expected = assert_equal expected (parse_string source)
+let assertion_of path = (Isla.Ir.of_toml (Otoml.Parser.from_file path)).assertion
 
 let tests =
   "Isla.Assertion"
-  >::: [ ("parse register eq"
+  >::: [ ("ARM MP: register conjunction"
          >:: fun _ ->
-         assert_parses_as "1:X0 = 1" (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)))
-         );
-         ("parse conjunction"
-         >:: fun _ ->
-         assert_parses_as "1:X0 = 1 & 2:X0 = 0"
+         assert_equal
            (And
               ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-                Atom (CmpCst (Reg (2, "X0"), Eq, Z.zero))
+                Atom (CmpCst (Reg (1, "X2"), Eq, Z.zero))
               )
            )
+           (assertion_of "../../arm/um/MP.litmus.toml")
          );
-         ("parse false" >:: fun _ -> assert_parses_as "false" False);
-         ("parse memory"
-         >:: fun _ -> assert_parses_as "*x = 2" (Atom (CmpCst (Mem "x", Eq, n 2)))
-         );
-         ("parse negation"
+         ("ARM EOR: hex value"
          >:: fun _ ->
-         assert_parses_as "~(1:X0 = 1)"
+         assert_equal
+           (Atom (CmpCst (Reg (0, "X0"), Eq, n 0x110)))
+           (assertion_of "../../arm/seq/EOR.litmus.toml")
+         );
+         ("X86 R_PO_MFENCE: memory + register"
+         >:: fun _ ->
+         assert_equal
+           (And
+              ( Atom (CmpCst (Mem "y", Eq, n 2)),
+                Atom (CmpCst (Reg (1, "RAX"), Eq, Z.zero))
+              )
+           )
+           (assertion_of "../../x86/um/R_PO_MFENCE.litmus.toml")
+         );
+         ("X86 IRIW: 4-way conjunction"
+         >:: fun _ ->
+         let rec count_atoms = function
+           | And (l, r) -> count_atoms l + count_atoms r
+           | Atom _ -> 1
+           | _ -> 0
+         in
+         assert_equal 4
+           (count_atoms (assertion_of "../../x86/um/IRIW.litmus.toml"))
+         );
+         ("register eq symbol (inline)"
+         >:: fun _ ->
+         assert_equal
+           (Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x")))
+           (Isla.Ir.parse_assertion_expr "0:X0 = x")
+         );
+         ("negation (inline)"
+         >:: fun _ ->
+         assert_equal
            (Not (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one))))
+           (Isla.Ir.parse_assertion_expr "~(1:X0 = 1)")
          );
-         ("parse hex values"
-         >:: fun _ ->
-         assert_parses_as "0:X0 = 0x2a" (Atom (CmpCst (Reg (0, "X0"), Eq, n 42)))
-         );
-         ("parse register equals symbol"
-         >:: fun _ ->
-         assert_parses_as "0:X0 = x" (Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x")))
+         ("false (inline)"
+         >:: fun _ -> assert_equal False (Isla.Ir.parse_assertion_expr "false")
          )
        ]
 
