@@ -157,27 +157,36 @@ module Make (Arch : Archsem.Arch) = struct
        )
       mem_conds
 
-  let get_thread_regname_pairs (reg_cond : Testrepr.thread_cond list) : (int * string) list =
-    List.concat_map (fun (thread, reg_pair) ->
-       List.map (fun (name, _) -> (thread, name)) reg_pair
-     ) reg_cond
+  let get_thread_regname_pairs (reg_cond : Testrepr.thread_cond list) :
+    (int * string) list
+    =
+    List.concat_map
+      (fun (thread, reg_pair) ->
+         List.map (fun (name, _) -> (thread, name)) reg_pair
+       )
+      reg_cond
 
-  let compare_mem_id (mem_cond_1 : Testrepr.mem_cond) (mem_cond_2 : Testrepr.mem_cond) =
+  let compare_mem_id
+        (mem_cond_1 : Testrepr.mem_cond)
+        (mem_cond_2 : Testrepr.mem_cond)
+    =
     if mem_cond_1.sym = mem_cond_2.sym then 0
     else if mem_cond_1.sym > mem_cond_2.sym then 1
     else -1
 
-  let get_unique_conds_ignoring_value (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-  : (int * string) list * Testrepr.mem_cond list =
+  let get_unique_conds_ignoring_value
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list) :
+    (int * string) list * Testrepr.mem_cond list
+    =
     (* Assuming that each (Testrepr.thread_cond list * Testrepr.mem_cond list) already contains unique values *)
     List.fold_left
-      (fun (acc_reg_cond, acc_mem_cond) (reg_cond, mem_cond) -> 
-        let new_reg_cond = get_thread_regname_pairs reg_cond in
-        (List.sort_uniq compare (acc_reg_cond @ new_reg_cond), 
-        List.sort_uniq compare_mem_id (acc_mem_cond @ mem_cond))
-        )
-      ([],[])
-      conds
+      (fun (acc_reg_cond, acc_mem_cond) (reg_cond, mem_cond) ->
+         let new_reg_cond = get_thread_regname_pairs reg_cond in
+         ( List.sort_uniq compare (acc_reg_cond @ new_reg_cond),
+           List.sort_uniq compare_mem_id (acc_mem_cond @ mem_cond)
+         )
+       )
+      ([], []) conds
 
   let final_regs_to_string
         (fs : ArchState.t)
@@ -194,10 +203,7 @@ module Make (Arch : Archsem.Arch) = struct
          regs
       )
 
-  let final_mem_to_string
-        (fs : ArchState.t)
-        (mem_conds : Testrepr.mem_cond list)
-    =
+  let final_mem_to_string (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) =
     let mem = ArchState.mem fs in
     String.concat " "
       (List.map
@@ -210,16 +216,20 @@ module Make (Arch : Archsem.Arch) = struct
 
   let get_obs_count
         (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (state_list : ArchState.t list) =
-    (List.length state_list) - List.length (
-      List.fold_left
-         (fun unmatched_state_list (cond, mem_cond) -> (
-            List.filter
-              (fun fs -> not (check_outcome fs cond && check_mem_outcome fs mem_cond))
-              unmatched_state_list )
-          )
-          state_list
-         conds)
+        (state_list : ArchState.t list)
+    =
+    List.length state_list
+    - List.length
+        (List.fold_left
+           (fun unmatched_state_list (cond, mem_cond) ->
+              List.filter
+                (fun fs ->
+                   not (check_outcome fs cond && check_mem_outcome fs mem_cond)
+                 )
+                unmatched_state_list
+            )
+           state_list conds
+        )
 
   (* Print observation statistics. The format is:
     Ok/No <optional extra detail>
@@ -236,7 +246,10 @@ module Make (Arch : Archsem.Arch) = struct
     in
     let obs_count = get_obs_count conds state_list in
     let msg = if obs_count > 0 then matched_msg else not_matched_msg in
-    msg ^ "\n" ^ test_observation_stats_to_string obs_count (List.length state_list - obs_count) test_name
+    msg ^ "\n"
+    ^ test_observation_stats_to_string obs_count
+        (List.length state_list - obs_count)
+        test_name
 
   let run_executions print_final_states model init fuel term test =
     let msgs = ref [] in
@@ -290,9 +303,13 @@ module Make (Arch : Archsem.Arch) = struct
           final_states_set;
         (* Print statistics about the condition(s) that we did and didn't want to observe *)
         if observable <> [] then
-          msg (observation_statistics_string observable true final_states test.name)
+          msg
+            (observation_statistics_string observable true final_states test.name)
         else if unobservable <> [] then
-          msg (observation_statistics_string unobservable false final_states test.name)
+          msg
+            (observation_statistics_string unobservable false final_states
+               test.name
+            )
         else msg "ERROR: no conditions to observe"
       )
     );
