@@ -246,7 +246,14 @@ let archstate_runner_tests =
   >::: [ ("EOR Expected with seq model"
          >:: fun _ ->
          let (result, _msgs) =
-           ArmRunner.run_testrepr Arm.(seq_model tiny_isa) eor
+           ArmRunner.run_testrepr true Arm.(seq_model tiny_isa) eor
+         in
+         assert_equal Runner.Expected result
+         );
+         ("EOR Expected with seq model"
+         >:: fun _ ->
+         let (result, _msgs) =
+           ArmRunner.run_testrepr false Arm.(seq_model tiny_isa) eor
          in
          assert_equal Runner.Expected result
          )

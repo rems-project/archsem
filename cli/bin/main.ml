@@ -185,18 +185,24 @@ let format_term =
   Arg.(value & opt (some format_enum) None & info ["format"; "f"] ~doc ~docv:"FMT")
 
 (** The sequential model command *)
-let cmd_seq =
+let cmd_seq print_final_states =
   let run =
-    let+ files = path_and_conf_term and+ fmt = format_term in
+    let+ files = path_and_conf_term
+    and+ fmt = format_term
+    and+ print_final_states = print_final_states in
     let parse = parse_testfile fmt in
     match Config.get_arch () with
     | Arm ->
         run_tests "arm-seq"
-          (ArmRunner.run_litmus_test ~parse Arm.(seq_model tiny_isa))
+          (ArmRunner.run_litmus_test ~parse print_final_states
+             Arm.(seq_model tiny_isa)
+          )
           files
     | X86 ->
         run_tests "x86-seq"
-          (X86Runner.run_litmus_test ~parse X86.(seq_model tiny_isa))
+          (X86Runner.run_litmus_test ~parse print_final_states
+             X86.(seq_model tiny_isa)
+          )
           files
   in
   let info =
@@ -206,13 +212,17 @@ let cmd_seq =
   Cmd.v info run
 
 (** The user-mode promising command *)
-let cmd_ump =
+let cmd_ump print_final_states =
   let run =
-    let+ files = path_and_conf_term and+ fmt = format_term in
+    let+ files = path_and_conf_term
+    and+ fmt = format_term
+    and+ print_final_states = print_final_states in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
-      (ArmRunner.run_litmus_test ~parse Arm.(umProm_model tiny_isa))
+      (ArmRunner.run_litmus_test ~parse print_final_states
+         Arm.(umProm_model tiny_isa)
+      )
       files
   in
   let info =
@@ -235,7 +245,7 @@ let bbm_of_config () =
          --bbm"
 
 (** The virtual-memory promising command *)
-let cmd_vmp =
+let cmd_vmp print_final_states =
   let open Arm in
   let bbm_mode =
     let doc = "Break-before-make mode: off, lax, or strict" in
@@ -250,11 +260,14 @@ let cmd_vmp =
   let run =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
-    and+ fmt = format_term in
+    and+ fmt = format_term
+    and+ print_final_states = print_final_states in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
-      (ArmRunner.run_litmus_test ~parse (vmProm_model ~bbm_param tiny_isa))
+      (ArmRunner.run_litmus_test ~parse print_final_states
+         (vmProm_model ~bbm_param tiny_isa)
+      )
       files
   in
   let info =
@@ -266,7 +279,7 @@ let cmd_vmp =
   in
   Cmd.v info run
 
-let cmd_tso =
+let cmd_tso print_final_states =
   let no_eager =
     let doc = "Disable eager transitions (eager is enabled by default)" in
     Arg.(value & flag & info ["no-eager"] ~doc)
@@ -274,12 +287,15 @@ let cmd_tso =
   let run =
     let+ files = path_and_conf_term
     and+ fmt = format_term
-    and+ no_eager = no_eager in
+    and+ no_eager = no_eager
+    and+ print_final_states = print_final_states in
     let allow_eager = not no_eager in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
-      (X86Runner.run_litmus_test ~parse X86.(op_model ~allow_eager tiny_isa))
+      (X86Runner.run_litmus_test ~parse print_final_states
+         X86.(op_model ~allow_eager tiny_isa)
+      )
       files
   in
   let info =

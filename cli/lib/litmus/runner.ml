@@ -98,9 +98,30 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
+let outcome_freq_to_string yes_freq no_freq =
+  if yes_freq = 0 then "Never" else if no_freq = 0 then "Always" else "Sometimes"
+
+(* Return string of format: Observation <test name> <string freq> <true count> <false count>*)
+let test_observation_stats_to_string bool_list test_name =
+  let (obs_count, not_obs_count) =
+    List.fold_left
+      (fun (t, f) b -> if b then (t + 1, f) else (t, f + 1))
+      (0, 0) bool_list
+  in
+  Printf.sprintf "Observation %s %s %d %d" test_name
+    (outcome_freq_to_string obs_count not_obs_count)
+    obs_count not_obs_count
+
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
+
+  (* Allow conversion of an iterable structure of ArchStates into a set*)
+  module ArchStateSet = Set.Make (struct
+      type t = Arch.ArchState.t
+
+      let compare = Stdlib.compare
+    end)
 
   let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
     List.for_all
@@ -141,7 +162,82 @@ module Make (Arch : Archsem.Arch) = struct
        )
       mem_conds
 
-  let run_executions model init fuel term finals =
+  let final_regs_to_string
+        (fs : ArchState.t)
+        (cond : Testrepr.thread_cond list)
+        (arch : string) : string
+    =
+    String.concat " "
+      (List.concat_map
+         (fun (tid, reqs) ->
+            let regs = ArchState.reg tid fs in
+            List.map
+              (fun (req_name, _) ->
+                 let reg = Reg.of_string req_name in
+                 let value = RegMap.geti reg regs in
+                 (* Note that we are making the register name lowercase *)
+                 let reg_name =
+                   if
+                     String.starts_with ~prefix:"x86" (String.lowercase_ascii arch)
+                   then String.lowercase_ascii req_name
+                   else req_name
+                 in
+                 Printf.sprintf "%d:%s=%d;" tid reg_name value
+               )
+              reqs
+          )
+         cond
+      )
+
+  let final_mem_to_string
+        (fs : ArchState.t)
+        (mem_conds : Testrepr.mem_cond list)
+        (mem_blocks : Testrepr.memory_block list) : string
+    =
+    let mem = ArchState.mem fs in
+    String.concat " "
+      (List.map
+         (fun (mc : Testrepr.mem_cond) ->
+            let mem_symbol = Testrepr.mem_addr_to_symbol mc.addr mem_blocks in
+            let value = MemMap.lookupi mc.addr mc.size mem in
+            Printf.sprintf "[%s]=%d;" mem_symbol value
+          )
+         mem_conds
+      )
+
+  (* Print observation statistics. The format is:
+    Ok/No <optional extra detail>
+    Observation <test_name> Always/Sometimes/Never <#times_test_cond_observed> <#times_test_cond_not_observed> *)
+  let observation_statistics_string
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+        (checking_for_positive : bool)
+        (state_list : ArchState.t list)
+        (test_name : string) : string
+    =
+    let (matched_msg, not_matched_msg) =
+      if checking_for_positive then ("Ok", "No (\"allowed\" not found)")
+      else ("No (\"not allowed\" found)", "Ok")
+    in
+
+    String.concat "\n"
+      (List.map
+         (fun (cond, mem_cond) ->
+            let each_obs_ok =
+              List.map
+                (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
+                state_list
+            in
+            let matched = List.exists Fun.id each_obs_ok in
+            let stats_opening =
+              if matched then matched_msg else not_matched_msg
+            in
+            stats_opening ^ "\n"
+            ^ test_observation_stats_to_string each_obs_ok test_name
+          )
+         conds
+      )
+
+  let run_executions print_final_states model init fuel term test =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -149,12 +245,12 @@ module Make (Arch : Archsem.Arch) = struct
     let observable =
       List.filter_map
         (function Testrepr.Observable (c, mc) -> Some (c, mc) | _ -> None)
-        finals
+        test.Testrepr.finals
     in
     let unobservable =
       List.filter_map
         (function Testrepr.Unobservable (c, mc) -> Some (c, mc) | _ -> None)
-        finals
+        test.Testrepr.finals
     in
 
     let errors =
@@ -172,6 +268,31 @@ module Make (Arch : Archsem.Arch) = struct
         (function ArchModel.Res.Flagged x -> Some x | _ -> None)
         results
     in
+
+    (* If the print-final-states flag is set, print all observable states and statistics *)
+    if print_final_states then (
+      let final_states_set = ArchStateSet.of_list final_states in
+      (* Print number of distinct observed states *)
+      msg (Printf.sprintf "States %d" (ArchStateSet.cardinal final_states_set));
+      (* Print each distinct observable state *)
+      let conds = observable @ unobservable in
+      if conds <> [] then (
+        let (reg_cond, mem_cond) = List.hd (observable @ unobservable) in
+        ArchStateSet.iter
+          (fun fs ->
+             msg
+               (Printf.sprintf "%s %s"
+                  (final_regs_to_string fs reg_cond test.arch)
+                  (final_mem_to_string fs mem_cond test.memory)
+               )
+           )
+          final_states_set;
+        (* Print statistics about the condition(s) that we did and didn't want to observe *)
+        msg (observation_statistics_string observable true final_states test.name);
+        msg
+          (observation_statistics_string unobservable false final_states test.name)
+      )
+    );
 
     List.iter
       (fun e ->
@@ -232,12 +353,12 @@ module Make (Arch : Archsem.Arch) = struct
     in
     (result, List.rev !msgs)
 
-  let run_testrepr model (test : Testrepr.t) =
+  let run_testrepr print_final_states model (test : Testrepr.t) =
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
-    run_executions model init fuel term test.finals
+    run_executions print_final_states model init fuel term test
 
-  let run_litmus_test ~parse model filename =
+  let run_litmus_test ~parse print_final_states model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
       Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset
@@ -247,18 +368,19 @@ module Make (Arch : Archsem.Arch) = struct
     else
       try
         let test = parse filename in
-        let (result, msgs) = run_testrepr model test in
+        let (result, msgs) = run_testrepr print_final_states model test in
         let (icon, color) =
           match result with
           | Expected -> (Terminal.check, Terminal.green)
           | Unexpected -> (Terminal.cross, Terminal.yellow)
           | _ -> (Terminal.cross, Terminal.red)
         in
-        Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
-        List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
+        Printf.printf "\n%s%s%s %s\n" color icon Terminal.reset name;
+        Printf.printf "Test %s Allowed\n" test.name;
+        List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
       with Otoml.Parse_error (pos, msg) ->
-        Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
+        Printf.printf "%s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
           Terminal.reset name Terminal.red
           (Option.fold ~none:"?"
              ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)

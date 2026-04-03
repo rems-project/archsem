@@ -108,3 +108,10 @@ let block_size (mb : memory_block) : int = Bytes.length mb.data
 
 let mem_by_sym (sym : string) =
   List.find (fun (mb : memory_block) -> mb.sym = Some sym)
+
+(* Convert memory address to corresponding symbol. Returns "?" if symbol is None. *)
+let mem_addr_to_symbol (addr : int) (mem_blocks : memory_block list) : string =
+  let mem_block =
+    List.find (fun (mb : memory_block) -> mb.addr = addr) mem_blocks
+  in
+  match mem_block.sym with Some symbol -> symbol | None -> "?"
