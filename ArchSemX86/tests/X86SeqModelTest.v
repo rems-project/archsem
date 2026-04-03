@@ -46,14 +46,14 @@ From ArchSemX86 Require Import X86Inst.
 Open Scope stdpp.
 Open Scope bv.
 
-(** Extract RAX in a Z on success to have something printable by Coq *)
+(** Extract rax in a Z on success to have something printable by Coq *)
 Definition RAX_extract `(a : archModel.Res.t ∅ 1 term) : result string Z :=
   match a with
   | archModel.Res.FinalState fs _ =>
       let regs : registerMap := fs.(archState.regs) !!! 0%fin in
-      if reg_lookup RAX regs is Some r
+      if reg_lookup rax regs is Some r
       then Ok (bv_unsigned r)
-      else Error "RAX not in state"
+      else Error "rax not in state"
   | archModel.Res.Error s => Error s
   | archModel.Res.Flagged e => match e with end
   end.
@@ -71,21 +71,21 @@ Definition regs_extract `(a : archModel.Res.t ∅ 1 term) :
 (** Standard initial configuration for user mode *)
 Definition common_init_regs :=
   ∅
-  |> reg_insert RIP 0x0
-  |> reg_insert RFLAGS 0x3000
+  |> reg_insert rip 0x0
+  |> reg_insert rflags 0x3000
 .
 
 (** We test against the sail-tiny-x86 semantic, with non-determinism disabled *)
 Definition x86_sem := sail_tiny_x86_sem false.
 
-(* Run XOR EAX, ECX at RIP address 0x500, which can have opcode 0b11_000_001 @ 0x33 @ 0x48 = 0xc13348 *)
+(* Run XOR EAX, ECX at rip address 0x500, which can have opcode 0b11_000_001 @ 0x33 @ 0x48 = 0xc13348 *)
 Module XOR.
 
 Definition init_reg : registerMap :=
   common_init_regs
-  |> reg_insert RIP 0x500
-  |> reg_insert RAX 0x11
-  |> reg_insert RCX 0x101
+  |> reg_insert rip 0x500
+  |> reg_insert rax 0x11
+  |> reg_insert rcx 0x101
  .
 
 Definition init_mem : memoryMap:=
@@ -93,7 +93,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x500 3 0xc13348. (* xor EAX, ECX *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup RIP rm =? Some (0x503 : bv 64)).
+  (λ tid rm, reg_lookup rip rm =? Some (0x503 : bv 64)).
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -111,9 +111,9 @@ End XOR.
 Module LDR. (* MOV EAX, [ECX] at 0x500, loading from 0x1000 *)
 Definition init_reg : registerMap :=
   common_init_regs
-  |> reg_insert RIP 0x500
-  |> reg_insert RCX 0x1000
-  |> reg_insert RAX 0x0.
+  |> reg_insert rip 0x500
+  |> reg_insert rcx 0x1000
+  |> reg_insert rax 0x0.
 
 Definition init_mem : memoryMap:=
   ∅
@@ -121,7 +121,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup RIP rm =? Some (0x502 : bv 64)).
+  (λ tid rm, reg_lookup rip rm =? Some (0x502 : bv 64)).
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -139,9 +139,9 @@ End LDR.
 Module STRLDR. (* MOV [EAX + 0x100], ECX; MOV EAX, [EAX + 0x100] at 0x500, using address 0x1100 *)
   Definition init_reg : registerMap :=
     common_init_regs
-    |> reg_insert RIP 0x500
-    |> reg_insert RAX 0x1000
-    |> reg_insert RCX 0x2a.
+    |> reg_insert rip 0x500
+    |> reg_insert rax 0x1000
+    |> reg_insert rcx 0x2a.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -150,7 +150,7 @@ Module STRLDR. (* MOV [EAX + 0x100], ECX; MOV EAX, [EAX + 0x100] at 0x500, using
     |> mem_insert 0x1100 8 0x0. (* Memory need to exist to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup RIP rm =? Some (0x50c : bv 64)).
+    (λ tid rm, reg_lookup rip rm =? Some (0x50c : bv 64)).
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -170,12 +170,12 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
   and with shifted instruction addresses *)
   Definition init_reg : registerMap :=
     common_init_regs
-    |> reg_insert RIP 0x500
-    |> reg_insert RDI 5 (* factorial argument *)
-    |> reg_insert RCX 0x1234 (* return address *) 
-    |> reg_insert RBP 0x1335
-    |> reg_insert RSP 0x1335
-    |> reg_insert RAX 0.
+    |> reg_insert rip 0x500
+    |> reg_insert rdi 5 (* factorial argument *)
+    |> reg_insert rcx 0x1234 (* return address *) 
+    |> reg_insert rbp 0x1335
+    |> reg_insert rsp 0x1335
+    |> reg_insert rax 0.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -191,7 +191,7 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
     |> mem_insert 0x51f 3 0xfc458b          (* mov eax, DWORD PTR [rbp-0x4] *) 
     |> mem_insert 0x522 6 0x00000001e881    (* sub eax, 0x1 *) 
     |> mem_insert 0x528 2 0xc789            (* mov edi, eax *)
-    |> mem_insert 0x52a 5 0xffffffd2e8      (* call 0x501 (relative RIP change is -2e) *)
+    |> mem_insert 0x52a 5 0xffffffd2e8      (* call 0x501 (relative rip change is -2e) *)
     |> mem_insert 0x52f 4 0xfc45af0f        (* imul eax, DWORD PTR [rbp-0x4] *)
     |> mem_insert 0x533 1 0xc9              (* leave *)
     |> mem_insert 0x534 1 0xc3              (* ret *)
@@ -199,7 +199,7 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
     |> mem_insert 0x1235 256 0. (* Memory need to exist to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup RIP rm =? Some (0x1234 : bv 64)).
+    (λ tid rm, reg_lookup rip rm =? Some (0x1234 : bv 64)).
 
   Definition initState :=
     {|archState.memory := init_mem;

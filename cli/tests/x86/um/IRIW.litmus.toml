@@ -15,26 +15,26 @@ symbolic = ["x", "y"]
 # (both readers see "their" write but not the other) cannot occur.
 
 [thread.0]
-init = { RCX = "x" }
+init = { rcx = "x" }
 code = """
 movl $1, (%rcx)
 """
 
 [thread.1]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl (%rcx), %eax
 movl (%rdx), %ebx
 """
 
 [thread.2]
-init = { RDX = "y" }
+init = { rdx = "y" }
 code = """
 movl $1, (%rdx)
 """
 
 [thread.3]
-init = { RCX = "x", RDX = "y" }
+init = { rcx = "x", rdx = "y" }
 code = """
 movl (%rdx), %eax
 movl (%rcx), %ebx
@@ -42,4 +42,4 @@ movl (%rcx), %ebx
 
 [final]
 expect = "unsat"
-assertion = "1:RAX = 1 & 1:RBX = 0 & 3:RAX = 1 & 3:RBX = 0"
+assertion = "1:rax = 1 & 1:rbx = 0 & 3:rax = 1 & 3:rbx = 0"
