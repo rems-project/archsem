@@ -102,12 +102,7 @@ let outcome_freq_to_string yes_freq no_freq =
   if yes_freq = 0 then "Never" else if no_freq = 0 then "Always" else "Sometimes"
 
 (* Return string of format: Observation <test name> <string freq> <true count> <false count>*)
-let test_observation_stats_to_string bool_list test_name =
-  let (obs_count, not_obs_count) =
-    List.fold_left
-      (fun (t, f) b -> if b then (t + 1, f) else (t, f + 1))
-      (0, 0) bool_list
-  in
+let test_observation_stats_to_string obs_count not_obs_count test_name =
   Printf.sprintf "Observation %s %s %d %d" test_name
     (outcome_freq_to_string obs_count not_obs_count)
     obs_count not_obs_count
@@ -162,23 +157,41 @@ module Make (Arch : Archsem.Arch) = struct
        )
       mem_conds
 
+  let get_thread_regname_pairs (reg_cond : Testrepr.thread_cond list) : (int * string) list =
+    List.concat_map (fun (thread, reg_pair) ->
+       List.map (fun (name, _) -> (thread, name)) reg_pair
+     ) reg_cond
+
+  let compare_mem_id (mem_cond_1 : Testrepr.mem_cond) (mem_cond_2 : Testrepr.mem_cond) =
+    if mem_cond_1.sym = mem_cond_2.sym then 0
+    else if mem_cond_1.sym > mem_cond_2.sym then 1
+    else -1
+
+  let get_unique_conds_ignoring_value (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+  : (int * string) list * Testrepr.mem_cond list =
+    (* Assuming that each (Testrepr.thread_cond list * Testrepr.mem_cond list) already contains unique values *)
+    List.fold_left
+      (fun (acc_reg_cond, acc_mem_cond) (reg_cond, mem_cond) -> 
+        let new_reg_cond = get_thread_regname_pairs reg_cond in
+        (List.sort_uniq compare (acc_reg_cond @ new_reg_cond), 
+        List.sort_uniq compare_mem_id (acc_mem_cond @ mem_cond))
+        )
+      ([],[])
+      conds
+
   let final_regs_to_string
         (fs : ArchState.t)
-        (cond : Testrepr.thread_cond list)
+        (regs : (int * string) list) (* list of (thread, reg_name) pairs *)
     =
     String.concat " "
-      (List.concat_map
-         (fun (tid, reqs) ->
+      (List.map
+         (fun (tid, reg_name) ->
             let regs = ArchState.reg tid fs in
-            List.map
-              (fun (req_name, _) ->
-                 let reg = Reg.of_string req_name in
-                 let value = RegMap.geti reg regs in
-                 Printf.sprintf "%d:%s=%d;" tid req_name value
-               )
-              reqs
+            let reg = Reg.of_string reg_name in
+            let value = RegMap.geti reg regs in
+            Printf.sprintf "%d:%s=%d;" tid reg_name value
           )
-         cond
+         regs
       )
 
   let final_mem_to_string
@@ -195,6 +208,19 @@ module Make (Arch : Archsem.Arch) = struct
          mem_conds
       )
 
+  let get_obs_count
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+        (state_list : ArchState.t list) =
+    (List.length state_list) - List.length (
+      List.fold_left
+         (fun unmatched_state_list (cond, mem_cond) -> (
+            List.filter
+              (fun fs -> not (check_outcome fs cond && check_mem_outcome fs mem_cond))
+              unmatched_state_list )
+          )
+          state_list
+         conds)
+
   (* Print observation statistics. The format is:
     Ok/No <optional extra detail>
     Observation <test_name> Always/Sometimes/Never <#times_test_cond_observed> <#times_test_cond_not_observed> *)
@@ -208,24 +234,9 @@ module Make (Arch : Archsem.Arch) = struct
       if checking_for_positive then ("Ok", "No (\"allowed\" not found)")
       else ("No (\"not allowed\" found)", "Ok")
     in
-
-    String.concat "\n"
-      (List.map
-         (fun (cond, mem_cond) ->
-            let each_obs_ok =
-              List.map
-                (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
-                state_list
-            in
-            let matched = List.exists Fun.id each_obs_ok in
-            let stats_opening =
-              if matched then matched_msg else not_matched_msg
-            in
-            stats_opening ^ "\n"
-            ^ test_observation_stats_to_string each_obs_ok test_name
-          )
-         conds
-      )
+    let obs_count = get_obs_count conds state_list in
+    let msg = if obs_count > 0 then matched_msg else not_matched_msg in
+    msg ^ "\n" ^ test_observation_stats_to_string obs_count (List.length state_list - obs_count) test_name
 
   let run_executions print_final_states model init fuel term test =
     let msgs = ref [] in
@@ -267,7 +278,7 @@ module Make (Arch : Archsem.Arch) = struct
       (* Print each distinct observable state *)
       let conds = observable @ unobservable in
       if conds <> [] then (
-        let (reg_cond, mem_cond) = List.hd (observable @ unobservable) in
+        let (reg_cond, mem_cond) = get_unique_conds_ignoring_value conds in
         ArchStateSet.iter
           (fun fs ->
              msg
@@ -278,9 +289,11 @@ module Make (Arch : Archsem.Arch) = struct
            )
           final_states_set;
         (* Print statistics about the condition(s) that we did and didn't want to observe *)
-        msg (observation_statistics_string observable true final_states test.name);
-        msg
-          (observation_statistics_string unobservable false final_states test.name)
+        if observable <> [] then
+          msg (observation_statistics_string observable true final_states test.name)
+        else if unobservable <> [] then
+          msg (observation_statistics_string unobservable false final_states test.name)
+        else msg "ERROR: no conditions to observe"
       )
     );
 
