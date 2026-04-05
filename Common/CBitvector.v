@@ -42,7 +42,7 @@
 
 From Stdlib Require Import Lia HexString.
 
-From stdpp Require Import decidable countable vector pretty.
+From stdpp Require Import decidable countable finite vector pretty.
 From stdpp.bitvector Require Import bitvector tactics.
 
 Require Import Options.
@@ -59,6 +59,27 @@ Proof using.
   - left. abstract naive_solver use bv_eq.
   - right. abstract (subst; rewrite JMeq_simpl; naive_solver).
 Defined.
+
+#[export] Remove Hints bv_eq_dec : typeclass_instances.
+#[export] Remove Hints bv_countable : typeclass_instances.
+#[export] Remove Hints bv_finite : typeclass_instances.
+
+#[export] Instance bv_eq_dec_compute (n : N) : EqDecision (bv n).
+Proof.
+  intros [v1 p1] [v2 p2].
+  destruct (Z.eq_dec v1 v2) as [-> | Hne].
+  - left. f_equal. apply proof_irrelevance.
+  - right. intros H. apply Hne. exact (f_equal bv_unsigned H).
+Defined.
+
+#[export] Instance bv_countable_compute n : Countable (bv n) :=
+  inj_countable bv_unsigned (Z_to_bv_checked n) (Z_to_bv_checked_bv_unsigned n).
+
+#[export] Instance bv_finite_compute n : Finite (bv n) := {|
+  enum := @enum _ _ (@bv_finite n);
+  NoDup_enum := @NoDup_enum _ _ (@bv_finite n);
+  elem_of_enum := @elem_of_enum _ _ (@bv_finite n)
+|}.
 
 (** Pretty instances *)
 
