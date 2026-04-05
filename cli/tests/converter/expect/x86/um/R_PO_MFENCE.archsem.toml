@@ -1,0 +1,53 @@
+arch = "x86"
+name = "R_PO_MFENCE"
+
+[[registers]]
+  RIP = 1280
+  RAX = 0
+  RCX = 4352
+  RDX = 4608
+  RFLAGS = 12288
+
+[[registers]]
+  RIP = 1536
+  RAX = 0
+  RCX = 4352
+  RDX = 4608
+  RFLAGS = 12288
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 1
+  data = [199, 1, 1, 0, 0, 0, 199, 2, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 1536
+  step = 1
+  data = [199, 2, 2, 0, 0, 0, 15, 174, 240, 139, 1]
+
+[[memory]]
+  addr = 4352
+  step = 8
+  data = 0
+
+[[memory]]
+  addr = 4608
+  step = 8
+  data = 0
+
+[[termCond]]
+  RIP = 1292
+
+[[termCond]]
+  RIP = 1547
+
+[[outcome]]
+  observable = {"1" = {RAX = 0}}
+
+[[outcome]]
+  observable = {"1" = {RAX = 1}}
+
+[[outcome]]
+  observable = {"1" = {RAX = 1}}

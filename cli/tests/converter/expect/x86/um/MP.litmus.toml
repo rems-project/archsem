@@ -1,0 +1,75 @@
+arch = "X86"
+name = "MP"
+
+[[registers]]
+  RIP = 9472
+  RCX = 1280
+  RDX = 5376
+  RAX = 0
+  RBX = 0
+  RSP = 0
+  RBP = 0
+  RSI = 0
+  RDI = 0
+  "R8" = 0
+  "R9" = 0
+  "R10" = 0
+  "R11" = 0
+  "R12" = 0
+  "R13" = 0
+  "R14" = 0
+  "R15" = 0
+  RFLAGS = 0
+
+[[registers]]
+  RIP = 13568
+  RCX = 1280
+  RDX = 5376
+  RAX = 0
+  RBX = 0
+  RSP = 0
+  RBP = 0
+  RSI = 0
+  RDI = 0
+  "R8" = 0
+  "R9" = 0
+  "R10" = 0
+  "R11" = 0
+  "R12" = 0
+  "R13" = 0
+  "R14" = 0
+  "R15" = 0
+  RFLAGS = 0
+
+[[memory]]
+  kind = "code"
+  addr = 9472
+  step = 1
+  data = [199, 1, 1, 0, 0, 0, 199, 2, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 13568
+  step = 1
+  data = [139, 2, 139, 25]
+
+[[memory]]
+  sym = "x"
+  addr = 1280
+  step = 8
+  data = 0
+
+[[memory]]
+  sym = "y"
+  addr = 5376
+  step = 8
+  data = 0
+
+[[termCond]]
+  RIP = 9484
+
+[[termCond]]
+  RIP = 13572
+
+[[outcome]]
+  unobservable = {"1" = {RAX = 1, RBX = 0}}

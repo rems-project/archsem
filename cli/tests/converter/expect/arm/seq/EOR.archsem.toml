@@ -1,0 +1,22 @@
+arch = "Arm"
+name = "EOR"
+
+[[registers]]
+  _PC = 1280
+  "R0" = 0
+  "R1" = 17
+  "R2" = 257
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
+
+[[memory]]
+  kind = "code"
+  addr = 1280
+  step = 4
+  data = 3389128736
+
+[[termCond]]
+  _PC = 1284
+
+[[outcome]]
+  observable = {"0" = {_PC = 1284, "R0" = 272}}

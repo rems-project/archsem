@@ -1,4 +1,4 @@
-(lang dune 3.8)
+(lang dune 3.14)
 (name coq-archsem)
 (using coq 0.8)
 (using menhir 2.1)
