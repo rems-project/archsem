@@ -79,6 +79,8 @@ let parse_value = function
       type_error "Value is invalid, should be int or string, but is: %s"
         (Otoml.Printer.to_string value)
 
+let is_meta_key k = String.starts_with ~prefix:"__isla" k
+
 let parse_thread (tid, table) =
   let tid =
     match int_of_string_opt tid with
@@ -90,7 +92,16 @@ let parse_thread (tid, table) =
   let init =
     Otoml.find_or ~default:[] table (Otoml.get_table_values parse_value) ["init"]
   in
-  {tid; code; init}
+  let reset =
+    Otoml.find_or ~default:[] table Otoml.get_table ["reset"]
+    |> List.filter (fun (k, _) -> not (is_meta_key k))
+    |> List.map (fun (k, v) -> (k, parse_value v))
+  in
+  let init_keys = List.map fst init in
+  let merged =
+    init @ List.filter (fun (k, _) -> not (List.mem k init_keys)) reset
+  in
+  {tid; code; init = merged}
 
 let parse_threads toml =
   let table = Otoml.get_table toml in
