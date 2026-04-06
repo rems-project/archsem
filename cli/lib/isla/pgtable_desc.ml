@@ -37,44 +37,90 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Function registry for isla term evaluation.
+(** AArch64 page table descriptor primitives.
 
-    Defines the [fn_spec] type and lookup/evaluation helpers.
-    Concrete function lists are provided by [Bv_fns] and
-    [Pgtable_fns]; callers pass the assembled list via [~fns]. *)
+    Pure functions for descriptor encoding, table walk, and entry lookup.
+    No dependencies on Term, Function, or Pgtable evaluator. *)
 
-type table_data = Pgtable_desc.table_data
+let table_size = 4096
 
-type fn_spec =
-  { params : string list;
-    eval : table_data -> Z.t list -> Z.t
-  }
+let entry_size = 8
 
-let arity_error name n =
-  failwith (Printf.sprintf "function %s: expected %d args" name n)
+(** {1 Address geometry} *)
 
-let find fns name = List.assoc_opt name fns
+let level_shift = function
+  | 0 -> 39
+  | 1 -> 30
+  | 2 -> 21
+  | 3 -> 12
+  | n -> failwith (Printf.sprintf "pgt_desc: invalid level %d" n)
 
-let eval_fn ~fns ?(td = []) name args =
-  match find fns name with
-  | Some spec -> spec.eval td args
-  | None ->
-      failwith (Printf.sprintf "function: unknown %s/%d" name (List.length args))
+let va_index va level = (va lsr level_shift level) land 0x1FF
 
-let align_kwargs ~fns name kwargs =
-  match find fns name with
-  | Some spec ->
-      List.map
-        (fun param ->
-           match List.assoc_opt param kwargs with
-           | Some v -> v
-           | None ->
-               failwith
-                 (Printf.sprintf "function %s: missing argument %s" name param)
-         )
-        spec.params
-  | None -> failwith (Printf.sprintf "function: unknown keyword function %s" name)
+(** {1 Descriptor encoding}
 
-let eval_kwfn ~fns ?(td = []) name kwargs =
-  let args = align_kwargs ~fns name kwargs in
-  eval_fn ~fns ~td name args
+    Attribute bits are stored WITHOUT the type field (bits 1:0).
+    Each constructor sets the type:
+    - table/page descriptor: bits 1:0 = 0b11
+    - block descriptor (L1/L2): bits 1:0 = 0b01 *)
+
+let table_descriptor next_table_pa = next_table_pa land 0x0000FFFFFFFFF000 lor 0x3
+
+let aarch64_data_attrs = 0x440
+
+let aarch64_code_attrs = 0x4C0
+
+let page_descriptor pa attrs = pa land 0x0000FFFFFFFFF000 lor attrs lor 0x3
+
+let block_descriptor pa level attrs =
+  let shift = level_shift level in
+  let mask = -1 lsl shift in
+  pa land mask land 0x0000FFFFFFFFFFFF lor attrs lor 0x1
+
+let make_desc ~level ~oa ~attrs () =
+  if level = 3 then page_descriptor oa attrs else block_descriptor oa level attrs
+
+(** {1 Table entry read/write} *)
+
+let write_entry data idx value =
+  let offset = idx * entry_size in
+  for i = 0 to 7 do
+    let byte = (value lsr (i * 8)) land 0xFF in
+    Bytes.set data (offset + i) (Char.chr byte)
+  done
+
+let read_entry data idx =
+  let offset = idx * entry_size in
+  let v = ref 0 in
+  for i = 7 downto 0 do
+    v := (!v lsl 8) lor Char.code (Bytes.get data (offset + i))
+  done;
+  !v
+
+(** {1 Table walk} *)
+
+type table_data = (int * Bytes.t) list
+
+let lookup_pte_addr ~(table_data : table_data) ~base va level =
+  let rec walk cur_base cur_level =
+    let idx = va_index va cur_level in
+    if cur_level = level then cur_base + (idx * entry_size)
+    else
+      let tbl = List.assoc cur_base table_data in
+      let desc = read_entry tbl idx in
+      if desc land 0x3 <> 0x3 then
+        failwith
+          (Printf.sprintf "pgt_desc: no table descriptor at level %d for VA 0x%x"
+             cur_level va
+          );
+      let next = desc land 0x0000FFFFFFFFF000 in
+      walk next (cur_level + 1)
+  in
+  walk base 0
+
+let lookup_desc_value ~(table_data : table_data) ~base va level =
+  let addr = lookup_pte_addr ~table_data ~base va level in
+  let tbl_base = addr - (addr mod table_size) in
+  let idx = (addr - tbl_base) / entry_size in
+  let tbl = List.assoc tbl_base table_data in
+  read_entry tbl idx

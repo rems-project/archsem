@@ -37,44 +37,92 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Function registry for isla term evaluation.
+(** Page table query functions: pteN, descN, mkdescN, page, asid.
+    Delegates descriptor lookups to {!Pgtable_desc}. *)
 
-    Defines the [fn_spec] type and lookup/evaluation helpers.
-    Concrete function lists are provided by [Bv_fns] and
-    [Pgtable_fns]; callers pass the assembled list via [~fns]. *)
+let pgt_fn_for_level prefix level ~mk_eval =
+  let name = Printf.sprintf "%s%d" prefix level in
+  (name, {Fn_registry.params = ["va"; "base"]; eval = mk_eval name level})
 
-type table_data = Pgtable_desc.table_data
+let pgt_functions : (string * Fn_registry.fn_spec) list =
+  let levels = [0; 1; 2; 3] in
+  [ ( "page",
+      { Fn_registry.params = ["a"];
+        eval =
+          (fun _ -> function
+             | [a] ->
+                 Z.logand (Z.shift_right a 12)
+                   (Z.sub (Z.shift_left Z.one 36) Z.one)
+             | _ -> Fn_registry.arity_error "page" 1
+             )
+      }
+    )
+  ]
+  @ List.map
+      (pgt_fn_for_level "pte" ~mk_eval:(fun name level ->
+         fun td -> function
+           | [va; base] ->
+               Z.of_int
+                 (Pgtable_desc.lookup_pte_addr ~table_data:td
+                    ~base:(Z.to_int base) (Z.to_int va) level
+                 )
+           | _ -> Fn_registry.arity_error name 2
+       )
+      )
+      levels
+  @ List.map
+      (pgt_fn_for_level "desc" ~mk_eval:(fun name level ->
+         fun td -> function
+           | [va; base] ->
+               Z.of_int
+                 (Pgtable_desc.lookup_desc_value ~table_data:td
+                    ~base:(Z.to_int base) (Z.to_int va) level
+                 )
+           | _ -> Fn_registry.arity_error name 2
+       )
+      )
+      levels
+  @ List.concat_map
+      (fun level ->
+         let name = Printf.sprintf "mkdesc%d" level in
+         [ ( name,
+             { Fn_registry.params = ["oa"];
+               eval =
+                 (fun _ -> function
+                    | [oa] ->
+                        Z.of_int
+                          (Pgtable_desc.make_desc ~level ~oa:(Z.to_int oa)
+                             ~attrs:Pgtable_desc.aarch64_data_attrs ()
+                          )
+                    | _ -> Fn_registry.arity_error name 1
+                    )
+             }
+           );
+           ( name ^ "_table",
+             { Fn_registry.params = ["table"];
+               eval =
+                 (fun _ -> function
+                    | [table_addr] ->
+                        Z.of_int
+                          (Pgtable_desc.table_descriptor (Z.to_int table_addr))
+                    | _ -> Fn_registry.arity_error (name ^ "_table") 1
+                    )
+             }
+           )
+         ]
+       )
+      levels
 
-type fn_spec =
-  { params : string list;
-    eval : table_data -> Z.t list -> Z.t
-  }
+let misc_functions : (string * Fn_registry.fn_spec) list =
+  [ ( "asid",
+      { Fn_registry.params = ["v"];
+        eval =
+          (fun _ -> function
+             | [v] -> Z.shift_left v 48 | _ -> Fn_registry.arity_error "asid" 1
+             )
+      }
+    )
+  ]
 
-let arity_error name n =
-  failwith (Printf.sprintf "function %s: expected %d args" name n)
-
-let find fns name = List.assoc_opt name fns
-
-let eval_fn ~fns ?(td = []) name args =
-  match find fns name with
-  | Some spec -> spec.eval td args
-  | None ->
-      failwith (Printf.sprintf "function: unknown %s/%d" name (List.length args))
-
-let align_kwargs ~fns name kwargs =
-  match find fns name with
-  | Some spec ->
-      List.map
-        (fun param ->
-           match List.assoc_opt param kwargs with
-           | Some v -> v
-           | None ->
-               failwith
-                 (Printf.sprintf "function %s: missing argument %s" name param)
-         )
-        spec.params
-  | None -> failwith (Printf.sprintf "function: unknown keyword function %s" name)
-
-let eval_kwfn ~fns ?(td = []) name kwargs =
-  let args = align_kwargs ~fns name kwargs in
-  eval_fn ~fns ~td name args
+let functions : (string * Fn_registry.fn_spec) list =
+  pgt_functions @ misc_functions

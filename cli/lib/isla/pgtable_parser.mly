@@ -37,44 +37,67 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Function registry for isla term evaluation.
+%{
+  open Pgtable
+%}
 
-    Defines the [fn_spec] type and lookup/evaluation helpers.
-    Concrete function lists are provided by [Bv_fns] and
-    [Pgtable_fns]; callers pass the assembled list via [~fns]. *)
+%token <Z.t> NUM
+%token <string> IDENT
+%token SEMICOLON ";"
+%token EQ "="
+%token LPAREN "("
+%token RPAREN ")"
+%token COMMA ","
+%token LBRACKET "["
+%token RBRACKET "]"
+%token STAR "*"
+%token MAPS_TO "|->"
+%token PHYSICAL VIRTUAL
+%token WITH DEFAULT CODE AND
+%token EOF
 
-type table_data = Pgtable_desc.table_data
+%start <Pgtable.stmt list> program
 
-type fn_spec =
-  { params : string list;
-    eval : table_data -> Z.t list -> Z.t
-  }
+%%
 
-let arity_error name n =
-  failwith (Printf.sprintf "function %s: expected %d args" name n)
+program:
+  | ss = list(stmt) EOF { ss }
 
-let find fns name = List.assoc_opt name fns
+stmt:
+  | s = stmt_inner ";" { s }
 
-let eval_fn ~fns ?(td = []) name args =
-  match find fns name with
-  | Some spec -> spec.eval td args
-  | None ->
-      failwith (Printf.sprintf "function: unknown %s/%d" name (List.length args))
+stmt_inner:
+  | PHYSICAL; names = separated_nonempty_list(COMMA, IDENT)
+    { AddrDecl { kind = Physical; names } }
+  | VIRTUAL; names = separated_nonempty_list(COMMA, IDENT)
+    { AddrDecl { kind = Virtual; names } }
+  | va = IDENT; "|->"; pa = IDENT; ws = opt_with_spec
+    { Mapping { va; pa; with_spec = ws } }
+  | "*"; addr = IDENT; "="; v = value_expr
+    { MemInit { addr; value = v } }
 
-let align_kwargs ~fns name kwargs =
-  match find fns name with
-  | Some spec ->
-      List.map
-        (fun param ->
-           match List.assoc_opt param kwargs with
-           | Some v -> v
-           | None ->
-               failwith
-                 (Printf.sprintf "function %s: missing argument %s" name param)
-         )
-        spec.params
-  | None -> failwith (Printf.sprintf "function: unknown keyword function %s" name)
+opt_with_spec:
+  | (* empty *) { [WsDefault] }
+  | WITH; ws = with_spec { ws }
 
-let eval_kwfn ~fns ?(td = []) name kwargs =
-  let args = align_kwargs ~fns name kwargs in
-  eval_fn ~fns ~td name args
+with_spec:
+  | DEFAULT { [WsDefault] }
+  | CODE { [WsCode] }
+  | "["; attrs = separated_nonempty_list(COMMA, attr); "]"
+    { [WsAttrs attrs] }
+  | "["; attrs = separated_nonempty_list(COMMA, attr); "]"; AND; rest = with_spec
+    { WsAttrs attrs :: rest }
+  | DEFAULT; AND; rest = with_spec { WsDefault :: rest }
+  | CODE; AND; rest = with_spec { WsCode :: rest }
+
+attr:
+  | k = IDENT; "="; v = value_expr { (k, v) }
+
+value_expr:
+  | v = NUM { Term.Const v }
+  | f = IDENT; "("; args = separated_list(",", value_expr); ")" { Term.Fn (f, args) }
+  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
+  | s = IDENT { Term.LocVal (Mem s) }
+
+kw_arg:
+  | k = IDENT; "="; v = value_expr { (k, v) }

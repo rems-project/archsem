@@ -170,7 +170,8 @@ let generate_asm (input : assembly_input) : string =
 (* {1 Stage 1b: linker script generation} *)
 
 let base_addr () =
-  Otoml.find (Config.get ()) Otoml.get_integer ["isla"; "symbols"; "base_address"]
+  Otoml.find (Config.get ()) Otoml.get_integer
+    ["isla"; "symbols"; "pa_base_address"]
 
 let page_bits () =
   Otoml.find (Config.get ()) Otoml.get_integer ["isla"; "page_bits"]

@@ -3,7 +3,7 @@
  (public_name archsem.isla)
  (libraries archsem litmus otoml zarith unix linksem))
 
-(ocamllex lexer)
+(ocamllex lexer pgtable_lexer)
 
 (menhir
- (modules parser))
+ (modules parser pgtable_parser))

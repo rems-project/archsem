@@ -37,44 +37,39 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Function registry for isla term evaluation.
+{
+  open Pgtable_parser
+}
 
-    Defines the [fn_spec] type and lookup/evaluation helpers.
-    Concrete function lists are provided by [Bv_fns] and
-    [Pgtable_fns]; callers pass the assembled list via [~fns]. *)
+let digit = ['0'-'9']
+let hex = ['0'-'9' 'a'-'f' 'A'-'F']
+let alpha = ['a'-'z' 'A'-'Z' '_']
+let alnum = alpha | digit
 
-type table_data = Pgtable_desc.table_data
-
-type fn_spec =
-  { params : string list;
-    eval : table_data -> Z.t list -> Z.t
-  }
-
-let arity_error name n =
-  failwith (Printf.sprintf "function %s: expected %d args" name n)
-
-let find fns name = List.assoc_opt name fns
-
-let eval_fn ~fns ?(td = []) name args =
-  match find fns name with
-  | Some spec -> spec.eval td args
-  | None ->
-      failwith (Printf.sprintf "function: unknown %s/%d" name (List.length args))
-
-let align_kwargs ~fns name kwargs =
-  match find fns name with
-  | Some spec ->
-      List.map
-        (fun param ->
-           match List.assoc_opt param kwargs with
-           | Some v -> v
-           | None ->
-               failwith
-                 (Printf.sprintf "function %s: missing argument %s" name param)
-         )
-        spec.params
-  | None -> failwith (Printf.sprintf "function: unknown keyword function %s" name)
-
-let eval_kwfn ~fns ?(td = []) name kwargs =
-  let args = align_kwargs ~fns name kwargs in
-  eval_fn ~fns ~td name args
+rule token = parse
+  | [' ' '\t' '\r' '\n']+ { token lexbuf }
+  | ';'        { SEMICOLON }
+  | '='        { EQ }
+  | '('        { LPAREN }
+  | ')'        { RPAREN }
+  | ','        { COMMA }
+  | '['        { LBRACKET }
+  | ']'        { RBRACKET }
+  | '*'        { STAR }
+  | "|->"      { MAPS_TO }
+  | "physical"     { PHYSICAL }
+  | "virtual"      { VIRTUAL }
+  | "with"         { WITH }
+  | "default"      { DEFAULT }
+  | "code"         { CODE }
+  | "and"          { AND }
+  | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
+  | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
+  | digit+ as s { NUM (Z.of_string s) }
+  | alpha alnum* as s { IDENT s }
+  | eof { EOF }
+  | _ as c {
+      failwith (Printf.sprintf
+        "pgtable lexer: unexpected character '%c' at position %d"
+        c (Lexing.lexeme_start lexbuf))
+    }

@@ -37,7 +37,6 @@
 (*  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  *)
 (*                                                                            *)
 (******************************************************************************)
-
 (** Parse isla-format TOML into an intermediate representation. *)
 
 (** {1 Isla test internal representation } *)
@@ -63,6 +62,7 @@ type t =
     name : string;
     threads : thread list;
     sections : section list;
+    page_table_setup : Pgtable.stmt list;
     symbolic : string list;
     locations : (string * Term.t) list;
     expect : expect;
@@ -72,6 +72,10 @@ type t =
 (** {1 Isla test parsing } *)
 
 let type_error fmt = Printf.ksprintf (fun s -> raise (Otoml.Type_error s)) fmt
+
+(** Key prefixes treated as tool-internal metadata and silently ignored
+    when parsing [thread.N.reset] tables. *)
+let is_meta_key k = String.starts_with ~prefix:"__isla" k
 
 let parse_value = function
   | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
@@ -94,8 +98,6 @@ let parse_value = function
       type_error "value must be int or string expression, but is: %s"
         (Otoml.Printer.to_string value)
 
-let is_meta_key k = String.starts_with ~prefix:"__isla" k
-
 let parse_thread (tid, table) =
   let tid =
     match int_of_string_opt tid with
@@ -107,15 +109,14 @@ let parse_thread (tid, table) =
   let init =
     Otoml.find_or ~default:[] table (Otoml.get_table_values parse_value) ["init"]
   in
-  let reset =
-    Otoml.find_or ~default:[] table Otoml.get_table ["reset"]
-    |> List.filter (fun (k, _) -> not (is_meta_key k))
-    |> List.map (fun (k, v) -> (k, parse_value v))
+  let parse_reset_table toml =
+    List.filter_map
+      (fun (k, v) -> if is_meta_key k then None else Some (k, parse_value v))
+      (Otoml.get_table toml)
   in
-  let init_keys = List.map fst init in
-  let merged =
-    init @ List.filter (fun (k, _) -> not (List.mem k init_keys)) reset
-  in
+  let reset = Otoml.find_or ~default:[] table parse_reset_table ["reset"] in
+  let has_init name = List.exists (fun (k, _) -> k = name) init in
+  let merged = init @ List.filter (fun (k, _) -> not (has_init k)) reset in
   {tid; code; init = merged}
 
 let parse_threads toml =
@@ -126,8 +127,7 @@ let parse_address = function
   | Otoml.TomlInteger i -> i
   | Otoml.TomlString s -> (
     try Z.to_int (Z.of_string s)
-    with Invalid_argument _ | Z.Overflow ->
-      raise (Otoml.Type_error ("invalid address: " ^ s))
+    with Invalid_argument _ -> raise (Otoml.Type_error ("invalid address: " ^ s))
   )
   | v ->
       raise
@@ -170,11 +170,23 @@ let parse_arch toml =
   try Litmus.Arch_id.of_string arch_string
   with Failure msg -> raise (Otoml.Type_error msg)
 
+let parse_page_table_setup toml =
+  let s = Otoml.get_string toml |> String.trim in
+  if s = "" then []
+  else
+    let lexbuf = Lexing.from_string s in
+    try Pgtable_parser.program Pgtable_lexer.token lexbuf
+    with Pgtable_parser.Error ->
+      type_error "page_table_setup parse error at position %d"
+        lexbuf.lex_curr_p.pos_cnum
+
 let of_toml toml =
   { arch = Otoml.find toml parse_arch ["arch"];
     name = Otoml.find_or ~default:"unknown" toml Otoml.get_string ["name"];
     threads = Otoml.find toml parse_threads ["thread"];
     sections = Otoml.find_or ~default:[] toml parse_sections ["section"];
+    page_table_setup =
+      Otoml.find_or ~default:[] toml parse_page_table_setup ["page_table_setup"];
     symbolic =
       Otoml.find_or ~default:[] toml
         (Otoml.get_array Otoml.get_string)

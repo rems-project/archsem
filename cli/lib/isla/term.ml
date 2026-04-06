@@ -50,7 +50,7 @@ type t =
   | Fn of string * t list
   | KwFn of string * (string * t) list
 
-let functions = Bv_fns.functions
+let functions = Bv_fns.functions @ Pgtable_fns.functions
 
 let eval_fn ?(td = []) name args =
   Fn_registry.eval_fn ~fns:functions ~td name args
