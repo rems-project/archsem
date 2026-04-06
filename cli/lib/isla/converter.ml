@@ -92,10 +92,12 @@ let default_memory_size () =
 
 (* {1 IR to assembly_input} *)
 
-let z_of_value asm_result = function
-  | Term.Const z -> z
-  | Term.LocVal (Mem sym) -> Z.of_int (Assembler.resolve_symbol asm_result sym)
-  | _ -> failwith "non-constant/symbol value not supported in this context"
+let z_of_value asm_result expr =
+  let env = function
+    | Term.Mem sym -> Some (Z.of_int (Assembler.resolve_symbol asm_result sym))
+    | _ -> None
+  in
+  Term.eval ~env expr
 
 let init_bytes_of_value mem_size sym value =
   if Z.numbits value > mem_size * 8 then

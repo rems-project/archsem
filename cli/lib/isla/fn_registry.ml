@@ -37,24 +37,44 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Bitvector terms: AST and constant evaluator. *)
+(** Function registry for isla term evaluation.
 
-type loc =
-  | Reg of int * string
-  | Mem of string
+    Defines the [fn_spec] type and lookup/evaluation helpers.
+    Concrete function lists are provided by [Bv_fns] (and later
+    [Pgtable_fns]); callers pass the assembled list via [~fns]. *)
 
-type t =
-  | Const of Z.t
-  | LocVal of loc
-  | Deref of loc
-  | Fn of string * t list
-  | KwFn of string * (string * t) list
+type table_data = (int * Bytes.t) list
 
-val string_of_loc : loc -> string
+type fn_spec =
+  { params : string list;
+    eval : table_data -> Z.t list -> Z.t
+  }
 
-(** Evaluate a [t] to a concrete integer.
-    [~env] maps [LocVal] leaves to integers; returns [None] for unbound locations. *)
-val eval : ?td:Fn_registry.table_data -> env:(loc -> Z.t option) -> t -> Z.t
+let arity_error name n =
+  failwith (Printf.sprintf "function %s: expected %d args" name n)
 
-(** Evaluate a positional function call. Delegates to {!Fn_registry.eval_fn}. *)
-val eval_fn : ?td:Fn_registry.table_data -> string -> Z.t list -> Z.t
+let find fns name = List.assoc_opt name fns
+
+let eval_fn ~fns ?(td = []) name args =
+  match find fns name with
+  | Some spec -> spec.eval td args
+  | None ->
+      failwith (Printf.sprintf "function: unknown %s/%d" name (List.length args))
+
+let align_kwargs ~fns name kwargs =
+  match find fns name with
+  | Some spec ->
+      List.map
+        (fun param ->
+           match List.assoc_opt param kwargs with
+           | Some v -> v
+           | None ->
+               failwith
+                 (Printf.sprintf "function %s: missing argument %s" name param)
+         )
+        spec.params
+  | None -> failwith (Printf.sprintf "function: unknown keyword function %s" name)
+
+let eval_kwfn ~fns ?(td = []) name kwargs =
+  let args = align_kwargs ~fns name kwargs in
+  eval_fn ~fns ~td name args

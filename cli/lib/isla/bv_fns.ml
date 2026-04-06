@@ -37,24 +37,66 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Bitvector terms: AST and constant evaluator. *)
+(** Bitvector functions: bvand, bvor, bvxor, bvshl, bvlshr, extz, exts. *)
 
-type loc =
-  | Reg of int * string
-  | Mem of string
-
-type t =
-  | Const of Z.t
-  | LocVal of loc
-  | Deref of loc
-  | Fn of string * t list
-  | KwFn of string * (string * t) list
-
-val string_of_loc : loc -> string
-
-(** Evaluate a [t] to a concrete integer.
-    [~env] maps [LocVal] leaves to integers; returns [None] for unbound locations. *)
-val eval : ?td:Fn_registry.table_data -> env:(loc -> Z.t option) -> t -> Z.t
-
-(** Evaluate a positional function call. Delegates to {!Fn_registry.eval_fn}. *)
-val eval_fn : ?td:Fn_registry.table_data -> string -> Z.t list -> Z.t
+let functions : (string * Fn_registry.fn_spec) list =
+  [ ( "bvand",
+      { params = ["a"; "b"];
+        eval =
+          (fun _ -> function
+             | [a; b] -> Z.logand a b | _ -> Fn_registry.arity_error "bvand" 2
+             )
+      }
+    );
+    ( "bvor",
+      { params = ["a"; "b"];
+        eval =
+          (fun _ -> function
+             | [a; b] -> Z.logor a b | _ -> Fn_registry.arity_error "bvor" 2
+             )
+      }
+    );
+    ( "bvxor",
+      { params = ["a"; "b"];
+        eval =
+          (fun _ -> function
+             | [a; b] -> Z.logxor a b | _ -> Fn_registry.arity_error "bvxor" 2
+             )
+      }
+    );
+    ( "bvshl",
+      { params = ["a"; "b"];
+        eval =
+          (fun _ -> function
+             | [a; b] -> Z.shift_left a (Z.to_int b)
+             | _ -> Fn_registry.arity_error "bvshl" 2
+             )
+      }
+    );
+    ( "bvlshr",
+      { params = ["a"; "b"];
+        eval =
+          (fun _ -> function
+             | [a; b] -> Z.shift_right a (Z.to_int b)
+             | _ -> Fn_registry.arity_error "bvlshr" 2
+             )
+      }
+    );
+    ( "extz",
+      { params = ["bits"; "len"];
+        eval =
+          (fun _ -> function
+             | [bits; _len] -> bits | _ -> Fn_registry.arity_error "extz" 2
+             )
+      }
+    );
+    ( "exts",
+      { params = ["bits"; "len"];
+        eval =
+          (fun _ -> function
+             | [bits; len] -> Z.signed_extract bits 0 (Z.to_int len)
+             | _ -> Fn_registry.arity_error "exts" 2
+             )
+      }
+    )
+  ]

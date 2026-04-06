@@ -37,7 +37,7 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Bitvector terms: AST for isla value expressions. *)
+(** Bitvector terms: AST and evaluator. *)
 
 type loc =
   | Reg of int * string
@@ -50,6 +50,30 @@ type t =
   | Fn of string * t list
   | KwFn of string * (string * t) list
 
+let functions = Bv_fns.functions
+
+let eval_fn ?(td = []) name args =
+  Fn_registry.eval_fn ~fns:functions ~td name args
+
 let string_of_loc = function
   | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
   | Mem sym -> sym
+
+let rec eval ?(td = []) ~env = function
+  | Const z -> z
+  | LocVal loc -> (
+    match env loc with
+    | Some z -> z
+    | None -> failwith (Printf.sprintf "term: unbound %s" (string_of_loc loc))
+  )
+  | Deref loc ->
+      failwith
+        (Printf.sprintf "term: cannot evaluate deref *%s statically"
+           (string_of_loc loc)
+        )
+  | Fn (name, args) ->
+      let evaluated = List.map (eval ~td ~env) args in
+      Fn_registry.eval_fn ~fns:functions ~td name evaluated
+  | KwFn (name, kwargs) ->
+      let evaluated = List.map (fun (k, v) -> (k, eval ~td ~env v)) kwargs in
+      Fn_registry.eval_kwfn ~fns:functions ~td name evaluated

@@ -77,10 +77,21 @@ let parse_value = function
   | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
   | Otoml.TomlString s -> (
     try Term.Const (Z.of_string s)
-    with Invalid_argument _ -> Term.LocVal (Term.Mem s)
+    with Invalid_argument _ -> (
+      let lexbuf = Lexing.from_string s in
+      let expr =
+        try Parser.binding Lexer.token lexbuf
+        with Parser.Error ->
+          type_error "term parse error at position %d in: %s"
+            lexbuf.lex_curr_p.pos_cnum s
+      in
+      match Term.eval ~env:(fun _ -> None) expr with
+      | z -> Term.Const z
+      | exception Failure _ -> expr
+    )
   )
   | value ->
-      type_error "Value is invalid, should be int or string, but is: %s"
+      type_error "value must be int or string expression, but is: %s"
         (Otoml.Printer.to_string value)
 
 let is_meta_key k = String.starts_with ~prefix:"__isla" k
