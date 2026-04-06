@@ -123,21 +123,40 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
        )
       ir.symbolic
   in
-  {sections = code_sections; symbols = data_symbols}
+  let fixed_sections =
+    List.map
+      (fun (sec : Ir.section) ->
+         { Assembler.name = sec.sec_name;
+           code = sec.code;
+           fixed_addr = Some sec.address
+         }
+       )
+      ir.sections
+  in
+  {sections = code_sections @ fixed_sections; symbols = data_symbols}
 
 (* {1 Memory, registers, and termination} *)
 
-(** Convert linked sections and data symbols into Testrepr memory blocks. *)
-let build_memory ~data_symbols (asm_result : Assembler.assembly_result) =
+(** Convert linked sections and data symbols into Testrepr memory blocks.
+    User-named sections (those listed in [user_section_names]) carry
+    [sym = Some name]; auto-generated thread sections do not. *)
+let build_memory
+      ~data_symbols
+      ~user_section_names
+      (asm_result : Assembler.assembly_result)
+  =
   let code_step = instruction_step () in
   let mem_size = default_memory_size () in
   let code_memory =
     List.map
       (fun (sec : Assembler.linked_section) ->
+         let sym =
+           if List.mem sec.name user_section_names then Some sec.name else None
+         in
          { Testrepr.addr = sec.addr;
            step = code_step;
            data = sec.data;
-           sym = None;
+           sym;
            kind = Testrepr.Code
          }
        )
@@ -293,7 +312,10 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let data_symbols = asm_input.symbols in
   let resolve sym = Assembler.resolve_symbol asm_result sym in
   let registers = build_registers ~arch:ir.arch asm_result ir.threads in
-  let memory = build_memory ~data_symbols asm_result in
+  let user_section_names =
+    List.map (fun (s : Ir.section) -> s.sec_name) ir.sections
+  in
+  let memory = build_memory ~data_symbols ~user_section_names asm_result in
   let term_cond = build_term_cond ~arch:ir.arch asm_result ir.threads in
   let memory_size sym =
     match
