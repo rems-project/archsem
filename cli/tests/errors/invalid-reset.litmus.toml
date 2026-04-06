@@ -1,0 +1,7 @@
+arch = "AArch64"
+
+[thread.0]
+code = "NOP"
+
+[thread.0.reset]
+X0 = true

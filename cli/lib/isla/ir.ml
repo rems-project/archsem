@@ -83,6 +83,21 @@ let parse_term : Toml.t -> Term.t = function
       Toml.error "Isla value is invalid, should be int or string, but is: %s"
         (Toml.Printer.to_string value)
 
+let is_meta_key k = String.starts_with ~prefix:"__isla" k
+
+let parse_reset_entry k v =
+  if is_meta_key k then None
+  else
+    let value =
+      try parse_term v
+      with Toml.Path_error (path, Toml.GenError msg) ->
+        Toml.error ~path "register %s has invalid reset value: %s" k msg
+    in
+    Some (k, value)
+
+let parse_reset_table toml =
+  Toml.get_table_key_values parse_reset_entry toml |> List.filter_map Fun.id
+
 let parse_thread (tid, table) =
   let tid =
     match int_of_string_opt tid with
@@ -95,7 +110,15 @@ let parse_thread (tid, table) =
   let init =
     Toml.find_or ~default:[] table (Toml.get_table_values parse_term) ["init"]
   in
-  {tid; code; init}
+  let reset = Toml.find_or ~default:[] table parse_reset_table ["reset"] in
+  List.iter
+    (fun (k, _) ->
+       if List.mem_assoc k init then
+         Toml.error "register %s is defined in both init and reset" k
+     )
+    reset;
+  let merged = init @ reset in
+  {tid; code; init = merged}
 
 let parse_threads toml =
   let table = Toml.get_table toml in
