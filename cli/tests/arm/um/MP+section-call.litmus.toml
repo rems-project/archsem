@@ -1,0 +1,30 @@
+arch = "AArch64"
+name = "MP+section-call"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { X0 = 0x1, X1 = "x", X2 = 0x1, X3 = "y" }
+code = """
+    STR X0,[X1]
+    DMB SY
+    STR X2,[X3]
+"""
+
+[thread.1]
+init = { X1 = "y", X3 = "x" }
+code = """
+    LDR X0,[X1]
+    B helper
+end1:
+"""
+
+[section.helper]
+address = "0x10000"
+code = """
+    LDR X2,[X3]
+    B end1
+"""
+
+[final]
+expect = "sat"
+assertion = "1:X0 = 0x1 & 1:X2 = 0x0"
