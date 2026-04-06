@@ -122,17 +122,6 @@ module Make (Arch : Archsem.Arch) = struct
   let run_test_file ~parse ~short model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then Error.fatal "file not found: %s" name;
-    let test =
-      try parse filename with
-      | Toml.Parse_error (pos, msg) ->
-          Error.parse_error filename pos "%s" msg;
-          raise Exit
-      | Toml.Path_error (path, FieldMissing field) ->
-          Error.toml_error filename path "Missing field: %s" field;
-          raise Exit
-      | Toml.Path_error (path, GenError msg) ->
-          Error.toml_error filename path "%s" msg;
-          raise Exit
-    in
+    let test = parse filename in
     run_testrepr ~short model test
 end

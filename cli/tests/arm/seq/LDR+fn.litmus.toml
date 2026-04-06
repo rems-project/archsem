@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "LDR+fn"
+symbolic = ["y"]
+
+[thread.0]
+init = { X1 = "bvor(b=0, a=y)" }
+code = """
+    LDR X0, [X1]
+"""
+
+[locations]
+y = "bvxor(bvor(a=0x28, b=0x2), 0)"
+
+[final]
+expect = "sat"
+assertion = "0:X0 = bvxor(bvor(a=0x28, b=0x2), 0) & 0:X1 = bvor(b=0, a=y)"

@@ -43,9 +43,20 @@
 type t =
   | Const of Z.t
   | Sym of string
+  | Fn of string * t list
+  | KwFn of string * (string * t) list
 
 let zero = Const Z.zero
 
-let eval ~resolve_sym = function
+(* More functions can be appended. *)
+let builtins = Bv_fns.functions
+
+let rec eval ~resolve_sym = function
   | Const z -> z
   | Sym sym -> Z.of_int (resolve_sym sym)
+  | Fn (name, args) ->
+      let evaluated = List.map (eval ~resolve_sym) args in
+      Fn_registry.eval_fn ~fns:builtins name evaluated
+  | KwFn (name, kwargs) ->
+      let evaluated = List.map (fun (k, v) -> (k, eval ~resolve_sym v)) kwargs in
+      Fn_registry.eval_kwfn ~fns:builtins name evaluated

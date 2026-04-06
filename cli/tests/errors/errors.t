@@ -61,7 +61,42 @@ Too much data for step
 
 Invalid reset value in Isla file
   $ archsem convert --format isla invalid-reset.litmus.toml
-  archsem: internal error, uncaught exception:
-           TOML error at "thread.reset.X0": register X0 has invalid reset value: Isla value is invalid, should be int or string, but is: true
-           
-  [125]
+  archsem: TOML error:
+  File "invalid-reset.litmus.toml", path "thread.reset.X0":
+  register X0 has invalid reset value: Isla value is invalid, should be int or string expression, but is: true
+  [1]
+
+Unknown Isla function
+  $ archsem seq unknown-isla-fn.litmus.toml
+  archsem: eval error:
+  File "unknown-isla-fn.litmus.toml", path "locations.x":
+  function: unknown unknown_fn/1
+  [1]
+
+Missing Isla function argument
+  $ archsem seq missing-isla-fn-arg.litmus.toml
+  archsem: eval error:
+  File "missing-isla-fn-arg.litmus.toml", path "locations.x":
+  function: bvor: missing argument b
+  [1]
+
+Duplicate Isla function argument
+  $ archsem seq duplicate-isla-fn-arg.litmus.toml
+  archsem: eval error:
+  File "duplicate-isla-fn-arg.litmus.toml", path "locations.x":
+  function: bvor: duplicate argument a
+  [1]
+
+Isla function error in register initialization
+  $ archsem seq init-isla-fn-error.litmus.toml
+  archsem: eval error:
+  File "init-isla-fn-error.litmus.toml", path "thread.0.init.R0":
+  function: unknown unknown_fn/1
+  [1]
+
+Isla function error in final assertion
+  $ archsem seq final-isla-fn-error.litmus.toml
+  archsem: eval error:
+  File "final-isla-fn-error.litmus.toml", path "final.assertion":
+  function: unknown unknown_fn/1
+  [1]

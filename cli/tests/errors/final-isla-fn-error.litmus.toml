@@ -1,0 +1,11 @@
+arch = "AArch64"
+name = "final-isla-fn-error"
+
+[thread.0]
+code = """
+    NOP
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0 = unknown_fn(0x1)"

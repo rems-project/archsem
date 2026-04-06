@@ -1,0 +1,12 @@
+arch = "AArch64"
+name = "init-isla-fn-error"
+
+[thread.0]
+init = { R0 = "unknown_fn(0x1)" }
+code = """
+    NOP
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

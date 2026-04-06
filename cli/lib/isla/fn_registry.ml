@@ -38,51 +38,49 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** This module is here to help error handling *)
+(** Registry for evaluating named functions in Isla terms.
+    Defines the [fn_spec] type and lookup/evaluation helpers.
 
-(** Raise a fatal error with [code], adds "archsem: error" in front*)
-let fatal ?(code = 1) fmt =
-  Printf.eprintf "archsem: %s%sfatal error:%s " Terminal.red Terminal.bold
-    Terminal.reset;
-  Printf.kfprintf (fun _ -> Printf.eprintf "\n"; exit code) stderr fmt
+    Any error during evaluation should be reported with [Failure] which will be
+    converted into a [eval_error] in [Term.eval] *)
 
-let assert_fatal ?(code = 1) (cond : bool) fmt =
-  if cond then Printf.ikfprintf (fun _ -> ()) stderr fmt else fatal ~code fmt
+type fn_spec =
+  { params : string list;
+    eval : Z.t list -> Z.t
+  }
 
-let parse_error file loc fmt =
-  Printf.eprintf "archsem: %s%sparse error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  ( match loc with
-  | Some (line, col) ->
-      Printf.eprintf "%sFile %s, line %d, character %d:%s\n" Terminal.bold file
-        line col Terminal.reset
-  | None -> Printf.eprintf "%sFile %s:%s\n" Terminal.bold file Terminal.reset
-  );
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
+let arity_error name expected actual =
+  Litmus.Error.failwith "function: %s: expected %d arguments, got %d" name
+    expected actual
 
-let toml_error file path fmt =
-  Printf.eprintf "archsem: %s%sTOML error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  if path == [] then
-    Printf.eprintf "%sFile \"%s\":%s\n" Terminal.bold file Terminal.reset
-  else
-    Printf.eprintf "%sFile \"%s\", path \"%s\":%s\n" Terminal.bold file
-      (String.concat "." path) Terminal.reset;
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
+let eval_fn ~fns name args =
+  match List.assoc_opt name fns with
+  | Some spec -> spec.eval args
+  | None -> Litmus.Error.failwith "function: unknown %s/%d" name (List.length args)
 
-let eval_error file path fmt =
-  Printf.eprintf "archsem: %s%seval error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  if path == [] then
-    Printf.eprintf "%sFile \"%s\":%s\n" Terminal.bold file Terminal.reset
-  else
-    Printf.eprintf "%sFile \"%s\", path \"%s\":%s\n" Terminal.bold file
-      (String.concat "." path) Terminal.reset;
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
+let align_kwargs name spec kwargs =
+  let bindings =
+    List.fold_left
+      (fun bindings (arg, value) ->
+         if not (List.mem arg spec.params) then
+           Litmus.Error.failwith "function: %s: unknown argument %s" name arg
+         else if List.mem_assoc arg bindings then
+           Litmus.Error.failwith "function: %s: duplicate argument %s" name arg
+         else (arg, value) :: bindings
+       )
+      [] kwargs
+  in
+  List.map
+    (fun param ->
+       match List.assoc_opt param bindings with
+       | Some value -> value
+       | None ->
+           Litmus.Error.failwith "function: %s: missing argument %s" name param
+     )
+    spec.params
 
-let model_error test msg =
-  Printf.eprintf "archsem: %s%smodel error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg
-
-let failwith fmt = Printf.ksprintf failwith fmt
+let eval_kwfn ~fns name kwargs =
+  match List.assoc_opt name fns with
+  | Some spec -> spec.eval (align_kwargs name spec kwargs)
+  | None ->
+      Litmus.Error.failwith "function: unknown %s/%d" name (List.length kwargs)

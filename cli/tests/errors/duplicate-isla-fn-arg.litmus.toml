@@ -1,0 +1,15 @@
+arch = "AArch64"
+name = "duplicate-isla-fn-arg"
+symbolic = ["x"]
+
+[thread.0]
+code = """
+    NOP
+"""
+
+[locations]
+x = "bvor(a=0x1, a=0x2, b=0)"
+
+[final]
+expect = "sat"
+assertion = "true"

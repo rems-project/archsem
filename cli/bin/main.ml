@@ -59,35 +59,52 @@ type format =
   | Archsem
   | Isla
 
+(** Guess a test format based on filename extension *)
+let guess_format (fmt : format option) (filename : string) : format =
+  match fmt with
+  | Some fmt -> fmt
+  | None -> (
+      let name = Filename.remove_extension filename in
+      let ext = Filename.extension name in
+      match ext with
+      | ".litmus" -> Isla
+      | ".archsem" -> Archsem
+      | _ ->
+          Error.fatal
+            "Could not guess test format from filename %s. Only .archsem.toml \
+             and .litmus.toml are supported"
+             filename
+    )
+
 (** Parse test files with the specified [fmt]. Guess based on the extension if [None].
     Recognised extensions are:
     - .archsem.toml for ArchSem format TOML tests
-    - .litmus.toml for Isla-style litmus tests *)
-let parse_testfile (fmt : format option) (filename : string) =
-  Error.assert_fatal
-    (Filename.extension filename = ".toml")
-    "Input file name %s is not ending in .toml" filename;
-  let fmt =
+    - .litmus.toml for Isla-style litmus tests
+
+    Print an error message and return [Exit] if this can't produce a valid
+    [Testrepr.t] *)
+let parse_testfile (fmt : format option) (filename : string) : Testrepr.t =
+  try
+    let fmt = guess_format fmt filename in
+    let toml = Toml.Parser.from_file filename in
     match fmt with
-    | Some fmt -> fmt
-    | None -> (
-        let name = Filename.remove_extension filename in
-        let ext = Filename.extension name in
-        match ext with
-        | ".litmus" -> Isla
-        | ".archsem" -> Archsem
-        | _ ->
-            failwith
-              "Could not guess test format from filename. Only .archsem.toml and \
-               .litmus.toml are supported"
-      )
-  in
-  let toml = Toml.Parser.from_file filename in
-  match fmt with
-  | Archsem -> Parser.parse_to_testrepr toml
-  | Isla ->
-      toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
-      |> Isla.Converter.to_testrepr
+    | Archsem -> Parser.parse_to_testrepr toml
+    | Isla ->
+        toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
+        |> Isla.Converter.to_testrepr
+  with
+  | Toml.Parse_error (pos, msg) ->
+      Error.parse_error filename pos "%s" msg;
+      raise Exit
+  | Toml.Path_error (path, Toml.FieldMissing field) ->
+      Error.toml_error filename path "Missing field: %s" field;
+      raise Exit
+  | Toml.Path_error (path, Toml.GenError msg) ->
+      Error.toml_error filename path "%s" msg;
+      raise Exit
+  | Isla.Converter.Term_eval_error (path, msg) ->
+      Error.eval_error filename path "%s" msg;
+      raise Exit
 
 let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
@@ -323,11 +340,13 @@ let convert files parse output =
   );
   List.iter
     (fun filename ->
-       let output = convert_output filename output in
-       if Sys.file_exists output then
-         Printf.ksprintf failwith "Target file already exists: %s" output;
-       let t = parse filename in
-       Litmus.Printer.to_file output t
+       try
+         let output = convert_output filename output in
+         if Sys.file_exists output then
+           Printf.ksprintf failwith "Target file already exists: %s" output;
+         let t = parse filename in
+         Litmus.Printer.to_file output t
+       with Exit -> exit 1
      )
     files
 
