@@ -47,29 +47,48 @@ let alpha = ['a'-'z' 'A'-'Z' '_']
 let alnum = alpha | digit
 
 rule token = parse
-  | [' ' '\t' '\r' '\n']+ { token lexbuf }
-  | ';'        { SEMICOLON }
-  | '='        { EQ }
+  | [' ' '\t' '\n']+ { token lexbuf }
+  | "|->"      { MAPS_TO }
+  | "?->"      { OPT_MAPS_TO }
+  | "=="       { EQEQ }
+  | "!="       { BANGEQ }
+  | ".."       { DOTDOT }
   | '('        { LPAREN }
   | ')'        { RPAREN }
-  | ','        { COMMA }
   | '['        { LBRACKET }
   | ']'        { RBRACKET }
+  | '{'        { LBRACE }
+  | '}'        { RBRACE }
+  | ','        { COMMA }
+  | ';'        { SEMICOLON }
+  | '='        { EQ }
   | '*'        { STAR }
-  | "|->"      { MAPS_TO }
   | "physical"     { PHYSICAL }
   | "virtual"      { VIRTUAL }
+  | "intermediate" { INTERMEDIATE }
+  | "aligned"      { ALIGNED }
+  | "identity"     { IDENTITY }
+  | "invalid"      { INVALID }
   | "with"         { WITH }
+  | "at"           { AT }
+  | "level"        { LEVEL }
+  | "as"           { AS }
   | "default"      { DEFAULT }
   | "code"         { CODE }
-  | "and"          { AND }
+  | "and"          { AND_KW }
+  | "s1table"      { S1TABLE }
+  | "s2table"      { S2TABLE }
+  | "option"       { OPTION }
+  | "true"         { TRUE }
+  | "false"        { FALSE }
+  | "assert"       { ASSERT }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
   | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
   | digit+ as s { NUM (Z.of_string s) }
   | alpha alnum* as s { IDENT s }
-  | eof { EOF }
+  | eof        { EOF }
   | _ as c {
       failwith (Printf.sprintf
-        "pgtable lexer: unexpected character '%c' at position %d"
+        "pgt_lexer: unexpected character '%c' at position %d"
         c (Lexing.lexeme_start lexbuf))
     }
