@@ -42,6 +42,7 @@
 type loc =
   | Reg of int * string
   | Mem of string
+  | Label of string
 
 type t =
   | Const of Z.t
@@ -53,3 +54,4 @@ type t =
 let string_of_loc = function
   | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
   | Mem sym -> sym
+  | Label name -> name ^ ":"

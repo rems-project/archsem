@@ -73,11 +73,28 @@ type t =
 
 let type_error fmt = Printf.ksprintf (fun s -> raise (Otoml.Type_error s)) fmt
 
+let is_label s =
+  let n = String.length s in
+  n >= 2
+  && s.[n - 1] = ':'
+  &&
+  let body = String.sub s 0 (n - 1) in
+  String.for_all
+    (fun c ->
+       c = '_'
+       || (c >= 'A' && c <= 'Z')
+       || (c >= 'a' && c <= 'z')
+       || (c >= '0' && c <= '9')
+     )
+    body
+
 let parse_value = function
   | Otoml.TomlInteger i -> Term.Const (Z.of_int i)
   | Otoml.TomlString s -> (
     try Term.Const (Z.of_string s)
-    with Invalid_argument _ -> Term.LocVal (Term.Mem s)
+    with Invalid_argument _ ->
+      if is_label s then Term.LocVal (Label (String.sub s 0 (String.length s - 1)))
+      else Term.LocVal (Term.Mem s)
   )
   | value ->
       type_error "Value is invalid, should be int or string, but is: %s"

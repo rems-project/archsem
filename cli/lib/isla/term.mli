@@ -42,6 +42,7 @@
 type loc =
   | Reg of int * string
   | Mem of string
+  | Label of string
 
 type t =
   | Const of Z.t
