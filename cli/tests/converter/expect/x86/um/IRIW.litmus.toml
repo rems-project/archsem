@@ -1,0 +1,133 @@
+arch = "X86"
+name = "IRIW"
+
+[[registers]]
+  rip = 9472
+  rcx = 1280
+  rax = 0
+  rdx = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
+
+[[registers]]
+  rip = 13568
+  rcx = 1280
+  rdx = 5376
+  rax = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
+
+[[registers]]
+  rip = 17664
+  rdx = 5376
+  rax = 0
+  rcx = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
+
+[[registers]]
+  rip = 21760
+  rcx = 1280
+  rdx = 5376
+  rax = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
+
+[[memory]]
+  kind = "code"
+  addr = 9472
+  step = 1
+  data = [199, 1, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 13568
+  step = 1
+  data = [139, 1, 139, 26]
+
+[[memory]]
+  kind = "code"
+  addr = 17664
+  step = 1
+  data = [199, 2, 1, 0, 0, 0]
+
+[[memory]]
+  kind = "code"
+  addr = 21760
+  step = 1
+  data = [139, 2, 139, 25]
+
+[[memory]]
+  sym = "x"
+  addr = 1280
+  step = 8
+  data = 0
+
+[[memory]]
+  sym = "y"
+  addr = 5376
+  step = 8
+  data = 0
+
+[[termCond]]
+  rip = 9478
+
+[[termCond]]
+  rip = 13572
+
+[[termCond]]
+  rip = 17670
+
+[[termCond]]
+  rip = 21764
+
+[[outcome]]
+  unobservable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 1, rbx = 0}}
