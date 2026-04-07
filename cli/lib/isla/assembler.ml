@@ -69,16 +69,11 @@ type linked_section =
     data : Bytes.t
   }
 
-(** A data symbol resolved with its linker-assigned address *)
-type linked_symbol =
-  { sym : data_symbol;
-    addr : int
-  }
-
 (** Output of the assembler pipeline *)
 type assembly_result =
   { sections : linked_section list;
-    symbols : linked_symbol list
+    data : data_symbol list;
+    symbols : (string * int) list
   }
 
 (* {1 Utilities} *)
@@ -332,10 +327,8 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
   | Error.Success (elf_file, _epi, symbol_map) ->
       let symbols =
         List.map
-          (fun (ds : data_symbol) ->
-             {sym = ds; addr = lookup_symbol_addr symbol_map ds.name}
-           )
-          input.symbols
+          (fun (name, (_, _, addr, _, _)) -> (name, Nat_big_num.to_int addr))
+          symbol_map
       in
       let sections =
         match elf_file with
@@ -346,7 +339,7 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
             @ resolve_relocatable_sections elf_sections symbol_map relocatable
         | Elf_file.ELF_File_32 _ -> failwith "assembler: only ELF64 supported"
       in
-      {sections; symbols}
+      {sections; data = input.symbols; symbols}
 
 (* {1 Public API} *)
 
@@ -357,10 +350,8 @@ let assemble (input : assembly_input) : assembly_result =
     ~finally:(fun () -> try Sys.remove elf_path with _ -> ())
     (fun () -> parse_elf elf_path input)
 
-(** Look up a data symbol address by name. *)
+(** Look up a symbol address by name. *)
 let resolve_symbol (result : assembly_result) (name : string) : int =
-  match
-    List.find_opt (fun (s : linked_symbol) -> s.sym.name = name) result.symbols
-  with
-  | Some sym -> sym.addr
+  match List.assoc_opt name result.symbols with
+  | Some addr -> addr
   | None -> Printf.ksprintf failwith "assembler: symbol %S not found" name

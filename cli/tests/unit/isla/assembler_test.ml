@@ -91,7 +91,7 @@ let test_assemble_no_symbols _ =
   Test_utils.setup_arm ();
   let input = make_input [section "thread0" "\tNOP\n"] in
   let result = assemble input in
-  assert_equal ~msg:"0 symbols" 0 (List.length result.symbols);
+  assert_equal ~msg:"0 data" 0 (List.length result.data);
   let t0 = find_section "thread0" result in
   assert_equal ~printer:string_of_int ~msg:"NOP = 4 bytes" 4 (Bytes.length t0.data)
 

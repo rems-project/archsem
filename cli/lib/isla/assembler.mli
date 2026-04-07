@@ -65,20 +65,15 @@ type linked_section =
     data : Bytes.t
   }
 
-(** A data symbol resolved with its linker-assigned address *)
-type linked_symbol =
-  { sym : data_symbol;
-    addr : int
-  }
-
 (** Output of the assembler pipeline *)
 type assembly_result =
   { sections : linked_section list;
-    symbols : linked_symbol list
+    data : data_symbol list;
+    symbols : (string * int) list
   }
 
 (** Assemble, link, and parse ELF. Uses config for toolchain commands. *)
 val assemble : assembly_input -> assembly_result
 
-(** Look up a data symbol address by name. Raises [Failure] if not found. *)
+(** Look up a symbol address by name. Raises [Failure] if not found. *)
 val resolve_symbol : assembly_result -> string -> int

@@ -159,15 +159,15 @@ let build_memory (asm_result : Assembler.assembly_result) =
   in
   let data_memory =
     List.map
-      (fun (lsym : Assembler.linked_symbol) ->
-         { Testrepr.addr = lsym.addr;
+      (fun (ds : Assembler.data_symbol) ->
+         { Testrepr.addr = Assembler.resolve_symbol asm_result ds.name;
            step = mem_size;
-           data = lsym.sym.init_bytes;
-           sym = Some lsym.sym.name;
+           data = ds.init_bytes;
+           sym = Some ds.name;
            kind = Testrepr.Data
          }
        )
-      asm_result.symbols
+      asm_result.data
   in
   code_memory @ data_memory
 
@@ -238,15 +238,15 @@ let atom_to_cond (asm_result : Assembler.assembly_result) atom =
   | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
       `Reg (tid, reg, reg_requirement op value)
   | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
-      let lsym =
+      let ds =
         List.find
-          (fun (s : Assembler.linked_symbol) -> s.sym.name = sym)
-          asm_result.symbols
+          (fun (s : Assembler.data_symbol) -> s.name = sym)
+          asm_result.data
       in
       `Mem
         ( { Testrepr.sym;
-            addr = lsym.addr;
-            size = Bytes.length lsym.sym.init_bytes;
+            addr = Assembler.resolve_symbol asm_result sym;
+            size = Bytes.length ds.init_bytes;
             req = mem_requirement op value
           }
          : Testrepr.mem_cond
