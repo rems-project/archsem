@@ -163,12 +163,24 @@ let parse_mem_requirement (toml : Otoml.t) : Testrepr.mem_requirement =
   )
   | _ -> MemEq (Z.of_int @@ Otoml.get_integer toml)
 
-let parse_mem_entry mem sym toml : Testrepr.mem_cond =
+let parse_mem_entry mem key toml : Testrepr.mem_cond =
   let block =
-    try Testrepr.mem_by_sym sym mem
-    with Not_found ->
-      failwith ("[[outcome]].mem." ^ sym ^ " not found in memory")
+    match Testrepr.mem_by_sym key mem with
+    | b -> b
+    | exception Not_found -> (
+      match int_of_string_opt key with
+      | None -> failwith ("[[outcome]].mem." ^ key ^ " not found in memory")
+      | Some addr -> (
+        try Testrepr.mem_by_addr addr mem
+        with Not_found ->
+          failwith
+            (Printf.sprintf "[[outcome]].mem.%s: no data block at address %s" key
+               key
+            )
+      )
+    )
   in
+  let sym = Option.value block.sym ~default:key in
   let req = parse_mem_requirement toml in
   {sym; addr = block.addr; size = Testrepr.block_size block; req}
 
@@ -185,6 +197,20 @@ let parse_test_finals mem toml : Testrepr.final_cond list =
       let mem = parse_mem_conds mem toml in
       (regs, mem)
     in
+    let known_keys = ["observable"; "unobservable"] in
+    let unknown =
+      Otoml.get_table toml
+      |> List.filter_map (fun (k, _) ->
+        if List.mem k known_keys then None else Some k
+      )
+    in
+    if unknown <> [] then
+      failwith
+        ("[[outcome]] unknown keys: " ^ String.concat ", " unknown
+       ^ " (expected: "
+        ^ String.concat ", " known_keys
+        ^ ")"
+        );
     match
       ( Otoml.find_opt toml parse_with_mem ["observable"],
         Otoml.find_opt toml parse_with_mem ["unobservable"]

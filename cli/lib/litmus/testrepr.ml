@@ -108,3 +108,6 @@ let block_size (mb : memory_block) : int = Bytes.length mb.data
 
 let mem_by_sym (sym : string) =
   List.find (fun (mb : memory_block) -> mb.sym = Some sym)
+
+let mem_by_addr (addr : int) =
+  List.find (fun (mb : memory_block) -> mb.addr = addr && mb.kind = Data)

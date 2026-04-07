@@ -57,17 +57,17 @@ rip = 0x60b
 [[outcome]]
 [outcome.observable]
 1 = {rax = 0}
-[outcome.mem]
-"0x1200" = {size = 8, value = 1}
+[outcome.observable.mem]
+"0x1200" = 1
 
 [[outcome]]
 [outcome.observable]
 1 = {rax = 1}
-[outcome.mem]
-"0x1200" = {size = 8, value = 1}
+[outcome.observable.mem]
+"0x1200" = 1
 
 [[outcome]]
 [outcome.observable]
 1 = {rax = 1}
-[outcome.mem]
-"0x1200" = {size = 8, value = 2}
+[outcome.observable.mem]
+"0x1200" = 2
