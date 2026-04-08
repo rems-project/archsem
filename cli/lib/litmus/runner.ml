@@ -110,13 +110,7 @@ let test_observation_stats_to_string obs_count not_obs_count test_name =
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
-
-  (* Allow conversion of an iterable structure of ArchStates into a set*)
-  module ArchStateSet = Set.Make (struct
-      type t = Arch.ArchState.t
-
-      let compare = Stdlib.compare
-    end)
+  module MinimiseState = MinState.Make (Arch)
 
   let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
     List.for_all
@@ -156,63 +150,6 @@ module Make (Arch : Archsem.Arch) = struct
          )
        )
       mem_conds
-
-  let get_thread_regname_pairs (reg_cond : Testrepr.thread_cond list) :
-    (int * string) list
-    =
-    List.concat_map
-      (fun (thread, reg_pair) ->
-         List.map (fun (name, _) -> (thread, name)) reg_pair
-       )
-      reg_cond
-
-  let compare_mem_id
-        (mem_cond_1 : Testrepr.mem_cond)
-        (mem_cond_2 : Testrepr.mem_cond)
-    =
-    if mem_cond_1.sym = mem_cond_2.sym then 0
-    else if mem_cond_1.sym > mem_cond_2.sym then 1
-    else -1
-
-  let get_unique_conds_ignoring_value
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list) :
-    (int * string) list * Testrepr.mem_cond list
-    =
-    (* Assuming that each (Testrepr.thread_cond list * Testrepr.mem_cond list) already contains unique values *)
-    List.fold_left
-      (fun (acc_reg_cond, acc_mem_cond) (reg_cond, mem_cond) ->
-         let new_reg_cond = get_thread_regname_pairs reg_cond in
-         ( List.sort_uniq compare (acc_reg_cond @ new_reg_cond),
-           List.sort_uniq compare_mem_id (acc_mem_cond @ mem_cond)
-         )
-       )
-      ([], []) conds
-
-  let final_regs_to_string
-        (fs : ArchState.t)
-        (regs : (int * string) list) (* list of (thread, reg_name) pairs *)
-    =
-    String.concat " "
-      (List.map
-         (fun (tid, reg_name) ->
-            let regs = ArchState.reg tid fs in
-            let reg = Reg.of_string reg_name in
-            let value = RegMap.geti reg regs in
-            Printf.sprintf "%d:%s=%d;" tid reg_name value
-          )
-         regs
-      )
-
-  let final_mem_to_string (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) =
-    let mem = ArchState.mem fs in
-    String.concat " "
-      (List.map
-         (fun (mc : Testrepr.mem_cond) ->
-            let value = MemMap.lookupi mc.addr mc.size mem in
-            Printf.sprintf "[%s]=%d;" mc.sym value
-          )
-         mem_conds
-      )
 
   let get_obs_count
         (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
@@ -285,22 +222,26 @@ module Make (Arch : Archsem.Arch) = struct
 
     (* If the print-final-states flag is set, print all observable states and statistics *)
     if print_final_states then (
-      let final_states_set = ArchStateSet.of_list final_states in
-      (* Print number of distinct observed states *)
-      msg (Printf.sprintf "States %d" (ArchStateSet.cardinal final_states_set));
-      (* Print each distinct observable state *)
       let conds = observable @ unobservable in
+      let unique_cond = MinimiseState.get_unique_conds_ignoring_value conds in
+      let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
+      let unique_minimised_fs =
+        List.sort_uniq MinimiseState.compare_minimised_states minimised_fs
+      in
+
+      (* Print number of distinct observed states *)
+      msg (Printf.sprintf "States %d" (List.length unique_minimised_fs));
+      (* Print each distinct observable state *)
       if conds <> [] then (
-        let (reg_cond, mem_cond) = get_unique_conds_ignoring_value conds in
-        ArchStateSet.iter
-          (fun fs ->
+        List.iter
+          (fun (regs_state, mems_state) ->
              msg
                (Printf.sprintf "%s %s"
-                  (final_regs_to_string fs reg_cond)
-                  (final_mem_to_string fs mem_cond)
+                  (MinimiseState.final_regs_to_string regs_state)
+                  (MinimiseState.final_mem_to_string mems_state)
                )
            )
-          final_states_set;
+          unique_minimised_fs;
         (* Print statistics about the condition(s) that we did and didn't want to observe *)
         if observable <> [] then
           msg
