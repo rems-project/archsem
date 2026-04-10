@@ -106,12 +106,12 @@ module Make (Arch : Archsem.Arch) = struct
     List.map
       (fun (mc : Testrepr.mem_cond) ->
          let value = MemMap.lookupi mc.addr mc.size mem in
-          {sym = mc.sym; addr = mc.addr; size = mc.size; value = value}
+         {sym = mc.sym; addr = mc.addr; size = mc.size; value}
        )
       mem_conds
 
   (* For a list of final states, for each final state, 
-    extract the registers and memory location that the conditions check
+    extract the registers and memory locations that the conditions check
     (with the final values of these locations) *)
   let minimise_states
         ((reg_conds, mem_conds) : (int * string) list * Testrepr.mem_cond list)
@@ -122,4 +122,14 @@ module Make (Arch : Archsem.Arch) = struct
          (minimise_reg_state reg_conds state, minimise_mem_state mem_conds state)
        )
       states
+
+  (* Find all the registers and memory locations that the conditions check,
+    extract only those locations from each final state, and deduplicate them *)
+  let get_unique_minimised_states
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+        (final_states : ArchState.t list) : (reg_state list * mem_state list) list
+    =
+    let unique_cond = get_unique_conds_ignoring_value conds in
+    let minimised_fs = minimise_states unique_cond final_states in
+    List.sort_uniq compare minimised_fs
 end

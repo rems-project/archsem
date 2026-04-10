@@ -103,9 +103,9 @@ module Make (Arch : Archsem.Arch) = struct
         (test_name : string) : string
     =
     let conds = observable @ unobservable in
-    let unique_cond = MinimiseState.get_unique_conds_ignoring_value conds in
-    let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
-    let unique_minimised_fs = List.sort_uniq compare minimised_fs in
+    let unique_minimised_fs =
+      MinimiseState.get_unique_minimised_states conds final_states
+    in
 
     (* Print number of distinct observed states *)
     let states_count_part =
