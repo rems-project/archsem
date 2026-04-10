@@ -233,7 +233,7 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr true
+           ArmRunner.run_testrepr ~print_final_states:true
              Arm.(seq_model tiny_isa)
              (convert simple_toml)
          in
@@ -243,7 +243,7 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr false
+           ArmRunner.run_testrepr ~print_final_states:false
              Arm.(seq_model tiny_isa)
              (convert simple_toml)
          in
@@ -253,7 +253,7 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr true
+           ArmRunner.run_testrepr ~print_final_states:true
              Arm.(umProm_model tiny_isa)
              (convert mp_toml)
          in
@@ -263,7 +263,7 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr false
+           ArmRunner.run_testrepr ~print_final_states:false
              Arm.(umProm_model tiny_isa)
              (convert mp_toml)
          in

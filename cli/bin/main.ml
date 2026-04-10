@@ -201,13 +201,13 @@ let cmd_seq =
     match Config.get_arch () with
     | Arm ->
         run_tests "arm-seq"
-          (ArmRunner.run_litmus_test ~parse print_final_states
+          (ArmRunner.run_litmus_test ~parse ~print_final_states
              Arm.(seq_model tiny_isa)
           )
           files
     | X86 ->
         run_tests "x86-seq"
-          (X86Runner.run_litmus_test ~parse print_final_states
+          (X86Runner.run_litmus_test ~parse ~print_final_states
              X86.(seq_model tiny_isa)
           )
           files
@@ -227,7 +227,7 @@ let cmd_ump =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
-      (ArmRunner.run_litmus_test ~parse print_final_states
+      (ArmRunner.run_litmus_test ~parse ~print_final_states
          Arm.(umProm_model tiny_isa)
       )
       files
@@ -272,7 +272,7 @@ let cmd_vmp =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
-      (ArmRunner.run_litmus_test ~parse print_final_states
+      (ArmRunner.run_litmus_test ~parse ~print_final_states
          (vmProm_model ~bbm_param tiny_isa)
       )
       files
@@ -300,7 +300,7 @@ let cmd_tso =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
-      (X86Runner.run_litmus_test ~parse print_final_states
+      (X86Runner.run_litmus_test ~parse ~print_final_states
          X86.(op_model ~allow_eager tiny_isa)
       )
       files

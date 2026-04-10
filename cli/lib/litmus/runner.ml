@@ -98,19 +98,18 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
-let outcome_freq_to_string yes_freq no_freq =
-  if yes_freq = 0 then "Never" else if no_freq = 0 then "Always" else "Sometimes"
-
-(* Return string of format: Observation <test name> <string freq> <true count> <false count>*)
-let test_observation_stats_to_string obs_count not_obs_count test_name =
-  Printf.sprintf "Observation %s %s %d %d" test_name
-    (outcome_freq_to_string obs_count not_obs_count)
-    obs_count not_obs_count
+let find_index p lst =
+  let rec aux i = function
+    | [] -> None
+    | x :: tl -> if p x then Some i else aux (i + 1) tl
+  in
+  aux 0 lst
 
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
   module MinimiseState = MinState.Make (Arch)
+  module McompareInst = Mcompare.Make (Arch)
 
   let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
     List.for_all
@@ -151,44 +150,7 @@ module Make (Arch : Archsem.Arch) = struct
        )
       mem_conds
 
-  let get_obs_count
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (state_list : ArchState.t list)
-    =
-    List.length state_list
-    - List.length
-        (List.fold_left
-           (fun unmatched_state_list (cond, mem_cond) ->
-              List.filter
-                (fun fs ->
-                   not (check_outcome fs cond && check_mem_outcome fs mem_cond)
-                 )
-                unmatched_state_list
-            )
-           state_list conds
-        )
-
-  (* Print observation statistics. The format is:
-    Ok/No <optional extra detail>
-    Observation <test_name> Always/Sometimes/Never <#times_test_cond_observed> <#times_test_cond_not_observed> *)
-  let observation_statistics_string
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (checking_for_positive : bool)
-        (state_list : ArchState.t list)
-        (test_name : string) : string
-    =
-    let (matched_msg, not_matched_msg) =
-      if checking_for_positive then ("Ok", "No (\"allowed\" not found)")
-      else ("No (\"not allowed\" found)", "Ok")
-    in
-    let obs_count = get_obs_count conds state_list in
-    let msg = if obs_count > 0 then matched_msg else not_matched_msg in
-    msg ^ "\n"
-    ^ test_observation_stats_to_string obs_count
-        (List.length state_list - obs_count)
-        test_name
-
-  let run_executions print_final_states model init fuel term test =
+  let run_executions ~print_final_states model init fuel term test =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -220,40 +182,56 @@ module Make (Arch : Archsem.Arch) = struct
         results
     in
 
-    (* If the print-final-states flag is set, print all observable states and statistics *)
-    if print_final_states then (
-      let conds = observable @ unobservable in
-      let unique_cond = MinimiseState.get_unique_conds_ignoring_value conds in
-      let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
-      let unique_minimised_fs =
-        List.sort_uniq MinimiseState.compare_minimised_states minimised_fs
-      in
+    (* For each condition in observed, get a list of bool representing which final states satisfy the condition *)
+    let observable_matrix =
+      List.map
+        (fun (cond, mem_cond) ->
+           List.map
+             (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
+             final_states
+         )
+        observable
+    in
+    (* For each condition in unobserved, get a list of bool representing which final states satisfy the condition *)
+    let unobservable_matrix =
+      List.map
+        (fun (cond, mem_cond) ->
+           List.map
+             (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
+             final_states
+         )
+        unobservable
+    in
 
-      (* Print number of distinct observed states *)
-      msg (Printf.sprintf "States %d" (List.length unique_minimised_fs));
-      (* Print each distinct observable state *)
-      if conds <> [] then (
-        List.iter
-          (fun (regs_state, mems_state) ->
-             msg
-               (Printf.sprintf "%s %s"
-                  (MinimiseState.final_regs_to_string regs_state)
-                  (MinimiseState.final_mem_to_string mems_state)
-               )
-           )
-          unique_minimised_fs;
-        (* Print statistics about the condition(s) that we did and didn't want to observe *)
-        if observable <> [] then
-          msg
-            (observation_statistics_string observable true final_states test.name)
-        else if unobservable <> [] then
-          msg
-            (observation_statistics_string unobservable false final_states
-               test.name
-            )
-        else msg "ERROR: no conditions to observe"
-      )
-    );
+    (* Get the number of states which satisfy at least one condition in observable *)
+    let observable_count =
+      let state_satisfied_list =
+        match observable_matrix with
+        | [] -> []
+        | h :: t -> List.fold_left (List.map2 ( || )) h t
+      in
+      List.fold_left
+        (fun acc x -> if x then acc + 1 else acc)
+        0 state_satisfied_list
+    in
+    (* Get the number of states which satisfy at least one condition in unobservable *)
+    let unobservable_count =
+      let state_satisfied_list =
+        match unobservable_matrix with
+        | [] -> []
+        | h :: t -> List.fold_left (List.map2 ( || )) h t
+      in
+      List.fold_left
+        (fun acc x -> if x then acc + 1 else acc)
+        0 state_satisfied_list
+    in
+
+    (* If the print-final-states flag is set, print all observable states and statistics *)
+    if print_final_states then
+      msg
+        (McompareInst.print_final_states observable unobservable observable_count
+           unobservable_count final_states test.name
+        );
 
     List.iter
       (fun e ->
@@ -263,46 +241,43 @@ module Make (Arch : Archsem.Arch) = struct
     if flags <> [] then msg "Flagged";
 
     let observable_ok =
-      List.for_all
-        (fun (cond, mem_cond) ->
-           let matched =
-             List.exists
-               (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
-               final_states
-           in
-           if (not matched) && final_states <> [] then
-             msg
-               (Printf.sprintf "%sObservable not found%s: %s %s" Terminal.red
-                  Terminal.reset (cond_to_string cond)
-                  (mem_cond_to_string mem_cond)
-               );
-           matched
-         )
-        observable
+      List.for_all Fun.id
+        (List.mapi
+           (fun i matched_list ->
+              let matched = List.exists Fun.id matched_list in
+              ( if (not matched) && final_states <> [] then
+                  let (cond, mem_cond) = List.nth observable i in
+                  msg
+                    (Printf.sprintf "%sObservable not found%s: %s %s" Terminal.red
+                       Terminal.reset (cond_to_string cond)
+                       (mem_cond_to_string mem_cond)
+                    )
+              );
+              matched
+            )
+           observable_matrix
+        )
     in
 
     let unobservable_ok =
       List.for_all Fun.id
         (List.mapi
-           (fun i fs ->
-              match
-                List.find_opt
-                  (fun (cond, mem_cond) ->
-                     check_outcome fs cond && check_mem_outcome fs mem_cond
-                   )
-                  unobservable
-              with
-              | Some (cond, mem_cond) ->
+           (fun i matched_list ->
+              let opt_index = find_index Fun.id matched_list in
+              match opt_index with
+              | Some index ->
+                  let (cond, mem_cond) = List.nth unobservable i in
                   msg
                     (Printf.sprintf
                        "%sUnobservable found%s in execution %d: %s %s"
-                       Terminal.red Terminal.reset (i + 1) (cond_to_string cond)
+                       Terminal.red Terminal.reset (index + 1)
+                       (cond_to_string cond)
                        (mem_cond_to_string mem_cond)
                     );
                   false
               | None -> true
             )
-           final_states
+           unobservable_matrix
         )
     in
 
@@ -314,12 +289,12 @@ module Make (Arch : Archsem.Arch) = struct
     in
     (result, List.rev !msgs)
 
-  let run_testrepr print_final_states model (test : Testrepr.t) =
+  let run_testrepr ~print_final_states model (test : Testrepr.t) =
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
-    run_executions print_final_states model init fuel term test
+    run_executions ~print_final_states model init fuel term test
 
-  let run_litmus_test ~parse print_final_states model filename =
+  let run_litmus_test ~parse ~print_final_states model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
       Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset
@@ -329,7 +304,7 @@ module Make (Arch : Archsem.Arch) = struct
     else
       try
         let test = parse filename in
-        let (result, msgs) = run_testrepr print_final_states model test in
+        let (result, msgs) = run_testrepr ~print_final_states model test in
         let (icon, color) =
           match result with
           | Expected -> (Terminal.check, Terminal.green)
