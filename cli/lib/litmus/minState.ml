@@ -105,11 +105,8 @@ module Make (Arch : Archsem.Arch) = struct
     let mem = ArchState.mem state in
     List.map
       (fun (mc : Testrepr.mem_cond) ->
-         match MemMap.lookupi_opt mc.addr mc.size mem with
-         | None ->
-             failwith
-               (Printf.sprintf "[[outcome]] memory not found at 0x%x" mc.addr)
-         | Some mv -> {sym = mc.sym; addr = mc.addr; size = mc.size; value = mv}
+         let value = MemMap.lookupi mc.addr mc.size mem in
+          {sym = mc.sym; addr = mc.addr; size = mc.size; value = value}
        )
       mem_conds
 
