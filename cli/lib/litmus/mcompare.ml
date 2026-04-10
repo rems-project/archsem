@@ -73,12 +73,34 @@ let test_observation_stats_to_string obs_count not_obs_count test_name =
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module MinimiseState = MinState.Make (Arch)
+  module RunnerUtils = Runner_utils.Make (Arch)
+
+  (* Get the number of states which satisfy at least one condition in conds *)
+  let get_obs_count
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+        (state_list : ArchState.t list)
+    =
+    List.length state_list
+    - List.length
+        (List.fold_left
+           (fun unmatched_state_list (cond, mem_cond) ->
+              List.filter
+                (fun fs ->
+                   not
+                     (RunnerUtils.check_outcome fs cond
+                     && RunnerUtils.check_mem_outcome fs mem_cond
+                     )
+                 )
+                unmatched_state_list
+            )
+           state_list conds
+        )
 
   (* Print observation statistics for Mcompare. The format is:
     Ok/No <Optional extra detail>
     Observation <test_name> Always/Sometimes/Never <#observed> <#not_observed> *)
   let observation_statistics_string
-        (obs_count : int)
+        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
         (checking_for_positive : bool)
         (state_list : ArchState.t list)
         (test_name : string) : string
@@ -87,6 +109,7 @@ module Make (Arch : Archsem.Arch) = struct
       if checking_for_positive then ("Ok", "No (\"allowed\" not found)")
       else ("No (\"not allowed\" found)", "Ok")
     in
+    let obs_count = get_obs_count conds state_list in
     let msg = if obs_count > 0 then matched_msg else not_matched_msg in
     msg ^ "\n"
     ^ test_observation_stats_to_string obs_count
@@ -97,15 +120,13 @@ module Make (Arch : Archsem.Arch) = struct
   let print_final_states
         (observable : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
         (unobservable : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (obs_count : int)
-        (unobs_count : int)
         (final_states : ArchState.t list)
         (test_name : string) : string
     =
     let conds = observable @ unobservable in
-    let unique_minimised_fs =
-      MinimiseState.get_unique_minimised_states conds final_states
-    in
+    let unique_cond = MinimiseState.get_unique_conds_ignoring_value conds in
+    let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
+    let unique_minimised_fs = List.sort_uniq compare minimised_fs in
 
     (* Print number of distinct observed states *)
     let states_count_part =
@@ -128,9 +149,9 @@ module Make (Arch : Archsem.Arch) = struct
       if
         (* Print statistics about the condition(s) that we did and didn't want to observe *)
         observable <> []
-      then observation_statistics_string obs_count true final_states test_name
+      then observation_statistics_string observable true final_states test_name
       else if unobservable <> [] then
-        observation_statistics_string unobs_count false final_states test_name
+        observation_statistics_string unobservable false final_states test_name
       else "ERROR: no conditions to observe"
     in
 

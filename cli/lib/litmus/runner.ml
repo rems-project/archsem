@@ -108,47 +108,9 @@ let find_index p lst =
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
+  module RunnerUtils = Runner_utils.Make (Arch)
   module MinimiseState = MinState.Make (Arch)
   module McompareInst = Mcompare.Make (Arch)
-
-  let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
-    List.for_all
-      (fun (tid, reqs) ->
-         let regs = ArchState.reg tid fs in
-         List.for_all
-           (fun (name, req) ->
-              let reg = Reg.of_string name in
-              match RegMap.get_opt reg regs with
-              | None ->
-                  failwith
-                    ("[[outcome]] register not found in final state: " ^ name)
-              | Some rv -> (
-                match req with
-                | Testrepr.ReqEq exp -> rv = RegVal.of_gen reg exp
-                | Testrepr.ReqNe exp -> rv = RegVal.of_gen reg exp
-              )
-            )
-           reqs
-       )
-      cond
-
-  let check_mem_outcome (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
-    bool
-    =
-    let mem = ArchState.mem fs in
-    List.for_all
-      (fun (mc : Testrepr.mem_cond) ->
-         match MemMap.lookup_opt mc.addr mc.size mem with
-         | None ->
-             failwith
-               (Printf.sprintf "[[outcome]] memory not found at 0x%x" mc.addr)
-         | Some actual -> (
-           match mc.req with
-           | Testrepr.MemEq expected -> Z.equal actual expected
-           | Testrepr.MemNe expected -> not (Z.equal actual expected)
-         )
-       )
-      mem_conds
 
   let run_executions ~print_final_states model init fuel term test =
     let msgs = ref [] in
@@ -182,55 +144,11 @@ module Make (Arch : Archsem.Arch) = struct
         results
     in
 
-    (* For each condition in observed, get a list of bool representing which final states satisfy the condition *)
-    let observable_matrix =
-      List.map
-        (fun (cond, mem_cond) ->
-           List.map
-             (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
-             final_states
-         )
-        observable
-    in
-    (* For each condition in unobserved, get a list of bool representing which final states satisfy the condition *)
-    let unobservable_matrix =
-      List.map
-        (fun (cond, mem_cond) ->
-           List.map
-             (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
-             final_states
-         )
-        unobservable
-    in
-
-    (* Get the number of states which satisfy at least one condition in observable *)
-    let observable_count =
-      let state_satisfied_list =
-        match observable_matrix with
-        | [] -> []
-        | h :: t -> List.fold_left (List.map2 ( || )) h t
-      in
-      List.fold_left
-        (fun acc x -> if x then acc + 1 else acc)
-        0 state_satisfied_list
-    in
-    (* Get the number of states which satisfy at least one condition in unobservable *)
-    let unobservable_count =
-      let state_satisfied_list =
-        match unobservable_matrix with
-        | [] -> []
-        | h :: t -> List.fold_left (List.map2 ( || )) h t
-      in
-      List.fold_left
-        (fun acc x -> if x then acc + 1 else acc)
-        0 state_satisfied_list
-    in
-
     (* If the print-final-states flag is set, print all observable states and statistics *)
     if print_final_states then
       msg
-        (McompareInst.print_final_states observable unobservable observable_count
-           unobservable_count final_states test.name
+        (McompareInst.print_final_states observable unobservable final_states
+           test.name
         );
 
     List.iter
@@ -241,43 +159,50 @@ module Make (Arch : Archsem.Arch) = struct
     if flags <> [] then msg "Flagged";
 
     let observable_ok =
-      List.for_all Fun.id
-        (List.mapi
-           (fun i matched_list ->
-              let matched = List.exists Fun.id matched_list in
-              ( if (not matched) && final_states <> [] then
-                  let (cond, mem_cond) = List.nth observable i in
-                  msg
-                    (Printf.sprintf "%sObservable not found%s: %s %s" Terminal.red
-                       Terminal.reset (cond_to_string cond)
-                       (mem_cond_to_string mem_cond)
-                    )
-              );
-              matched
-            )
-           observable_matrix
-        )
+      List.for_all
+        (fun (cond, mem_cond) ->
+           let matched =
+             List.exists
+               (fun fs ->
+                  RunnerUtils.check_outcome fs cond
+                  && RunnerUtils.check_mem_outcome fs mem_cond
+                )
+               final_states
+           in
+           if (not matched) && final_states <> [] then
+             msg
+               (Printf.sprintf "%sObservable not found%s: %s %s" Terminal.red
+                  Terminal.reset (cond_to_string cond)
+                  (mem_cond_to_string mem_cond)
+               );
+           matched
+         )
+        observable
     in
 
     let unobservable_ok =
       List.for_all Fun.id
         (List.mapi
-           (fun i matched_list ->
-              let opt_index = find_index Fun.id matched_list in
-              match opt_index with
-              | Some index ->
-                  let (cond, mem_cond) = List.nth unobservable i in
+           (fun i fs ->
+              match
+                List.find_opt
+                  (fun (cond, mem_cond) ->
+                     RunnerUtils.check_outcome fs cond
+                     && RunnerUtils.check_mem_outcome fs mem_cond
+                   )
+                  unobservable
+              with
+              | Some (cond, mem_cond) ->
                   msg
                     (Printf.sprintf
                        "%sUnobservable found%s in execution %d: %s %s"
-                       Terminal.red Terminal.reset (index + 1)
-                       (cond_to_string cond)
+                       Terminal.red Terminal.reset (i + 1) (cond_to_string cond)
                        (mem_cond_to_string mem_cond)
                     );
                   false
               | None -> true
             )
-           unobservable_matrix
+           final_states
         )
     in
 
