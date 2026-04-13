@@ -1,0 +1,120 @@
+# VMP two-thread MP test with mixed-size accesses and virtual memory
+# Thread 0 writes data as 4 bytes (W), Thread 1 reads data as 8 bytes (X)
+
+arch="Arm"
+name="MPmixed+VM"
+
+# Thread 0: STR W2, [X1, X0]; STR X5, [X4, X3]
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA base
+R1 = 0x100             # Offset -> VA 0x8000001100
+R2 = 0x2a              # Data value (4-byte write)
+R3 = 0x8000001000      # VA base
+R4 = 0x200             # Offset -> VA 0x8000001200
+R5 = 0x1               # Flag value (8-byte write)
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Thread 1: LDR X5, [X4, X3]; LDR X2, [X1, X0]
+[[registers]]
+_PC = 0x8000000600
+R0 = 0x8000001000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x8000001000
+R4 = 0x200
+R5 = 0x0
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Thread 0 instructions at PA 0x500
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xb8206822, # STR W2, [X1, X0] — 4-byte data write
+  0xf8236885] # STR X5, [X4, X3] — 8-byte flag write
+
+# Thread 1 instructions at PA 0x600
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 4
+data = [
+  0xf8636885, # LDR X5, [X4, X3] — 8-byte flag read
+  0xf8606822] # LDR X2, [X1, X0] — 8-byte data read
+
+# Shared data at PA 0x1100
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+# Shared flag at PA 0x1200
+[[memory]]
+addr = 0x1200
+step = 8
+data = 0
+
+# Page table hierarchy
+[[memory]]
+addr = 0x80000
+step = 8
+data = 0
+
+# L0[1] -> L1
+[[memory]]
+addr = 0x80008
+step = 8
+data = 0x81003
+
+# L1[0] -> L2
+[[memory]]
+addr = 0x81000
+step = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+addr = 0x82000
+step = 8
+data = 0x83003
+
+# L3[0]: code page VA 0x8000000000 -> PA 0x0000
+[[memory]]
+addr = 0x83000
+step = 8
+data = 0x3
+
+# L3[1]: data page VA 0x8000001000 -> PA 0x1000
+[[memory]]
+addr = 0x83008
+step = 8
+data = 0x1043
+
+[[termCond]]
+_PC = 0x8000000508
+
+[[termCond]]
+_PC = 0x8000000608
+
+# All 4 outcomes allowed for MP without barriers
+[[outcome]]
+observable.1 = { R5 = 0x0, R2 = 0x2a }
+
+[[outcome]]
+observable.1 = { R5 = 0x0, R2 = 0x0 }
+
+[[outcome]]
+observable.1 = { R5 = 0x1, R2 = 0x2a }
+
+[[outcome]]
+observable.1 = { R5 = 0x1, R2 = 0x0 }

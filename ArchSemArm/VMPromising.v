@@ -43,104 +43,26 @@ From ASCommon Require Import Common GRel Exec FMon StateT HVec.
 From ArchSem Require Import GenPromising.
 Require Import ArmInst.
 
+Require UMPromising.
+Import (hints) UMPromising.
+
+(** Reuse Msg and FwdItem from UMPromising (identical definitions). *)
+Module Msg := UMPromising.Msg.
+Export (hints) Msg.
 
 #[local] Open Scope list.
 #[local] Open Scope nat.
 #[local] Open Scope stdpp.
 
-(** The goal of this module is to define an Virtual memory promising model,
-    without mixed-size on top of the new interface *)
+(** Virtual memory promising model with mixed-size memory access.
 
-(** VM uses its own 8-byte-aligned Loc (bv 53), decoupled from
-    UMPromising.Loc which is now byte-granular for mixed-size. *)
-Module Loc.
-  Definition t := bv 53.
-  #[export] Typeclasses Transparent t.
-  #[export] Hint Transparent t : bv_unfold_db.
+    Memory events use byte-granular addresses (like UMPromising).
+    Translation, TLB, and BBM checking remain at page/location level. *)
 
-  #[global] Instance dec : EqDecision t.
-  Proof. unfold t. solve_decision. Defined.
+(** Convert a physical address to a 64-bit virtual address *)
+Definition addr_to_va (addr : address) : bv 64 := bv_concat 64 (bv_0 8) addr.
 
-  Definition to_addr (loc : t) : address := bv_concat 56 loc (bv_0 3).
-
-  Definition from_addr (addr : address) : option t :=
-    if bv_extract 0 3 addr =? bv_0 3 then
-      Some (bv_extract 3 53 addr)
-    else None.
-
-  Lemma to_from_addr (addr : address) (loc : t) :
-    from_addr addr = Some loc → to_addr loc = addr.
-  Proof.
-    unfold from_addr,to_addr in *.
-    cdestruct addr,loc |- *** #CDestrMatch.
-    bv_solve'.
-  Qed.
-
-  Lemma from_to_addr (loc : t) : from_addr (to_addr loc) = Some loc.
-    unfold t in *.
-    unfold from_addr, to_addr.
-    cdestruct |- *** #CDestrMatch; bv_solve'.
-  Qed.
-
-  Definition to_addrs (loc : t) : list address := addr_range (to_addr loc) 8.
-
-  Definition from_addr_in (addr : address) : t := bv_extract 3 53 addr.
-
-  Definition addr_index (addr : address) : bv 3 := bv_extract 0 3 addr.
-
-  Lemma from_addr_addr_in addr loc :
-    from_addr addr = Some loc → from_addr_in addr = loc.
-  Proof. unfold from_addr,from_addr_in. cdestruct |- *** #CDestrMatch. Qed.
-
-  Lemma from_addr_in_to_addrs loc :
-    ∀ addr ∈ to_addrs loc, from_addr_in addr = loc.
-  Proof.
-    unfold from_addr_in, to_addrs, addr_range, addr_addN, to_addr.
-    set_unfold.
-    cdestruct |- ***.
-    unfold t, addr_size in *.
-    bv_solve.
-  Qed.
-
-  Definition to_va (loc : t) : bv 64 :=
-    bv_concat 64 (bv_0 8) $ bv_concat 52 loc (bv_0 3).
-
-  Definition from_va (addr : bv 64) : option t :=
-    if bv_extract 0 3 addr =? bv_0 3 then
-      Some (bv_extract 3 53 addr)
-    else None.
-
-End Loc.
-Export (hints) Loc.
-
-(** Register and memory values (all memory access are 8 bytes aligned *)
-Definition val := bv 64.
-#[global] Typeclasses Transparent val.
-
-Definition val_to_address (v : val) : address :=
-  bv_extract 0 56 v.
-
-(** VM uses its own fixed-size Msg (8-byte aligned, no mixed-size).
-    Decoupled from UMPromising.Msg which supports mixed-size access. *)
-Module Msg.
-  Record t :=
-    make {
-      tid : nat;
-      loc : Loc.t;
-      val : val;
-    }.
-  Arguments make : clear implicits.
-
-  #[global] Instance eq_dec : EqDecision t.
-  Proof. solve_decision. Defined.
-
-  #[global] Instance count : Countable t.
-  Proof.
-    apply (inj_countable' (λ msg, (tid msg, loc msg, val msg))
-                      (λ x, make x.1.1 x.1.2 x.2)).
-    by intros [].
-  Defined.
-End Msg.
+Definition val_to_addr {size : N} (v : bv (8 * size)) : address := bv_extract 0 56 v.
 
 Module TLBI.
   Inductive t :=
@@ -213,18 +135,10 @@ Module Ev.
   solve_decision.
   Defined.
 
-  Definition eqb (e1 e2 : t) : bool := bool_decide (e1 = e2).
-
   Definition tid (ev : t) :=
     match ev with
     | Msg msg => Msg.tid msg
     | Tlbi tlbi => TLBI.tid tlbi
-    end.
-
-  Definition is_write_to (loc : Loc.t) (ev : t) :=
-    match ev with
-    | Msg msg => Msg.loc msg =? loc
-    | Tlbi _ => false
     end.
 
   Definition get_msg (ev : t) : option Msg.t :=
@@ -238,12 +152,20 @@ Module Ev.
     | Tlbi tlbi => Some tlbi
     | _ => None
     end.
+
+  (** Check whether an event overlaps with an address range *)
+  Definition overlaps_range (a : address) (sz : N) (ev : t) : bool :=
+    match ev with
+    | Msg msg => Msg.overlaps_range a sz msg
+    | _ => false
+    end.
 End Ev.
+
 Coercion Ev.Msg : Msg.t >-> Ev.t.
 Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
 
-(** A view is just a natural *)
-Definition view := nat.
+(** Reuse view and FwdItem from UMPromising. *)
+Definition view := UMPromising.view.
 #[export] Typeclasses Transparent view.
 Bind Scope nat_scope with view.
 Global Hint Transparent view : core.
@@ -252,38 +174,6 @@ Global Hint Unfold view : core.
 Module Memory.
   Import PromMemory.
 
-  (** Representation of initial memory, this is representation
-      optimized for the internals of this model, so it not a plain
-      memoryMap *)
-  Definition initial := gmap Loc.t val.
-  #[export] Typeclasses Transparent initial.
-
-  (** Convert from a memoryMap to the internal representation: initial *)
-  Definition initial_from_memMap (mem : memoryMap) : initial :=
-    mem
-    |> dom
-    |> (set_map (bv_extract 3 53) : _ → gset Loc.t)
-    |> set_fold (λ loc map,
-        let base := Loc.to_addr loc in
-        let lo :=
-          for addr in addr_range base 4 do mem !! addr end
-          |$> bv_of_bytes 32
-        in
-        let hi :=
-          for addr in addr_range (addr_addN base 4) 4 do mem !! addr end
-          |$> bv_of_bytes 32
-        in
-        let val :=
-          match lo, hi with
-          | Some lo, Some hi => Some (bv_concat 64 hi lo)
-          | Some lo, None => Some (bv_concat 64 (bv_0 32) lo)
-          | None, Some hi => Some (bv_concat 64 hi (bv_0 32))
-          | None, None => None
-          end
-        in
-        partial_alter (λ _, val) loc map) ∅.
-
-
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
@@ -291,82 +181,45 @@ Module Memory.
   Definition cut_after : nat -> t -> t := @cut_after Ev.t.
   Definition cut_before : nat -> t -> t := @cut_before Ev.t.
 
- (** Reads the last write to a location in some memory. Gives the value and the
-     timestamp of the write that it read from.
-     The timestamp is 0 if reading from initial memory. *)
-  Fixpoint read_last (loc : Loc.t) (init : initial) (mem : t) : option (val * nat) :=
+  (** Reads the last write covering a byte location.
+      Returns the byte value and the timestamp of the write.
+      Timestamp is 0 if reading from initial memory. *)
+  Fixpoint read_last (addr : address) (init : memoryMap) (mem : t) : option (bv 8 * nat) :=
     match mem with
-    | [] => init !! loc |$> (., 0%nat)
+    | [] => init !! addr |$> (., 0%nat)
     | (Ev.Msg msg) :: mem' =>
-        if Msg.loc msg =? loc then
-          Some (Msg.val msg, List.length mem)
-        else read_last loc init mem'
-    | Ev.Tlbi _ :: mem' => read_last loc init mem'
+        if Msg.read_byte addr msg is Some byte then
+          Some (byte, List.length mem)
+        else read_last addr init mem'
+    | Ev.Tlbi _ :: mem' => read_last addr init mem'
     end.
-
-  (** Read memory at a given timestamp without any weak memory behaviour *)
-  Definition read_at (loc : Loc.t) (init : initial) (mem : t) (time : nat) :=
-    read_last loc init (cut_before time mem).
 
   (** Reads from initial memory and fail if the memory has been overwritten.
 
       This is mainly for instruction fetching in this model *)
-  Definition read_initial (loc : Loc.t) (init : initial) (mem : t) : option val :=
-    match read_last loc init mem with
+  Definition read_initial (addr : address) (init : memoryMap) (mem : t) : option (bv 8) :=
+    match read_last addr init mem with
     | Some (v, 0%nat) => Some v
     | _ => None
     end.
 
+  (** Reads an 8-byte value starting at [addr] at a specific timestamp
+      [time]. Used by TLB/BBM code to read PTEs at a specific translation
+      time. *)
+  Definition read_at (addr : address) (size : N)
+      (init : memoryMap) (mem : t) (time : nat) : option (bv (8 * size)) :=
+    let mem_at := cut_before time mem in
+    bytes ← mapM (λ a, fst <$> read_last a init mem_at) (addr_range addr size);
+    Some (bv_of_bytes (8 * size) bytes).
 
-  (* (** Reads from initial memory for instruction fetch (only 4 bytes aligned) *)
-  (*     and fail if the memory was modified *)
-  (*  *) *)
-  (* Definition read_ifetch (addr : bv 50) (init : initial) (mem : t) *)
-  (*   : option val := *)
-  (*   if existsb (fun ev => *)
-  (*                 match ev with *)
-  (*                 | Ev.Msg msg => Msg.lov msg =? (bv_extract 1 49 addr) *)
-  (*                 | _ => false) mem *)
-  (*   then None *)
-  (*   else Some ( *)
-  (*   match read_last loc init mem with *)
-  (*   | (v, 0%nat) => Some v *)
-  (*   | _ => None *)
-  (*   end. *)
-
+  Definition to_memMap (init : memoryMap) (mem : t) : memoryMap :=
+    foldr (λ ev mm,
+        if Ev.get_msg ev is Some msg
+        then mem_insert_bv (Msg.addr msg) (Msg.val msg) mm
+        else mm) init mem.
 
   (** Transform a promising initial memory and memory history back to a
       TermModel memoryMap *)
-  Definition to_memMap (init : initial) (mem : t) : memoryMap:=
-    let final :=
-      foldl (λ nmem ev,
-          if ev is Ev.Msg msg
-          then insert msg.(Msg.loc) msg.(Msg.val) nmem
-          else nmem)
-        init mem
-    in
-    map_fold (λ loc (val : bv 64), mem_insert (Loc.to_addr loc) 8 val) ∅ final.
-
-  (** Returns the list of possible reads at a location restricted by a certain
-      view. The list is never empty as one can always read from at least the
-      initial value. *)
-  Definition read (loc : Loc.t) (v : view) (init : initial) (mem : t)
-    : option (list (val * view)) :=
-    first ← mem |> cut_before v |> read_last loc init;
-    let lasts :=
-      mem |> cut_after_with_timestamps v
-      |> omap
-           (λ '(ev, v),
-             match ev with
-             | Ev.Msg msg =>
-                 if Msg.loc msg =? loc
-                 then Some (Msg.val msg, v)
-                 else None
-             | Ev.Tlbi _ => None
-             end)
-    in
-    Some (lasts ++ [first])%list.
-
 
   (** Promise a write and add it at the end of memory *)
   Definition promise (ev : Ev.t) : Exec.t t string view :=
@@ -374,47 +227,43 @@ Module Memory.
     mem ← mGet;
     mret (List.length mem).
 
-  (** Returns a view among a promise set that correspond to an event. The
-      oldest matching view is taken. This is because it can be proven that
-      taking a more recent view, will make the previous promises unfulfillable
-      and thus the corresponding executions would be discarded. TODO prove it.
-      *)
+  (** Returns a view among a promise set that correspond to an event. *)
   Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
     prom |> filter (λ t, mem !! t = Some ev)
          |> reverse
          |> head.
 
-  (** Check that the write at the provided timestamp is indeed to that location
-      and that no write to that location have been made by any other thread *)
-  Definition exclusive (loc : Loc.t) (v : view) (mem : t) : bool :=
-    match mem !! v with
-    | Some (Ev.Msg msg) =>
-        if Msg.loc msg =? loc then
-          let tid := Msg.tid msg in
-          mem |> cut_after v
-              |> forallb
-              (fun ev => match ev with
-                      | Ev.Msg msg =>
-                          (Msg.tid msg =? tid)
-                          || negb (Msg.loc msg =? loc)
-                      | _ => true
-                      end)
-        else false
-    | _ => false
-    end.
+
+  (** Checks that no write overlapping [addr, addr+size) has been made by any
+      thread other than [tid] since view [v].  This is the exclusive-monitor
+      interference check: if another thread wrote to any byte in the monitored
+      range between the load-exclusive and store-exclusive, the exclusive
+      must fail. *)
+  Definition exclusive (tid : nat) (addr : address) (size : N)
+      (v : view) (mem : t) : bool :=
+    mem |> cut_after v
+        |> forallb (λ ev, (Ev.tid ev =? tid)
+                          || negb (Ev.overlaps_range addr size ev)).
 End Memory.
 Import (hints) Memory.
 
-Module FwdItem.
-  Record t :=
-    make {
-      time : nat;
-      view : view;
-      xcl : bool
-    }.
-  Definition init := make 0 0 false.
-End FwdItem.
+Module FwdItem := UMPromising.FwdItem.
 
+
+(** Reads a single byte from a memory snapshot with forwarding applied.
+    If the observed write's timestamp matches [fwdb]'s entry for the byte,
+    the read view is [FwdItem.read_fwd_view] (possibly smaller than
+    [twrite]); otherwise the read view is just [twrite]. *)
+Definition read_fwd (addr : address) (fwdb : gmap address FwdItem.t)
+    (macc : mem_acc) (init : memoryMap) (mem : Memory.t) : option (bv 8 * view * nat) :=
+  '(val, twrite) ← Memory.read_last addr init mem;
+  let read_view :=
+    if fwdb !! addr is Some fwd then
+      if (fwd.(FwdItem.time) =? twrite)%nat
+      then FwdItem.read_fwd_view macc fwd
+      else twrite
+    else twrite in
+  Some (val, read_view, twrite).
 
 Definition EL := (fin 4).
 #[export] Typeclasses Transparent EL.
@@ -514,12 +363,18 @@ Definition is_reg_unknown (r : reg) : Prop :=
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
-Equations regval_to_val (r : reg) (v : reg_type r) : option val :=
-  | R_bitvector_64 _, v => Some v
-  | _, v => None.
+Equations regval_to_val {size : N} (r : reg) (v : reg_type r) : option (bv (8 * size)) :=
+  | R_bitvector_64 _, v =>
+    if decide (8 ≤ size)%N
+    then Some (Z_to_bv (8 * size) (bv_unsigned v))
+    else None
+  | _, _ => None.
 
-Equations val_to_regval (r : reg) (v : val) : option (reg_type r) :=
-  | R_bitvector_64 _, v => Some v
+Equations val_to_regval {size : N} (r : reg) (v : bv (8 * size)) : option (reg_type r) :=
+  | R_bitvector_64 _, v =>
+    if decide (size ≤ 8)%N
+    then Some (Z_to_bv 64 (bv_unsigned v))
+    else None
   | _, v => None.
 
 (** * The thread state *)
@@ -573,8 +428,8 @@ Module TState.
         regs : dmap reg (λ reg, reg_type reg * view)%type;
         levs : list LEv.t;
 
-        (* The coherence views *)
-        coh : gmap Loc.t view;
+        (* Per-byte coherence views *)
+        coh : gmap address view;
 
         vrd : view; (* The maximum output view of a read  *)
         vwr : view; (* The maximum output view of a write  *)
@@ -588,15 +443,11 @@ Module TState.
         vacq : view; (* The maximum output view of an acquire access *)
         vrel : view; (* The maximum output view of an release access *)
 
-        (* Forwarding database. The first view is the timestamp of the
-           write while the second view is the max view of the dependencies
-           of the write. The boolean marks if the store was an exclusive*)
-        fwdb : gmap Loc.t FwdItem.t;
+        (* Per-byte forwarding database *)
+        fwdb : gmap address FwdItem.t;
 
-        (* Exclusive database. If there was a recent load exclusive but the
-           corresponding store exclusive has not yet run, this will contain
-           the timestamp and post-view of the load exclusive*)
-        xclb : option (nat * view);
+        (* Exclusive database: (time, view, size, addr) *)
+        xclb : option (nat * view * N * address);
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -706,27 +557,38 @@ Module TState.
     let lev := LEv.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
-  (** Sets the coherence view of a location *)
-  Definition set_coh (loc : Loc.t) (v : view) : t → t :=
-    set coh (insert loc v).
+  (** Sets the coherence view of a byte address *)
+  Definition set_coh (a : address) (v : view) : t → t :=
+    set coh (insert a v).
 
-  (** Updates the coherence view of a location by taking the max of the new
-      view and of the existing value *)
-  Definition update_coh (loc : Loc.t) (v : view) (ts : t) : t :=
-    set_coh loc (max v (ts.(coh) !!! loc)) ts.
+  (** Updates the coherence view of a byte address *)
+  Definition update_coh (a : address) (v : view) (ts : t) : t :=
+    set_coh a (max v (ts.(coh) !!! a)) ts.
 
-  (** Updates the forwarding database for a location. *)
-  Definition set_fwdb (loc : Loc.t) (fi : FwdItem.t) : t → t :=
-    set fwdb (insert loc fi).
+  (** Max coherence view across a range of byte addresses *)
+  Definition max_cohs (addrs : list address) (ts : t) : view :=
+    foldr max 0%nat (map (λ a, ts.(coh) !!! a) addrs).
 
-  (** Set the exclusive database to the timestamp and view of the latest
-      load exclusive *)
-  Definition set_xclb (vs : view * view) : t → t :=
-    set xclb (λ _, Some vs).
+  (** Updates the coherence view for a list of (address, view) pairs. *)
+  Definition update_cohs (avs : list (address * view)) (ts : t) : t :=
+    foldr (λ '(a, v), update_coh a v) ts avs.
 
-  (** Clear the exclusive database, to mark a store exclusive *)
-  Definition clear_xclb : t → t :=
-    set xclb (λ _, None).
+  (** Updates the forwarding database for an address *)
+  Definition set_fwdb (addr : address) (fi : FwdItem.t) : t → t :=
+    set fwdb (insert addr fi).
+
+  (** Set forwarding entries for all bytes in a range *)
+  Definition set_fwds (addrs : list address)
+      (time : nat) (vdata : view) (xcl : bool) (ts : t) : t :=
+    let fi := FwdItem.make time vdata xcl in
+    foldr (λ a, set_fwdb a fi) ts addrs.
+
+  (** Set the exclusive database: (time, view, size, addr) *)
+  Definition set_xclb (vs : nat * view * N * address) : t → t :=
+    setv xclb (Some vs).
+
+  (** Clears the exclusive database, to mark a store exclusive *)
+  Definition clear_xclb : t → t := setv xclb None.
 
   (** Updates a view that from the state, by taking the max of new value and
       the current value.
@@ -833,64 +695,61 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
   bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
 
-Definition next_entry_loc (loc : Loc.t) (index : bv 9) : Loc.t :=
-  bv_concat 53 (bv_extract 9 44 loc) index.
-
-Definition is_valid (e : val) : Prop :=
+Definition is_valid (e : bv 64) : Prop :=
   (bv_extract 0 1 e) = 1%bv.
-Instance Decision_is_valid (e : val) : Decision (is_valid e).
+Instance Decision_is_valid (e : bv 64) : Decision (is_valid e).
 Proof. unfold_decide. Defined.
 
 (** A PTE is a table descriptor if:
     - It is not at the leaf level (level 3), AND
     - Its bits [0:2] = 11 (table descriptor encoding)
     At leaf level, bits [0:2]=11 indicates a page entry, not a table. *)
-Definition is_table (lvl : Level) (e : val) : Prop :=
+Definition is_table (lvl : Level) (e : bv 64) : Prop :=
   lvl ≠ leaf_lvl ∧ (bv_extract 0 2 e) = 3%bv.
-Instance Decision_is_table (lvl : Level) (e : val) : Decision (is_table lvl e).
+Instance Decision_is_table (lvl : Level) (e : bv 64) : Decision (is_table lvl e).
 Proof. unfold_decide. Defined.
 
-Definition is_block (e : val) : Prop :=
+Definition is_block (e : bv 64) : Prop :=
   (bv_extract 0 2 e) = 1%bv.
-Instance Decision_is_block (e : val) : Decision (is_block e).
+Instance Decision_is_block (e : bv 64) : Decision (is_block e).
 Proof. unfold_decide. Defined.
 
-Definition is_final (lvl : Level) (e : val) : Prop :=
+Definition is_final (lvl : Level) (e : bv 64) : Prop :=
   if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv else is_block e.
-Instance Decision_is_final (lvl : Level) (e : val) : Decision (is_final lvl e).
+Instance Decision_is_final (lvl : Level) (e : bv 64) : Decision (is_final lvl e).
 Proof. unfold_decide. Defined.
 
-Definition is_global (lvl : Level) (e : val) : Prop :=
+Definition is_global (lvl : Level) (e : bv 64) : Prop :=
   is_final lvl e ∧ (bv_extract 11 1 e) = 0%bv.
-Instance Decision_is_global (lvl : Level) (e : val) : Decision (is_global lvl e).
+Instance Decision_is_global (lvl : Level) (e : bv 64) : Decision (is_global lvl e).
 Proof. unfold_decide. Defined.
 
 (** Extract AttrIndx field (bits 4:2) from a block/page descriptor.
     This indexes into MAIR_ELx to determine memory type and cacheability. *)
-Definition attr_idx (e : val) : bv 3 := bv_extract 2 3 e.
+Definition attr_idx (e : bv 64) : bv 3 := bv_extract 2 3 e.
 
 (** Extract Shareability field (bits 9:8) from a block/page descriptor.
     00 = Non-shareable, 10 = Outer Shareable, 11 = Inner Shareable *)
-Definition shareability (e : val) : bv 2 := bv_extract 8 2 e.
+Definition shareability (e : bv 64) : bv 2 := bv_extract 8 2 e.
 
 (** Extract non-Global bit (bit 11) from a block/page descriptor.
     nG=0 means global (all ASIDs), nG=1 means non-global (ASID-specific). *)
-Definition is_non_global (e : val) : bool := (bv_extract 11 1 e) =? 1%bv.
+Definition is_non_global (e : bv 64) : bool := (bv_extract 11 1 e) =? 1%bv.
 
 (** Extract Contiguous bit (bit 52) from a block/page descriptor.
     When set, indicates this entry is part of a contiguous set of entries
     that could be cached as a single TLB entry. *)
-Definition is_contiguous (e : val) : bool := (bv_extract 52 1 e) =? 1%bv.
+Definition is_contiguous (e : bv 64) : bool := (bv_extract 52 1 e) =? 1%bv.
 
 (** Check if a PTE allows write access.
     For table descriptors: check APTable[1] (bit 62) = 0
     For block/page entries: check AP[1] (bit 7) = 0
     AP[1]=0 means EL1 read/write, AP[1]=1 means EL1 read-only. *)
-Definition allow_write (lvl : Level) (e : val) : Prop :=
+Definition allow_write (lvl : Level) (e : bv 64) : Prop :=
   let ap := if decide (is_table lvl e) then (bv_extract 61 2 e)
             else (bv_extract 6 2 e) in
   (bv_extract 1 1 ap) = 0%bv.
-Instance Decision_allow_write (lvl : Level) (e : val) : Decision (allow_write lvl e).
+Instance Decision_allow_write (lvl : Level) (e : bv 64) : Decision (allow_write lvl e).
 Proof. unfold_decide. Defined.
 
 (** The offset size (in bits) for a given translation level.
@@ -906,7 +765,7 @@ Definition output_addr_size (lvl : Level) : N := 48 - (offset_size lvl).
 
 (** Extract the output address (OA) from a PTE at a given level.
     The OA is the physical address base that the PTE maps to. *)
-Definition output_addr (lvl : Level) (e : val) : bv (output_addr_size lvl) :=
+Definition output_addr (lvl : Level) (e : bv 64) : bv (output_addr_size lvl) :=
   bv_extract (offset_size lvl) (output_addr_size lvl) e.
 
 (** * TLB ***)
@@ -920,7 +779,7 @@ Module TLB.
           va : prefix lvl;
           asid : option (bv 16);
         }.
-    Arguments make {_} _ _.
+    Arguments make {_} _ _ _.
     Arguments upper {_}.
     Arguments va {_}.
     Arguments asid {_}.
@@ -952,8 +811,8 @@ Module TLB.
   Module Entry.
     Record t {lvl : Level} :=
       make {
-        val_ttbr : val;
-        ptes : vec val (S lvl);
+        val_ttbr : bv 64;
+        ptes : vec (bv 64) (S lvl);
       }.
     Arguments t : clear implicits.
 
@@ -974,7 +833,7 @@ Module TLB.
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
-        (pte : val)
+        (pte : bv 64)
         (CHILD : lvl + 1 = clvl) : @t clvl :=
       make _ tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte])).
     Solve All Obligations with lia.
@@ -1121,7 +980,7 @@ Module TLB.
       Returns [(vatlb', changed)] where [changed] is [true] if new entries
       were added. *)
   Definition va_fill_root (vatlb : VATLB.t) (ts : TState.t)
-      (init : Memory.initial)
+      (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (va : prefix root_lvl)
@@ -1130,14 +989,13 @@ Module TLB.
       (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
-      let loc := Loc.from_addr_in entry_addr in
-      if Memory.read_at loc init mem time is Some (memval, _) then
+      if (Memory.read_at entry_addr 8 init mem time : option (bv 64)) is Some memval then
         if decide (is_table root_lvl memval) then
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
           let entry : Entry.t (Ctxt.lvl ctxt) :=
-            Entry.make _ val_ttbr ([#memval] : vec val (S root_lvl)) in
+            Entry.make _ val_ttbr ([#memval] : vec (bv 64) (S root_lvl)) in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
             Ok (VATLB.insert ctxt entry vatlb, true)
@@ -1164,7 +1022,7 @@ Module TLB.
       Returns [(vatlb', changed)] where [changed] is [true] if a new entry
       was added. *)
   Definition va_fill_lvl (vatlb : VATLB.t) (ts : TState.t)
-      (init : Memory.initial)
+      (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (ctxt : Ctxt.t)
@@ -1175,8 +1033,7 @@ Module TLB.
     if decide (¬is_table plvl (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
-      let loc := Loc.from_addr_in entry_addr in
-      if (Memory.read_at loc init mem time) is Some (next_pte, _) then
+      if (Memory.read_at entry_addr 8 init mem time : option (bv 64)) is Some next_pte then
         if decide (is_valid next_pte) then
           match inspect $ child_lvl (Ctxt.lvl ctxt) with
           | Some clvl eq:e =>
@@ -1194,7 +1051,7 @@ Module TLB.
           end
         else Ok (vatlb, false)
       else
-        guard_or ("TLB Fill: Failed to read next level PTE at " ++ (pretty loc))%string
+        guard_or ("TLB Fill: Failed to read next level PTE at " ++ (pretty entry_addr))%string
                  (negb mem_strict);;
         Ok (vatlb, false).
 
@@ -1209,7 +1066,7 @@ Module TLB.
       Returns [(tlb', changed)] where [changed] is [true] if new entries
       were added. *)
   Definition va_fill (tlb : t) (ts : TState.t)
-      (init : Memory.initial)
+      (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
@@ -1249,15 +1106,16 @@ Module TLB.
       Returns [(tlb', changed)] where [changed] is [true] if new entries
       were added. *)
   Definition update (tlb : t) (ts : TState.t)
-      (init : Memory.initial)
+      (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
       (ttbr : reg) : result string (t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
-              $ TState.read_sreg_at ts ttbr time;
     upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
+    sregs ← othrow "TTBR should exist in initial state"
+      $ TState.read_sreg_at ts ttbr time;
+    val_ttbrs ← othrow "TTBR should be a 64 bit value"
+      $ mapM (M:=option) (λ sreg, regval_to_val (size:=8) ttbr sreg.1) sregs;
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ←
         va_fill tlb_prev ts init mem time lvl va upper val_ttbrs (*strict*)true;
@@ -1272,7 +1130,7 @@ Module TLB.
 
       The [mem_strict] param decides if non-existing memory triggers an error. *)
   Definition traverse_root (vatlb : VATLB.t) (ts : TState.t)
-        (init : Memory.initial)
+        (init : memoryMap)
         (mem : Memory.t)
         (time : nat)
         (upper : bool)
@@ -1289,7 +1147,7 @@ Module TLB.
 
       The [mem_strict] param decides if non-existing memory triggers an error. *)
   Definition traverse_lvl (vatlb : VATLB.t) (ts : TState.t)
-        (init : Memory.initial)
+        (init : memoryMap)
         (mem : Memory.t)
         (time : nat)
         (fe : FE.t)
@@ -1306,7 +1164,7 @@ Module TLB.
 
       The [mem_strict] param decides if non-existing memory triggers an error. *)
   Definition traverse (tlb : t) (ts : TState.t)
-      (init : Memory.initial)
+      (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (lvl : Level)
@@ -1335,15 +1193,16 @@ Module TLB.
 
       The [mem_strict] param decides if non-existing memory triggers an error. *)
   Definition update_all (tlb : t) (ts : TState.t)
-        (init : Memory.initial)
+        (init : memoryMap)
         (mem : Memory.t)
         (time : nat)
         (ttbr : reg)
         (mem_strict : bool) : result string (t * bool) :=
-    sregs ← othrow "TTBR should exist in initial state"
-              $ TState.read_sreg_at ts ttbr time;
     upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    let val_ttbrs := omap (λ sreg, regval_to_val ttbr sreg.1) sregs in
+    sregs ← othrow "TTBR should exist in initial state"
+      $ TState.read_sreg_at ts ttbr time;
+    val_ttbrs ← othrow "TTBR should be a 64 bit value"
+      $ mapM (M:=option) (λ sreg, regval_to_val (size:=8) ttbr sreg.1) sregs;
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ←
           traverse tlb_prev ts init mem time lvl upper val_ttbrs mem_strict;
@@ -1406,11 +1265,9 @@ Module TLB.
       - Applying any TLBI events in memory.
       - Calling [update] to fill translation entries for the specific VA.
 
-      Memory behavior controlled by [mem_param].
-
       Only records snapshots where the TLB actually changed. The result is
       accumulated in [acc] and returned in descending timestamp order. *)
-  Fixpoint unique_snapshots_va_between (ts : TState.t) (mem_init : Memory.initial)
+  Fixpoint unique_snapshots_va_between (ts : TState.t) (mem_init : memoryMap)
                        (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
@@ -1445,11 +1302,9 @@ Module TLB.
 
       Initializes the TLB at time 0, then calls [unique_snapshots_va_between]
       to track changes. Returns snapshots in descending timestamp order,
-      including the initial state at time 0.
-
-      Memory behavior controlled by [mem_param]. *)
+      including the initial state at time 0.  *)
   Definition unique_snapshots_va_until (ts : TState.t)
-                       (mem_init : Memory.initial)
+                       (mem_init : memoryMap)
                        (mem : Memory.t)
                        (time : nat)
                        (va : bv 64)
@@ -1466,11 +1321,9 @@ Module TLB.
       - Applying any TLBI events in memory.
       - Calling [update_all] to fill translation entries for all VAs.
 
-      Memory behavior controlled by [mem_param].
-
       Only records snapshots where the TLB actually changed. The result is
       accumulated in [acc] and returned in descending timestamp order. *)
-  Fixpoint unique_snapshots_between (ts : TState.t) (mem_init : Memory.initial)
+  Fixpoint unique_snapshots_between (ts : TState.t) (mem_init : memoryMap)
                        (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
@@ -1490,8 +1343,7 @@ Module TLB.
               then (tlbi_apply tlbi tlb_prev, true)
               else (tlb_prev, false)
             in
-            '(tlb, is_changed) ← update_all tlb_inv ts mem_init mem time_cur
-                                            ttbr mem_strict;
+            '(tlb, is_changed) ← update_all tlb_inv ts mem_init mem time_cur ttbr mem_strict;
             mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
@@ -1500,19 +1352,16 @@ Module TLB.
         | true => (tlb, time_cur) :: acc
         | false => acc
         end in
-      unique_snapshots_between
-        ts mem_init mem tlb time_cur ccnt ttbr acc mem_strict
+      unique_snapshots_between ts mem_init mem tlb time_cur ccnt ttbr acc mem_strict
     end.
 
   (** Compute all unique TLB snapshots from time 0 to [time] for BBM checking.
 
       Initializes the TLB at time 0, then calls [unique_snapshots_between]
       to track changes. Returns snapshots in descending timestamp order,
-      including the initial state at time 0.
-
-      Memory behavior controlled by [mem_param]. *)
+      including the initial state at time 0. *)
   Definition unique_snapshots_until (ts : TState.t)
-                       (mem_init : Memory.initial)
+                       (mem_init : memoryMap)
                        (mem : Memory.t)
                        (time : nat)
                        (ttbr : reg)
@@ -1575,7 +1424,7 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (ndctxt : NDCtxt.t lvl) :
-            result string (list (val * list val * (option nat))) :=
+            result string (list (bv 64 * list (bv 64) * (option nat))) :=
     let ctxt := existT lvl ndctxt in
     let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
     let tes := if decide (lvl = leaf_lvl) then tes
@@ -1595,7 +1444,7 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
-            result string (list (val * list val * (option nat))) :=
+            result string (list (bv 64 * list (bv 64) * (option nat))) :=
     upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
                 (is_upper_va va);
     let ndctxt_asid := NDCtxt.make upper (level_prefix va lvl) (Some asid) in
@@ -1614,7 +1463,7 @@ Module TLB.
               (tid : nat)
               (tlb : TLB.t) (trans_time : nat)
               (va : bv 64) (asid : bv 16) :
-            result string (list (val * list val * (option nat))) :=
+            result string (list (bv 64 * list (bv 64) * (option nat))) :=
     res1 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 1%fin va asid;
     res2 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 2%fin va asid;
     res3 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time leaf_lvl va asid;
@@ -1626,7 +1475,7 @@ Module TLB.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [option nat] *)
   Definition get_invalid_ptes_with_inv_time_by_lvl_asid (ts : TState.t)
-                (init : Memory.initial)
+                (init : memoryMap)
                 (mem : Memory.t)
                 (tid : nat)
                 (tlb : t) (trans_time : nat)
@@ -1634,10 +1483,10 @@ Module TLB.
                 (va : bv 64)
                 (asid : option (bv 16))
                 (ttbr : reg) :
-        result string (list (val * list val * (option nat))) :=
+        result string (list (bv 64 * list (bv 64) * (option nat))) :=
     if parent_lvl lvl is Some parent_lvl then
       upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
-                (is_upper_va va);
+        (is_upper_va va);
       let ndctxt := NDCtxt.make upper (level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
       let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
@@ -1646,8 +1495,7 @@ Module TLB.
         for te in (elements tes) do
           let entry_addr :=
             next_entry_addr (Entry.pte te) (level_index va lvl) in
-          let loc := Loc.from_addr_in entry_addr in
-          if (Memory.read_at loc init mem trans_time) is Some (memval, _) then
+          if (Memory.read_at entry_addr 8 init mem trans_time : option (bv 64)) is Some memval then
             if decide (is_valid memval) then mret None
             else
               ti ← invalidation_time mem tid trans_time ctxt te;
@@ -1659,18 +1507,17 @@ Module TLB.
       mret $ omap id invalid_ptes
     else
       sregs ← othrow "TTBR should exist in initial state"
-                $ TState.read_sreg_at ts ttbr trans_time;
+        $ TState.read_sreg_at ts ttbr trans_time;
       invalid_ptes ←
         for sreg in sregs do
           val_ttbr ← othrow "TTBR should be a 64 bit value"
-                  $ regval_to_val ttbr sreg.1;
+            $ regval_to_val ttbr sreg.1;
           let entry_addr :=
-              next_entry_addr (val_to_address val_ttbr) (level_index va lvl) in
-          let loc := Loc.from_addr_in entry_addr in
-          if (Memory.read_at loc init mem trans_time) is Some (memval, _) then
+              next_entry_addr (val_to_addr (size:= 8) val_ttbr) (level_index va lvl) in
+          if (Memory.read_at entry_addr 8 init mem trans_time : option (bv 64)) is Some memval then
             if decide (is_valid memval) then mret None
             else
-              mret $ Some (val_ttbr, [memval], None)
+              mret $ Some ((val_ttbr : bv 64), [memval], None)
           else mthrow "The root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
@@ -1681,14 +1528,14 @@ Module TLB.
       Return each TLB entry as a list of descriptors [list val] with
       the invalidation time [option nat] *)
   Definition get_invalid_ptes_with_inv_time_by_lvl (ts : TState.t)
-                (init : Memory.initial)
+                (init : memoryMap)
                 (mem : Memory.t)
                 (tid : nat)
                 (tlb : t) (trans_time : nat)
                 (lvl : Level)
                 (va : bv 64) (asid : bv 16)
                 (ttbr : reg) :
-      result string (list (val * list val * (option nat))) :=
+      result string (list (bv 64 * list (bv 64) * (option nat))) :=
     candidates_asid ←
       get_invalid_ptes_with_inv_time_by_lvl_asid
         ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
@@ -1697,13 +1544,13 @@ Module TLB.
         ts init mem tid tlb trans_time lvl va None ttbr;
     mret (candidates_asid ++ candidates_global).
 
-  Definition get_invalid_ptes_with_inv_time (ts : TState.t) (init : Memory.initial)
+  Definition get_invalid_ptes_with_inv_time (ts : TState.t) (init : memoryMap)
                        (mem : Memory.t)
                        (tid : nat)
                        (tlb : TLB.t) (time : nat)
                        (va : bv 64) (asid : bv 16)
                        (ttbr : reg) :
-    result string (list (val * list val * (option nat))) :=
+    result string (list (bv 64 * list (bv 64) * (option nat))) :=
   fault_ptes ←
     for lvl in enum Level do
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
@@ -1718,8 +1565,8 @@ Module TLB.
     | Some _, None => true
     end.
 
-  Definition is_new_entry (val_ttbr : val) (path : list val) (ti_new : option nat)
-      (entries : list (val * list val * nat * option nat)) : bool :=
+  Definition is_new_entry (val_ttbr : bv 64) (path : list (bv 64)) (ti_new : option nat)
+      (entries : list (bv 64 * list (bv 64) * nat * option nat)) : bool :=
     forallb
       (λ '(vt, p, t, ti),
         negb(val_ttbr =? vt)
@@ -1732,7 +1579,7 @@ Module TLB.
                 (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) :
-              result string (list (val * list val * nat * option nat)) :=
+              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       candidates ← TLB.lookup mem tid tlb trans_time va asid;
       let new :=
@@ -1746,11 +1593,11 @@ Module TLB.
 
   Definition get_invalid_entries_from_snapshots (snapshots : list (t * nat))
                 (ts : TState.t)
-                (init : Memory.initial)
+                (init : memoryMap)
                 (mem : Memory.t)
                 (tid : nat) (is_ets2 : bool)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
-              result string (list (val * list val * nat * option nat)) :=
+              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
         mret entries
@@ -1816,10 +1663,6 @@ End IIS.
 
 Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
 
-Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
-  if f.(FwdItem.xcl) && is_rel_acq macc
-  then f.(FwdItem.time) else f.(FwdItem.view).
-
 (** Perform an explicit memory read.
 
     Computes the pre-view [vpre] from address dependencies and barrier ordering,
@@ -1830,45 +1673,51 @@ Definition read_fwd_view (macc : mem_acc) (f : FwdItem.t) :=
     - Invalidation time checking for translated addresses.
 
     Returns the post-view and read value. *)
-Definition read_mem_explicit (loc : Loc.t) (vaddr : view)
+Definition read_mem_explicit (addr : address) (size : N) (vaddr : view)
     (invalidation_time : option nat) (macc : mem_acc)
-    (init : Memory.initial) :
-  Exec.t (TState.t * Memory.t) string (view * val) :=
+    (init : memoryMap) :
+  Exec.t (TState.t * Memory.t) string (view * bv (8 * size)) :=
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  let addrs := addr_range addr size in
   ts ← mget fst;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
-  (* We only read after the coherence point, because without mixed-size, this
-     is equivalent to reading at vpre and discarding incoherent options *)
-  let vread := vpre ⊔ (TState.coh ts !!! loc) in
+  (* Per-byte coherence: read after the max coh across all bytes *)
+  let vread := vpre ⊔ TState.max_cohs addrs ts in
   mem ← mget snd;
-  reads ← othrow ("Reading from unmapped memory " ++ (pretty loc))%string
-            $ Memory.read loc vread init mem;
-  '(res, time) ← mchoosel reads;
-  let read_view :=
-    if (ts.(TState.fwdb) !! loc) is Some fwd then
-      if (fwd.(FwdItem.time) =? time) then read_fwd_view macc fwd else time
-    else time in
+  let affecting_ts :=
+    mem |> PromMemory.cut_after_with_timestamps vread
+        |> omap (λ '(ev, t),
+            if Ev.overlaps_range addr size ev then Some t else None) in
+  tread ← mchoosel (remove_dups (vread :: affecting_ts));
+  let mem_at_read := Memory.cut_before tread mem in
+  resolved ← othrow "Reading from unmapped memory" $
+    mapM (λ a, read_fwd a ts.(TState.fwdb) macc init mem_at_read) addrs;
+  let '(bytes_views, twrites) := List.split resolved in
+  let '(bytes, read_views) := List.split bytes_views in
+  let res := bv_of_bytes (8 * size) bytes in
+  let read_view := foldr max 0%nat read_views in
   let vpost := vpre ⊔ read_view in
   let check_vpost :=
     if invalidation_time is Some invalidation_time then
       (vpost <? invalidation_time)%nat
     else true in
   guard_discard (check_vpost);;
-  mset fst $ TState.update_coh loc time;;
+  mset fst $ TState.update_cohs (zip addrs twrites);;
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset fst $ TState.update TState.vspec vaddr;;
   (if is_exclusive macc
-  then mset fst $ TState.set_xclb (time, vpost)
+  then mset fst $ TState.set_xclb
+    (foldr max 0%nat twrites, vpost, size, addr)
   else mret ());;
   mret (vpost, res).
 
 Definition read_pte (vaddr : view) :
-    Exec.t (TState.t * IIS.TransRes.t) string (view * val) :=
+    Exec.t (TState.t * IIS.TransRes.t) string (view * bv 64) :=
   tres ← mget snd;
   let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
   val ← Exec.liftSt snd IIS.TransRes.pop;
@@ -1960,45 +1809,44 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
             $ TState.set_reg reg (val, vreg') ts;
     msetv PPState.state nts.
 
-(** Run a MemRead outcome.
-    Returns the new thread state, the vpost of the read and the read value. *)
-Definition run_mem_read (addr : address) (macc : mem_acc) (init : Memory.initial) :
-    Exec.t (PPState.t TState.t Ev.t IIS.t) string val :=
-  loc ← othrow "Address not supported" $ Loc.from_addr addr;
+(** Run an explicit MemRead outcome. *)
+Definition run_mem_read (addr : address) (size : N) (macc : mem_acc) (init : memoryMap) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (bv (8 * size)) :=
   iis ← mget PPState.iis;
   let vaddr := iis.(IIS.strict) in
-  if is_explicit macc then
-    '(view, val) ←
-      Exec.liftSt (PPState.state ×× PPState.mem)
-        $ read_mem_explicit loc vaddr iis.(IIS.inv_time) macc init;
-    mset PPState.iis $ IIS.add view;;
-    mret val
-  else if is_ttw macc then
-    ts ← mget PPState.state;
-    tres ← othrow "TTW read before translation start" iis.(IIS.trs);
-    '(view, val) ←
-      read_pte vaddr (ts, tres)
-      |> Exec.lift_res_set_full
-          (λ '(ts, tres) ppst,
-            ppst
-            |> setv PPState.state ts
-            |> set PPState.iis (IIS.set_trs tres));
-    mset PPState.iis $ IIS.add view;;
-    mret val
-  else mthrow "Unsupported 8 bytes access".
+  '(view, val) ←
+    Exec.liftSt (PPState.state ×× PPState.mem)
+      $ read_mem_explicit addr size vaddr iis.(IIS.inv_time) macc init;
+  mset PPState.iis $ IIS.add view;;
+  mret val.
 
-Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initial) :
-    Exec.t Memory.t string (bv 32) :=
-  if is_ifetch macc then
-    let aligned_addr := bv_unset_bit 2 addr in
-    let bit2 := bv_get_bit 2 addr in
-    loc ← othrow "Address not supported" $ Loc.from_addr aligned_addr;
-    mem ← mGet;
-    block ← othrow ("Modified instruction memory at " ++ (pretty loc))%string
-                            (Memory.read_initial loc init mem);
-    mret $ (if bit2 then bv_extract 32 32 else bv_extract 0 32) block
-  else mthrow "Non-ifetch 4 bytes access".
+(** Run a TTW (table walk) MemRead — always reads an 8-byte PTE.
+    [size] must be 8; result is a [bv (8 * size)] for outcome compatibility. *)
+Definition run_mem_read_ttw (size : N) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (bv (8 * size)) :=
+  guard_or "TTW of size other than 8" (size =? 8)%N;;
+  iis ← mget PPState.iis;
+  let vaddr := iis.(IIS.strict) in
+  ts ← mget PPState.state;
+  tres ← othrow "TTW read before translation start" iis.(IIS.trs);
+  '(view, val) ←
+    read_pte vaddr (ts, tres)
+    |> Exec.lift_res_set_full
+        (λ '(ts, tres) ppst,
+          ppst
+          |> setv PPState.state ts
+          |> set PPState.iis (IIS.set_trs tres));
+  mset PPState.iis $ IIS.add view;;
+  mret (bv_zero_extend (8 * size) val).
 
+(** Run an ifetch MemRead — always reads a 4-byte instruction. *)
+Definition run_mem_read_inst (addr : address) (size : N)
+    (init : memoryMap) : Exec.t Memory.t string (bv (8 * size)) :=
+  guard_or "Ifetch of size other than 4" (size =? 4)%N;;
+  mem ← mGet;
+  bytes ← othrow ("Modified instruction memory at " ++ (pretty addr))%string $
+    mapM (λ a, Memory.read_initial a init mem) (addr_range addr size);
+  mret (bv_of_bytes (8 * size) bytes).
 
 (** Perform a memory write.
 
@@ -2010,17 +1858,19 @@ Definition run_mem_read4 (addr : address) (macc : mem_acc) (init : Memory.initia
     Handles release semantics by updating [vrel] for store-release.
     Returns [(time, Some vpre)] if a new promise was created, or
     [(time, None)] if an existing promise was fulfilled. *)
-Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
-      (invalidation_time : option nat) (macc : mem_acc) (data : val) :
+Definition write_mem (tid : nat) (addr : address) (size : N) (viio : view)
+      (invalidation_time : option nat) (macc : mem_acc) (data : bv (8 * size)) :
     Exec.t (TState.t * Memory.t) string (view * option view) :=
-  let msg := Msg.make tid loc data in
+  let msg := Msg.make size tid addr data in
+  let ev := Ev.Msg msg in
+  let addrs := addr_range addr size in
   let is_release := is_rel_acq macc in
   '(ts, mem) ← mGet;
   '(time, new_promise) ←
-    match Memory.fulfill msg (TState.prom ts) mem with
+    match Memory.fulfill ev (TState.prom ts) mem with
     | Some t => mret (t, false)
     | None =>
-      t ← Exec.liftSt snd $ Memory.promise msg;
+      t ← Exec.liftSt snd $ Memory.promise ev;
       mret (t, true)
     end;
   let vbob :=
@@ -2033,9 +1883,9 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
       (time <? invalidation_time)%nat
     else true in
   guard_discard check_vpost;;
-  guard_discard (vpre ⊔ (TState.coh ts !!! loc) < time)%nat;;
+  guard_discard (vpre ⊔ TState.max_cohs addrs ts < time)%nat;;
   mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
-  mset fst $ TState.update_coh loc time;;
+  mset fst $ TState.update_cohs (map (., time) addrs);;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;
   mret (time, if (new_promise : bool) then Some vpre else None).
@@ -2050,32 +1900,35 @@ Definition write_mem (tid : nat) (loc : Loc.t) (viio : view)
 
     If the exclusive check fails, the execution is discarded (store fails).
     On success, clears [xclb] and updates the forwarding database. *)
-Definition write_mem_xcl (tid : nat) (loc : Loc.t) (viio : view)
-    (invalidation_time : option nat) (macc : mem_acc) (data : val) :
+Definition write_mem_xcl (tid : nat) (addr : address) (size : N) (viio : view)
+    (invalidation_time : option nat) (macc : mem_acc) (data : bv (8 * size)) :
   Exec.t (TState.t * Memory.t) string (option view) :=
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  let addrs := addr_range addr size in
   let xcl := is_exclusive macc in
   if xcl then
-    '(time, vpre_opt) ← write_mem tid loc viio invalidation_time macc data;
+    '(time, vpre_opt) ← write_mem tid addr size viio invalidation_time macc data;
     '(ts, mem) ← mGet;
     match TState.xclb ts with
     | None => mdiscard
-    | Some (xtime, xview) =>
-        guard_discard' (Memory.exclusive loc xtime (Memory.cut_after time mem))
+    | Some (xtime, xview, xsize, xaddr) =>
+        if decide (addr = xaddr ∧ size = xsize) then
+          guard_discard' (Memory.exclusive tid addr size xtime (Memory.cut_after time mem))
+        else mret ()
     end;;
-    mset fst $ TState.set_fwdb loc (FwdItem.make time viio true);;
+    mset fst $ TState.set_fwds addrs time viio true;;
     mset fst TState.clear_xclb;;
     mret vpre_opt
   else
-    '(time, vpre_opt) ← write_mem tid loc viio invalidation_time macc data;
-    mset fst $ TState.set_fwdb loc (FwdItem.make time viio false);;
+    '(time, vpre_opt) ← write_mem tid addr size viio invalidation_time macc data;
+    mset fst $ TState.set_fwds addrs time viio false;;
     mret vpre_opt.
 
 (** Perform a Context Synchronization Event (CSE).
 
-    CSEs occur at ISB instructions, exception taking, and exception returns.
-    They ensure that all prior context-changing operations (MSR writes) are
-    observed before subsequent instruction fetch and execution.
+    CSEs occur at ISB instructions and exception returns. They ensure that
+    all prior context-changing operations (MSR writes) are observed
+    before subsequent instruction fetch and execution.
 
     Non-deterministically chooses a view between the current dependencies
     and [vmax_t], then updates [vcse] and adds a CSE marker to the local
@@ -2195,16 +2048,14 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   end.
 
 Definition ets2 (ts : TState.t) : result string bool :=
-  let mmfr1 : reg := ID_AA64MMFR1_EL1 in
-  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
-  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  '(mmfr1, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts ID_AA64MMFR1_EL1);
+  val ← othrow "ID_AA64MMFR1_EL1 should be a 64 bit value" (regval_to_val (size:=8) ID_AA64MMFR1_EL1 mmfr1);
   let ets_bits := bv_extract 36 4 val in
   mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
 
 Definition ets3 (ts : TState.t) : result string bool :=
-  let mmfr1 : reg := ID_AA64MMFR1_EL1 in
-  '(regval, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts mmfr1);
-  val ← othrow "The register value of ID_AA64MMFR1_EL1 is 64 bit" (regval_to_val mmfr1 regval);
+  '(mmfr1, _) ← othrow "ETS is indicated in the ID_AA64MMFR1_EL1 register value" (TState.read_reg ts ID_AA64MMFR1_EL1);
+  val ← othrow "ID_AA64MMFR1_EL1 should be a 64 bit value" (regval_to_val (size:=8) ID_AA64MMFR1_EL1 mmfr1);
   mret (bv_extract 36 4 val =? 3%bv).
 
 (** Handle the start of an address translation.
@@ -2220,8 +2071,7 @@ Definition ets3 (ts : TState.t) : result string bool :=
     translation reads. Also records the invalidation time if the translation
     may be affected by a future TLBI. *)
 Definition run_trans_start (trans_start : TranslationStartInfo)
-                           (tid : nat) (init : Memory.initial) :
-    Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
+    (tid : nat) (init : memoryMap) : Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
   mem ← mget PPState.mem;
 
@@ -2248,7 +2098,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
         for (val_ttbr, path, t, ti) in valid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
+            (val_to_regval (size:=8) ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
           let ti := if is_ifetch then None else ti in
           mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
@@ -2257,7 +2107,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
         for (val_ttbr, path, t, ti) in invalid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
+            (val_to_regval (size:=8) ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
           mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
         end;
@@ -2344,32 +2194,33 @@ Section RunOutcome.
   | RegWrite reg racc val =>
       run_reg_write reg racc val;;
       mret ((), None)
-  | MemRead (MemReq.make macc addr addr_space 8 0) =>
+  | MemRead (MemReq.make macc addr addr_space size 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      let initmem := Memory.initial_from_memMap initmem in
-      val ← run_mem_read addr macc initmem;
-      mret (Ok (val, 0%bv), None)
-  | MemRead (MemReq.make macc addr addr_space 4 0) => (* ifetch *)
-      guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      let initmem := Memory.initial_from_memMap initmem in
-      opcode ← Exec.liftSt PPState.mem $ run_mem_read4 addr macc initmem;
-      mret (Ok (opcode, 0%bv), None)
-  | MemRead _ => mthrow "Memory read of size other than 8 or 4, or with tags"
+      if is_ifetch macc then
+        opcode ← Exec.liftSt PPState.mem $ run_mem_read_inst addr size initmem;
+        mret (Ok (opcode, 0%bv), None)
+      else if is_explicit macc then
+        val ← run_mem_read addr size macc initmem;
+        mret (Ok (val, 0%bv), None)
+      else if is_ttw macc then
+        val ← run_mem_read_ttw size;
+        mret (Ok (val, 0%bv), None)
+      else mthrow "Read is not explicit, ifetch, nor translation"
+  | MemRead _ => mthrow "Memory read with tags unsupported"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
       mset PPState.state $ TState.update TState.vspec vaddr;;
       mret ((), None)
-  | MemWrite (MemReq.make macc addr addr_space 8 0) val _ =>
+  | MemWrite (MemReq.make macc addr addr_space size 0) val _ =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      addr ← othrow "Address not supported" $ Loc.from_addr addr;
       viio ← mget (IIS.strict ∘ PPState.iis);
       if is_explicit macc then
         inv_time ← mget (IIS.inv_time ∘ PPState.iis);
         vpre_opt ← Exec.liftSt (PPState.state ×× PPState.mem) $
-                      write_mem_xcl tid addr viio inv_time macc val;
+                      write_mem_xcl tid addr size viio inv_time macc val;
         mret (Ok (), vpre_opt)
       else mthrow "Unsupported non-explicit write"
-  | MemWrite _ _ _ => mthrow "Memory write of size other than 8, or with tags"
+  | MemWrite _ _ _ => mthrow "Memory write with tags unsupported"
   | Barrier barrier =>
       mem ← mget PPState.mem;
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_barrier barrier (length mem);;
@@ -2383,7 +2234,6 @@ Section RunOutcome.
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem);;
       mret ((), None)
   | TranslationStart trans_start =>
-      let initmem := Memory.initial_from_memMap initmem in
       run_trans_start trans_start tid initmem;;
       mret ((), None)
   | TranslationEnd trans_end =>
@@ -2423,38 +2273,40 @@ Section BBM.
       BBM checking is only relevant when the MMU is enabled. *)
   Definition is_mmu_enabled (ts : TState.t) : result string bool :=
     '(sctlr, _) ← othrow "SCTLR_EL1 is not set" $ TState.read_reg ts SCTLR_EL1;
-    val_sctlr ← othrow "SCTLR_EL1 should be bv 64" $ regval_to_val SCTLR_EL1 sctlr;
-    Ok ((bv_extract 0 1 val_sctlr) =? 1%bv).
+    val ← othrow "SCTLR_EL1 should be a 64 bit value" (regval_to_val (size:=8) SCTLR_EL1 sctlr);
+    Ok ((bv_extract 0 1 val) =? 1%bv).
 
-  (** Check if a memory location falls within the address range
-      covered by a given base address. *)
-  Definition is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) : Prop :=
-    bv_extract (53 - n) n loc = baddr.
-  Instance Decision_is_loc_from_baddr {n : N} (loc : Loc.t) (baddr : bv n) :
-    Decision (is_loc_from_baddr loc baddr).
+  (** Check if a physical address falls within the address range
+      covered by a given output address prefix. *)
+  Definition is_addr_from_oa {n : N} (addr : address) (oa : bv n) : Prop :=
+    bv_extract (56 - n) n addr = oa.
+  Instance Decision_is_addr_from_oa {n : N} (addr : address) (oa : bv n) :
+    Decision (is_addr_from_oa addr oa).
   Proof. unfold_decide. Defined.
 
-  (** Compare memory contents at two output addresses. *)
-  Definition mem_contents_eq (mem : Memory.t) (init : Memory.initial)
+  (** Compare memory contents at two output addresses.
+      Checks whether all 8-byte-aligned addresses that fall under either
+      output address have the same memory contents. *)
+  Definition mem_contents_eq (mem : Memory.t) (init : memoryMap)
                 (time : nat)
                 (lvl : Level)
                 (oa1 oa2 : bv (output_addr_size lvl))
-                (relevant_locs : list Loc.t) : bool :=
-    let offset_bits := (53 - output_addr_size lvl)%N in
+                (relevant_addrs : list address) : bool :=
+    let offset_bits := (56 - output_addr_size lvl)%N in
     let relevant_offs :=
-      omap (λ loc,
-        if decide (is_loc_from_baddr loc oa1 ∨ is_loc_from_baddr loc oa2)
-          then Some (bv_extract 0 offset_bits loc)
-          else None) relevant_locs in
+      omap (λ addr,
+        if decide (is_addr_from_oa addr oa1 ∨ is_addr_from_oa addr oa2)
+          then Some (bv_extract 0 offset_bits addr)
+          else None) relevant_addrs in
     forallb (λ offs,
-      let loc1 := bv_concat 53 oa1 offs in
-      let loc2 := bv_concat 53 oa2 offs in
-      let res1 := Memory.read_at loc1 init mem time in
-      let res2 := Memory.read_at loc2 init mem time in
+      let addr1 := bv_concat 56 oa1 offs in
+      let addr2 := bv_concat 56 oa2 offs in
+      let res1 : option (bv 64) := Memory.read_at addr1 8 init mem time in
+      let res2 : option (bv 64) := Memory.read_at addr2 8 init mem time in
       match res1, res2 with
-      | Some res1, Some res2 => fst res1 =? fst res2
-      | Some res1, None => fst res1 =? 0%bv
-      | None, Some res2 => 0%bv =? fst res2
+      | Some res1, Some res2 => res1 =? res2
+      | Some res1, None => res1 =? 0%bv
+      | None, Some res2 => 0%bv =? res2
       | None, None => true
       end) relevant_offs.
 
@@ -2477,9 +2329,9 @@ Section BBM.
         va1_trunc =? va2.
 
   (** Check for BBM violation between two TLB entries. *)
-  Definition is_bbm_violation (mem : Memory.t) (init : Memory.initial)
+  Definition is_bbm_violation (mem : Memory.t) (init : memoryMap)
                 (time : nat)
-                (relevant_locs : list Loc.t)
+                (relevant_addrs : list address)
                 (fe1 fe2 : TLB.FE.t) : bool :=
     let c1 := TLB.FE.ctxt fe1 in
     let c2 := TLB.FE.ctxt fe2 in
@@ -2497,7 +2349,7 @@ Section BBM.
           ctrans (f_equal output_addr_size (eq_sym Heq)) (output_addr lvl2 pte2) in
         if negb (oa1 =? oa2) then
           if decide (allow_write lvl1 pte1 ∨ allow_write lvl2 pte2) then true
-          else negb (mem_contents_eq mem init time lvl1 oa1 oa2 relevant_locs)
+          else negb (mem_contents_eq mem init time lvl1 oa1 oa2 relevant_addrs)
         else if negb (attr_idx pte1 =? attr_idx pte2) then true
         else if negb (shareability pte1 =? shareability pte2) then true
         else if xorb (is_contiguous pte1) (is_contiguous pte2) then true
@@ -2508,14 +2360,14 @@ Section BBM.
 
   (** Check for BBM violations within a single TLB snapshot. *)
   Definition has_bbm_violation (mem : Memory.t)
-                (init : Memory.initial)
+                (init : memoryMap)
                 (tlb : TLB.t)
                 (time : nat) : bool :=
-    let relevant_locs := elements (dom init) in
+    let relevant_addrs := elements (dom init) in
     let finals := TLB.VATLB.final_entries (TLB.vatlb tlb) in
     existsb (λ '(fe1, fe2),
       if decide (fe1 = fe2) then false
-      else is_bbm_violation mem init time relevant_locs fe1 fe2
+      else is_bbm_violation mem init time relevant_addrs fe1 fe2
     ) (list_prod finals finals).
 
   (** Find the TLB snapshot that was active at a given time. *)
@@ -2528,7 +2380,6 @@ Section BBM.
         (mem : Memory.t) (mem_strict : bool) : result string bool :=
     mmu_enabled ← is_mmu_enabled ts;
     if (mmu_enabled : bool) then
-      let init := Memory.initial_from_memMap initmem in
       let max_t := length mem in
       let ttbrs_to_check :=
         filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
@@ -2539,11 +2390,11 @@ Section BBM.
       foldlM (λ violated ttbr,
         if (violated : bool) then mret true
         else
-          snapshots ← TLB.unique_snapshots_until ts init mem max_t ttbr mem_strict;
+          snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr mem_strict;
           mret $
             existsb (λ target_time,
               if find_latest_snapshot_before snapshots target_time is Some (tlb, _) then
-                has_bbm_violation mem init tlb target_time
+                has_bbm_violation mem initmem tlb target_time
               else false
             ) times_to_check
       ) false (elements ttbrs_to_check)
@@ -2592,8 +2443,7 @@ Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
     handle_outcome := run_outcome;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     check_valid_end := λ tid initmem ts mem, BBM.check bbm_param tid initmem ts mem;
-    memory_snapshot :=
-      λ initmem, Memory.to_memMap (Memory.initial_from_memMap initmem);
+    memory_snapshot := Memory.to_memMap;
   |}.
 
 Definition VMPromising_nocert (bbm_param : BBM.param) :=

@@ -1,0 +1,77 @@
+# Single thread: STR W2, [X1, X0]; LDR X0, [X1, X0]
+# 4-byte write then 8-byte read at same VA with page table translation
+
+arch="Arm"
+name="STRW_LDRX+VM"
+
+[config]
+FEAT_ETS2 = true
+
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA base for data access
+R1 = 0x100             # Offset (VA + offset = 0x8000001100)
+R2 = 0x2a              # Value to store
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+# Instructions at PA 0x500 (VA 0x8000000500)
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xb8206822, # STR W2, [X1, X0] — 4-byte write
+  0xf8606820] # LDR X0, [X1, X0] — 8-byte read
+
+# Backing memory for data at PA 0x1100 (8 bytes, zero-init)
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+# Page table hierarchy
+[[memory]]
+addr = 0x80000
+step = 8
+data = 0
+
+# L0[1] -> L1
+[[memory]]
+addr = 0x80008
+step = 8
+data = 0x81003
+
+# L1[0] -> L2
+[[memory]]
+addr = 0x81000
+step = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+addr = 0x82000
+step = 8
+data = 0x83003
+
+# L3[0]: code page VA 0x8000000000 -> PA 0x0000
+[[memory]]
+addr = 0x83000
+step = 8
+data = 0x3
+
+# L3[1]: data page VA 0x8000001000 -> PA 0x1000
+[[memory]]
+addr = 0x83008
+step = 8
+data = 0x1043
+
+[[termCond]]
+_PC = 0x8000000508
+
+# 8-byte read sees zero-extended 4-byte write
+[[outcome]]
+observable.0.R0 = 0x2a
