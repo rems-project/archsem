@@ -54,7 +54,7 @@ Section Model.
   (** * Types *)
 
   (** A memory entry in a write-buffer *)
-  Record addr_val := {
+  Record buffer_entry := {
       addr: address;
       size: N; (* IN BYTES *)
       val: bv (8 * size)
@@ -67,7 +67,7 @@ Section Model.
 
       (* Store buffer for each thread. Each buffer is a list of address-value
         tuples, oldest first *)
-      buf : vec (list addr_val) threads;
+      buf : vec (list buffer_entry) threads;
 
       (* Global machine lock, indicating when some thread has exclusive access to
         memory *)
@@ -108,7 +108,7 @@ Section Model.
   Definition all_buffers_empty (state : mstate) : bool :=
     bool_decide (∀ t : fin threads, buffer_empty t state).
 
-  Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val)
+  Fixpoint read_from_write_buffer_inner (rev_buffer : list buffer_entry)
       (goal_addr: address) (goal_size : N) :
       Exec.t mstate string (option (bv (8 * goal_size))) :=
     (* Allow a direct match to be store-forwarded
@@ -182,7 +182,7 @@ Section Model.
       read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
       mret read.
 
-  Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads) :
+  Fixpoint write_buffer_to_mem (buffer: list buffer_entry) (tid: fin threads) :
       Exec.t mstate string unit :=
     match buffer with
     | [] => mret ()
