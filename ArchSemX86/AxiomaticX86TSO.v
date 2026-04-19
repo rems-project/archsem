@@ -33,9 +33,7 @@ Section Model.
   (** ** Thread relations *)
   Notation pe := (pre_exec cd).
   Notation int := (same_thread pe).
-  Notation si := (same_instruction_instance cd). (*TODO: does si in herd mean same instruction or same access...*)
-  Notation sca := (same_access cd).
-  Notation iio := (iio pe).
+  Notation si := (same_instruction_instance cd).
 
   (** ** Memory *)
   Notation W := (explicit_writes pe).
@@ -59,6 +57,7 @@ Section Model.
   Notation po := (instruction_order pe).
   Definition po_loc := po ∩ same_addr cd.
 
+  (** ** Only allow whitelisted regs *)
   Definition is_illegal_reg_write (regs : gset reg) :=
     is_reg_writeP (λ reg acc _, reg ∉ regs).
   #[export] Instance is_illegal_reg_write_dec regs ev :
@@ -126,7 +125,7 @@ Section Model.
       (* Memory events must be explicit or instruction fetch *)
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
 
-      (* We might care about not allowing mixed-size accesses*)
+      (* We might care about not allowing mixed-size accesses *)
       is_nms' : if ms is NMS then is_nms cd else True;
     }.
   #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
