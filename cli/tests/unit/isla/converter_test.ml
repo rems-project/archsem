@@ -48,7 +48,8 @@ module X86Runner = Runner.Make (X86)
 module RegValGen = Archsem.RegValGen
 
 let convert toml =
-  toml |> Isla.Ir.of_toml |> Isla.Normalize.apply |> Isla.Converter.to_testrepr
+  toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
+  |> Isla.Converter.to_testrepr ~mode:"seq"
 
 let n i = RegValGen.Number (Z.of_int i)
 
@@ -58,7 +59,7 @@ let expected_regs ~arch ~pc overrides =
   let defaults =
     List.filter_map
       (fun (name, value) -> if has name then None else Some (name, value))
-      (Isla.Converter.register_defaults ())
+      (Isla.Converter.register_defaults ~mode:"seq" ())
   in
   ((pc_reg, n pc) :: overrides) @ defaults
 

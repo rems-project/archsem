@@ -61,11 +61,20 @@ let pc_reg arch =
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
   | Litmus.Arch_id.X86 -> Archsem.X86.Reg.to_string Archsem.X86.Reg.pc
 
-let register_defaults () =
+let register_defaults ~mode () =
   let config = Config.get () in
-  Otoml.find_or ~default:[] config
-    (Otoml.get_table_values regval_of_toml)
-    ["registers"; "defaults"]
+  let base =
+    Otoml.find_or ~default:[] config
+      (Otoml.get_table_values regval_of_toml)
+      ["registers"; "defaults"]
+  in
+  let overlay =
+    Otoml.find_or ~default:[] config
+      (Otoml.get_table_values regval_of_toml)
+      [mode; "registers"; "defaults"]
+  in
+  let has name = List.exists (fun (k, _) -> k = name) overlay in
+  List.filter (fun (k, _) -> not (has k)) base @ overlay
 
 let instruction_step () =
   let width =
@@ -159,7 +168,7 @@ let z_of_value syms = function
   | Ir.Int z -> z
   | Ir.Sym sym -> Z.of_int (Symbols.resolve syms sym)
 
-let build_registers syms ~arch pc (thread : Ir.thread) =
+let build_registers ~mode syms ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
   let used_regs =
     List.map
@@ -170,7 +179,7 @@ let build_registers syms ~arch pc (thread : Ir.thread) =
   let default_regs =
     List.filter_map
       (fun (reg, value) -> if has reg then None else Some (reg, value))
-      (register_defaults ())
+      (register_defaults ~mode ())
   in
   (pc_entry :: used_regs) @ default_regs
 
@@ -187,7 +196,7 @@ let build_data_memory syms sym addr init_value =
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
   {Testrepr.addr; step = mem_size; data; sym = Some sym; kind = Testrepr.Data}
 
-let to_testrepr (ir : Ir.t) : Testrepr.t =
+let to_testrepr ~mode (ir : Ir.t) : Testrepr.t =
   let syms = Symbols.empty () in
   List.iter (Symbols.alloc_sym syms) ir.symbolic;
   let encoded_threads =
@@ -203,7 +212,7 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let registers =
     List.map
       (fun (thread, _, code_addr) ->
-         build_registers syms ~arch:ir.arch code_addr thread
+         build_registers ~mode syms ~arch:ir.arch code_addr thread
        )
       encoded_threads
   in

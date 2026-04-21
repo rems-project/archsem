@@ -63,7 +63,7 @@ type format =
     Recognised extensions are:
     - .archsem.toml for ArchSem format TOML tests
     - .litmus.toml for Isla-style litmus tests *)
-let parse_testfile fmt filename =
+let parse_testfile ~mode fmt filename =
   assert (Filename.extension filename = ".toml");
   let fmt =
     match fmt with
@@ -85,7 +85,7 @@ let parse_testfile fmt filename =
   | Archsem -> Parser.parse_to_testrepr toml
   | Isla ->
       toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
-      |> Isla.Converter.to_testrepr
+      |> Isla.Converter.to_testrepr ~mode
 
 let get_toml_files dir =
   if Sys.file_exists dir && Sys.is_directory dir then
@@ -188,7 +188,7 @@ let format_term =
 let cmd_seq =
   let run =
     let+ files = path_and_conf_term and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode:"seq" fmt in
     match Config.get_arch () with
     | Arm ->
         run_tests "arm-seq"
@@ -209,7 +209,7 @@ let cmd_seq =
 let cmd_ump =
   let run =
     let+ files = path_and_conf_term and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode:"ump" fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
       (ArmRunner.run_litmus_test ~parse Arm.(umProm_model tiny_isa))
@@ -251,7 +251,7 @@ let cmd_vmp =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
     and+ fmt = format_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode:"vmp" fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
       (ArmRunner.run_litmus_test ~parse (vmProm_model ~bbm_param tiny_isa))
@@ -276,7 +276,7 @@ let cmd_tso =
     and+ fmt = format_term
     and+ no_eager = no_eager in
     let allow_eager = not no_eager in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode:"x86_tso" fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
       (X86Runner.run_litmus_test ~parse X86.(op_model ~allow_eager tiny_isa))
@@ -339,7 +339,7 @@ let cmd_convert =
     let+ files = path_and_conf_term
     and+ fmt = format_term
     and+ output = output_term in
-    let parse = parse_testfile fmt in
+    let parse = parse_testfile ~mode:"seq" fmt in
     convert files parse output
   in
   let info =
