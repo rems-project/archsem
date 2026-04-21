@@ -159,6 +159,29 @@ let z_of_value syms = function
   | Ir.Int z -> z
   | Ir.Sym sym -> Z.of_int (Symbols.resolve syms sym)
 
+(** Group dot-separated register names into struct values.
+    E.g. [("PSTATE.EL", Number 1); ("PSTATE.SP", Number 0)]
+    becomes [("PSTATE", Struct [("EL", Number 1); ("SP", Number 0)])].
+    Needed because isla flattens struct registers to dotted strings in
+    its TOML output, while archsem expects struct registers nested. *)
+let group_dotted_regs (regs : (string * RegValGen.t) list) =
+  List.fold_left
+    (fun acc (name, value) ->
+       match String.index_opt name '.' with
+       | None -> acc @ [(name, value)]
+       | Some i ->
+           let prefix = String.sub name 0 i in
+           let field = String.sub name (i + 1) (String.length name - i - 1) in
+           let rec upsert = function
+             | [] -> [(prefix, RegValGen.Struct [(field, value)])]
+             | (p, RegValGen.Struct fs) :: rest when p = prefix ->
+                 (p, RegValGen.Struct (fs @ [(field, value)])) :: rest
+             | x :: rest -> x :: upsert rest
+           in
+           upsert acc
+     )
+    [] regs
+
 let build_registers syms ~arch pc (thread : Ir.thread) =
   let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int pc)) in
   let used_regs =
@@ -166,6 +189,7 @@ let build_registers syms ~arch pc (thread : Ir.thread) =
       (fun (reg, value) -> (reg, RegValGen.Number (z_of_value syms value)))
       thread.init
   in
+  let used_regs = group_dotted_regs used_regs in
   let has name = List.exists (fun (reg, _) -> reg = name) used_regs in
   let default_regs =
     List.filter_map
