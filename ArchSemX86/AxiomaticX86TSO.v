@@ -63,7 +63,7 @@ End Barriers.
 Section Model.
   Import Candidate.
   Context (regs_whitelist : gset reg).
-  Context {nmth : nat}.
+  Context {nmth : nat}. (* number of threads *)
   Context {ms: exec_type}. (* mixed-size or not *)
   Context (cd : Candidate.t ms nmth).
 
@@ -81,7 +81,7 @@ Section Model.
   Notation IF := (ifetch_reads pe).
   Notation IR := (init_mem_reads cd).
 
-  Definition co := ⦗W⦘⨾coherence cd⨾⦗W⦘ ∩ overlapping cd.
+  Definition co := coherence cd ∩ overlapping cd.
   Definition coi := co ∩ int.
   Definition coe := co ∖ coi.
 
@@ -139,14 +139,9 @@ Section Model.
 
   (** ** Model axioms *)
   Record consistent := {
-      (* Internal visibility requirement *)
-      internal : grel_acyclic (po_loc ∪ ca ∪ rf);
-      
-      (* Atomicity requirement *)
+      internal_visibility : grel_acyclic (po_loc ∪ ca ∪ rf);
       atomic : rmw ∩ (fre⨾ coe) = ∅;
-
-      (* External visibility requirement *)
-      external : grel_irreflexive ob;
+      external_visibility : grel_irreflexive ob;
     }.
   #[export] Instance consistent_dec : Decision consistent := ltac:(decide_record).
 
@@ -155,11 +150,12 @@ Section Model.
       (* Ensure we are not fetching modified instructions *)
       initial_reads : IF ⊆ IR;
 
-      (* An instruction fetch should not occur "strictly after" a memory event *)
+      (* An instruction fetch should not occur "strictly after" a memory event 
+        / should not change the state of memory, TODO: clarify *)
       initial_reads_not_delayed : IF ## grel_rng (coherence cd);
 
       (* Ensure that only whitelisted registers are written to *)
-      register_write_permitted : Illegal_RW = ∅;
+      register_write_permitted : Illegal_RW = ∅; (* TODO: is this necessary *)
 
       (* Memory events must be explicit or instruction fetch *)
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
