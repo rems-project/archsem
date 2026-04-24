@@ -37,42 +37,49 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** This file actually runs in the converter directory (parent) but the
-    generated rules run in the expect directory*)
+(** Helper functions for checking final states *)
 
-(** Expects [arm/um/test.*.toml]*)
-let generate_rules file =
-  (* Dune doesn't support generating files in subdirectory, or importing
-     subdirectory stanza with dynamic_include so we have to flatten the
-     directory structure*)
-  let flat = file |> String.split_on_char '/' |> String.concat "_" in
-  Printf.printf
-    {|
-(rule
- (deps ../../%s)
- (targets %s)
- (action
-  (run archsem convert %%{deps} -o %%{targets})))
+module Make (Arch : Archsem.Arch) = struct
+  open Arch
 
-(rule
- (alias runtest)
- (action
-  (diff %s %s)))
-|}
-     file flat file flat
+  (* Check if a final state satisfies cond (register conditions) *)
+  let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
+    List.for_all
+      (fun (tid, reqs) ->
+         let regs = ArchState.reg tid fs in
+         List.for_all
+           (fun (name, req) ->
+              let reg = Reg.of_string name in
+              match RegMap.get_opt reg regs with
+              | None ->
+                  failwith
+                    ("[[outcome]] register not found in final state: " ^ name)
+              | Some rv -> (
+                match req with
+                | Testrepr.ReqEq exp -> rv = RegVal.of_gen reg exp
+                | Testrepr.ReqNe exp -> rv = RegVal.of_gen reg exp
+              )
+            )
+           reqs
+       )
+      cond
 
-let gen_for_dir dir =
-  if Sys.is_directory (Filename.concat ".." dir) then
-    Sys.readdir (Filename.concat "../" dir)
-    |> Array.to_list |> List.sort String.compare
-    |> List.map (fun s -> Filename.concat dir s)
-    |> List.filter (fun s -> Filename.check_suffix s ".toml")
-    |> List.iter generate_rules
-
-let gen_for_arch arch =
-  Sys.readdir ("../" ^ arch)
-  |> Array.to_list |> List.sort String.compare
-  |> List.map (fun s -> Filename.concat arch s)
-  |> List.iter gen_for_dir
-
-let () = gen_for_arch "arm"; gen_for_arch "x86"
+  (* Check if a final state satisfies mem_conds *)
+  let check_mem_outcome (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
+    bool
+    =
+    let mem = ArchState.mem fs in
+    List.for_all
+      (fun (mc : Testrepr.mem_cond) ->
+         match MemMap.lookup_opt mc.addr mc.size mem with
+         | None ->
+             failwith
+               (Printf.sprintf "[[outcome]] memory not found at 0x%x" mc.addr)
+         | Some actual -> (
+           match mc.req with
+           | Testrepr.MemEq expected -> Z.equal actual expected
+           | Testrepr.MemNe expected -> not (Z.equal actual expected)
+         )
+       )
+      mem_conds
+end

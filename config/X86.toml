@@ -33,3 +33,21 @@ r13 = 0
 r14 = 0
 r15 = 0
 rflags = 0
+
+[isla.register_renames]
+eax = "rax"
+ecx = "rcx"
+edx = "rdx"
+ebx = "rbx"
+esp = "rsp"
+ebp = "rbp"
+esi = "rsi"
+edi = "rdi"
+ax = "rax"
+cx = "rcx"
+dx = "rdx"
+bx = "rbx"
+sp = "rsp"
+bp = "rbp"
+si = "rsi"
+di = "rdi"

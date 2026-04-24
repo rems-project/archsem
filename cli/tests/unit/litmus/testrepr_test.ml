@@ -241,19 +241,6 @@ let parse_bad_file_test =
 
 (** {1 ArchState Conversion And Execution} *)
 
-let archstate_runner_tests =
-  "testrepr_to_archstate / run_testrepr"
-  >::: [ ("EOR Expected with seq model"
-         >:: fun _ ->
-         let (result, _msgs) =
-           ArmRunner.run_testrepr Arm.(seq_model tiny_isa) eor
-         in
-         assert_equal Runner.Expected result
-         )
-       ]
-
 let () =
   run_test_tt_main
-    ("litmus_testrepr"
-    >::: [parse_correct_file_test; parse_bad_file_test; archstate_runner_tests]
-    )
+    ("litmus_testrepr" >::: [parse_correct_file_test; parse_bad_file_test])

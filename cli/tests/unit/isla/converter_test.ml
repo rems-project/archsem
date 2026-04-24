@@ -233,7 +233,19 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr Arm.(seq_model tiny_isa) (convert simple_toml)
+           ArmRunner.run_testrepr ~print_final_states:true
+             Arm.(seq_model tiny_isa)
+             (convert simple_toml)
+         in
+         assert_equal Runner.Expected result
+         );
+         ("e2e: SimpleStore seq"
+         >:: fun _ ->
+         Test_utils.setup_arm ();
+         let (result, _msgs) =
+           ArmRunner.run_testrepr ~print_final_states:false
+             Arm.(seq_model tiny_isa)
+             (convert simple_toml)
          in
          assert_equal Runner.Expected result
          );
@@ -241,7 +253,19 @@ let tests =
          >:: fun _ ->
          Test_utils.setup_arm ();
          let (result, _msgs) =
-           ArmRunner.run_testrepr Arm.(umProm_model tiny_isa) (convert mp_toml)
+           ArmRunner.run_testrepr ~print_final_states:true
+             Arm.(umProm_model tiny_isa)
+             (convert mp_toml)
+         in
+         assert_equal Runner.Expected result
+         );
+         ("e2e: MP ump"
+         >:: fun _ ->
+         Test_utils.setup_arm ();
+         let (result, _msgs) =
+           ArmRunner.run_testrepr ~print_final_states:false
+             Arm.(umProm_model tiny_isa)
+             (convert mp_toml)
          in
          assert_equal Runner.Expected result
          )

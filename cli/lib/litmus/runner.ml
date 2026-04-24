@@ -98,50 +98,21 @@ let result_to_string = function
   | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
   | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
 
+let find_index p lst =
+  let rec aux i = function
+    | [] -> None
+    | x :: tl -> if p x then Some i else aux (i + 1) tl
+  in
+  aux 0 lst
+
 module Make (Arch : Archsem.Arch) = struct
   open Arch
   module AS = ToArchState.Make (Arch)
+  module RunnerUtils = Runner_utils.Make (Arch)
+  module MinimiseState = MinState.Make (Arch)
+  module McompareInst = Mcompare.Make (Arch)
 
-  let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
-    List.for_all
-      (fun (tid, reqs) ->
-         let regs = ArchState.reg tid fs in
-         List.for_all
-           (fun (name, req) ->
-              let reg = Reg.of_string name in
-              match RegMap.get_opt reg regs with
-              | None ->
-                  failwith
-                    ("[[outcome]] register not found in final state: " ^ name)
-              | Some rv -> (
-                match req with
-                | Testrepr.ReqEq exp -> rv = RegVal.of_gen reg exp
-                | Testrepr.ReqNe exp -> rv = RegVal.of_gen reg exp
-              )
-            )
-           reqs
-       )
-      cond
-
-  let check_mem_outcome (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
-    bool
-    =
-    let mem = ArchState.mem fs in
-    List.for_all
-      (fun (mc : Testrepr.mem_cond) ->
-         match MemMap.lookup_opt mc.addr mc.size mem with
-         | None ->
-             failwith
-               (Printf.sprintf "[[outcome]] memory not found at 0x%x" mc.addr)
-         | Some actual -> (
-           match mc.req with
-           | Testrepr.MemEq expected -> Z.equal actual expected
-           | Testrepr.MemNe expected -> not (Z.equal actual expected)
-         )
-       )
-      mem_conds
-
-  let run_executions model init fuel term finals =
+  let run_executions ~print_final_states model init fuel term test =
     let msgs = ref [] in
     let msg s = msgs := s :: !msgs in
     let results = model fuel term init in
@@ -149,12 +120,12 @@ module Make (Arch : Archsem.Arch) = struct
     let observable =
       List.filter_map
         (function Testrepr.Observable (c, mc) -> Some (c, mc) | _ -> None)
-        finals
+        test.Testrepr.finals
     in
     let unobservable =
       List.filter_map
         (function Testrepr.Unobservable (c, mc) -> Some (c, mc) | _ -> None)
-        finals
+        test.Testrepr.finals
     in
 
     let errors =
@@ -173,6 +144,13 @@ module Make (Arch : Archsem.Arch) = struct
         results
     in
 
+    (* If the print-final-states flag is set, print all observable states and statistics *)
+    if print_final_states then
+      msg
+        (McompareInst.print_final_states observable unobservable final_states
+           test.name
+        );
+
     List.iter
       (fun e ->
          msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)
@@ -185,7 +163,10 @@ module Make (Arch : Archsem.Arch) = struct
         (fun (cond, mem_cond) ->
            let matched =
              List.exists
-               (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
+               (fun fs ->
+                  RunnerUtils.check_outcome fs cond
+                  && RunnerUtils.check_mem_outcome fs mem_cond
+                )
                final_states
            in
            if (not matched) && final_states <> [] then
@@ -206,7 +187,8 @@ module Make (Arch : Archsem.Arch) = struct
               match
                 List.find_opt
                   (fun (cond, mem_cond) ->
-                     check_outcome fs cond && check_mem_outcome fs mem_cond
+                     RunnerUtils.check_outcome fs cond
+                     && RunnerUtils.check_mem_outcome fs mem_cond
                    )
                   unobservable
               with
@@ -232,12 +214,12 @@ module Make (Arch : Archsem.Arch) = struct
     in
     (result, List.rev !msgs)
 
-  let run_testrepr model (test : Testrepr.t) =
+  let run_testrepr ~print_final_states model (test : Testrepr.t) =
     let fuel = Config.get_fuel () in
     let (init, term) = AS.testrepr_to_archstate test in
-    run_executions model init fuel term test.finals
+    run_executions ~print_final_states model init fuel term test
 
-  let run_litmus_test ~parse model filename =
+  let run_litmus_test ~parse ~print_final_states model filename =
     let name = Filename.basename filename in
     if not (Sys.file_exists filename) then (
       Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset
@@ -247,18 +229,19 @@ module Make (Arch : Archsem.Arch) = struct
     else
       try
         let test = parse filename in
-        let (result, msgs) = run_testrepr model test in
+        let (result, msgs) = run_testrepr ~print_final_states model test in
         let (icon, color) =
           match result with
           | Expected -> (Terminal.check, Terminal.green)
           | Unexpected -> (Terminal.cross, Terminal.yellow)
           | _ -> (Terminal.cross, Terminal.red)
         in
-        Printf.printf "  %s%s%s %s\n" color icon Terminal.reset name;
-        List.iter (fun m -> Printf.printf "    %s\n" m) msgs;
+        Printf.printf "\n%s%s%s %s\n" color icon Terminal.reset name;
+        Printf.printf "Test %s Allowed\n" test.name;
+        List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
       with Otoml.Parse_error (pos, msg) ->
-        Printf.printf "  %s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
+        Printf.printf "%s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
           Terminal.reset name Terminal.red
           (Option.fold ~none:"?"
              ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)
