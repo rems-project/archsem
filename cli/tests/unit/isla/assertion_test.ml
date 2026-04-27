@@ -44,57 +44,66 @@ open Isla.Assertion
 
 let n = Z.of_int
 
-let parse_string s =
-  let toml =
-    Otoml.Parser.from_string
-      (Printf.sprintf
-         {|
-arch = "AArch64"
+let parse = Isla.Ir.parse_assertion_expr
 
-[thread.0]
-code = "NOP"
+let parse_cases =
+  [ ("int constant", "0:X0 = 1", Atom (CmpCst (Reg (0, "X0"), Eq, Z.one)));
+    ("hex constant", "0:X0 = 0x2a", Atom (CmpCst (Reg (0, "X0"), Eq, n 42)));
+    ("memory location", "*x = 2", Atom (CmpCst (Mem "x", Eq, n 2)));
+    ( "symbol on rhs (CmpLoc)",
+      "0:X0 = x",
+      Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x"))
+    );
+    ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one))));
+    ( "conjunction",
+      "1:X0 = 1 & 2:X0 = 0",
+      And
+        ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
+          Atom (CmpCst (Reg (2, "X0"), Eq, Z.zero))
+        )
+    );
+    ("false", "false", False)
+  ]
 
-[final]
-assertion = %S
-|} s
-      )
-  in
-  (Isla.Ir.of_toml toml).assertion
+(* Atoms used to build expected DNF results. *)
+let a = CmpCst (Reg (0, "X0"), Eq, Z.zero)
 
-let assert_parses_as source expected = assert_equal expected (parse_string source)
+let b = CmpCst (Reg (0, "X0"), Eq, Z.one)
 
-let tests =
-  "Isla.Assertion"
-  >::: [ ("parse register eq"
-         >:: fun _ ->
-         assert_parses_as "1:X0 = 1" (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)))
-         );
-         ("parse conjunction"
-         >:: fun _ ->
-         assert_parses_as "1:X0 = 1 & 2:X0 = 0"
-           (And
-              ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-                Atom (CmpCst (Reg (2, "X0"), Eq, Z.zero))
-              )
-           )
-         );
-         ("parse false" >:: fun _ -> assert_parses_as "false" False);
-         ("parse memory"
-         >:: fun _ -> assert_parses_as "*x = 2" (Atom (CmpCst (Mem "x", Eq, n 2)))
-         );
-         ("parse negation"
-         >:: fun _ ->
-         assert_parses_as "~(1:X0 = 1)"
-           (Not (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one))))
-         );
-         ("parse hex values"
-         >:: fun _ ->
-         assert_parses_as "0:X0 = 0x2a" (Atom (CmpCst (Reg (0, "X0"), Eq, n 42)))
-         );
-         ("parse register equals symbol"
-         >:: fun _ ->
-         assert_parses_as "0:X0 = x" (Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x")))
-         )
-       ]
+let c = CmpCst (Reg (1, "X0"), Eq, Z.zero)
 
-let () = run_test_tt_main tests
+let d = CmpCst (Reg (1, "X0"), Eq, Z.one)
+
+let na = CmpCst (Reg (0, "X0"), Ne, Z.zero)
+
+let nb = CmpCst (Reg (0, "X0"), Ne, Z.one)
+
+let dnf_cases =
+  [ ("atom", Atom a, [[a]]);
+    ("true is one empty clause", True, [[]]);
+    ("false is no clauses", False, []);
+    (* ~(A & B) = ~A | ~B — exercises Not, And, op-flip *)
+    ("De Morgan over And", Not (And (Atom a, Atom b)), [[na]; [nb]]);
+    (* (A | B) & (C | D) — cartesian product distribution *)
+    ( "And-of-Or distributes",
+      And (Or (Atom a, Atom b), Or (Atom c, Atom d)),
+      [[a; c]; [a; d]; [b; c]; [b; d]]
+    );
+    ("double negation cancels", Not (Not (Atom a)), [[a]])
+  ]
+
+let cases ~name ~run xs =
+  name
+  >::: List.map
+         (fun (label, input, expected) ->
+            label >:: fun _ -> assert_equal expected (run input)
+          )
+         xs
+
+let () =
+  run_test_tt_main
+    ("Isla.Assertion"
+    >::: [ cases ~name:"parse" ~run:parse parse_cases;
+           cases ~name:"to_dnf" ~run:to_dnf dnf_cases
+         ]
+    )

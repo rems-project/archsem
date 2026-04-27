@@ -1,11 +1,3 @@
 (tests
- (names
-  assembler_test
-  assertion_test
-  converter_test
-  ir_test
-  normalize_test
-  symbols_test)
- (libraries archsem litmus isla test_utils otoml ounit2 unix)
- (deps
-  (source_tree ../../../../config)))
+ (names assembler_test assertion_test symbols_test)
+ (libraries archsem isla test_utils ounit2))

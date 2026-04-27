@@ -37,17 +37,13 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Shared test helpers for unit tests. *)
+(** Shared helpers for the printer round-trip tests. *)
 
 open Litmus
-
-(** {1 Test File Helpers} *)
 
 let test_root = Filename.concat (Filename.dirname Sys.argv.(0)) ".."
 
 let test_dirs = ["../arm/seq"; "../arm/um"; "../arm/vm"; "../x86/seq"; "../x86/um"]
-
-let i n = Archsem.RegValGen.Number (Z.of_int n)
 
 let setup_arm () = Config.set (Config.of_arch Arch_id.Arm)
 
