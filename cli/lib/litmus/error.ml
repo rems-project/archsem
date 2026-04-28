@@ -37,40 +37,10 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Architecture management *)
+(** This module is here to help error handling *)
 
-type t =
-  | Arm
-  | X86
-
-let of_string_opt = function
-  | "Arm" | "AArch64" | "arm" | "aarch64" -> Some Arm
-  | "X86" | "x86" | "X86_64" | "x86_64" -> Some X86
-  | _ -> None
-
-exception UnknownArch of string
-
-let of_string arch =
-  match of_string_opt arch with
-  | Some arch -> arch
-  | None -> raise (UnknownArch arch)
-
-let _ =
-  Printexc.register_printer (function
-    | UnknownArch str -> Some (Printf.sprintf "Unknown architecture: \"%s\"" str)
-    | _ -> None
-    )
-
-let to_string = function Arm -> "Arm" | X86 -> "X86"
-
-let of_toml toml = toml |> Otoml.get_string |> of_string
-
-let to_toml arch = arch |> to_string |> Otoml.string
-
-let guess_from_test filename =
-  try
-    let toml = Otoml.Parser.from_file filename in
-    Otoml.find toml of_toml ["arch"]
-  with exn ->
-    Error.fatal "Failed to guess architecture in %s with error :\n        %s"
-      filename (Printexc.to_string exn)
+(** Raise a fatal error with [code], adds "archsem: error" in front*)
+let fatal ?(code = 1) fmt =
+  Printf.eprintf "archsem: %s%sfatal error:%s " Terminal.red Terminal.bold
+    Terminal.reset;
+  Printf.kfprintf (fun _ -> Printf.eprintf "\n"; exit code) stderr fmt
