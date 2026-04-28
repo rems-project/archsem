@@ -2,26 +2,26 @@ arch = "Arm"
 name = "STRW_LDRX"
 
 [[registers]]
-  _PC = 1280
-  "R0" = 4096
-  "R1" = 256
-  "R2" = 42
+  _PC = 0x500
+  "R0" = 0x1000
+  "R1" = 0x100
+  "R2" = 0x2a
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0}
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 4
-  data = [3089131554, 4167067680]
+  data = [0xb8206822, 0xf8606820]
 
 [[memory]]
-  addr = 4352
+  addr = 0x1100
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 1288
+  _PC = 0x508
 
 [[outcome]]
-  observable = {"0" = {"R0" = 42}}
+  observable = {"0" = {"R0" = 0x2a}}

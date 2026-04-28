@@ -64,14 +64,14 @@ let _ =
 
 let to_string = function Arm -> "Arm" | X86 -> "X86"
 
-let of_toml toml = toml |> Otoml.get_string |> of_string
+let of_toml toml = toml |> Toml.get_string |> of_string
 
-let to_toml arch = arch |> to_string |> Otoml.string
+let to_toml arch = arch |> to_string |> Toml.string
 
 let guess_from_test filename =
   try
-    let toml = Otoml.Parser.from_file filename in
-    Otoml.find toml of_toml ["arch"]
+    let toml = Toml.Parser.from_file filename in
+    Toml.find toml of_toml ["arch"]
   with exn ->
     Error.fatal "Failed to guess architecture in %s with error :\n        %s"
       filename (Printexc.to_string exn)

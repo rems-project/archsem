@@ -51,8 +51,7 @@ let setup_arm () = Config.set (Config.of_arch Arch_id.Arm)
 let setup_x86 () = Config.set (Config.of_arch Arch_id.X86)
 
 let parse_file path =
-  Parser.parse_to_testrepr
-    (Otoml.Parser.from_file (Filename.concat test_root path))
+  Parser.parse_to_testrepr (Toml.Parser.from_file (Filename.concat test_root path))
 
 let collect_archsem_files () =
   let suffix = ".archsem.toml" in

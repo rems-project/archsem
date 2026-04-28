@@ -2,54 +2,54 @@ arch = "Arm"
 name = "MP+dmbs-unobservable"
 
 [[registers]]
-  _PC = 1280
-  "R0" = 4096
-  "R1" = 256
-  "R2" = 42
-  "R3" = 4096
-  "R4" = 512
+  _PC = 0x500
+  "R0" = 0x1000
+  "R1" = 0x100
+  "R2" = 0x2a
+  "R3" = 0x1000
+  "R4" = 0x200
   "R5" = 1
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0}
 
 [[registers]]
-  _PC = 1536
-  "R0" = 4096
-  "R1" = 256
+  _PC = 0x600
+  "R0" = 0x1000
+  "R1" = 0x100
   "R2" = 0
-  "R3" = 4096
-  "R4" = 512
+  "R3" = 0x1000
+  "R4" = 0x200
   "R5" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0}
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 4
-  data = [4162873378, 3573759935, 4163070085]
+  data = [0xf8206822, 0xd5033fbf, 0xf8236885]
 
 [[memory]]
   kind = "code"
-  addr = 1536
+  addr = 0x600
   step = 4
-  data = [4167264389, 3573759935, 4167067682]
+  data = [0xf8636885, 0xd5033fbf, 0xf8606822]
 
 [[memory]]
-  addr = 4352
+  addr = 0x1100
   step = 8
   data = 0
 
 [[memory]]
-  addr = 4608
+  addr = 0x1200
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 1292
+  _PC = 0x50c
 
 [[termCond]]
-  _PC = 1548
+  _PC = 0x60c
 
 [[outcome]]
   unobservable = {"1" = {"R5" = 1, "R2" = 0}}

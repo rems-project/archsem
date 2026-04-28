@@ -193,8 +193,7 @@ let generate_asm
 
 (* {1 Stage 1b: linker script generation} *)
 
-let page_bits () =
-  Otoml.find (Config.get ()) Otoml.get_integer ["isla"; "page_bits"]
+let page_bits () = Toml.find (Config.get ()) Toml.get_integer ["isla"; "page_bits"]
 
 (** Round [addr] up to the next multiple of [page_size]. *)
 let next_page page_size addr = ((addr / page_size) + 1) * page_size
@@ -270,7 +269,7 @@ let run_pipeline
       (linker_placed : section list) : unit
   =
   let command =
-    Otoml.find (Config.get ()) Otoml.get_string ["assembler"; "command"]
+    Toml.find (Config.get ()) Toml.get_string ["assembler"; "command"]
   in
   let asm_path = Filename.temp_file "archsem" ".s" in
   let ld_path = Filename.temp_file "archsem" ".ld" in

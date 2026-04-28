@@ -50,76 +50,84 @@
 
 module RegValGen = Archsem.RegValGen
 
-(** {1 TOML Helpers} *)
-
-let toml_type_name : Otoml.t -> string = function
-  | TomlInteger _ -> "integer"
-  | TomlFloat _ -> "float"
-  | TomlString _ -> "string"
-  | TomlBoolean _ -> "boolean"
-  | TomlArray _ -> "array"
-  | TomlTable _ -> "table"
-  | TomlInlineTable _ -> "inline table"
-  | TomlTableArray _ -> "table array"
-  | _ -> "unknown"
-
 (** {1 TOML -> Testrepr.t} *)
 
 (** Convert a TOML value to RegValGen.t *)
-let rec toml_to_gen : Otoml.t -> RegValGen.t = function
-  | TomlInteger i -> Number (Z.of_int i)
+let rec toml_to_gen : Toml.t -> RegValGen.t = function
+  | TomlInteger i -> Number i
   | TomlString s -> String s
   | TomlArray l -> Array (List.map toml_to_gen l)
   | TomlTable t | TomlInlineTable t ->
       Struct (List.map (fun (k, v) -> (k, toml_to_gen v)) t)
-  | v -> failwith ("Unsupported register value type: " ^ toml_type_name v)
+  | v -> Toml.error "Unsupported register value type: %s" (Toml.toml_type_name v)
 
 (** Parse [[registers]] into register lists with string keys *)
 let parse_test_registers toml =
-  let parse_regs = Otoml.get_table_values toml_to_gen in
-  Otoml.find toml (Otoml.get_array parse_regs) ["registers"]
+  let parse_regs = Toml.get_table_values toml_to_gen in
+  Toml.find toml (Toml.get_array parse_regs) ["registers"]
+
+(** Parse a memory block in [[memory]] *)
 
 (** Parse [[memory]] into abstract memory blocks *)
 let parse_test_memory toml : Testrepr.memory_block list =
-  let parse_memory_block (table : Otoml.t) : Testrepr.memory_block =
-    let _ = Otoml.get_table table in
-    (* <- for error message *)
-    let addr = Otoml.find table Otoml.get_integer ["addr"] in
+  let parse_memory_block (table : Toml.t) : Testrepr.memory_block =
+    let addr = Toml.find table Toml.get_integer ["addr"] in
+    let step = Toml.find table Toml.get_integer ["step"] in
+    if step <= 0 then
+      Toml.error ~path:["step"] "Memory block step must be positive";
+    let get_sized_Z step toml =
+      let z = Toml.get_Z toml in
+      if Z.sign z < 0 then
+        Toml.error "Negative memory data is not allowed: %s" (Z.format "%#x" z);
+      if Z.numbits z > 8 * step then
+        Toml.error "Memory data number (%s) contains %d bytes but the step is %d"
+          (Z.format "%#x" z)
+          ((Z.numbits z + 7) / 8)
+          step;
+      z
+    in
     let values =
-      Otoml.find table (Otoml.get_array ~strict:false Otoml.get_integer) ["data"]
+      Toml.find table (Toml.get_array ~strict:false (get_sized_Z step)) ["data"]
     in
     let n = List.length values in
-    let step = Otoml.find table Otoml.get_integer ["step"] in
-    if step <= 0 then failwith "Memory block step must be positive";
-    let data = Bytes.create (n * step) in
+    let data = Bytes.make (n * step) (Char.chr 0) in
     List.iteri
       (fun i v ->
-         for j = 0 to step - 1 do
-           Bytes.set data ((i * step) + j) (Char.chr ((v lsr (j * 8)) land 0xFF))
-         done
+         let vbytes = Z.to_bits v in
+         Bytes.blit_string vbytes 0 data (i * step)
+           (min step (String.length vbytes))
        )
       values;
-    let sym = Otoml.find_opt table Otoml.get_string ["sym"] in
-    let kind =
-      Otoml.find_opt table Otoml.get_string ["kind"]
-      |> Option.fold ~none:Testrepr.Data ~some:Testrepr.memory_kind_of_string
+    let sym = Toml.find_opt table Toml.get_string ["sym"] in
+    let get_memory_kind toml : Testrepr.memory_kind =
+      match Toml.get_string toml with
+      | "data" -> Data
+      | "code" -> Code
+      | "pagetable" -> PageTable
+      | s ->
+          Toml.error
+            "Expect memory kind (\"data\", \"code\", \"pagetable\") but got: %s" s
     in
-    if kind = Code && sym <> None then
-      failwith "[[memory]] code blocks must not have sym";
+    let kind =
+      Toml.find_or ~default:Testrepr.Data table get_memory_kind ["kind"]
+    in
+    ( if kind = Code then
+        match sym with
+        | Some s -> Toml.error "memory code blocks must not have sym but got %s" s
+        | None -> ()
+    );
     {addr; step; data; sym; kind}
   in
-  Otoml.find toml (Otoml.get_array parse_memory_block) ["memory"]
+  Toml.find toml (Toml.get_array parse_memory_block) ["memory"]
 
 (** Parse [[termCond]] into term cond lists with string keys *)
 let parse_test_termcond toml : (string * RegValGen.t) list list =
-  Otoml.find toml
-    (Otoml.get_array (Otoml.get_table_values toml_to_gen))
-    ["termCond"]
+  Toml.find toml (Toml.get_array (Toml.get_table_values toml_to_gen)) ["termCond"]
 
 (** {2 Register final condition parsing} *)
 
 (** Parse a requirement from TOML into Testrepr.reg_requirement *)
-let parse_reg_requirement (toml : Otoml.t) : Testrepr.reg_requirement =
+let parse_reg_requirement (toml : Toml.t) : Testrepr.reg_requirement =
   match toml with
   | TomlTable pairs | TomlInlineTable pairs -> (
     match (List.assoc_opt "op" pairs, List.assoc_opt "val" pairs) with
@@ -134,35 +142,35 @@ let parse_reg_requirement (toml : Otoml.t) : Testrepr.reg_requirement =
 (** Parse a condition block into thread conditions with string keys *)
 let parse_reg_cond toml : (int * (string * Testrepr.reg_requirement) list) list =
   let regs_table =
-    match Otoml.find_opt toml Otoml.get_table ["regs"] with
+    match Toml.find_opt toml Toml.get_table ["regs"] with
     | Some regs_table -> regs_table
-    | None -> Otoml.get_table toml
+    | None -> Toml.get_table toml
   in
   regs_table
   |> List.filter_map (fun (tid_str, regs) ->
     match int_of_string_opt tid_str with
     | None -> None
     | Some tid ->
-        let reqs = Otoml.get_table_values parse_reg_requirement regs in
+        let reqs = Toml.get_table_values parse_reg_requirement regs in
         Some (tid, reqs)
   )
 
 (** {2 Memory final condition parsing} *)
 
 (** Parse all [[outcome]] blocks into final conditions *)
-let parse_mem_requirement (toml : Otoml.t) : Testrepr.mem_requirement =
+let parse_mem_requirement (toml : Toml.t) : Testrepr.mem_requirement =
   match toml with
   | TomlTable pairs | TomlInlineTable pairs -> (
     match (List.assoc_opt "op" pairs, List.assoc_opt "val" pairs) with
-    | (Some (TomlString "eq"), Some v) -> MemEq (Z.of_int @@ Otoml.get_integer v)
-    | (Some (TomlString "ne"), Some v) -> MemNe (Z.of_int @@ Otoml.get_integer v)
+    | (Some (TomlString "eq"), Some v) -> MemEq (Toml.get_Z v)
+    | (Some (TomlString "ne"), Some v) -> MemNe (Toml.get_Z v)
     | (_, _) ->
         failwith
           ("[[outcome]] unknown memory requirement: "
-          ^ Otoml.Printer.to_string toml
+         ^ Toml.Printer.to_string toml
           )
   )
-  | _ -> MemEq (Z.of_int @@ Otoml.get_integer toml)
+  | _ -> MemEq (Toml.get_Z toml)
 
 let parse_mem_entry mem sym toml : Testrepr.mem_cond =
   let block =
@@ -175,9 +183,9 @@ let parse_mem_entry mem sym toml : Testrepr.mem_cond =
 
 let parse_mem_conds mem toml : Testrepr.mem_cond list =
   let parse_mem_cond toml =
-    Otoml.get_table toml |> List.map (fun (sym, v) -> parse_mem_entry mem sym v)
+    Toml.get_table toml |> List.map (fun (sym, v) -> parse_mem_entry mem sym v)
   in
-  Otoml.find_or ~default:[] toml parse_mem_cond ["mem"]
+  Toml.find_or ~default:[] toml parse_mem_cond ["mem"]
 
 let parse_test_finals mem toml : Testrepr.final_cond list =
   let parse_test_final toml =
@@ -187,8 +195,8 @@ let parse_test_finals mem toml : Testrepr.final_cond list =
       (regs, mem)
     in
     match
-      ( Otoml.find_opt toml parse_with_mem ["observable"],
-        Otoml.find_opt toml parse_with_mem ["unobservable"]
+      ( Toml.find_opt toml parse_with_mem ["observable"],
+        Toml.find_opt toml parse_with_mem ["unobservable"]
       )
     with
     | (Some (regs, mem), None) -> Testrepr.Observable (regs, mem)
@@ -198,7 +206,7 @@ let parse_test_finals mem toml : Testrepr.final_cond list =
     | (None, None) ->
         failwith "[[outcome]] must have observable or unobservable key"
   in
-  Otoml.find toml (Otoml.get_array parse_test_final) ["outcome"]
+  Toml.find toml (Toml.get_array parse_test_final) ["outcome"]
 
 let resolve_mem_conds memory (mcs : Testrepr.mem_cond list) =
   let sym_table =
@@ -219,11 +227,11 @@ let resolve_mem_conds memory (mcs : Testrepr.mem_cond list) =
      )
     mcs
 
-let parse_to_testrepr : Otoml.t -> Testrepr.t =
+let parse_to_testrepr : Toml.t -> Testrepr.t =
  fun toml ->
   let memory = parse_test_memory toml in
-  { Testrepr.arch = Otoml.find toml Otoml.get_string ["arch"];
-    name = Otoml.find toml Otoml.get_string ["name"];
+  { Testrepr.arch = Toml.find toml Toml.get_string ["arch"];
+    name = Toml.find toml Toml.get_string ["name"];
     registers = parse_test_registers toml;
     memory;
     term_cond = parse_test_termcond toml;

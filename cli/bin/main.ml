@@ -81,7 +81,7 @@ let parse_testfile fmt filename =
                .litmus.toml are supported"
       )
   in
-  let toml = Otoml.Parser.from_file filename in
+  let toml = Toml.Parser.from_file filename in
   match fmt with
   | Archsem -> Parser.parse_to_testrepr toml
   | Isla ->
@@ -250,7 +250,7 @@ let cmd_ump =
   Cmd.v info run
 
 let bbm_of_config () =
-  match Otoml.find_opt (Config.get ()) Otoml.get_string ["vmp"; "bbm"] with
+  match Toml.find_opt (Config.get ()) Toml.get_string ["vmp"; "bbm"] with
   | Some "lax" -> Arm.BBM.Lax
   | Some "strict" -> Arm.BBM.Strict
   | Some "off" -> Arm.BBM.Off

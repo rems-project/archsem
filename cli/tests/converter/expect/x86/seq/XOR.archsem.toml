@@ -2,19 +2,19 @@ arch = "x86"
 name = "x86-XOR"
 
 [[registers]]
-  rip = 1280
-  rax = 17
-  rcx = 257
-  rflags = 12288
+  rip = 0x500
+  rax = 0x11
+  rcx = 0x101
+  rflags = 0x3000
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 1
-  data = [72, 51, 193]
+  data = [0x48, 0x33, 0xc1]
 
 [[termCond]]
-  rip = 1283
+  rip = 0x503
 
 [[outcome]]
-  observable = {"0" = {rax = 272}}
+  observable = {"0" = {rax = 0x110}}

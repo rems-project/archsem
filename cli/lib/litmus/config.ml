@@ -43,9 +43,9 @@
     A thin wrapper around Otoml.t. Each consumer queries the
     section and keys it needs. No per-test config. *)
 
-type t = Otoml.t
+type t = Toml.t
 
-let empty = Otoml.TomlTable []
+let empty = Toml.TomlTable []
 
 let rec find_from dir relpath =
   let candidate = Filename.concat dir relpath in
@@ -64,7 +64,7 @@ let default_path_for_arch arch =
 
 let of_arch arch =
   match default_path_for_arch arch with
-  | Some path -> Otoml.Parser.from_file path
+  | Some path -> Toml.Parser.from_file path
   | None ->
       failwith ("config: no default config for arch " ^ Arch_id.to_string arch)
 
@@ -74,12 +74,12 @@ let global : t ref = ref empty
 
 let set config = global := config
 
-let load file = global := Otoml.Parser.from_file file
+let load file = global := Toml.Parser.from_file file
 
 let get () = !global
 
 (** {1 Common fields} *)
-let get_arch () = Otoml.find !global Arch_id.of_toml ["arch"]
+let get_arch () = Toml.find !global Arch_id.of_toml ["arch"]
 
 let get_fuel () =
-  Otoml.find_or ~default:1000 !global Otoml.get_integer ["execution"; "fuel"]
+  Toml.find_or ~default:1000 !global Toml.get_integer ["execution"; "fuel"]

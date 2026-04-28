@@ -2,76 +2,76 @@ arch = "x86"
 name = "IRIW"
 
 [[registers]]
-  rip = 1280
-  rcx = 4352
-  rflags = 12288
+  rip = 0x500
+  rcx = 0x1100
+  rflags = 0x3000
 
 [[registers]]
-  rip = 1536
+  rip = 0x600
   rax = 0
   rbx = 0
-  rcx = 4352
-  rdx = 4608
-  rflags = 12288
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
 
 [[registers]]
-  rip = 1792
-  rdx = 4608
-  rflags = 12288
+  rip = 0x700
+  rdx = 0x1200
+  rflags = 0x3000
 
 [[registers]]
-  rip = 2048
+  rip = 0x800
   rax = 0
   rbx = 0
-  rcx = 4352
-  rdx = 4608
-  rflags = 12288
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 1
-  data = [199, 1, 1, 0, 0, 0]
+  data = [0xc7, 1, 1, 0, 0, 0]
 
 [[memory]]
   kind = "code"
-  addr = 1536
+  addr = 0x600
   step = 1
-  data = [139, 1, 139, 26]
+  data = [0x8b, 1, 0x8b, 0x1a]
 
 [[memory]]
   kind = "code"
-  addr = 1792
+  addr = 0x700
   step = 1
-  data = [199, 2, 1, 0, 0, 0]
+  data = [0xc7, 2, 1, 0, 0, 0]
 
 [[memory]]
   kind = "code"
-  addr = 2048
+  addr = 0x800
   step = 1
-  data = [139, 2, 139, 25]
+  data = [0x8b, 2, 0x8b, 0x19]
 
 [[memory]]
-  addr = 4352
+  addr = 0x1100
   step = 8
   data = 0
 
 [[memory]]
-  addr = 4608
+  addr = 0x1200
   step = 8
   data = 0
 
 [[termCond]]
-  rip = 1286
+  rip = 0x506
 
 [[termCond]]
-  rip = 1540
+  rip = 0x604
 
 [[termCond]]
-  rip = 1798
+  rip = 0x706
 
 [[termCond]]
-  rip = 2052
+  rip = 0x804
 
 [[outcome]]
   observable = {"1" = {rax = 0, rbx = 0}, "3" = {rax = 0, rbx = 0}}
