@@ -62,7 +62,6 @@ End Barriers.
 
 Section Model.
   Import Candidate.
-  Context (regs_whitelist : gset reg).
   Context {nmth : nat}. (* number of threads *)
   Context {ms: exec_type}. (* mixed-size or not *)
   Context (cd : Candidate.t ms nmth).
@@ -73,6 +72,11 @@ Section Model.
   Notation pe := (pre_exec cd).
   Notation int := (same_thread pe).
   Notation si := (same_instruction_instance cd).
+  Notation full_instruction_order := (full_instruction_order pe).
+
+  (** ** Registers *)
+  Notation rrf := (reg_reads_from cd).
+  Notation rfr := (reg_from_reads cd).
 
   (** ** Memory *)
   Notation W := (explicit_writes pe).
@@ -94,16 +98,18 @@ Section Model.
 
   (** ** Program-order *)
   Notation po := (instruction_order pe).
-  Definition po_loc := po ∩ same_addr cd.
+  Definition po_loc := po ∩ overlapping cd.
 
-  (** ** Only allow whitelisted regs *)
-  Definition is_illegal_reg_write (regs : gset reg) :=
-    is_reg_writeP (λ reg acc _, reg ∉ regs).
-  #[export] Instance is_illegal_reg_write_dec regs ev :
-    Decision (is_illegal_reg_write regs ev).
-  Proof. unfold_decide. Defined.
 
-  Definition Illegal_RW := collect_all (λ _, is_illegal_reg_write regs_whitelist) cd.
+
+  (** Ensure that all register accesses within a thread occur in program order *)
+  Record reg_internal := {
+      rrf_internal : rrf ⊆ full_instruction_order;
+      rfr_internal : rfr ⊆ not_after cd
+    }.
+  #[export] Instance reg_internal_dec : Decision reg_internal :=
+    ltac:(decide_record).
+
 
 
 
@@ -142,6 +148,7 @@ Section Model.
       internal_visibility : grel_acyclic (po_loc ∪ ca ∪ rf);
       atomic : rmw ∩ (fre⨾ coe) = ∅;
       external_visibility : grel_irreflexive ob;
+      reg_internal' :> reg_internal; (* Not part of original cat definition *)
     }.
   #[export] Instance consistent_dec : Decision consistent := ltac:(decide_record).
 
@@ -150,18 +157,15 @@ Section Model.
       (* Ensure we are not fetching modified instructions *)
       initial_reads : IF ⊆ IR;
 
-      (* An instruction fetch should not occur "strictly after" a memory event 
-        / should not change the state of memory, TODO: clarify *)
+      (* An instruction fetch should not occur after any memory event in the coherence order
+        / should not change the state of memory?, TODO: clarify *)
       initial_reads_not_delayed : IF ## grel_rng (coherence cd);
-
-      (* Ensure that only whitelisted registers are written to *)
-      register_write_permitted : Illegal_RW = ∅; (* TODO: is this necessary *)
 
       (* Memory events must be explicit or instruction fetch *)
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
 
-      (* We might care about not allowing mixed-size accesses *)
-      is_nms' : if ms is NMS then is_nms cd else True;
+      (* There should be no mixed-size accesses if the "not mixed size" option is chosen *)
+      only_ms_if_allowed' : if ms is NMS then is_nms cd else True;
     }.
   #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
 
@@ -173,12 +177,9 @@ End Model.
 Require Import ASCommon.CResult.
 
 (** The User x86 axiomatic model *)
-Definition axmodel regs_whitelist : Ax.t Candidate.NMS ∅ :=
-  λ _ cd, if decide (consistent cd) then
-            if decide (not_UB regs_whitelist cd) then Ok Ax.Allowed
-            else Error ""
-          else Ok Ax.Rejected.
+Definition axmodel : Ax.t Candidate.NMS ∅ :=
+  λ _ cd, if decide (consistent cd) then Ok Ax.Allowed else Ok Ax.Rejected.
 
 (** The User x86 architecture model *)
-Definition archmodel regs_whitelist isem : archModel.nc ∅ :=
-  Ax.to_archModel_nc isem (axmodel regs_whitelist).
+Definition archmodel isem : archModel.nc ∅ :=
+  Ax.to_archModel_nc isem axmodel.
