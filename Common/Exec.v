@@ -4,6 +4,7 @@
 (*  Copyright (c) 2021                                                        *)
 (*      Thibaut Pérami, University of Cambridge                               *)
 (*      Yeji Han, Seoul National University                                   *)
+(*      Shreeka Lohani, University of Cambridge                               *)
 (*      Zongyuan Liu, Aarhus University                                       *)
 (*      Nils Lauermann, University of Cambridge                               *)
 (*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
