@@ -1,0 +1,27 @@
+arch = "AArch64"
+name = "MPmixed"
+symbolic = ["x", "y"]
+
+[thread.0]
+init = { X1 = "x", X3 = "y" }
+code = """
+MOV W2, #0x2a
+STR W2, [X1]
+MOV X5, #0x1
+STR X5, [X3]
+"""
+
+[thread.1]
+init = { X1 = "y", X3 = "x" }
+code = """
+LDR X5, [X1]
+LDR X2, [X3]
+"""
+
+[locations]
+x = 0x0
+y = 0x0
+
+[final]
+expect = "sat"
+assertion = "1:X5 = 0x1 & 1:X2 = 0x0"
