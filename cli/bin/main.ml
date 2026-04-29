@@ -170,7 +170,7 @@ let path_and_conf_term =
         match Config.default_path_for_arch arch with
         | Some conf -> conf
         | None ->
-            Printf.ksprintf failwith "Unable to find %s.toml automatically"
+            Error.fatal "Unable to find config %s.toml automatically"
               (Arch_id.to_string arch)
       )
   in
