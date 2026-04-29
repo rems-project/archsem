@@ -451,3 +451,85 @@ Module IRIW.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End IRIW.
+
+Module SB_mixed.
+  (* Mixed-size store buffering test (instructions in format: instr src,dest)
+    Thread 1 : movl $2,4(%rbx); movl $2,(%rbx); movq (%rbx),%rcx; movq (%rdx),%rsi
+    Thread 2 : movl $1,4(%rdx); movl $1,(%rdx); movq (%rdx),%rcx; movq (%rbx),%rsi
+
+    Expected result : (Thread 1:rcx=8589934594 /\ Thread 2:rcx=4294967297 /\ Thread 1:rsi=0 
+      /\ Thread 2:rsi=0) should be possible
+
+      The first 2 registers should only take the above values.
+      The last 2 register values can vary.
+  *)
+
+  Definition init_reg_t1 : registerMap :=
+    common_init_regs
+    |> reg_insert rip 0x500
+    |> reg_insert rax 0x2
+    |> reg_insert rcx 0x0
+    |> reg_insert rsi 0x0
+    |> reg_insert rdx 0x1200
+    |> reg_insert rbx 0x1300.
+
+  Definition init_reg_t2 : registerMap :=
+    common_init_regs
+    |> reg_insert rip 0x600
+    |> reg_insert rax 0x1
+    |> reg_insert rcx 0x0
+    |> reg_insert rsi 0x0
+    |> reg_insert rdx 0x1200
+    |> reg_insert rbx 0x1300.
+
+  Definition init_mem : memoryMap :=
+    ∅
+    (* Thread 1 @ 0x500 *)
+    |> mem_insert 0x500 7 0x000000020443c7  (* movl $2,4(%rbx) = 0x00000002 @ 0x04 @ 0b01_000_011 @ 0xC7 *)
+    |> mem_insert 0x507 6 0x0000000203c7  (* movl $2,(%rbx) = 0x00000002 @ 0b00_000_011 @ 0xC7 *)
+    |> mem_insert 0x50D 3 0x0B8b48  (* movq (%rbx),%rcx = 0b00_001_011 @ 0x8B @ 0x48 *)
+    |> mem_insert 0x510 3 0x328b48  (* movq (%rdx),%rsi = 0b00_110_010 @ 0x8B @ 0x48 *)
+    (* Thread 2 @ 0x600 *)
+    |> mem_insert 0x600 7 0x000000010442c7  (* movl $1,4(%rdx) = 0x00000001 @ 0x04 @ 0b01_000_010 @ 0xC7 *)
+    |> mem_insert 0x607 6 0x0000000102c7  (* movl $1,(%rdx) = 0x00000001 @ 0b00_000_010 @ 0xC7 *)
+    |> mem_insert 0x60D 3 0x0A8b48  (* movq (%rdx),%rcx = 0b00_001_010 @ 0x8B @ 0x48 *)
+    |> mem_insert 0x610 3 0x338b48  (* movq (%rbx),%rsi = 0b00_110_011 @ 0x8B @ 0x48 *)
+    (* Memory locations accessed *)
+    |> mem_insert 0x1200 8 0x0
+    |> mem_insert 0x1300 8 0x0.
+
+  Definition n_threads := 2%nat.
+
+  Definition terminate_at := [# Some (0x513 : bv 64); Some (0x613 : bv 64)].
+
+  (* Each thread’s PC must reach the end of its two instructions *)
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup rip rm =? terminate_at !!! tid).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.address_space := () |}.
+
+  Definition fuel := 13%nat.
+
+  (* Non-eager runner is too slow (> 10s), we're not running it here *)
+
+  Definition test_results_eager :=
+    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+
+  Goal elements (regs_extract [(0%fin, rcx); (1%fin, rcx); (0%fin, rsi); (1%fin, rsi)] <$> test_results_eager) ≡ₚ
+    [Ok [0x200000002%Z; 0x100000001%Z; 0x0%Z; 0x0%Z]; 
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000000%Z; 0x0%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000001%Z; 0x0%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x0%Z; 0x200000000%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x0%Z; 0x200000002%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000000%Z; 0x200000000%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000001%Z; 0x200000000%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000000%Z; 0x200000002%Z];
+      Ok [0x200000002%Z; 0x100000001%Z; 0x100000001%Z; 0x200000002%Z]].
+  Proof.
+    vm_compute (elements _).
+    apply NoDup_Permutation; try solve_NoDup; set_solver.
+  Qed.
+End SB_mixed.

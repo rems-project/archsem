@@ -108,33 +108,28 @@ Section Model.
   Definition all_buffers_empty (state : mstate) : bool :=
     bool_decide (∀ t : fin threads, buffer_empty t state).
 
-  Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val)
-      (goal_addr: address) (goal_size : N) :
-      Exec.t mstate string (option (bv (8 * goal_size))) :=
-    (* Allow a direct match to be store-forwarded
-       if it is the most recent write to all relevant addresses.
-       Underapproximation of store buffering.
+  Fixpoint read_byte_from_write_buffer_inner (rev_buffer : list addr_val)
+      (goal_addr: address) :
+      Exec.t mstate string (option (bv 8)) :=
+    (* Allow a direct byte match to be store-forwarded
        Reverse buffer so that we see most recent writes first *)
     match rev_buffer with
     | x :: xs =>
-        let goal_range : gset address := list_to_set (addr_range goal_addr goal_size) in
-        let x_range : gset address := list_to_set (addr_range (addr x) (size x)) in
-        (* If we have a direct match, then perform store forwarding *)
-        if bool_decide (goal_range = x_range) then
-          let unsigned_val := bv_unsigned (val x) in
-          let return_val := Z_to_bv (8 * goal_size) unsigned_val in
-          mret (Some return_val)
-        else if bool_decide (goal_range ∩ x_range ≠ ∅) then
-          mthrow "Model prohibits programs where mixed-size store forwarding can occur"
-        else read_from_write_buffer_inner xs goal_addr goal_size
+        let addr_range : gset address := list_to_set (addr_range (addr x) (size x)) in
+        (* If we have a byte match, then perform store forwarding *)
+        if bool_decide (goal_addr ∈ addr_range) then
+          let index := Z.to_nat ((bv_unsigned goal_addr - bv_unsigned (addr x))) in
+          let wanted_byte := nth_error (bv_to_bytes 8 (val x)) index in
+          mret wanted_byte
+        else read_byte_from_write_buffer_inner xs goal_addr
     | _ => mret None
     end.
 
-  Definition read_from_write_buffer (tid : fin threads) (addr : address) (size : N) :
-      Exec.t mstate string (option (bv (8 * size))) :=
+  Definition read_byte_from_write_buffer (tid : fin threads) (addr : address) :
+      Exec.t mstate string (option (bv 8)) :=
     buffer ← mget ((.!!! tid) ∘ buf);
     (* Reverse buffer so that we see most recent writes first *)
-    read_from_write_buffer_inner (rev buffer) addr size.
+    read_byte_from_write_buffer_inner (rev buffer) addr.
 
   Fixpoint add_to_mem_written (addr : address) (size : nat) :
       Exec.t mstate string unit :=
@@ -170,17 +165,26 @@ Section Model.
 
   (** ** Buffer and Memory functions *)
 
-  Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address)
-      (size : N) : Exec.t mstate string (bv (8 * size)) :=
+  Definition read_mem_byte_with_store_forwarding (tid : fin threads) (addr : address) :
+      Exec.t mstate string (bv 8) :=
     (* Attempt store forwarding *)
-    opt ← read_from_write_buffer tid addr size;
+    opt ← read_byte_from_write_buffer tid addr;
     if opt is Some read then
       mret read
     else
       (* Attempt memory read and return read value *)
-      opt ← mget (mem_lookup addr size ∘ mem);
+      opt ← mget (mem_lookup_byte addr ∘ mem);
       read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
       mret read.
+    
+
+  Definition read_mem_with_store_forwarding (tid : fin threads) (addr : address)
+      (size : N) : Exec.t mstate string (bv (8 * size)) :=
+      (* For each byte we want to read, attempt store forwarding. If this fails, read byte from memory.*)
+      read ← mapM 
+        (fun addr => read_mem_byte_with_store_forwarding tid addr)
+        (addr_range addr size);
+      mret (bv_of_bytes (8 * size) read).
 
   Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads) :
       Exec.t mstate string unit :=
