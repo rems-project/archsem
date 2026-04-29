@@ -165,9 +165,7 @@ Module STRLDR. (* MOV [EAX + 0x100], ECX; MOV EAX, [EAX + 0x100] at 0x500, using
   Qed.
 End STRLDR.
 
-Module Factorial. (* https://godbolt.org/z/GWcWjTrWc, 
-  but with opcode 83 instructions changed to opcode 81 instructions,
-  and with shifted instruction addresses *)
+Module Factorial. (* https://godbolt.org/z/GWcWjTrWc, but with shifted instruction addresses *)
   Definition init_reg : registerMap :=
     common_init_regs
     |> reg_insert rip 0x500
@@ -179,22 +177,22 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc,
 
   Definition init_mem : memoryMap:=
     ∅
-    |> mem_insert 0x500 1 0x51              (* push rcx (return address) = 0x5 @ 0b0 @ 0b001 *)
-    |> mem_insert 0x501 1 0x55              (* push rbp *)
-    |> mem_insert 0x502 3 0xe58948          (* mov rbp, rsp *)
-    |> mem_insert 0x505 7 0x00000010ec8148  (* sub rsp, 0x10 *)
-    |> mem_insert 0x50c 3 0xfc7d89          (* mov DWORD PTR [rbp-0x4], edi *)
-    |> mem_insert 0x50f 7 0x00000000fc7d81  (* cmp DWORD PTR [rbp-0x4], 0x0 *)
-    |> mem_insert 0x516 2 0x0775            (* jne 0x51f *)
-    |> mem_insert 0x518 5 0x00000001b8      (* mov eax, 0x1 *) 
-    |> mem_insert 0x51d 2 0x14eb            (* jmp 0x533 *)
-    |> mem_insert 0x51f 3 0xfc458b          (* mov eax, DWORD PTR [rbp-0x4] *) 
-    |> mem_insert 0x522 6 0x00000001e881    (* sub eax, 0x1 *) 
-    |> mem_insert 0x528 2 0xc789            (* mov edi, eax *)
-    |> mem_insert 0x52a 5 0xffffffd2e8      (* call 0x501 (relative rip change is -2e) *)
-    |> mem_insert 0x52f 4 0xfc45af0f        (* imul eax, DWORD PTR [rbp-0x4] *)
-    |> mem_insert 0x533 1 0xc9              (* leave *)
-    |> mem_insert 0x534 1 0xc3              (* ret *)
+    |> mem_insert 0x500 1 0x51          (* push rcx (return address) = 0x5 @ 0b0 @ 0b001 *)
+    |> mem_insert 0x501 1 0x55          (* push rbp *)
+    |> mem_insert 0x502 3 0xe58948      (* mov rbp, rsp *)
+    |> mem_insert 0x505 4 0x10ec8348    (* sub rsp, 0x10 *)
+    |> mem_insert 0x509 3 0xfc7d89      (* mov DWORD PTR [rbp-0x4], edi *)
+    |> mem_insert 0x50c 4 0x00fc7d83    (* cmp DWORD PTR [rbp-0x4], 0x0 *)
+    |> mem_insert 0x510 2 0x0775        (* jne 0x519 (0x07 relative)*)
+    |> mem_insert 0x512 5 0x00000001b8  (* mov eax, 0x1 *) 
+    |> mem_insert 0x517 2 0x11eb        (* jmp 0x52a (0x11 relative) *)
+    |> mem_insert 0x519 3 0xfc458b      (* mov eax, DWORD PTR [rbp-0x4] *) 
+    |> mem_insert 0x51c 3 0x01e883      (* sub eax, 0x1 *) 
+    |> mem_insert 0x51f 2 0xc789        (* mov edi, eax *)
+    |> mem_insert 0x521 5 0xffffffdbe8  (* call 0x501 (relative rip change is -26) *)
+    |> mem_insert 0x526 4 0xfc45af0f    (* imul eax, DWORD PTR [rbp-0x4] *)
+    |> mem_insert 0x52a 1 0xc9          (* leave *)
+    |> mem_insert 0x52b 1 0xc3          (* ret *)
 
     |> mem_insert 0x1235 256 0. (* Memory need to exist to be written to *)
 

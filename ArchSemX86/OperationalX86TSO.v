@@ -54,7 +54,7 @@ Section Model.
   (** * Types *)
 
   (** A memory entry in a write-buffer *)
-  Record addr_val := {
+  Record buffer_entry := {
       addr: address;
       size: N; (* IN BYTES *)
       val: bv (8 * size)
@@ -67,7 +67,7 @@ Section Model.
 
       (* Store buffer for each thread. Each buffer is a list of address-value
         tuples, oldest first *)
-      buf : vec (list addr_val) threads;
+      buf : vec (list buffer_entry) threads;
 
       (* Global machine lock, indicating when some thread has exclusive access to
         memory *)
@@ -108,7 +108,7 @@ Section Model.
   Definition all_buffers_empty (state : mstate) : bool :=
     bool_decide (∀ t : fin threads, buffer_empty t state).
 
-  Fixpoint read_from_write_buffer_inner (rev_buffer : list addr_val)
+  Fixpoint read_from_write_buffer_inner (rev_buffer : list buffer_entry)
       (goal_addr: address) (goal_size : N) :
       Exec.t mstate string (option (bv (8 * goal_size))) :=
     (* Allow a direct match to be store-forwarded
@@ -182,7 +182,7 @@ Section Model.
       read ← othrow ("Memory not found at " ++ pretty addr)%string opt;
       mret read.
 
-  Fixpoint write_buffer_to_mem (buffer: list addr_val) (tid: fin threads) :
+  Fixpoint write_buffer_to_mem (buffer: list buffer_entry) (tid: fin threads) :
       Exec.t mstate string unit :=
     match buffer with
     | [] => mret ()
@@ -217,9 +217,9 @@ Section Model.
     (* Ensure thread can acquire lock: a thread (including thread tid) might already have the lock*)
     lock_status ← mget lock;
     guard_discard (lock_status = None);;
-    (* Ensure thread can acquire lock: store buffer might not be empty.
-       Hence eagerly empty buffer. Can do this as no other thread has lock *)
-    empty_write_buffer tid;;
+    (* Ensure thread can acquire lock: store buffer needs to be empty *)
+    '(buffer_is_empty : bool) ← mget (buffer_empty tid);
+    guard_discard buffer_is_empty;;
     (* Acquire lock *)
     mSet (acquire_lock tid).
 
@@ -228,11 +228,12 @@ Section Model.
 
   Definition release_lock_conditional (tid : fin threads) :
       Exec.t mstate string unit :=
-    (* Make sure we have the lock before releasing it *)
+    (* Ensure thread can release lock: make sure we have the lock*)
     state ← mGet;
     guard_discard (thread_has_lock tid state);;
-    (* Empty write buffer (eager) (other requirement for releasing lock) *)
-    empty_write_buffer tid;;
+    (* Ensure thread can release lock: ensure that the write buffer is empty *)
+    '(buffer_is_empty : bool) ← mget (buffer_empty tid);
+    guard_discard buffer_is_empty;;
     (* Release lock *)
     mSet (release_lock tid).
 
@@ -287,22 +288,22 @@ Section Model.
         (* Handle atomic case (release lock) *)
         (if is_atomic_rmw macc then
           if eager then
-            (* Must discard outcome if eager, as release_lock_conditional requires
-              the store buffer to be emptied to complete *)
+            (* Must discard outcome if eager, as we need an emptied write buffer to 
+              release the lock *)
             mdiscard
-          else release_lock_conditional tid
+          else 
+            empty_write_buffer tid;;
+            release_lock_conditional tid
         else mret ());;
         mret (Ok ())
     | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
     | Barrier Barrier_MFENCE =>
         (* Cannot eagerly perform memory barriers that do something*)
         guard_discard (negb eager);;
-
-        (* Write buffer (of thread tid) must be emptied before this instruction
-           can complete. *)
-        is_blocked ← mget (blocked tid);
-        guard_discard (negb is_blocked);;
-        empty_write_buffer tid
+        (* Write buffer (of thread tid) must be empty for this instruction to complete. *)
+        '(buffer_is_empty : bool) ← mget (buffer_empty tid);
+        guard_discard buffer_is_empty;;
+        mret ()
     | Barrier _ => mret ()
     | GenericFail msg => mthrow msg
     | _ => mthrow "Unsupported outcome".
@@ -351,6 +352,9 @@ Section Model.
     tid ← mchoosef;
     flush_transition ← mchoosef;
     if (flush_transition : bool) then
+      (* Discard if lock is not free *)
+      lock_status ← mget lock;
+      guard_discard (lock_status = None);;
       (* This function discards if there is nothing to flush. *)
       flush_one_item_buffer tid;;
       mret None
