@@ -57,6 +57,7 @@ rule token = parse
   | '=' { EQ }
   | '*' { STAR }
   | ':' { COLON }
+  | ',' { COMMA }
   | "true" { TRUE }
   | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }

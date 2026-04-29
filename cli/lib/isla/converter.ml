@@ -93,8 +93,9 @@ let default_memory_size () =
 (* {1 IR to assembly_input} *)
 
 let z_of_value asm_result = function
-  | Ir.Int z -> z
-  | Ir.Sym sym -> Z.of_int (Assembler.resolve_symbol asm_result sym)
+  | Term.Const z -> z
+  | Term.LocVal (Mem sym) -> Z.of_int (Assembler.resolve_symbol asm_result sym)
+  | _ -> failwith "non-constant/symbol value not supported in this context"
 
 let init_bytes_of_value mem_size sym value =
   if Z.numbits value > mem_size * 8 then
@@ -120,16 +121,15 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
     List.map
       (fun sym ->
          let init_value =
-           List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
+           List.assoc_opt sym ir.locations
+           |> Option.value ~default:(Term.Const Z.zero)
          in
          let value =
            match init_value with
-           | Ir.Int z -> z
-           | Ir.Sym s ->
+           | Term.Const z -> z
+           | _ ->
                Error.fatal
-                 "symbol-valued location initializer not supported (cannot \
-                  resolve %s before linking)"
-                  s
+                 "non-constant location initializer not supported before linking"
          in
          { Assembler.name = sym;
            init_bytes = init_bytes_of_value mem_size sym value
@@ -137,7 +137,17 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
        )
       ir.symbolic
   in
-  {sections = code_sections; symbols = data_symbols}
+  let fixed_sections =
+    List.map
+      (fun (sec : Ir.section) ->
+         { Assembler.name = sec.sec_name;
+           code = sec.code;
+           fixed_addr = Some sec.address
+         }
+       )
+      ir.sections
+  in
+  {sections = code_sections @ fixed_sections; symbols = data_symbols}
 
 (* {1 Memory, registers, and termination} *)
 
@@ -233,24 +243,29 @@ let mem_requirement op value =
   | Assertion.Eq -> Testrepr.MemEq value
   | Assertion.Ne -> Testrepr.MemNe value
 
+(** Resolve a Term.t to location, deref, or constant. *)
+let resolve_term = function
+  | Term.LocVal loc -> `Loc loc
+  | Term.Deref (Term.Mem sym) -> `Deref sym
+  | Term.Const z -> `Const z
+  | _ -> failwith "assertion: unsupported term form"
+
 (** Convert a single assertion atom into a register or memory condition. *)
-let atom_to_cond ~resolve_sym ~memory_size atom =
-  match atom with
-  | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
-      `Reg (tid, reg, reg_requirement op value)
-  | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
+let atom_to_cond ~resolve_sym ~memory_size (Assertion.Cmp (lhs, op, rhs)) =
+  match (resolve_term lhs, resolve_term rhs) with
+  | (`Loc (Term.Reg (tid, reg)), `Const z) -> `Reg (tid, reg, reg_requirement op z)
+  | (`Deref sym, `Const z) ->
       `Mem
         ( { Testrepr.sym;
             addr = resolve_sym sym;
             size = memory_size sym;
-            req = mem_requirement op value
+            req = mem_requirement op z
           }
          : Testrepr.mem_cond
          )
-  | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
-      Error.fatal "assertion: register-to-location comparisons are not supported"
-  | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-      Error.fatal "assertion: memory-to-location comparisons are not supported"
+  | (`Loc (Term.Mem _), _) ->
+      Error.fatal "assertion: bare memory symbol not supported, use *sym"
+  | _ -> Error.fatal "assertion: unsupported comparison form"
 
 (** Partition atoms into per-thread register conditions and memory conditions. *)
 let atoms_to_conds ~resolve_sym ~memory_size atoms =

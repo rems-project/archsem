@@ -53,12 +53,19 @@ let normalize_reg reg =
   | None -> reg
 
 let normalize_loc = function
-  | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
-  | Mem _ as loc -> loc
+  | Term.Reg (tid, reg) -> Term.Reg (tid, normalize_reg reg)
+  | loc -> loc
 
-let normalize_atom = function
-  | CmpCst (loc, op, value) -> CmpCst (normalize_loc loc, op, value)
-  | CmpLoc (lhs, op, rhs) -> CmpLoc (normalize_loc lhs, op, normalize_loc rhs)
+let rec normalize_term = function
+  | Term.LocVal loc -> Term.LocVal (normalize_loc loc)
+  | Term.Deref loc -> Term.Deref (normalize_loc loc)
+  | Term.Fn (name, args) -> Term.Fn (name, List.map normalize_term args)
+  | Term.KwFn (name, kw) ->
+      Term.KwFn (name, List.map (fun (k, v) -> (k, normalize_term v)) kw)
+  | t -> t
+
+let normalize_atom (Cmp (lhs, op, rhs)) =
+  Cmp (normalize_term lhs, op, normalize_term rhs)
 
 let rec normalize_expr = function
   | Atom atom -> Atom (normalize_atom atom)

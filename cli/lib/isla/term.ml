@@ -4,7 +4,6 @@
 (*  Copyright (c) 2021                                                        *)
 (*      Thibaut Pérami, University of Cambridge                               *)
 (*      Yeji Han, Seoul National University                                   *)
-(*      Shreeka Lohani, University of Cambridge                               *)
 (*      Zongyuan Liu, Aarhus University                                       *)
 (*      Nils Lauermann, University of Cambridge                               *)
 (*      Jean Pichon-Pharabod, University of Cambridge, Aarhus University      *)
@@ -38,19 +37,19 @@
 (*                                                                            *)
 (******************************************************************************)
 
-type op =
-  | Eq
-  | Ne
+(** Bitvector terms: AST for isla value expressions. *)
 
-type atom = Cmp of Term.t * op * Term.t
+type loc =
+  | Reg of int * string
+  | Mem of string
 
-type expr =
-  | Atom of atom
-  | And of expr * expr
-  | Or of expr * expr
-  | Not of expr
-  | True
-  | False  (** Boolean expression for a final assertion *)
+type t =
+  | Const of Z.t
+  | LocVal of loc
+  | Deref of loc
+  | Fn of string * t list
+  | KwFn of string * (string * t) list
 
-(** Convert expression to Disjunctive Normal Form *)
-val to_dnf : expr -> atom list list
+let string_of_loc = function
+  | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
+  | Mem sym -> sym

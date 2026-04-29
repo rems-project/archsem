@@ -46,6 +46,7 @@
 %token <string> IDENT
 %token LPAREN "("
 %token RPAREN ")"
+%token COMMA ","
 %token AND "&"
 %token OR "|"
 %token NOT "~"
@@ -60,11 +61,15 @@
 %nonassoc NOT
 
 %start <Assertion.expr> assertion
+%start <Term.t> binding
 
 %%
 
 assertion:
   | e = prop; EOF { e }
+
+binding:
+  | v = value_expr; EOF { v }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or (e1, e2) }
@@ -76,14 +81,22 @@ prop:
   | FALSE { False }
 
 atom:
-  | l = loc; "="; v = NUM {
-      match l with
-      | Reg _ -> CmpCst (l, Eq, v)
-      | Mem _ -> failwith "assertion: use *sym = value for memory comparisons"
-    }
-  | l1 = loc; "="; l2 = loc { CmpLoc (l1, Eq, l2) }
-  | "*"; s = IDENT; "="; v = NUM { CmpCst (Mem s, Eq, v) }
+  | lhs = term; "="; rhs = term { Cmp (lhs, Eq, rhs) }
 
-loc:
-  | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | s = IDENT { Mem s }
+term:
+  | tid = NUM; ":"; r = IDENT { Term.LocVal (Reg (Z.to_int tid, r)) }
+  | "*"; s = IDENT { Term.Deref (Mem s) }
+  | v = NUM { Term.Const v }
+  | s = IDENT { Term.LocVal (Mem s) }
+
+(* Note: Fn/KwFn rules have a shift/resolve conflict on IDENT "(" IDENT "=".
+   Menhir resolves by shifting (into kw_arg), which gives correct behavior:
+   foo(x=1) -> KwFn, foo(x) -> Fn. Mixed positional+keyword args are not supported. *)
+value_expr:
+  | v = NUM { Term.Const v }
+  | f = IDENT; "("; args = separated_list(",", value_expr); ")" { Term.Fn (f, args) }
+  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
+  | s = IDENT { Term.LocVal (Mem s) }
+
+kw_arg:
+  | k = IDENT; "="; v = value_expr { (k, v) }

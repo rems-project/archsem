@@ -38,46 +38,50 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Unit tests for Isla.Assertion. *)
-
 open OUnit2
 open Isla.Assertion
+open Isla.Term
 
 let n = Z.of_int
+
+let reg tid r = LocVal (Reg (tid, r))
+
+let mem s = Deref (Mem s)
+
+let sym s = LocVal (Mem s)
+
+let cst v = Const v
 
 let parse = Isla.Ir.parse_assertion_expr
 
 let parse_cases =
-  [ ("int constant", "0:X0 = 1", Atom (CmpCst (Reg (0, "X0"), Eq, Z.one)));
-    ("hex constant", "0:X0 = 0x2a", Atom (CmpCst (Reg (0, "X0"), Eq, n 42)));
-    ("memory location", "*x = 2", Atom (CmpCst (Mem "x", Eq, n 2)));
-    ( "symbol on rhs (CmpLoc)",
-      "0:X0 = x",
-      Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x"))
-    );
-    ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one))));
+  [ ("int constant", "0:X0 = 1", Atom (Cmp (reg 0 "X0", Eq, cst Z.one)));
+    ("hex constant", "0:X0 = 0x2a", Atom (Cmp (reg 0 "X0", Eq, cst (n 42))));
+    ("memory location", "*x = 2", Atom (Cmp (mem "x", Eq, cst (n 2))));
+    ("symbol on rhs", "0:X0 = x", Atom (Cmp (reg 0 "X0", Eq, sym "x")));
+    ("negation", "~(1:X0 = 1)", Not (Atom (Cmp (reg 1 "X0", Eq, cst Z.one))));
     ( "conjunction",
       "1:X0 = 1 & 2:X0 = 0",
       And
-        ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-          Atom (CmpCst (Reg (2, "X0"), Eq, Z.zero))
+        ( Atom (Cmp (reg 1 "X0", Eq, cst Z.one)),
+          Atom (Cmp (reg 2 "X0", Eq, cst Z.zero))
         )
     );
     ("false", "false", False)
   ]
 
 (* Atoms used to build expected DNF results. *)
-let a = CmpCst (Reg (0, "X0"), Eq, Z.zero)
+let a = Cmp (reg 0 "X0", Eq, cst Z.zero)
 
-let b = CmpCst (Reg (0, "X0"), Eq, Z.one)
+let b = Cmp (reg 0 "X0", Eq, cst Z.one)
 
-let c = CmpCst (Reg (1, "X0"), Eq, Z.zero)
+let c = Cmp (reg 1 "X0", Eq, cst Z.zero)
 
-let d = CmpCst (Reg (1, "X0"), Eq, Z.one)
+let d = Cmp (reg 1 "X0", Eq, cst Z.one)
 
-let na = CmpCst (Reg (0, "X0"), Ne, Z.zero)
+let na = Cmp (reg 0 "X0", Ne, cst Z.zero)
 
-let nb = CmpCst (Reg (0, "X0"), Ne, Z.one)
+let nb = Cmp (reg 0 "X0", Ne, cst Z.one)
 
 let dnf_cases =
   [ ("atom", Atom a, [[a]]);
