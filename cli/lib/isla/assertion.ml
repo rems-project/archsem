@@ -49,7 +49,7 @@ type op =
   | Ne
 
 type atom =
-  | CmpCst of loc * op * Z.t
+  | CmpTerm of loc * op * Term.t
   | CmpLoc of loc * op * loc
 
 type expr =
@@ -60,12 +60,10 @@ type expr =
   | True
   | False
 
-module Testrepr = Litmus.Testrepr
-
 let negate_op = function Eq -> Ne | Ne -> Eq
 
 let negate_atom = function
-  | CmpCst (loc, op, value) -> CmpCst (loc, negate_op op, value)
+  | CmpTerm (lhs, op, rhs) -> CmpTerm (lhs, negate_op op, rhs)
   | CmpLoc (lhs, op, rhs) -> CmpLoc (lhs, negate_op op, rhs)
 
 let rec negate = function

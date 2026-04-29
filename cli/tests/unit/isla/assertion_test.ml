@@ -42,42 +42,53 @@
 
 open OUnit2
 open Isla.Assertion
+open Isla.Term
 
 let n = Z.of_int
+
+let reg tid r = Reg (tid, r)
+
+let mem s = Mem s
+
+let sym s = Sym s
+
+let cst v = Const v
 
 let parse = Isla.Ir.parse_assertion_expr
 
 let parse_cases =
-  [ ("int constant", "0:X0 = 1", Atom (CmpCst (Reg (0, "X0"), Eq, Z.one)));
-    ("hex constant", "0:X0 = 0x2a", Atom (CmpCst (Reg (0, "X0"), Eq, n 42)));
-    ("memory location", "*x = 2", Atom (CmpCst (Mem "x", Eq, n 2)));
-    ( "symbol on rhs (CmpLoc)",
-      "0:X0 = x",
-      Atom (CmpLoc (Reg (0, "X0"), Eq, Mem "x"))
-    );
-    ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (Reg (1, "X0"), Eq, Z.one))));
+  [ ("int constant", "0:X0 = 1", Atom (CmpTerm (reg 0 "X0", Eq, cst Z.one)));
+    ("hex constant", "0:X0 = 0x2a", Atom (CmpTerm (reg 0 "X0", Eq, cst (n 42))));
+    ("memory location", "*x = 2", Atom (CmpTerm (mem "x", Eq, cst (n 2))));
+    ("symbol on rhs", "0:X0 = x", Atom (CmpTerm (reg 0 "X0", Eq, sym "x")));
+    ("register on rhs", "0:X0 = 2:X2", Atom (CmpLoc (reg 0 "X0", Eq, reg 2 "X2")));
+    ("memory on rhs", "0:X0 = *x", Atom (CmpLoc (reg 0 "X0", Eq, mem "x")));
+    ("negation", "~(1:X0 = 1)", Not (Atom (CmpTerm (reg 1 "X0", Eq, cst Z.one))));
     ( "conjunction",
       "1:X0 = 1 & 2:X0 = 0",
       And
-        ( Atom (CmpCst (Reg (1, "X0"), Eq, Z.one)),
-          Atom (CmpCst (Reg (2, "X0"), Eq, Z.zero))
+        ( Atom (CmpTerm (reg 1 "X0", Eq, cst Z.one)),
+          Atom (CmpTerm (reg 2 "X0", Eq, cst Z.zero))
         )
     );
     ("false", "false", False)
   ]
 
+let parse_error_cases =
+  [("register dereference", "*0:X0 = 4"); ("symbol lhs", "x = 1")]
+
 (* Atoms used to build expected DNF results. *)
-let a = CmpCst (Reg (0, "X0"), Eq, Z.zero)
+let a = CmpTerm (reg 0 "X0", Eq, cst Z.zero)
 
-let b = CmpCst (Reg (0, "X0"), Eq, Z.one)
+let b = CmpTerm (reg 0 "X0", Eq, cst Z.one)
 
-let c = CmpCst (Reg (1, "X0"), Eq, Z.zero)
+let c = CmpTerm (reg 1 "X0", Eq, cst Z.zero)
 
-let d = CmpCst (Reg (1, "X0"), Eq, Z.one)
+let d = CmpTerm (reg 1 "X0", Eq, cst Z.one)
 
-let na = CmpCst (Reg (0, "X0"), Ne, Z.zero)
+let na = CmpTerm (reg 0 "X0", Ne, cst Z.zero)
 
-let nb = CmpCst (Reg (0, "X0"), Ne, Z.one)
+let nb = CmpTerm (reg 0 "X0", Ne, cst Z.one)
 
 let dnf_cases =
   [ ("atom", Atom a, [[a]]);
@@ -101,10 +112,23 @@ let cases ~name ~run xs =
           )
          xs
 
+let error_cases ~name ~run xs =
+  name
+  >::: List.map
+         (fun (label, input) ->
+            label
+            >:: fun _ ->
+            match run input with
+            | exception Litmus.Toml.Path_error _ -> ()
+            | _ -> assert_failure ("expected parse error for: " ^ input)
+          )
+         xs
+
 let () =
   run_test_tt_main
     ("Isla.Assertion"
     >::: [ cases ~name:"parse" ~run:parse parse_cases;
+           error_cases ~name:"parse-errors" ~run:parse parse_error_cases;
            cases ~name:"to_dnf" ~run:to_dnf dnf_cases
          ]
     )

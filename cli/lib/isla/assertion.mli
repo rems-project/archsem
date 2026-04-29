@@ -41,14 +41,13 @@
 type loc =
   | Reg of int * string
   | Mem of string
-  (** A location to get data from. [Mem] mean the data at that location in memory *)
 
 type op =
   | Eq
   | Ne
 
 type atom =
-  | CmpCst of loc * op * Z.t
+  | CmpTerm of loc * op * Term.t
   | CmpLoc of loc * op * loc
 
 type expr =

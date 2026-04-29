@@ -38,44 +38,14 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Normalize architecture-specific register aliases in the IR. *)
+(** Isla value terms: AST for constant expressions. *)
 
-module Toml = Litmus.Toml
-open Assertion
+type t =
+  | Const of Z.t
+  | Sym of string
 
-let register_renames () =
-  Toml.find_or ~default:[] (Litmus.Config.get ())
-    (Toml.get_table_values Toml.get_string)
-    ["isla"; "register_renames"]
+let zero = Const Z.zero
 
-let normalize_reg reg =
-  match List.assoc_opt reg (register_renames ()) with
-  | Some renamed -> renamed
-  | None -> reg
-
-let normalize_loc = function
-  | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
-  | loc -> loc
-
-let normalize_atom = function
-  | CmpTerm (lhs, op, rhs) -> CmpTerm (normalize_loc lhs, op, rhs)
-  | CmpLoc (lhs, op, rhs) -> CmpLoc (normalize_loc lhs, op, normalize_loc rhs)
-
-let rec normalize_expr = function
-  | Atom atom -> Atom (normalize_atom atom)
-  | And (lhs, rhs) -> And (normalize_expr lhs, normalize_expr rhs)
-  | Or (lhs, rhs) -> Or (normalize_expr lhs, normalize_expr rhs)
-  | Not expr -> Not (normalize_expr expr)
-  | True -> True
-  | False -> False
-
-let normalize_thread (thread : Ir.thread) =
-  { thread with
-    init = List.map (fun (reg, value) -> (normalize_reg reg, value)) thread.init
-  }
-
-let apply (ir : Ir.t) : Ir.t =
-  { ir with
-    threads = List.map normalize_thread ir.threads;
-    assertion = normalize_expr ir.assertion
-  }
+let eval ~resolve_sym = function
+  | Const z -> z
+  | Sym sym -> Z.of_int (resolve_sym sym)

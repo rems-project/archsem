@@ -45,14 +45,10 @@ module Arch_id = Litmus.Arch_id
 
 module Toml = Litmus.Toml
 
-type value =
-  | Int of Z.t
-  | Sym of string
-
 type thread =
   { tid : int;
     code : string;
-    init : (string * value) list
+    init : (string * Term.t) list
   }
 
 type section =
@@ -71,17 +67,17 @@ type t =
     threads : thread list;
     sections : section list;
     symbolic : string list;
-    locations : (string * value) list;
+    locations : (string * Term.t) list;
     expect : expect;
     assertion : Assertion.expr
   }
 
 (** {1 Isla test parsing } *)
 
-let parse_value : Toml.t -> value = function
-  | TomlInteger i -> Int i
+let parse_term : Toml.t -> Term.t = function
+  | TomlInteger i -> Term.Const i
   | TomlString s -> (
-    try Int (Z.of_string s) with Invalid_argument _ -> Sym s
+    try Term.Const (Z.of_string s) with Invalid_argument _ -> Term.Sym s
   )
   | value ->
       Toml.error "Isla value is invalid, should be int or string, but is: %s"
@@ -97,7 +93,7 @@ let parse_thread (tid, table) =
   in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   let init =
-    Toml.find_or ~default:[] table (Toml.get_table_values parse_value) ["init"]
+    Toml.find_or ~default:[] table (Toml.get_table_values parse_term) ["init"]
   in
   {tid; code; init}
 
@@ -151,7 +147,7 @@ let of_toml toml =
       Toml.find_or ~default:[] toml (Toml.get_array Toml.get_string) ["symbolic"];
     locations =
       Toml.find_or ~default:[] toml
-        (Toml.get_table_values parse_value)
+        (Toml.get_table_values parse_term)
         ["locations"];
     expect = Toml.find_or ~default:Sat toml parse_expect ["final"; "expect"];
     assertion =
