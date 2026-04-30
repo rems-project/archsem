@@ -157,9 +157,8 @@ Section Model.
       (* Ensure we are not fetching modified instructions *)
       initial_reads : IF ⊆ IR;
 
-      (* An instruction fetch should not occur after any memory event in the coherence order
-        / should not change the state of memory?, TODO: clarify *)
-      initial_reads_not_delayed : IF ## grel_rng (coherence cd);
+      (* Ensure that only writes are in the coherence order *)
+      only_writes_in_coherence : grel_dom (coherence cd) ∪ grel_rng (coherence cd) ⊆ W;
 
       (* Memory events must be explicit or instruction fetch *)
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
