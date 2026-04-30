@@ -105,7 +105,7 @@ Section Model.
   (** Ensure that all register accesses within a thread occur in program order *)
   Record reg_internal := {
       rrf_internal : rrf ⊆ full_instruction_order;
-      rfr_internal : rfr ⊆ not_after cd
+      rfr_internal : rfr ⊆ full_instruction_order
     }.
   #[export] Instance reg_internal_dec : Decision reg_internal :=
     ltac:(decide_record).
