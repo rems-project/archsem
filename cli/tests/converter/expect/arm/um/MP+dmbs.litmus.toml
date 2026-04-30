@@ -2,11 +2,11 @@ arch = "Arm"
 name = "MP+dmbs"
 
 [[registers]]
-  _PC = 9472
+  _PC = 12288
   "R0" = 1
-  "R1" = 1280
+  "R1" = 4096
   "R2" = 1
-  "R3" = 5376
+  "R3" = 8192
   "R4" = 0
   "R5" = 0
   "R6" = 0
@@ -38,9 +38,9 @@ name = "MP+dmbs"
   PSTATE = {EL = 0, SP = 0}
 
 [[registers]]
-  _PC = 13568
-  "R1" = 5376
-  "R3" = 1280
+  _PC = 12300
+  "R1" = 8192
+  "R3" = 4096
   "R0" = 0
   "R2" = 0
   "R4" = 0
@@ -75,33 +75,33 @@ name = "MP+dmbs"
 
 [[memory]]
   kind = "code"
-  addr = 9472
+  addr = 12288
   step = 4
   data = [4177526816, 3573759935, 4177526882]
 
 [[memory]]
   kind = "code"
-  addr = 13568
+  addr = 12300
   step = 4
   data = [4181721120, 3573759935, 4181721186]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 5376
+  addr = 8192
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 9484
+  _PC = 12300
 
 [[termCond]]
-  _PC = 13580
+  _PC = 12312
 
 [[outcome]]
   unobservable = {"1" = {"R0" = 1, "R2" = 0}}
