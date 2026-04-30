@@ -1,7 +1,7 @@
 (coq.theory
  (name ArchSemX86)
  (package coq-archsem-x86)
- (modules X86Inst OperationalX86TSO)
+ (modules X86Inst OperationalX86TSO AxiomaticX86TSO)
  (theories
   Stdlib
   stdpp
