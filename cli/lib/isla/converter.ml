@@ -137,7 +137,17 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
        )
       ir.symbolic
   in
-  {sections = code_sections; symbols = data_symbols}
+  let fixed_sections =
+    List.map
+      (fun (sec : Ir.section) ->
+         { Assembler.name = sec.sec_name;
+           code = sec.code;
+           fixed_addr = Some sec.address
+         }
+       )
+      ir.sections
+  in
+  {sections = code_sections @ fixed_sections; symbols = data_symbols}
 
 (* {1 Memory, registers, and termination} *)
 

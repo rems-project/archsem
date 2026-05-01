@@ -1,0 +1,20 @@
+arch = "AArch64"
+name = "EOR+section"
+
+[thread.0]
+init = { X1 = 0x11, X2 = 0x101 }
+code = """
+    B helper
+end0:
+"""
+
+[section.helper]
+address = "0x10000"
+code = """
+    EOR X0, X1, X2
+    B end0
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 0x110"
