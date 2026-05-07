@@ -25,6 +25,7 @@ depends: [
   "base-threads" {= "base"}
   "base-unix" {= "base"}
   "camlp-streams" {= "5.0.1" & with-doc}
+  "camomile" {= "2.0.0" & with-dev-setup}
   "cmdliner" {= "1.3.0" & with-doc}
   "conf-gmp" {= "5"}
   "conf-linux-libc-dev" {= "0"}
@@ -43,8 +44,12 @@ depends: [
   "csexp" {= "1.5.2"}
   "dune" {= "3.20.2"}
   "dune-configurator" {= "3.20.2"}
+  "dune-private-libs" {= "3.20.2" & with-dev-setup}
+  "dune-site" {= "3.20.2" & with-dev-setup}
+  "dyn" {= "3.20.2" & with-dev-setup}
   "fmt" {= "0.11.0" & with-doc}
   "fpath" {= "0.7.3" & with-doc}
+  "headache" {= "1.08" & with-dev-setup}
   "ocaml" {= "4.14.2"}
   "ocaml-compiler-libs" {= "v0.12.4"}
   "ocaml-config" {= "2"}
@@ -54,6 +59,8 @@ depends: [
   "ocamlfind" {= "1.9.8"}
   "odoc" {= "3.1.0" & with-doc}
   "odoc-parser" {= "3.1.0" & with-doc}
+  "ordering" {= "3.20.2" & with-dev-setup}
+  "pp" {= "2.0.0" & with-dev-setup}
   "ppx_derivers" {= "1.2.1"}
   "ppx_optcomp" {= "v0.16.0"}
   "ppxlib" {= "0.35.0"}
@@ -67,6 +74,7 @@ depends: [
   "sexplib0" {= "v0.16.0"}
   "stdio" {= "v0.16.0"}
   "stdlib-shims" {= "0.3.0"}
+  "stdune" {= "3.20.2" & with-dev-setup}
   "topkg" {= "1.1.1" & with-doc}
   "tyxml" {= "4.6.0" & with-doc}
   "uutf" {= "1.0.4" & with-doc}
