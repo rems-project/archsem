@@ -116,13 +116,12 @@ Section Model.
        Reverse buffer so that we see most recent writes first *)
     match rev_buffer with
     | x :: xs =>
-        let addr_range : gset address := list_to_set (addr_range (addr x) (size x)) in
-        (* If we have a byte match, then perform store forwarding *)
-        if bool_decide (goal_addr ∈ addr_range) then
-          let index := Z.to_nat ((bv_unsigned goal_addr - bv_unsigned (addr x))) in
-          let wanted_byte := nth_error (bv_to_bytes 8 (val x)) index in
-          mret wanted_byte
-        else read_byte_from_write_buffer_inner xs goal_addr
+      (* if the buffer entry contains the byte we want, then extract the byte *)
+      let index := Z.to_N (bv_unsigned (goal_addr - (addr x))%bv) in
+      if bool_decide (index < size x)%N then
+        mret (Some (bv_extract (8 * index) 8 (val x)))
+      (* otherwise try the next buffer entry *)
+      else read_byte_from_write_buffer_inner xs goal_addr
     | _ => mret None
     end.
 
