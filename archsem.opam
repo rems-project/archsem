@@ -25,6 +25,7 @@ depends: [
   "menhir" {>= "20231231"}
   "ounit2" {with-test & >= "2.2"}
   "ocamlformat" {with-dev-setup & >= "0.28"}
+  "headache" {with-dev-setup}
   "odoc" {with-doc}
 ]
 build: [

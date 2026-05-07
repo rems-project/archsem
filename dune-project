@@ -29,6 +29,7 @@
   (coq-hammer-tactics (>= 1.3.2))
   (coq-stdpp (= 1.12.0))
   (coq-stdpp-bitvector (= 1.12.0))
+  (headache :with-dev-setup)
  )
 )
 
@@ -79,6 +80,7 @@
   (menhir (>= 20231231))
   (ounit2 (and :with-test (>= 2.2)))
   (ocamlformat (and :with-dev-setup (>= 0.28)))
+  (headache :with-dev-setup)
  )
 )
 

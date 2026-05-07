@@ -98,3 +98,13 @@ jobs:
     - name: Check formatting
       run: |
         opam exec -- dune build @fmt
+
+    - name: Check build is clean
+      run: |
+        git diff --quiet
+
+    - name: Check Licence headers are up to date
+      run: |
+        eval $(opam env)
+        make headers
+        git diff --quiet
