@@ -235,7 +235,6 @@ module Make (Arch : Archsem.Arch) = struct
           | _ -> (Terminal.cross, Terminal.red)
         in
         Printf.printf "\n%s%s%s %s\n" color icon Terminal.reset name;
-        Printf.printf "Test %s Allowed\n" test.name;
         List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
       with Otoml.Parse_error (pos, msg) ->

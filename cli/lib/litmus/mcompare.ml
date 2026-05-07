@@ -128,6 +128,8 @@ module Make (Arch : Archsem.Arch) = struct
     let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
     let unique_minimised_fs = List.sort_uniq compare minimised_fs in
 
+    let title = Printf.sprintf "Test %s Allowed\n" test_name in
+
     (* Print number of distinct observed states *)
     let states_count_part =
       Printf.sprintf "States %d\n" (List.length unique_minimised_fs)
@@ -155,5 +157,5 @@ module Make (Arch : Archsem.Arch) = struct
       else "ERROR: no conditions to observe"
     in
 
-    states_count_part ^ state_list_part ^ observation_part
+    title ^ states_count_part ^ state_list_part ^ observation_part
 end
