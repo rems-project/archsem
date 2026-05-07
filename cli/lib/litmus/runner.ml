@@ -108,9 +108,10 @@ let find_index p lst =
 
 module Make (Arch : Archsem.Arch) = struct
   open Arch
+
+  open Runner_utils.Make (Arch)
+
   module AS = ToArchState.Make (Arch)
-  module RunnerUtils = Runner_utils.Make (Arch)
-  module MinimiseState = MinState.Make (Arch)
   module McompareInst = Mcompare.Make (Arch)
 
   let run_executions ~print_final_states model init fuel term test =
@@ -164,10 +165,7 @@ module Make (Arch : Archsem.Arch) = struct
         (fun (cond, mem_cond) ->
            let matched =
              List.exists
-               (fun fs ->
-                  RunnerUtils.check_outcome fs cond
-                  && RunnerUtils.check_mem_outcome fs mem_cond
-                )
+               (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
                final_states
            in
            if (not matched) && final_states <> [] then
@@ -188,8 +186,7 @@ module Make (Arch : Archsem.Arch) = struct
               match
                 List.find_opt
                   (fun (cond, mem_cond) ->
-                     RunnerUtils.check_outcome fs cond
-                     && RunnerUtils.check_mem_outcome fs mem_cond
+                     check_outcome fs cond && check_mem_outcome fs mem_cond
                    )
                   unobservable
               with
