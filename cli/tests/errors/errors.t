@@ -2,7 +2,7 @@ Non-existing file
   $ archsem seq nonexistingfile.archsem.toml
   archsem: TESTS… arguments: no 'nonexistingfile.archsem.toml' file or
            directory
-  Usage: archsem seq [--config=FILE] [--format=FMT] [OPTION]… TESTS…
+  Usage: archsem seq [--config=FILE] [--format=FMT] [--print-final-states] [OPTION]… TESTS…
   Try 'archsem seq --help' or 'archsem --help' for more information.
   [124]
 
