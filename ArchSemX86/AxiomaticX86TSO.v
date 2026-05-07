@@ -164,7 +164,7 @@ Section Model.
       memory_events_permitted : (mem_events cd) ⊆ M ∪ IF;
 
       (* There should be no mixed-size accesses if the "not mixed size" option is chosen *)
-      only_ms_if_allowed' : if ms is NMS then is_nms cd else True;
+      only_ms_if_allowed : if ms is NMS then is_nms cd else True;
     }.
   #[export] Instance not_UB_dec : Decision not_UB := ltac:(decide_record).
 
