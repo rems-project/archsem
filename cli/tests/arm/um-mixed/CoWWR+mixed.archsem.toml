@@ -1,0 +1,63 @@
+arch="Arm"
+name="CoWWR+mixed"
+
+# Cross-thread mixed-size tearing.
+# T0: STR X2, [X1]                  (8B = 0x1111111111111111)
+# T1: STR W3, [X1]; LDR X0, [X1]    (4B = 0x22222222, then 8B read)
+# t_X and t_W are not ordered (different threads), so T1 may see W
+# without yet seeing X for bytes [4..7].
+
+# Thread 0
+[[registers]]
+_PC = 0x500
+R1 = 0x1100
+R2 = 0x1111111111111111
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 1
+[[registers]]
+_PC = 0x600
+R0 = 0x0
+R1 = 0x1100
+R3 = 0x22222222
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
+# Thread 0 instructions
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xf9000022] # STR X2, [X1]
+
+# Thread 1 instructions
+[[memory]]
+addr = 0x600
+kind = "code"
+step = 4
+data = [
+  0xb9000023, # STR W3, [X1]
+  0xf9400020] # LDR X0, [X1]
+
+# Shared backing memory (8 bytes)
+[[memory]]
+addr = 0x1100
+step = 8
+data = 0
+
+[[termCond]]
+_PC = 0x504
+
+[[termCond]]
+_PC = 0x608
+
+[[outcome]]
+observable.1.R0 = 0x1111111111111111
+
+[[outcome]]
+observable.1.R0 = 0x1111111122222222
+
+[[outcome]]
+observable.1.R0 = 0x0000000022222222
