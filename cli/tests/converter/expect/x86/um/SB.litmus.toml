@@ -2,9 +2,9 @@ arch = "X86"
 name = "SB"
 
 [[registers]]
-  rip = 9472
-  rcx = 1280
-  rdx = 5376
+  rip = 12288
+  rcx = 4096
+  rdx = 8192
   rax = 0
   rbx = 0
   rsp = 0
@@ -22,9 +22,9 @@ name = "SB"
   rflags = 0
 
 [[registers]]
-  rip = 13568
-  rcx = 1280
-  rdx = 5376
+  rip = 12296
+  rcx = 4096
+  rdx = 8192
   rax = 0
   rbx = 0
   rsp = 0
@@ -43,33 +43,33 @@ name = "SB"
 
 [[memory]]
   kind = "code"
-  addr = 9472
+  addr = 12288
   step = 1
   data = [199, 1, 1, 0, 0, 0, 139, 2]
 
 [[memory]]
   kind = "code"
-  addr = 13568
+  addr = 12296
   step = 1
   data = [199, 2, 1, 0, 0, 0, 139, 1]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 5376
+  addr = 8192
   step = 8
   data = 0
 
 [[termCond]]
-  rip = 9480
+  rip = 12296
 
 [[termCond]]
-  rip = 13576
+  rip = 12304
 
 [[outcome]]
   observable = {"0" = {rax = 0}, "1" = {rax = 0}}

@@ -38,6 +38,55 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Assemble code into a machine code byte sequence
-    use configuration to figure out the toolchain *)
-val assemble : string -> Bytes.t
+(** Assembler pipeline: .s generation → clang (assemble+link) → linksem ELF parsing *)
+
+(** {1 Input types} *)
+
+(** A code section to assemble *)
+type section =
+  { name : string;
+    code : string;
+    fixed_addr : int option
+  }
+
+(** Data symbol to allocate in .data *)
+type data_symbol =
+  { name : string;
+    init_bytes : Bytes.t
+  }
+
+(** Input to the assembler pipeline *)
+type assembly_input =
+  { sections : section list;
+    symbols : data_symbol list
+  }
+
+(** {1 Output types} *)
+
+(** A resolved section with its address and machine code *)
+type linked_section =
+  { name : string;
+    addr : int;
+    data : Bytes.t
+  }
+
+(** Output of the assembler pipeline *)
+type assembly_result =
+  { sections : linked_section list;
+    symbols : (string * int) list
+  }
+
+(** {1 Pipeline} *)
+
+(** Assemble, link, and parse ELF. Uses config for toolchain commands. *)
+val assemble : assembly_input -> assembly_result
+
+(** Look up a symbol address by name. Raises [Failure] if not found. *)
+val resolve_symbol : assembly_result -> string -> int
+
+(** {1 Dump configuration}
+
+    When set to [Some dir], the assembler copies its [.s], [.ld] and
+    [.elf] artifacts into [dir] for debugging.  Set by the
+    [--asm-dump] CLI flag. *)
+val set_dump_dir : string option -> unit

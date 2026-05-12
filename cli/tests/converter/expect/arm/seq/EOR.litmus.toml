@@ -2,7 +2,7 @@ arch = "Arm"
 name = "EOR"
 
 [[registers]]
-  _PC = 1280
+  _PC = 4096
   "R1" = 17
   "R2" = 257
   "R0" = 0
@@ -39,12 +39,12 @@ name = "EOR"
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 4096
   step = 4
   data = 3389128736
 
 [[termCond]]
-  _PC = 1284
+  _PC = 4100
 
 [[outcome]]
   observable = {"0" = {"R0" = 272}}

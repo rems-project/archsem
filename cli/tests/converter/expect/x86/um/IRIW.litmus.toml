@@ -2,8 +2,8 @@ arch = "X86"
 name = "IRIW"
 
 [[registers]]
-  rip = 9472
-  rcx = 1280
+  rip = 12288
+  rcx = 4096
   rax = 0
   rdx = 0
   rbx = 0
@@ -22,9 +22,9 @@ name = "IRIW"
   rflags = 0
 
 [[registers]]
-  rip = 13568
-  rcx = 1280
-  rdx = 5376
+  rip = 12294
+  rcx = 4096
+  rdx = 8192
   rax = 0
   rbx = 0
   rsp = 0
@@ -42,8 +42,8 @@ name = "IRIW"
   rflags = 0
 
 [[registers]]
-  rip = 17664
-  rdx = 5376
+  rip = 12298
+  rdx = 8192
   rax = 0
   rcx = 0
   rbx = 0
@@ -62,9 +62,9 @@ name = "IRIW"
   rflags = 0
 
 [[registers]]
-  rip = 21760
-  rcx = 1280
-  rdx = 5376
+  rip = 12304
+  rcx = 4096
+  rdx = 8192
   rax = 0
   rbx = 0
   rsp = 0
@@ -83,51 +83,51 @@ name = "IRIW"
 
 [[memory]]
   kind = "code"
-  addr = 9472
+  addr = 12288
   step = 1
   data = [199, 1, 1, 0, 0, 0]
 
 [[memory]]
   kind = "code"
-  addr = 13568
+  addr = 12294
   step = 1
   data = [139, 1, 139, 26]
 
 [[memory]]
   kind = "code"
-  addr = 17664
+  addr = 12298
   step = 1
   data = [199, 2, 1, 0, 0, 0]
 
 [[memory]]
   kind = "code"
-  addr = 21760
+  addr = 12304
   step = 1
   data = [139, 2, 139, 25]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 5376
+  addr = 8192
   step = 8
   data = 0
 
 [[termCond]]
-  rip = 9478
+  rip = 12294
 
 [[termCond]]
-  rip = 13572
+  rip = 12298
 
 [[termCond]]
-  rip = 17670
+  rip = 12304
 
 [[termCond]]
-  rip = 21764
+  rip = 12308
 
 [[outcome]]
   unobservable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 1, rbx = 0}}
