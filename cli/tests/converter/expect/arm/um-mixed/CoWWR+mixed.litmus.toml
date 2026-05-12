@@ -2,8 +2,8 @@ arch = "Arm"
 name = "CoWWR+mixed"
 
 [[registers]]
-  _PC = 5376
-  "R1" = 1280
+  _PC = 8192
+  "R1" = 4096
   "R2" = 1229782938247303441
   "R0" = 0
   "R3" = 0
@@ -38,8 +38,8 @@ name = "CoWWR+mixed"
   PSTATE = {EL = 0, SP = 0}
 
 [[registers]]
-  _PC = 9472
-  "R1" = 1280
+  _PC = 8196
+  "R1" = 4096
   "R3" = 572662306
   "R0" = 0
   "R2" = 0
@@ -75,27 +75,27 @@ name = "CoWWR+mixed"
 
 [[memory]]
   kind = "code"
-  addr = 5376
+  addr = 8192
   step = 4
   data = 4177526818
 
 [[memory]]
   kind = "code"
-  addr = 9472
+  addr = 8196
   step = 4
   data = [3103784995, 4181721120]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 5380
+  _PC = 8196
 
 [[termCond]]
-  _PC = 9480
+  _PC = 8204
 
 [[outcome]]
   observable = {"1" = {"R0" = 572662306}}

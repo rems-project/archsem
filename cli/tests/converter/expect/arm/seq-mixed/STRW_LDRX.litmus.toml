@@ -2,8 +2,8 @@ arch = "Arm"
 name = "STRW_LDRX"
 
 [[registers]]
-  _PC = 5376
-  "R1" = 1280
+  _PC = 8192
+  "R1" = 4096
   "R0" = 0
   "R2" = 0
   "R3" = 0
@@ -39,18 +39,18 @@ name = "STRW_LDRX"
 
 [[memory]]
   kind = "code"
-  addr = 5376
+  addr = 8192
   step = 4
   data = [1384121666, 3103784994, 4181721120]
 
 [[memory]]
   sym = "x"
-  addr = 1280
+  addr = 4096
   step = 8
   data = 0
 
 [[termCond]]
-  _PC = 5388
+  _PC = 8204
 
 [[outcome]]
   observable = {"0" = {"R0" = 42}}
