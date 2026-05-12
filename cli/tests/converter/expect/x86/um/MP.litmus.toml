@@ -2,9 +2,9 @@ arch = "X86"
 name = "MP"
 
 [[registers]]
-  rip = 12288
-  rcx = 4096
-  rdx = 8192
+  rip = 0x3000
+  rcx = 0x1000
+  rdx = 0x2000
   rax = 0
   rbx = 0
   rsp = 0
@@ -22,9 +22,9 @@ name = "MP"
   rflags = 0
 
 [[registers]]
-  rip = 12300
-  rcx = 4096
-  rdx = 8192
+  rip = 0x300c
+  rcx = 0x1000
+  rdx = 0x2000
   rax = 0
   rbx = 0
   rsp = 0
@@ -43,33 +43,33 @@ name = "MP"
 
 [[memory]]
   kind = "code"
-  addr = 12288
+  addr = 0x3000
   step = 1
-  data = [199, 1, 1, 0, 0, 0, 199, 2, 1, 0, 0, 0]
+  data = [0xc7, 1, 1, 0, 0, 0, 0xc7, 2, 1, 0, 0, 0]
 
 [[memory]]
   kind = "code"
-  addr = 12300
+  addr = 0x300c
   step = 1
-  data = [139, 2, 139, 25]
+  data = [0x8b, 2, 0x8b, 0x19]
 
 [[memory]]
   sym = "x"
-  addr = 4096
+  addr = 0x1000
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 8192
+  addr = 0x2000
   step = 8
   data = 0
 
 [[termCond]]
-  rip = 12300
+  rip = 0x300c
 
 [[termCond]]
-  rip = 12304
+  rip = 0x3010
 
 [[outcome]]
   unobservable = {"1" = {rax = 1, rbx = 0}}

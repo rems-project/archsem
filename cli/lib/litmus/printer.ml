@@ -40,81 +40,76 @@
 
 (** Litmus test TOML printer.
 
-    Converts Testrepr.t to TOML via Otoml. *)
+    Converts Testrepr.t to TOML via Toml. *)
 
 (** {1 Value Conversion} *)
 
-let rec gen_to_toml (v : Archsem.RegValGen.t) : Otoml.t =
+let rec gen_to_toml (v : Archsem.RegValGen.t) : Toml.t =
   match v with
-  | Number z -> TomlInteger (Z.to_int z)
+  | Number z -> TomlInteger z
   | String s -> TomlString s
   | Array vs -> TomlArray (List.map gen_to_toml vs)
   | Struct fields ->
       TomlInlineTable (List.map (fun (k, field) -> (k, gen_to_toml field)) fields)
 
-let req_to_toml (req : Testrepr.reg_requirement) : Otoml.t =
+let req_to_toml (req : Testrepr.reg_requirement) : Toml.t =
   match req with
   | ReqEq v -> gen_to_toml v
   | ReqNe v -> TomlInlineTable [("op", TomlString "ne"); ("val", gen_to_toml v)]
 
 (** {1 Section Builders} *)
 
-let registers_to_toml regs : Otoml.t =
+let registers_to_toml regs : Toml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
 
-let memory_block_to_toml (block : Testrepr.memory_block) : Otoml.t =
+let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
   let step = block.step in
-  if step <= 0 then failwith "memory block step must be positive";
+  assert (step > 0);
   let len = Bytes.length block.data in
   let n = len / step in
   assert (len = n * step);
   let values =
-    List.init n (fun i ->
-      Bytes.sub_string block.data (i * step) step |> Z.of_bits |> Z.to_int
-    )
+    List.init n (fun i -> Bytes.sub_string block.data (i * step) step |> Z.of_bits)
   in
-  let data_toml : Otoml.t =
+  let data_toml : Toml.t =
     match values with
-    | [single] -> Otoml.TomlInteger single
-    | multiple ->
-        Otoml.TomlArray (List.map (fun v -> Otoml.TomlInteger v) multiple)
+    | [single] -> Toml.TomlInteger single
+    | multiple -> Toml.TomlArray (List.map (fun v -> Toml.TomlInteger v) multiple)
   in
   TomlTable
     (( match block.sym with
-       | Some sym -> [("sym", Otoml.TomlString sym)]
+       | Some sym -> [("sym", Toml.TomlString sym)]
        | None -> []
        )
     @ ( match block.kind with
       | Testrepr.Data -> []
-      | kind -> [("kind", Otoml.TomlString (Testrepr.string_of_memory_kind kind))]
+      | kind -> [("kind", Toml.TomlString (Testrepr.string_of_memory_kind kind))]
       )
-    @ [ ("addr", Otoml.TomlInteger block.addr);
-        ("step", Otoml.TomlInteger step);
+    @ [ ("addr", Toml.TomlInteger (Z.of_int block.addr));
+        ("step", Toml.TomlInteger (Z.of_int step));
         ("data", data_toml)
       ]
     )
 
-let termcond_to_toml regs : Otoml.t =
+let termcond_to_toml regs : Toml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
 
 let mem_cond_to_toml default_size (mc : Testrepr.mem_cond) =
   match mc.req with
-  | Testrepr.MemEq v when mc.size = default_size ->
-      (mc.sym, Otoml.TomlInteger (Z.to_int v))
+  | Testrepr.MemEq v when mc.size = default_size -> (mc.sym, Toml.TomlInteger v)
   | _ ->
       let pairs =
         ( match mc.req with
-          | Testrepr.MemEq v -> [("val", Otoml.TomlInteger (Z.to_int v))]
+          | Testrepr.MemEq v -> [("val", Toml.TomlInteger v)]
           | Testrepr.MemNe v ->
-              [ ("op", Otoml.TomlString "ne");
-                ("val", Otoml.TomlInteger (Z.to_int v))
-              ]
+              [("op", Toml.TomlString "ne"); ("val", Toml.TomlInteger v)]
           )
         @
-        if mc.size <> default_size then [("size", Otoml.TomlInteger mc.size)]
+        if mc.size <> default_size then
+          [("size", Toml.TomlInteger (Z.of_int mc.size))]
         else []
       in
-      (mc.sym, Otoml.TomlInlineTable pairs)
+      (mc.sym, Toml.TomlInlineTable pairs)
 
 let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
   let (label, thread_conds, mem_conds) =
@@ -126,7 +121,7 @@ let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
     List.map
       (fun (tid, reqs) ->
          ( string_of_int tid,
-           Otoml.TomlInlineTable
+           Toml.TomlInlineTable
              (List.map (fun (reg, req) -> (reg, req_to_toml req)) reqs)
          )
        )
@@ -144,7 +139,7 @@ let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
     | [] -> []
     | _ ->
         [ ( "mem",
-            Otoml.TomlInlineTable
+            Toml.TomlInlineTable
               (List.map
                  (fun (mc : Testrepr.mem_cond) ->
                     let default_size =
@@ -159,11 +154,11 @@ let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
           )
         ]
   in
-  Otoml.TomlTable [(label, Otoml.TomlTable (thread_entries @ mem_entries))]
+  Toml.TomlTable [(label, Toml.TomlTable (thread_entries @ mem_entries))]
 
 (** {1 Public API} *)
 
-let to_toml (test : Testrepr.t) : Otoml.t =
+let to_toml (test : Testrepr.t) : Toml.t =
   TomlTable
     [ ("arch", TomlString test.arch);
       ("name", TomlString test.name);
@@ -173,8 +168,7 @@ let to_toml (test : Testrepr.t) : Otoml.t =
       ("outcome", TomlTableArray (List.map (outcome_to_toml test) test.finals))
     ]
 
-let to_string test =
-  Otoml.Printer.to_string ~force_table_arrays:true (to_toml test)
+let to_string test = Toml.Printer.to_string ~force_table_arrays:true (to_toml test)
 
 let to_file path test =
   let oc = open_out path in

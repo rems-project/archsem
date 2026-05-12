@@ -47,7 +47,7 @@ open Test_utils
 let round_trip rel_path =
   let original = parse_file rel_path in
   let printed = Printer.to_string original in
-  let reparsed = Parser.parse_to_testrepr (Otoml.Parser.from_string printed) in
+  let reparsed = Parser.parse_to_testrepr (Toml.Parser.from_string printed) in
   original = reparsed
 
 let round_trip_tests =

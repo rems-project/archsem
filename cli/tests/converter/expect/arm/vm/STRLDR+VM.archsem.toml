@@ -2,11 +2,11 @@ arch = "Arm"
 name = "STRLDR+VM"
 
 [[registers]]
-  _PC = 549755815168
-  "R0" = 549755817984
-  "R1" = 256
-  "R2" = 42
-  "TTBR0_EL1" = 524288
+  _PC = 0x8000000500
+  "R0" = 0x8000001000
+  "R1" = 0x100
+  "R2" = 0x2a
+  "TTBR0_EL1" = 0x80000
   "TCR_EL1" = 0
   "SCTLR_EL1" = 1
   "ID_AA64MMFR1_EL1" = 0
@@ -14,47 +14,47 @@ name = "STRLDR+VM"
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 4
-  data = [4162873378, 4167067680]
+  data = [0xf8206822, 0xf8606820]
 
 [[memory]]
-  addr = 4352
+  addr = 0x1100
   step = 8
   data = 0
 
 [[memory]]
-  addr = 524288
+  addr = 0x80000
   step = 8
   data = 0
 
 [[memory]]
-  addr = 524296
+  addr = 0x80008
   step = 8
-  data = 528387
+  data = 0x81003
 
 [[memory]]
-  addr = 528384
+  addr = 0x81000
   step = 8
-  data = 532483
+  data = 0x82003
 
 [[memory]]
-  addr = 532480
+  addr = 0x82000
   step = 8
-  data = 536579
+  data = 0x83003
 
 [[memory]]
-  addr = 536576
+  addr = 0x83000
   step = 8
   data = 3
 
 [[memory]]
-  addr = 536584
+  addr = 0x83008
   step = 8
-  data = 4163
+  data = 0x1043
 
 [[termCond]]
-  _PC = 549755815176
+  _PC = 0x8000000508
 
 [[outcome]]
-  observable = {"0" = {"R0" = 42}}
+  observable = {"0" = {"R0" = 0x2a}}

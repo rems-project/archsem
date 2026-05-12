@@ -2,9 +2,9 @@ arch = "Arm"
 name = "EOR"
 
 [[registers]]
-  _PC = 4096
-  "R1" = 17
-  "R2" = 257
+  _PC = 0x1000
+  "R1" = 0x11
+  "R2" = 0x101
   "R0" = 0
   "R3" = 0
   "R4" = 0
@@ -39,12 +39,12 @@ name = "EOR"
 
 [[memory]]
   kind = "code"
-  addr = 4096
+  addr = 0x1000
   step = 4
-  data = 3389128736
+  data = 0xca020020
 
 [[termCond]]
-  _PC = 4100
+  _PC = 0x1004
 
 [[outcome]]
-  observable = {"0" = {"R0" = 272}}
+  observable = {"0" = {"R0" = 0x110}}

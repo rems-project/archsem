@@ -50,20 +50,6 @@ module RegValGen = Archsem.RegValGen
 
 (* {1 Config helpers} *)
 
-let regval_of_toml = function
-  | Otoml.TomlInteger i -> RegValGen.Number (Z.of_int i)
-  | Otoml.TomlInlineTable fields | Otoml.TomlTable fields ->
-      RegValGen.Struct
-        (List.map
-           (fun (k, v) ->
-              match v with
-              | Otoml.TomlInteger i -> (k, RegValGen.Number (Z.of_int i))
-              | _ -> failwith ("config: register field " ^ k ^ " must be integer")
-            )
-           fields
-        )
-  | _ -> failwith "config: register default must be integer or inline table"
-
 let pc_reg arch =
   match arch with
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
@@ -71,13 +57,13 @@ let pc_reg arch =
 
 let register_defaults () =
   let config = Config.get () in
-  Otoml.find_or ~default:[] config
-    (Otoml.get_table_values regval_of_toml)
+  Toml.find_or ~default:[] config
+    (Toml.get_table_values Litmus.Parser.toml_to_gen)
     ["registers"; "defaults"]
 
 let instruction_step () =
   let width =
-    Otoml.find (Config.get ()) Otoml.get_integer ["assembler"; "instruction_step"]
+    Toml.find (Config.get ()) Toml.get_integer ["assembler"; "instruction_step"]
   in
   if width <= 0 then
     failwith "config: [assembler] instruction_step must be positive";
@@ -85,7 +71,7 @@ let instruction_step () =
 
 let default_memory_size () =
   let size =
-    Otoml.find (Config.get ()) Otoml.get_integer ["isla"; "default_memory_size"]
+    Toml.find (Config.get ()) Toml.get_integer ["isla"; "default_memory_size"]
   in
   if size <= 0 then failwith "config: [isla] default_memory_size must be positive";
   size

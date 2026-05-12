@@ -2,12 +2,12 @@ arch = "Arm"
 name = "BBMSuccess"
 
 [[registers]]
-  _PC = 549755815168
-  "R0" = 549755817984
+  _PC = 0x8000000500
+  "R0" = 0x8000001000
   "R1" = 0
-  "R2" = 549755879432
+  "R2" = 0x8000010008
   "R3" = 0
-  "TTBR0_EL1" = 524288
+  "TTBR0_EL1" = 0x80000
   "TCR_EL1" = 0
   "SCTLR_EL1" = 1
   "ID_AA64MMFR1_EL1" = 0
@@ -15,52 +15,52 @@ name = "BBMSuccess"
 
 [[memory]]
   kind = "code"
-  addr = 1280
+  addr = 0x500
   step = 4
-  data = [4163004451, 3573758623, 3574104864, 3573758879, 3573759967]
+  data = [0xf8226823, 0xd5033a9f, 0xd5088320, 0xd5033b9f, 0xd5033fdf]
 
 [[memory]]
-  addr = 4096
+  addr = 0x1000
   step = 8
-  data = 42
+  data = 0x2a
 
 [[memory]]
-  addr = 524288
+  addr = 0x80000
   step = 8
   data = 0
 
 [[memory]]
-  addr = 524296
+  addr = 0x80008
   step = 8
-  data = 530435
+  data = 0x81803
 
 [[memory]]
-  addr = 528384
+  addr = 0x81000
   step = 8
-  data = 532483
+  data = 0x82003
 
 [[memory]]
-  addr = 532480
+  addr = 0x82000
   step = 8
-  data = 536579
+  data = 0x83003
 
 [[memory]]
-  addr = 536576
+  addr = 0x83000
   step = 8
-  data = 18014398509483907
+  data = 0x40000000000783
 
 [[memory]]
-  addr = 536584
+  addr = 0x83008
   step = 8
-  data = 27021597764228995
+  data = 0x60000000001783
 
 [[memory]]
-  addr = 536704
+  addr = 0x83080
   step = 8
-  data = 27021597764761347
+  data = 0x60000000083703
 
 [[termCond]]
-  _PC = 549755815188
+  _PC = 0x8000000514
 
 [[outcome]]
   observable = {"0" = {"R3" = 0}}

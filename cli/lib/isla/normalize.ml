@@ -40,11 +40,12 @@
 
 (** Normalize architecture-specific register aliases in the IR. *)
 
+module Toml = Litmus.Toml
 open Assertion
 
 let register_renames () =
-  Otoml.find_or ~default:[] (Litmus.Config.get ())
-    (Otoml.get_table_values Otoml.get_string)
+  Toml.find_or ~default:[] (Litmus.Config.get ())
+    (Toml.get_table_values Toml.get_string)
     ["isla"; "register_renames"]
 
 let normalize_reg reg =

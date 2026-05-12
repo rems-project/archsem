@@ -1,0 +1,23 @@
+arch="Arm"
+name="EOR"
+
+[[registers]]
+_PC = 0x500
+R0 = 0x0
+R1 = 0x11
+R2 = 0x101
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
+[[memory]]
+addr = 0x500
+step = 2
+kind = "code"
+data = 0xca020020 # 4 bytes of data but step is 2 bytes
+
+[[termCond]]
+_PC = 0x504
+
+[[outcome]]
+observable.0._PC = 0x504
+observable.0.R0 = 0x110

@@ -237,7 +237,7 @@ module Make (Arch : Archsem.Arch) = struct
         Printf.printf "\n%s%s%s %s\n" color icon Terminal.reset name;
         List.iter (fun m -> Printf.printf "%s\n" m) msgs;
         result
-      with Otoml.Parse_error (pos, msg) ->
+      with Toml.Parse_error (pos, msg) ->
         Printf.printf "%s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
           Terminal.reset name Terminal.red
           (Option.fold ~none:"?"
