@@ -30,14 +30,16 @@ PSTATE = { "EL" = 0b00, "SP" = 0b00 }
 addr = 0x500
 kind = "code"
 step = 4
-data = [0xf8206822, 0xf8236885]
+data = [0xf8206822, # STR X2, [X0,X1] # data at 0x1100
+        0xf8236885] # STR X5, [X3,X4] # flag at 0x1200
 
 # Thread 2 Instructions
 [[memory]]
 addr = 0x600
 kind = "code"
 step = 4
-data = [0xf8636885, 0xf8606822]
+data = [0xf8636885, # LDR X5,[X3,X4] # flag at 0x1200
+        0xf8606822] # LDR X2,[X0,X1] # data at 0x1100
 
 # Shared Data
 [[memory]]
@@ -56,19 +58,6 @@ _PC = 0x508
 [[termCond]]
 _PC = 0x608
 
-# Check that the parser can read multiple outcome formats
-[[outcome]]
-observable.1.R5 = 0x0
-observable.1.R2 = 0x2a
-
-[[outcome]]
-[outcome.observable.1]
-R5 = 0x0
-R2 = 0x0
-
-[[outcome]]
-observable.1.R5 = { op = "eq", val = 0x1 }
-observable.1.R2 = { op = "eq", val = 0x0 }
-
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
+[final]
+regs.1.R5 = {"op" = "eq", "val" = 1}
+regs.1.R2 = 0

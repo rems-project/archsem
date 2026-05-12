@@ -54,7 +54,6 @@ rip = 0x508
 rip = 0x608
 
 # SB allows both threads to read 0 (store buffer reordering)
-[[outcome]]
-[outcome.observable]
-0 = {rax = 0}
-1 = {rax = 0}
+[final]
+regs.0.rax = 0
+regs.1.rax = 0

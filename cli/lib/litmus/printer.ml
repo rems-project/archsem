@@ -94,30 +94,18 @@ let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
 let termcond_to_toml regs : Toml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
 
-let mem_cond_to_toml default_size (mc : Testrepr.mem_cond) =
-  match mc.req with
-  | Testrepr.MemEq v when mc.size = default_size -> (mc.sym, Toml.TomlInteger v)
-  | _ ->
-      let pairs =
-        ( match mc.req with
-          | Testrepr.MemEq v -> [("val", Toml.TomlInteger v)]
-          | Testrepr.MemNe v ->
-              [("op", Toml.TomlString "ne"); ("val", Toml.TomlInteger v)]
-          )
-        @
-        if mc.size <> default_size then
-          [("size", Toml.TomlInteger (Z.of_int mc.size))]
-        else []
-      in
-      (mc.sym, Toml.TomlInlineTable pairs)
-
-let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
-  let (label, thread_conds, mem_conds) =
-    match fc with
-    | Testrepr.Observable (tc, mc) -> ("observable", tc, mc)
-    | Testrepr.Unobservable (tc, mc) -> ("unobservable", tc, mc)
+let mem_cond_to_toml (mc : Testrepr.mem_cond) =
+  let req =
+    match mc.req with
+    | Testrepr.MemEq v -> Toml.TomlInteger v
+    | Testrepr.MemNe v ->
+        Toml.TomlInlineTable
+          [("op", Toml.TomlString "ne"); ("val", Toml.TomlInteger v)]
   in
-  let thread_entries =
+  (mc.sym, req)
+
+let final_to_toml (test : Testrepr.t) =
+  let regs_table =
     List.map
       (fun (tid, reqs) ->
          ( string_of_int tid,
@@ -125,36 +113,22 @@ let outcome_to_toml (test : Testrepr.t) (fc : Testrepr.final_cond) =
              (List.map (fun (reg, req) -> (reg, req_to_toml req)) reqs)
          )
        )
-      thread_conds
+      test.final.regs
   in
-  let memory_sizes =
-    List.filter_map
-      (fun (block : Testrepr.memory_block) ->
-         Option.map (fun sym -> (sym, block.step)) block.sym
-       )
-      test.memory
+  let reg_entry =
+    if regs_table == [] then [] else [("regs", Toml.TomlTable regs_table)]
   in
-  let mem_entries =
-    match mem_conds with
-    | [] -> []
-    | _ ->
-        [ ( "mem",
-            Toml.TomlInlineTable
-              (List.map
-                 (fun (mc : Testrepr.mem_cond) ->
-                    let default_size =
-                      match List.assoc_opt mc.sym memory_sizes with
-                      | Some size -> size
-                      | None -> mc.size
-                    in
-                    mem_cond_to_toml default_size mc
-                  )
-                 mem_conds
-              )
-          )
-        ]
+  let mem_table = List.map mem_cond_to_toml test.final.mem in
+  let mem_entry =
+    if mem_table == [] then [] else [("mem", Toml.TomlTable mem_table)]
   in
-  Toml.TomlTable [(label, Toml.TomlTable (thread_entries @ mem_entries))]
+  let kind_entry =
+    match test.kind with
+    | Exists -> []
+    | Forall -> [("kind", Toml.TomlString "forall")]
+    | NotExists -> [("kind", Toml.TomlString "notexists")]
+  in
+  Toml.TomlTable (reg_entry @ mem_entry @ kind_entry)
 
 (** {1 Public API} *)
 
@@ -165,7 +139,7 @@ let to_toml (test : Testrepr.t) : Toml.t =
       ("registers", TomlTableArray (List.map registers_to_toml test.registers));
       ("memory", TomlTableArray (List.map memory_block_to_toml test.memory));
       ("termCond", TomlTableArray (List.map termcond_to_toml test.term_cond));
-      ("outcome", TomlTableArray (List.map (outcome_to_toml test) test.finals))
+      ("final", final_to_toml test)
     ]
 
 let to_string test = Toml.Printer.to_string ~force_table_arrays:true (to_toml test)

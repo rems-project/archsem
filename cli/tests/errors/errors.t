@@ -2,9 +2,16 @@ Non-existing file
   $ archsem seq nonexistingfile.archsem.toml
   archsem: TESTS… arguments: no 'nonexistingfile.archsem.toml' file or
            directory
-  Usage: archsem seq [OPTION]… TESTS…
+  Usage: archsem seq [--asm-dump=DIR] [--config=FILE] [--format=FMT] [OPTION]… TESTS…
   Try 'archsem seq --help' or 'archsem --help' for more information.
   [124]
+
+Non TOML file
+  $ archsem seq not-toml.litmus
+  archsem: fatal error: Failed to guess architecture in not-toml.litmus with error :
+          TOML field "arch" is missing
+  [1]
+
 
 Empty file
   $ archsem seq empty.archsem.toml
@@ -26,43 +33,31 @@ Invalid TOML
 
 Just architecture and nothing else
   $ archsem seq justarch.archsem.toml
-  archsem: internal error, uncaught exception:
-           TOML field "memory" is missing
-           
-  
-  arm-seq  1 test(s)
-  
-  [125]
+  archsem: TOML error:
+  File "justarch.archsem.toml":
+  Missing field: memory
+  [1]
 
 Missing "step" in memory field
   $ archsem seq missing-step.archsem.toml
-  archsem: internal error, uncaught exception:
-           TOML field "step" is missing at memory.[0]
-           
-  
-  arm-seq  1 test(s)
-  
-  [125]
+  archsem: TOML error:
+  File "missing-step.archsem.toml", path "memory.[0]":
+  Missing field: step
+  [1]
 
 Invalid "step" in memory field
   $ archsem seq invalid-step.archsem.toml
-  archsem: internal error, uncaught exception:
-           TOML error at "memory.[0].step": Expected integer, found string
-           
-  
-  arm-seq  1 test(s)
-  
-  [125]
+  archsem: TOML error:
+  File "invalid-step.archsem.toml", path "memory.[0].step":
+  Expected integer, found string
+  [1]
 
 Too much data for step
   $ archsem seq too-much-data.archsem.toml
-  archsem: internal error, uncaught exception:
-           TOML error at "memory.[0].data": Memory data number (0xca020020) contains 4 bytes but the step is 2
-           
-  
-  arm-seq  1 test(s)
-  
-  [125]
+  archsem: TOML error:
+  File "too-much-data.archsem.toml", path "memory.[0].data":
+  Memory data number (0xca020020) contains 4 bytes but the step is 2
+  [1]
 
 Invalid reset value in Isla file
   $ archsem convert --format isla invalid-reset.litmus.toml

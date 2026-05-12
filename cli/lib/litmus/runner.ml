@@ -38,73 +38,7 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Litmus test runner. *)
-
-(** {1 Types} *)
-
-type test_result =
-  | Expected  (** Outcome matched test expectations *)
-  | Unexpected  (** Outcome did not match test expectations *)
-  | ModelError  (** Model produced errors during execution *)
-  | NoBehaviour  (** Model produces no behaviours (model bug) *)
-  | ParseError  (** Parser or configuration error *)
-
-(** {1 Display Helpers} *)
-let rec string_of_regval_gen : Archsem.RegValGen.t -> string = function
-  | Number z -> Printf.sprintf "0x%s" (Z.format "%x" z)
-  | String s -> Printf.sprintf "\"%s\"" s
-  | Array vs ->
-      Printf.sprintf "[%s]" (String.concat ", " (List.map string_of_regval_gen vs))
-  | Struct fields ->
-      Printf.sprintf "{ %s }"
-        (String.concat ", "
-           (List.map
-              (fun (k, v) -> Printf.sprintf "%s = %s" k (string_of_regval_gen v))
-              fields
-           )
-        )
-
-let req_to_string (reg, req) =
-  let (op, v) =
-    match req with Testrepr.ReqEq v -> ("=", v) | Testrepr.ReqNe v -> ("!=", v)
-  in
-  Printf.sprintf "%s%s%s" reg op (string_of_regval_gen v)
-
-let cond_to_string cond =
-  List.map
-    (fun (tid, reqs) ->
-       Printf.sprintf "%d:{%s}" tid
-         (String.concat "," (List.map req_to_string reqs))
-     )
-    cond
-  |> String.concat " "
-
-let mem_cond_to_string mem_reqs =
-  List.map
-    (fun (mc : Testrepr.mem_cond) ->
-       let (op, value) =
-         match mc.req with
-         | Testrepr.MemEq value -> ("=", value)
-         | Testrepr.MemNe value -> ("!=", value)
-       in
-       Printf.sprintf "*0x%x[%d]%s0x%s" mc.addr mc.size op (Z.format "%x" value)
-     )
-    mem_reqs
-  |> String.concat " "
-
-let result_to_string = function
-  | Expected -> Terminal.green ^ "EXPECTED" ^ Terminal.reset
-  | Unexpected -> Terminal.yellow ^ "UNEXPECTED" ^ Terminal.reset
-  | ModelError -> Terminal.red ^ "MODEL ERROR" ^ Terminal.reset
-  | NoBehaviour -> Terminal.red ^ "NO BEHAVIOUR" ^ Terminal.reset
-  | ParseError -> Terminal.red ^ "PARSE ERROR" ^ Terminal.reset
-
-let find_index p lst =
-  let rec aux i = function
-    | [] -> None
-    | x :: tl -> if p x then Some i else aux (i + 1) tl
-  in
-  aux 0 lst
+(** Run a litmus test and display results *)
 
 module Make (Arch : Archsem.Arch) = struct
   open Arch
@@ -112,138 +46,81 @@ module Make (Arch : Archsem.Arch) = struct
   open Runner_utils.Make (Arch)
 
   module AS = ToArchState.Make (Arch)
-  module McompareInst = Mcompare.Make (Arch)
+  module MinSt = MinState.Make (Arch)
 
-  let run_executions ~print_final_states model init fuel term test =
-    let msgs = ref [] in
-    let msg s = msgs := s :: !msgs in
+  (** Run a test in a given model, print [short] or long output.
+      raises [Exit] if something went wrong, after printing message on [stderr] *)
+  let run_testrepr ~short model (test : Testrepr.t) =
+    let fuel = Config.get_fuel () in
+    let (init, term) = AS.testrepr_to_archstate test in
+    let time_start = Sys.time () in
     let results = model fuel term init in
-
-    let observable =
-      List.filter_map
-        (function Testrepr.Observable (c, mc) -> Some (c, mc) | _ -> None)
-        test.Testrepr.finals
-    in
-    let unobservable =
-      List.filter_map
-        (function Testrepr.Unobservable (c, mc) -> Some (c, mc) | _ -> None)
-        test.Testrepr.finals
-    in
-
+    let time_end = Sys.time () in
+    let time = time_end -. time_start in
     let errors =
       List.filter_map
         (function ArchModel.Res.Error e -> Some e | _ -> None)
         results
     in
-    let final_states =
-      List.filter_map
-        (function ArchModel.Res.FinalState fs -> Some fs | _ -> None)
-        results
-    in
+    if errors != [] then (
+      List.iter (Error.model_error test.name) errors;
+      raise Exit
+    );
+
     let flags =
       List.filter_map
         (function ArchModel.Res.Flagged x -> Some x | _ -> None)
         results
     in
+    if flags != [] then (
+      Error.model_error test.name "Flags unsupported";
+      raise Exit
+    );
 
-    (* If the print-final-states flag is set, print all observable states and statistics *)
-    if print_final_states then
-      msg
-        (McompareInst.print_final_states observable unobservable final_states
-           test.name
-        );
+    let final_states =
+      List.filter_map
+        (function ArchModel.Res.FinalState fs -> Some fs | _ -> None)
+        results
+    in
+    if final_states == [] then (
+      Error.model_error test.name "No behaviour";
+      raise Exit
+    );
 
-    List.iter
-      (fun e ->
-         msg (Printf.sprintf "%s[Error]%s %s" Terminal.red Terminal.reset e)
-       )
-      errors;
-    if flags <> [] then msg "Flagged";
-
-    let observable_ok =
-      List.for_all
-        (fun (cond, mem_cond) ->
-           let matched =
-             List.exists
-               (fun fs -> check_outcome fs cond && check_mem_outcome fs mem_cond)
-               final_states
-           in
-           if (not matched) && final_states <> [] then
-             msg
-               (Printf.sprintf "%sObservable not found%s: %s %s" Terminal.red
-                  Terminal.reset (cond_to_string cond)
-                  (mem_cond_to_string mem_cond)
-               );
-           matched
-         )
-        observable
+    let (observed, not_observed) =
+      List.partition (check_final_cond test.final) final_states
     in
 
-    let unobservable_ok =
-      List.for_all Fun.id
-        (List.mapi
-           (fun i fs ->
-              match
-                List.find_opt
-                  (fun (cond, mem_cond) ->
-                     check_outcome fs cond && check_mem_outcome fs mem_cond
-                   )
-                  unobservable
-              with
-              | Some (cond, mem_cond) ->
-                  msg
-                    (Printf.sprintf
-                       "%sUnobservable found%s in execution %d: %s %s"
-                       Terminal.red Terminal.reset (i + 1) (cond_to_string cond)
-                       (mem_cond_to_string mem_cond)
-                    );
-                  false
-              | None -> true
-            )
-           final_states
-        )
-    in
+    let obs_count = List.length observed in
+    let not_obs_count = List.length not_observed in
 
-    let result =
-      if results = [] then NoBehaviour
-      else if errors <> [] then ModelError
-      else if observable_ok && unobservable_ok then Expected
-      else Unexpected
-    in
-    (result, List.rev !msgs)
-
-  let run_testrepr ~print_final_states model (test : Testrepr.t) =
-    let fuel = Config.get_fuel () in
-    let (init, term) = AS.testrepr_to_archstate test in
-    run_executions ~print_final_states model init fuel term test
-
-  let run_litmus_test ~parse ~print_final_states model filename =
-    let name = Filename.basename filename in
-    if not (Sys.file_exists filename) then (
-      Printf.printf "  %s✗%s %s  %sfile not found%s\n" Terminal.red Terminal.reset
-        name Terminal.red Terminal.reset;
-      ParseError
-    )
+    if short then Mcompare.print_observation test.name obs_count not_obs_count
     else
-      try
-        let test = parse filename in
-        let (result, msgs) = run_testrepr ~print_final_states model test in
-        let (icon, color) =
-          match result with
-          | Expected -> (Terminal.check, Terminal.green)
-          | Unexpected -> (Terminal.cross, Terminal.yellow)
-          | _ -> (Terminal.cross, Terminal.red)
-        in
-        Printf.printf "\n%s%s%s %s\n" color icon Terminal.reset name;
-        List.iter (fun m -> Printf.printf "%s\n" m) msgs;
-        result
-      with Toml.Parse_error (pos, msg) ->
-        Printf.printf "%s✗%s %s  %sparse error at %s: %s%s\n" Terminal.red
-          Terminal.reset name Terminal.red
-          (Option.fold ~none:"?"
-             ~some:(fun (l, c) -> Printf.sprintf "%d:%d" l c)
-             pos
-          )
-          msg Terminal.reset;
-        ParseError
+      let min_states =
+        MinSt.get_unique_minimised_states test.final final_states
+      in
+      Mcompare.print test min_states obs_count not_obs_count time
+
+  (** Run a testfile in a given model.
+      @param parse is the parsing function (filename to Testrepr.t)
+                   This parsing function may do isla conversion
+      @param short requires either short form output (observation line) or
+                   full output.
+      Raises [Exit] on test error, the error was already printed on [stderr] *)
+  let run_test_file ~parse ~short model filename =
+    let name = Filename.basename filename in
+    if not (Sys.file_exists filename) then Error.fatal "file not found: %s" name;
+    let test =
+      try parse filename with
+      | Toml.Parse_error (pos, msg) ->
+          Error.parse_error filename pos "%s" msg;
+          raise Exit
+      | Toml.Path_error (path, FieldMissing field) ->
+          Error.toml_error filename path "Missing field: %s" field;
+          raise Exit
+      | Toml.Path_error (path, GenError msg) ->
+          Error.toml_error filename path "%s" msg;
+          raise Exit
+    in
+    run_testrepr ~short model test
 end

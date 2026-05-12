@@ -14,5 +14,5 @@ LDR X0, [X1]
 x = 0x0
 
 [final]
-expect = "sat"
+kind = "forall"
 assertion = "0:X0 = 0x2a"

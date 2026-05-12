@@ -28,11 +28,13 @@ name = "R_PO_MFENCE"
   data = [0xc7, 2, 2, 0, 0, 0, 15, 0xae, 0xf0, 0x8b, 1]
 
 [[memory]]
+  sym = "x"
   addr = 0x1100
   step = 8
   data = 0
 
 [[memory]]
+  sym = "y"
   addr = 0x1200
   step = 8
   data = 0
@@ -43,11 +45,11 @@ name = "R_PO_MFENCE"
 [[termCond]]
   rip = 0x60b
 
-[[outcome]]
-  observable = {"1" = {rax = 0}}
+[final]
+  kind = "notexists"
 
-[[outcome]]
-  observable = {"1" = {rax = 1}}
+[final.regs]
+  "1" = {rax = 0}
 
-[[outcome]]
-  observable = {"1" = {rax = 1}}
+[final.mem]
+  y = 2

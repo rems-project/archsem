@@ -71,5 +71,8 @@ name = "SB"
 [[termCond]]
   rip = 0x3010
 
-[[outcome]]
-  observable = {"0" = {rax = 0}, "1" = {rax = 0}}
+[final]
+
+[final.regs]
+  "0" = {rax = 0}
+  "1" = {rax = 0}

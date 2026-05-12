@@ -22,7 +22,7 @@ data = 42
 [[termCond]]
 _PC = 0x504
 
-[[outcome]]
-observable.0.R0 = 0
-[outcome.observable.mem]
-x = 42
+[final]
+kind = "forall"
+regs.0.R0 = 0
+mem.x = 42

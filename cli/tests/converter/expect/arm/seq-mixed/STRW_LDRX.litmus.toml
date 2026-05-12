@@ -52,5 +52,8 @@ name = "STRW_LDRX"
 [[termCond]]
   _PC = 0x200c
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0x2a}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {"R0" = 0x2a}

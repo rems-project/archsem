@@ -23,5 +23,5 @@ movl (%rcx), %eax
 """
 
 [final]
-expect = "unsat"
+kind = "notexists"
 assertion = "*y = 2 & 1:rax = 0"

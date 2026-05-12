@@ -56,5 +56,8 @@ name = "STRLDR+VM"
 [[termCond]]
   _PC = 0x8000000508
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0x2a}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {"R0" = 0x2a}

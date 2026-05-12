@@ -57,16 +57,16 @@ type mem_state =
 module Make (Arch : Archsem.Arch) = struct
   open Arch
 
-  (* Convert a collection of register conditions (each having a thread id and a register name)
-  into a list of thread-regname pairs *)
-  let get_thread_regname_pairs (reg_cond : Testrepr.thread_cond list) :
-    (int * string) list
+  (** Convert a collection of register conditions (each having a thread id and a
+     register name) into a list of unique thread-regname pairs *)
+  let get_regs_from_cond (reg_cond : Testrepr.reg_cond list) : (int * string) list
     =
     List.concat_map
       (fun (thread, reg_pair) ->
          List.map (fun (name, _) -> (thread, name)) reg_pair
        )
       reg_cond
+    |> List.sort_uniq compare
 
   (* Compare the memory symbol of 2 memory conditions *)
   let compare_mem_sym
@@ -77,18 +77,14 @@ module Make (Arch : Archsem.Arch) = struct
 
   (* From the test conditions, get a list of all unique thread-register pairs, 
     and a list of all unique memory symbols *)
-  let get_unique_conds_ignoring_value
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list) :
+  let get_unique_locations (cond : Testrepr.final_cond) :
     (int * string) list * Testrepr.mem_cond list
     =
-    let (reg_conds, mem_conds) = List.split conds in
-    let all_reg_conds = get_thread_regname_pairs (List.flatten reg_conds) in
-    ( List.sort_uniq compare all_reg_conds,
-      List.sort_uniq compare_mem_sym (List.flatten mem_conds)
-    )
+    (get_regs_from_cond cond.regs, List.sort_uniq compare_mem_sym cond.mem)
 
-  (* From a final state, extract the registers (and values) that the register conditions check *)
-  let minimise_reg_state (reg_conds : (int * string) list) (state : ArchState.t) :
+  (* From a final state, extract the registers (and values) that the register
+     conditions check *)
+  let minimise_reg_state (regs : (int * string) list) (state : ArchState.t) :
     reg_state list
     =
     List.map
@@ -97,7 +93,7 @@ module Make (Arch : Archsem.Arch) = struct
          let value = RegMap.geti (Reg.of_string regname) regs in
          {tid; regname; value}
        )
-      reg_conds
+      regs
 
   (* From a final state, extract the memory locations (and values) that the memory conditions check *)
   let minimise_mem_state (mem_conds : Testrepr.mem_cond list) (state : ArchState.t)
@@ -127,10 +123,10 @@ module Make (Arch : Archsem.Arch) = struct
   (* Find all the registers and memory locations that the conditions check,
     extract only those locations from each final state, and deduplicate them *)
   let get_unique_minimised_states
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
+        (cond : Testrepr.final_cond)
         (final_states : ArchState.t list) : (reg_state list * mem_state list) list
     =
-    let unique_cond = get_unique_conds_ignoring_value conds in
-    let minimised_fs = minimise_states unique_cond final_states in
+    let locs = get_unique_locations cond in
+    let minimised_fs = minimise_states locs final_states in
     List.sort_uniq compare minimised_fs
 end

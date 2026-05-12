@@ -39,11 +39,7 @@ name = "CoWWR+mixed"
 [[termCond]]
   _PC = 0x608
 
-[[outcome]]
-  observable = {"1" = {"R0" = 0x1111111111111111}}
+[final]
 
-[[outcome]]
-  observable = {"1" = {"R0" = 0x1111111122222222}}
-
-[[outcome]]
-  observable = {"1" = {"R0" = 0x22222222}}
+[final.regs]
+  "1" = {"R0" = 0x1111111122222222}

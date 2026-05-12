@@ -30,5 +30,7 @@ name = "x86-XOR"
 [[termCond]]
   rip = 0x1003
 
-[[outcome]]
-  observable = {"0" = {rax = 0x110}}
+[final]
+
+[final.regs]
+  "0" = {rax = 0x110}

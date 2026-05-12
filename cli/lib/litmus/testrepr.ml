@@ -69,7 +69,7 @@ type memory_block =
     kind : memory_kind
   }
 
-(** {1 Outcome Types} *)
+(** {1 Final condition types} *)
 
 type reg_requirement =
   | ReqEq of Archsem.RegValGen.t
@@ -79,7 +79,8 @@ type mem_requirement =
   | MemEq of Z.t
   | MemNe of Z.t
 
-type thread_cond = int * (string * reg_requirement) list
+(** The thread and a list of registers and requirements *)
+type reg_cond = int * (string * reg_requirement) list
 
 type mem_cond =
   { sym : string;
@@ -89,8 +90,16 @@ type mem_cond =
   }
 
 type final_cond =
-  | Observable of thread_cond list * mem_cond list
-  | Unobservable of thread_cond list * mem_cond list
+  { regs : reg_cond list;
+    mem : mem_cond list
+  }
+
+(** This is the herd kinds, we could add [NotForall], but herd and mcompare
+    don't support it, so I don't see the point *)
+type kind =
+  | Forall
+  | Exists
+  | NotExists
 
 (** {1 Test} *)
 
@@ -100,7 +109,8 @@ type t =
     registers : (string * Archsem.RegValGen.t) list list;
     memory : memory_block list;
     term_cond : (string * Archsem.RegValGen.t) list list;
-    finals : final_cond list
+    final : final_cond;
+    kind : kind
   }
 
 (** {1 Helper functions} *)

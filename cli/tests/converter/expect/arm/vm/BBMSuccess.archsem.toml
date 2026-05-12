@@ -62,5 +62,8 @@ name = "BBMSuccess"
 [[termCond]]
   _PC = 0x8000000514
 
-[[outcome]]
-  observable = {"0" = {"R3" = 0}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {"R3" = 0}

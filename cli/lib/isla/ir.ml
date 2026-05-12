@@ -57,10 +57,6 @@ type section =
     code : string
   }
 
-type expect =
-  | Sat
-  | Unsat
-
 type t =
   { arch : Arch_id.t;
     name : string;
@@ -68,7 +64,7 @@ type t =
     sections : section list;
     symbolic : string list;
     locations : (string * Term.t) list;
-    expect : expect;
+    kind : Litmus.Testrepr.kind;
     assertion : Assertion.expr
   }
 
@@ -135,14 +131,6 @@ let parse_section name table =
 
 let parse_sections toml = Toml.get_table_key_values parse_section toml
 
-let parse_expect toml =
-  match Toml.get_string toml with
-  | "sat" -> Sat
-  | "unsat" -> Unsat
-  | expect ->
-      Toml.error "Expected expectation value (\"sat\" or \"unsat\"), found: %s"
-        expect
-
 let parse_assertion_expr s =
   let lexbuf = Lexing.from_string s in
   try Parser.assertion Lexer.token lexbuf
@@ -172,7 +160,8 @@ let of_toml toml =
       Toml.find_or ~default:[] toml
         (Toml.get_table_values parse_term)
         ["locations"];
-    expect = Toml.find_or ~default:Sat toml parse_expect ["final"; "expect"];
+    kind = Litmus.Parser.parse_kind toml;
+    (* We voluntarily ignore the [expect] field *)
     assertion =
       Toml.find_or ~default:Assertion.True toml parse_assertion
         ["final"; "assertion"]

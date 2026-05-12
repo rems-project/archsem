@@ -40,19 +40,21 @@
 
 (** Functions for displaying mcompare-compatible output *)
 
-(* Convert a list of register state to string format, 
-  suitable for printing final register states for mcompare *)
+(** Convert a list of register state to string format,
+    suitable for printing final register states for mcompare *)
 let final_regs_to_string (rs : MinState.reg_state list) =
   String.concat " "
     (List.map
        (fun (r : MinState.reg_state) ->
-          Printf.sprintf "%d:%s=%d;" r.tid r.regname r.value
+          if r.value >= 0 && r.value < 16 then
+            Printf.sprintf "%d:%s=%d;" r.tid r.regname r.value
+          else Printf.sprintf "%d:%s=%#x;" r.tid r.regname r.value
         )
        rs
     )
 
-(* Convert a list of memory state to string format, 
-  suitable for printing final memory states for mcompare *)
+(** Convert a list of memory state to string format,
+    suitable for printing final memory states for mcompare *)
 let final_mem_to_string (ms : MinState.mem_state list) =
   String.concat " "
     (List.map
@@ -60,103 +62,43 @@ let final_mem_to_string (ms : MinState.mem_state list) =
        ms
     )
 
-(* Print how often an outcome occurs, part of the required Mcompare output *)
-let outcome_freq_to_string yes_freq no_freq =
-  if yes_freq = 0 then "Never" else if no_freq = 0 then "Always" else "Sometimes"
-
-(* Return string of format: Observation <test name> <string freq> <true count> <false count>.
-  which is required for Mcompare output*)
-let test_observation_stats_to_string obs_count not_obs_count test_name =
-  Printf.sprintf "Observation %s %s %d %d" test_name
-    (outcome_freq_to_string obs_count not_obs_count)
+(** Print observation line:
+    [Observation <test name> <Always/Sometimes/Never> <obs-count> <not-obs-count>] *)
+let print_observation test_name obs_count not_obs_count =
+  Printf.printf "Observation %s %s %d %d\n" test_name
+    ( if obs_count = 0 then "Never"
+      else if not_obs_count = 0 then "Always"
+      else "Sometimes"
+    )
     obs_count not_obs_count
 
-module Make (Arch : Archsem.Arch) = struct
-  open Arch
-  module MinimiseState = MinState.Make (Arch)
-  module RunnerUtils = Runner_utils.Make (Arch)
+let kind_to_top_string : Testrepr.kind -> string = function
+  | Exists -> "Allowed"
+  | Forall -> "Forall"
+  | NotExists -> "Forbidden"
 
-  (* Get the number of states which satisfy at least one condition in conds *)
-  let get_obs_count
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (state_list : ArchState.t list)
-    =
-    List.length state_list
-    - List.length
-        (List.fold_left
-           (fun unmatched_state_list (cond, mem_cond) ->
-              List.filter
-                (fun fs ->
-                   not
-                     (RunnerUtils.check_outcome fs cond
-                     && RunnerUtils.check_mem_outcome fs mem_cond
-                     )
-                 )
-                unmatched_state_list
-            )
-           state_list conds
-        )
+let kind_validation (kind : Testrepr.kind) obs_count not_obs_count =
+  match kind with
+  | Exists -> obs_count > 0
+  | Forall -> not_obs_count == 0
+  | NotExists -> obs_count == 0
 
-  (* Print observation statistics for Mcompare. The format is:
-    Ok/No <Optional extra detail>
-    Observation <test_name> Always/Sometimes/Never <#observed> <#not_observed> *)
-  let observation_statistics_string
-        (conds : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (checking_for_positive : bool)
-        (state_list : ArchState.t list)
-        (test_name : string) : string
-    =
-    let (matched_msg, not_matched_msg) =
-      if checking_for_positive then ("Ok", "No (\"allowed\" not found)")
-      else ("No (\"not allowed\" found)", "Ok")
-    in
-    let obs_count = get_obs_count conds state_list in
-    let msg = if obs_count > 0 then matched_msg else not_matched_msg in
-    msg ^ "\n"
-    ^ test_observation_stats_to_string obs_count
-        (List.length state_list - obs_count)
-        test_name
-
-  (* Top-level function to call for mcompare-compatible output *)
-  let print_final_states
-        (observable : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (unobservable : (Testrepr.thread_cond list * Testrepr.mem_cond list) list)
-        (final_states : ArchState.t list)
-        (test_name : string) : string
-    =
-    let conds = observable @ unobservable in
-    let unique_cond = MinimiseState.get_unique_conds_ignoring_value conds in
-    let minimised_fs = MinimiseState.minimise_states unique_cond final_states in
-    let unique_minimised_fs = List.sort_uniq compare minimised_fs in
-
-    let title = Printf.sprintf "Test %s Allowed\n" test_name in
-
-    (* Print number of distinct observed states *)
-    let states_count_part =
-      Printf.sprintf "States %d\n" (List.length unique_minimised_fs)
-    in
-    (* Print each distinct observable state *)
-    let state_list_part =
-      if conds <> [] then
-        List.map
-          (fun (regs_state, mems_state) ->
-             Printf.sprintf "%s %s\n"
-               (final_regs_to_string regs_state)
-               (final_mem_to_string mems_state)
-           )
-          unique_minimised_fs
-        |> String.concat ""
-      else ""
-    in
-    let observation_part =
-      if
-        (* Print statistics about the condition(s) that we did and didn't want to observe *)
-        observable <> []
-      then observation_statistics_string observable true final_states test_name
-      else if unobservable <> [] then
-        observation_statistics_string unobservable false final_states test_name
-      else "ERROR: no conditions to observe"
-    in
-
-    title ^ states_count_part ^ state_list_part ^ observation_part
-end
+(** Print mcompare compatible output, missing [Condition] and [Hash] for now *)
+let print (test : Testrepr.t) states obs_count not_obs_count time =
+  Printf.printf "Test %s %s\n" test.name (kind_to_top_string test.kind);
+  Printf.printf "States %d\n" (List.length states);
+  List.iter
+    (fun (regs_state, mems_state) ->
+       Printf.printf "%s %s\n"
+         (final_regs_to_string regs_state)
+         (final_mem_to_string mems_state)
+     )
+    states;
+  if kind_validation test.kind obs_count not_obs_count then Printf.printf "Ok\n"
+  else Printf.printf "No\n";
+  Printf.printf "Witnesses\n";
+  Printf.printf "Positive: %d Negative: %d\n" obs_count not_obs_count;
+  (* Skipping Flag and Condition *)
+  print_observation test.name obs_count not_obs_count;
+  Printf.printf "Time %s %f\n" test.name time
+(* Skipping Hash *)

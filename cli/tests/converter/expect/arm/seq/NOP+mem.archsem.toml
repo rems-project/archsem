@@ -22,5 +22,11 @@ name = "NOP+mem"
 [[termCond]]
   _PC = 0x504
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0}, mem = {x = 0x2a}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {"R0" = 0}
+
+[final.mem]
+  x = 0x2a

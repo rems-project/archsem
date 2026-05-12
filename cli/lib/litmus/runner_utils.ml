@@ -44,7 +44,9 @@ module Make (Arch : Archsem.Arch) = struct
   open Arch
 
   (* Check if a final state satisfies cond (register conditions) *)
-  let check_outcome (fs : ArchState.t) (cond : Testrepr.thread_cond list) : bool =
+  let check_reg_conds (reg_conds : Testrepr.reg_cond list) (fs : ArchState.t) :
+    bool
+    =
     List.for_all
       (fun (tid, reqs) ->
          let regs = ArchState.reg tid fs in
@@ -63,10 +65,10 @@ module Make (Arch : Archsem.Arch) = struct
             )
            reqs
        )
-      cond
+      reg_conds
 
   (* Check if a final state satisfies mem_conds *)
-  let check_mem_outcome (fs : ArchState.t) (mem_conds : Testrepr.mem_cond list) :
+  let check_mem_conds (mem_conds : Testrepr.mem_cond list) (fs : ArchState.t) :
     bool
     =
     let mem = ArchState.mem fs in
@@ -83,4 +85,8 @@ module Make (Arch : Archsem.Arch) = struct
          )
        )
       mem_conds
+
+  (* Check if a final state satisfies mem_conds *)
+  let check_final_cond (cond : Testrepr.final_cond) (fs : ArchState.t) : bool =
+    check_reg_conds cond.regs fs && check_mem_conds cond.mem fs
 end

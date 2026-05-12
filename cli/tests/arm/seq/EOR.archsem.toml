@@ -18,6 +18,7 @@ data = 0xca020020
 [[termCond]]
 _PC = 0x504
 
-[[outcome]]
-observable.0._PC = 0x504
-observable.0.R0 = 0x110
+[final]
+kind = "forall"
+regs.0._PC = 0x504
+regs.0.R0 = 0x110

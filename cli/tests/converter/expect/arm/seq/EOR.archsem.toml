@@ -18,5 +18,8 @@ name = "EOR"
 [[termCond]]
   _PC = 0x504
 
-[[outcome]]
-  observable = {"0" = {_PC = 0x504, "R0" = 0x110}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {_PC = 0x504, "R0" = 0x110}
