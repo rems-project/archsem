@@ -147,6 +147,15 @@ let get_table_values accessor toml =
      )
     tbl
 
+let get_table_key_values accessor toml =
+  let tbl = get_table toml in
+  List.map
+    (fun (k, v) ->
+       try accessor k v
+       with Path_error (path, msg) -> raise (Path_error (k :: path, msg))
+     )
+    tbl
+
 let get_Z toml =
   match toml with
   | TomlInteger i -> i

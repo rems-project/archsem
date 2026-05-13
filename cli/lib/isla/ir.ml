@@ -55,6 +55,12 @@ type thread =
     init : (string * value) list
   }
 
+type section =
+  { sec_name : string;
+    address : int;
+    code : string
+  }
+
 type expect =
   | Sat
   | Unsat
@@ -63,6 +69,7 @@ type t =
   { arch : Arch_id.t;
     name : string;
     threads : thread list;
+    sections : section list;
     symbolic : string list;
     locations : (string * value) list;
     expect : expect;
@@ -102,6 +109,13 @@ let parse_threads toml =
   List.iteri (fun i t -> if i != t.tid then Toml.error "Thread %i is missing" i) l;
   l
 
+let parse_section name table =
+  let address = Toml.find table Toml.get_integer ["address"] in
+  let code = Toml.find table Toml.get_string ["code"] |> String.trim in
+  {sec_name = name; address; code}
+
+let parse_sections toml = Toml.get_table_key_values parse_section toml
+
 let parse_expect toml =
   match Toml.get_string toml with
   | "sat" -> Sat
@@ -132,6 +146,7 @@ let of_toml toml =
   { arch = Toml.find toml parse_arch ["arch"];
     name = Toml.find_or ~default:"unknown" toml Toml.get_string ["name"];
     threads = Toml.find toml parse_threads ["thread"];
+    sections = Toml.find_or ~default:[] toml parse_sections ["section"];
     symbolic =
       Toml.find_or ~default:[] toml (Toml.get_array Toml.get_string) ["symbolic"];
     locations =
