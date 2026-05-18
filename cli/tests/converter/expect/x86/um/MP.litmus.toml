@@ -72,6 +72,4 @@ name = "MP"
   rip = 0x3010
 
 [final]
-
-[final.regs]
-  "1" = {rax = 1, rbx = 0}
+  assertion = {and = [{"1:rax" = 1}, {"1:rbx" = 0}]}

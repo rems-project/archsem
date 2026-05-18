@@ -47,7 +47,5 @@ name = "EOR"
   _PC = 0x1004
 
 [final]
+  assertion = {"0:R0" = 0x110}
   kind = "forall"
-
-[final.regs]
-  "0" = {"R0" = 0x110}

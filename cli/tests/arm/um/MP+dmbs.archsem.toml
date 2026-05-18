@@ -64,5 +64,4 @@ _PC = 0x50C
 _PC = 0x60C
 
 [final]
-regs.1.R5 = 1
-regs.1.R2 = 0
+assertion.and = [{"1:R5"=1}, {"1:R2"=0}]

@@ -24,5 +24,4 @@ _PC = 0x504
 
 [final]
 kind = "forall"
-regs.0.R0 = 0
-mem.x = 42
+assertion.and = [{"0:R0" = 0}, {"x" = 42}]

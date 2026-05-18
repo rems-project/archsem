@@ -39,7 +39,7 @@
 (******************************************************************************)
 
 %{
-  open Assertion
+  open Litmus.Assertion
 %}
 
 %token <Z.t> NUM
@@ -59,7 +59,7 @@
 %left AND
 %nonassoc NOT
 
-%start <Assertion.expr> assertion
+%start <Term.t Litmus.Assertion.expr> assertion
 
 %%
 
@@ -67,8 +67,8 @@ assertion:
   | e = prop; EOF { e }
 
 prop:
-  | e1 = prop; "|"; e2 = prop { Or (e1, e2) }
-  | e1 = prop; "&"; e2 = prop { And (e1, e2) }
+  | e1 = prop; "|"; e2 = prop { Or [e1; e2] }
+  | e1 = prop; "&"; e2 = prop { And [e1; e2] }
   | "~"; e = prop { Not e }
   | "("; e = prop; ")" { e }
   | a = atom { Atom a }
@@ -76,8 +76,8 @@ prop:
   | FALSE { False }
 
 atom:
-  | lhs = loc; "="; rhs = term { CmpTerm (lhs, Eq, rhs) }
-  | lhs = loc; "="; rhs = loc { CmpLoc (lhs, Eq, rhs) }
+  | lhs = loc; "="; rhs = term { CmpCst (lhs, rhs) }
+  | lhs = loc; "="; rhs = loc { CmpLoc (lhs, rhs) }
 
 loc:
   | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }

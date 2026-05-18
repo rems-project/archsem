@@ -69,6 +69,5 @@ name = "STRWPT+VM"
   _PC = 0x800000050c
 
 [final]
-
-[final.regs]
-  "0" = {"R0" = 0x2a, "R4" = 0x2a}
+  assertion = {and = [{"0:R0" = 0x2a}, {or = [{"0:R4" = 0x2a}, {"0:R4" = 0x42}]}]}
+  kind = "forall"

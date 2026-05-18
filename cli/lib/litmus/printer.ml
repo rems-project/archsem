@@ -94,41 +94,36 @@ let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
 let termcond_to_toml regs : Toml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
 
-let mem_cond_to_toml (mc : Testrepr.mem_cond) =
-  let req =
-    match mc.req with
-    | Testrepr.MemEq v -> Toml.TomlInteger v
-    | Testrepr.MemNe v ->
-        Toml.TomlInlineTable
-          [("op", Toml.TomlString "ne"); ("val", Toml.TomlInteger v)]
-  in
-  (mc.sym, req)
+let location_to_string : Assertion.loc -> string = function
+  | Reg (thread, reg) -> Printf.sprintf "%d:%s" thread reg
+  | Mem mem -> mem
+
+let atom_to_toml : Z.t Assertion.atom -> Toml.t = function
+  | CmpCst (loc, cst) ->
+      TomlInlineTable [(location_to_string loc, TomlInteger cst)]
+  | CmpLoc (loc, loc') ->
+      TomlInlineTable
+        [(location_to_string loc, TomlString (location_to_string loc'))]
+
+let rec assertion_to_toml : Z.t Assertion.expr -> Toml.t = function
+  | Atom atom -> atom_to_toml atom
+  | And exprs ->
+      TomlInlineTable [("and", TomlArray (List.map assertion_to_toml exprs))]
+  | Or exprs ->
+      TomlInlineTable [("or", TomlArray (List.map assertion_to_toml exprs))]
+  | Not expr -> TomlInlineTable [("not", assertion_to_toml expr)]
+  | True -> TomlBoolean true
+  | False -> TomlBoolean false
 
 let final_to_toml (test : Testrepr.t) =
-  let regs_table =
-    List.map
-      (fun (tid, reqs) ->
-         ( string_of_int tid,
-           Toml.TomlInlineTable
-             (List.map (fun (reg, req) -> (reg, req_to_toml req)) reqs)
-         )
-       )
-      test.final.regs
-  in
-  let reg_entry =
-    if regs_table == [] then [] else [("regs", Toml.TomlTable regs_table)]
-  in
-  let mem_table = List.map mem_cond_to_toml test.final.mem in
-  let mem_entry =
-    if mem_table == [] then [] else [("mem", Toml.TomlTable mem_table)]
-  in
+  let assertion_entry = [("assertion", assertion_to_toml test.final)] in
   let kind_entry =
     match test.kind with
     | Exists -> []
     | Forall -> [("kind", Toml.TomlString "forall")]
     | NotExists -> [("kind", Toml.TomlString "notexists")]
   in
-  Toml.TomlTable (reg_entry @ mem_entry @ kind_entry)
+  Toml.TomlTable (assertion_entry @ kind_entry)
 
 (** {1 Public API} *)
 

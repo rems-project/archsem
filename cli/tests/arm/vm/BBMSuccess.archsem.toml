@@ -86,4 +86,4 @@ _PC = 0x8000000514
 
 [final]
 kind = "forall"
-regs.0.R3 = 0
+assertion."0:R3" = 0

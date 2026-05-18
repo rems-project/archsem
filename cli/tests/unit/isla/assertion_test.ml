@@ -41,7 +41,7 @@
 (** Unit tests for Isla.Assertion. *)
 
 open OUnit2
-open Isla.Assertion
+open Litmus.Assertion
 open Isla.Term
 
 let n = Z.of_int
@@ -57,52 +57,25 @@ let cst v = Const v
 let parse = Isla.Ir.parse_assertion_expr
 
 let parse_cases =
-  [ ("int constant", "0:X0 = 1", Atom (CmpTerm (reg 0 "X0", Eq, cst Z.one)));
-    ("hex constant", "0:X0 = 0x2a", Atom (CmpTerm (reg 0 "X0", Eq, cst (n 42))));
-    ("memory location", "*x = 2", Atom (CmpTerm (mem "x", Eq, cst (n 2))));
-    ("symbol on rhs", "0:X0 = x", Atom (CmpTerm (reg 0 "X0", Eq, sym "x")));
-    ("register on rhs", "0:X0 = 2:X2", Atom (CmpLoc (reg 0 "X0", Eq, reg 2 "X2")));
-    ("memory on rhs", "0:X0 = *x", Atom (CmpLoc (reg 0 "X0", Eq, mem "x")));
-    ("negation", "~(1:X0 = 1)", Not (Atom (CmpTerm (reg 1 "X0", Eq, cst Z.one))));
+  [ ("int constant", "0:X0 = 1", Atom (CmpCst (reg 0 "X0", cst Z.one)));
+    ("hex constant", "0:X0 = 0x2a", Atom (CmpCst (reg 0 "X0", cst (n 42))));
+    ("memory location", "*x = 2", Atom (CmpCst (mem "x", cst (n 2))));
+    ("symbol on rhs", "0:X0 = x", Atom (CmpCst (reg 0 "X0", sym "x")));
+    ("register on rhs", "0:X0 = 2:X2", Atom (CmpLoc (reg 0 "X0", reg 2 "X2")));
+    ("memory on rhs", "0:X0 = *x", Atom (CmpLoc (reg 0 "X0", mem "x")));
+    ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (reg 1 "X0", cst Z.one))));
     ( "conjunction",
       "1:X0 = 1 & 2:X0 = 0",
       And
-        ( Atom (CmpTerm (reg 1 "X0", Eq, cst Z.one)),
-          Atom (CmpTerm (reg 2 "X0", Eq, cst Z.zero))
-        )
+        [ Atom (CmpCst (reg 1 "X0", cst Z.one));
+          Atom (CmpCst (reg 2 "X0", cst Z.zero))
+        ]
     );
     ("false", "false", False)
   ]
 
 let parse_error_cases =
   [("register dereference", "*0:X0 = 4"); ("symbol lhs", "x = 1")]
-
-(* Atoms used to build expected DNF results. *)
-let a = CmpTerm (reg 0 "X0", Eq, cst Z.zero)
-
-let b = CmpTerm (reg 0 "X0", Eq, cst Z.one)
-
-let c = CmpTerm (reg 1 "X0", Eq, cst Z.zero)
-
-let d = CmpTerm (reg 1 "X0", Eq, cst Z.one)
-
-let na = CmpTerm (reg 0 "X0", Ne, cst Z.zero)
-
-let nb = CmpTerm (reg 0 "X0", Ne, cst Z.one)
-
-let dnf_cases =
-  [ ("atom", Atom a, [[a]]);
-    ("true is one empty clause", True, [[]]);
-    ("false is no clauses", False, []);
-    (* ~(A & B) = ~A | ~B — exercises Not, And, op-flip *)
-    ("De Morgan over And", Not (And (Atom a, Atom b)), [[na]; [nb]]);
-    (* (A | B) & (C | D) — cartesian product distribution *)
-    ( "And-of-Or distributes",
-      And (Or (Atom a, Atom b), Or (Atom c, Atom d)),
-      [[a; c]; [a; d]; [b; c]; [b; d]]
-    );
-    ("double negation cancels", Not (Not (Atom a)), [[a]])
-  ]
 
 let cases ~name ~run xs =
   name
@@ -128,7 +101,6 @@ let () =
   run_test_tt_main
     ("Isla.Assertion"
     >::: [ cases ~name:"parse" ~run:parse parse_cases;
-           error_cases ~name:"parse-errors" ~run:parse parse_error_cases;
-           cases ~name:"to_dnf" ~run:to_dnf dnf_cases
+           error_cases ~name:"parse-errors" ~run:parse parse_error_cases
          ]
     )

@@ -53,7 +53,5 @@ name = "STRW_LDRX"
   _PC = 0x200c
 
 [final]
+  assertion = {"0:R0" = 0x2a}
   kind = "forall"
-
-[final.regs]
-  "0" = {"R0" = 0x2a}

@@ -54,7 +54,5 @@ name = "EOR+section"
   _PC = 0x2004
 
 [final]
+  assertion = {"0:R0" = 0x110}
   kind = "forall"
-
-[final.regs]
-  "0" = {"R0" = 0x110}

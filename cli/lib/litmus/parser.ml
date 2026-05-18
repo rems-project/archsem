@@ -44,7 +44,9 @@
     - [[registers]]: Initial register state per thread
     - [[memory]]: Initial memory contents
     - [[termCond]]: Termination conditions per thread (typically PC values)
-    - [[outcome]]: Expected observable/unobservable final condition
+    - [[final]]: Final condition
+      - [[kind]]: Test kind (exists/forall/notexists)
+      - [[assertion]]: The assertion in funky TOML syntax
 
     Parsing path: TOML -> Testrepr.t *)
 
@@ -124,68 +126,52 @@ let parse_test_memory toml : Testrepr.memory_block list =
 let parse_test_termcond toml : (string * RegValGen.t) list list =
   Toml.find toml (Toml.get_array (Toml.get_table_values toml_to_gen)) ["termCond"]
 
-(** {2 Register final condition parsing} *)
+(** {2 Final condition parsing} *)
 
-(** Parse a requirement from TOML into Testrepr.reg_requirement *)
-let parse_reg_requirement (toml : Toml.t) : Testrepr.reg_requirement =
+(** Parse a location string, either ["0:R0"] or ["x"] *)
+let parse_location_string str : Assertion.loc =
+  match String.split_on_char ':' str with
+  | [thread; reg] ->
+      let thread =
+        try int_of_string thread
+        with Failure msg ->
+          Toml.error
+            "Thread number in final assertion on register is not a number: %s" msg
+      in
+      Assertion.Reg (thread, reg)
+  | [mem] ->
+      if String.length mem == 0 then
+        Toml.error "Assertion location can't be empty";
+      (* This case catches the "0.R0" instead of "0:R0" mistake *)
+      let is_digit chr = chr >= '0' && chr <= '9' in
+      if is_digit mem.[0] then
+        Toml.error "Assertion location \"%s\" starts with a digit" mem;
+      Assertion.Mem mem
+  | _ -> Toml.error "Assertion location has more than one ':'"
+
+let parse_atom key toml : Z.t Assertion.atom =
+  let lhs = parse_location_string key in
   match toml with
-  | TomlTable pairs | TomlInlineTable pairs -> (
-    match (List.assoc_opt "op" pairs, List.assoc_opt "val" pairs) with
-    | (Some (TomlString "eq"), Some v) -> Testrepr.ReqEq (toml_to_gen v)
-    | (Some (TomlString "ne"), Some v) -> Testrepr.ReqNe (toml_to_gen v)
-    | (Some (TomlString op), _) ->
-        failwith ("[[outcome]] unknown requirement op: " ^ op)
-    | _ -> Testrepr.ReqEq (toml_to_gen toml)
-  )
-  | _ -> Testrepr.ReqEq (toml_to_gen toml)
+  | Toml.TomlString s -> Assertion.CmpLoc (lhs, parse_location_string s)
+  | TomlInteger z -> Assertion.CmpCst (lhs, z)
+  | _ -> Toml.error "right hand side must be location or integer"
 
-(** Parse a condition block into thread conditions with string keys *)
-let parse_reg_conds toml : Testrepr.reg_cond list =
-  match Toml.find_opt toml Toml.get_table ["final"; "regs"] with
-  | Some regs_table ->
-      regs_table
-      |> List.filter_map (fun (tid_str, regs) ->
-        match int_of_string_opt tid_str with
-        | None -> None
-        | Some tid ->
-            let reqs = Toml.get_table_values parse_reg_requirement regs in
-            Some (tid, reqs)
-      )
-  | None -> []
+(* This TOML encoding is very simple, but will fail if a memory location is
+   called "and, or, not" or contains colons *)
+let rec parse_assertion : Toml.t -> Z.t Assertion.expr = function
+  | TomlBoolean true -> Assertion.True
+  | TomlBoolean false -> Assertion.False
+  | toml ->
+      let parse_singleton key toml =
+        match key with
+        | "and" -> Assertion.And (Toml.get_array parse_assertion toml)
+        | "or" -> Assertion.Or (Toml.get_array parse_assertion toml)
+        | "not" -> Assertion.Not (parse_assertion toml)
+        | k -> Assertion.Atom (parse_atom k toml)
+      in
+      Toml.get_singleton parse_singleton toml
 
-(** {2 Memory final condition parsing} *)
-
-(** Parse all [[outcome]] blocks into final conditions *)
-let parse_mem_requirement (toml : Toml.t) : Testrepr.mem_requirement =
-  match toml with
-  | TomlTable pairs | TomlInlineTable pairs -> (
-    match (List.assoc_opt "op" pairs, List.assoc_opt "val" pairs) with
-    | (Some (TomlString "eq"), Some v) -> MemEq (Toml.get_Z v)
-    | (Some (TomlString "ne"), Some v) -> MemNe (Toml.get_Z v)
-    | (_, _) ->
-        failwith
-          ("[[outcome]] unknown memory requirement: "
-         ^ Toml.Printer.to_string toml
-          )
-  )
-  | _ -> MemEq (Toml.get_Z toml)
-
-let parse_mem_cond mem sym toml : Testrepr.mem_cond =
-  let block =
-    try Testrepr.mem_by_sym sym mem
-    with Not_found ->
-      Toml.error "Final condition error: symbol %s not found" sym
-  in
-  let req = parse_mem_requirement toml in
-  {sym; addr = block.addr; size = Testrepr.block_size block; req}
-
-let parse_mem_conds mem toml : Testrepr.mem_cond list =
-  Toml.find_or ~default:[] toml
-    (Toml.get_table_key_values (parse_mem_cond mem))
-    ["final"; "mem"]
-
-let parse_test_final mem toml : Testrepr.final_cond =
-  {regs = parse_reg_conds toml; mem = parse_mem_conds mem toml}
+(** {2 Parse test kinds} *)
 
 let parse_kind toml : Testrepr.kind =
   let parse_kind_string toml : Testrepr.kind =
@@ -199,14 +185,17 @@ let parse_kind toml : Testrepr.kind =
   in
   Toml.find_or ~default:Testrepr.Exists toml parse_kind_string ["final"; "kind"]
 
+(** {2 Top-level parser} *)
+
 let parse_to_testrepr : Toml.t -> Testrepr.t =
  fun toml ->
-  let memory = parse_test_memory toml in
   { Testrepr.arch = Toml.find toml Toml.get_string ["arch"];
     name = Toml.find toml Toml.get_string ["name"];
     registers = parse_test_registers toml;
-    memory;
+    memory = parse_test_memory toml;
     term_cond = parse_test_termcond toml;
-    final = parse_test_final memory toml;
+    final =
+      Toml.find_or ~default:Assertion.True toml parse_assertion
+        ["final"; "assertion"];
     kind = parse_kind toml
   }

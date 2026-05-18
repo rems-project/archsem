@@ -57,5 +57,4 @@ rip = 0x60b
 # [EDX]=2 ∧ EAX=0 is forbidden (MFENCE prevents this)
 [final]
 kind = "notexists"
-regs.1.rax = 0
-mem.y = 2
+assertion.and = [{"1:rax" = 0},{"y"=2}]

@@ -105,6 +105,5 @@ data = 0x60000000083303
 _PC = 0x800000050c
 
 [final]
-regs.0.R0 = 0x2a
-#TODO or-condition with 0x42
-regs.0.R4 = 0x2a
+kind = "forall"
+assertion.and=[{"0:R0" = 0x2a}, {"or"=[{"0:R4"=0x2a},{"0:R4"=0x42}]}]

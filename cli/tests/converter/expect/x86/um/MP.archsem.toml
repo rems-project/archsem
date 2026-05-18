@@ -44,7 +44,5 @@ name = "MP"
   rip = 0x604
 
 [final]
+  assertion = {and = [{"1:rax" = 0}, {"1:rbx" = 1}]}
   kind = "notexists"
-
-[final.regs]
-  "1" = {rax = 1, rbx = 0}

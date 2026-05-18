@@ -41,7 +41,7 @@
 (** Normalize architecture-specific register aliases in the IR. *)
 
 module Toml = Litmus.Toml
-open Assertion
+open Litmus.Assertion
 
 let register_renames () =
   Toml.find_or ~default:[] (Litmus.Config.get ())
@@ -57,17 +57,7 @@ let normalize_loc = function
   | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
   | loc -> loc
 
-let normalize_atom = function
-  | CmpTerm (lhs, op, rhs) -> CmpTerm (normalize_loc lhs, op, rhs)
-  | CmpLoc (lhs, op, rhs) -> CmpLoc (normalize_loc lhs, op, normalize_loc rhs)
-
-let rec normalize_expr = function
-  | Atom atom -> Atom (normalize_atom atom)
-  | And (lhs, rhs) -> And (normalize_expr lhs, normalize_expr rhs)
-  | Or (lhs, rhs) -> Or (normalize_expr lhs, normalize_expr rhs)
-  | Not expr -> Not (normalize_expr expr)
-  | True -> True
-  | False -> False
+let normalize_expr expr = expr |> map_loc normalize_loc |> flatten
 
 let normalize_thread (thread : Ir.thread) =
   { thread with

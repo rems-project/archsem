@@ -40,6 +40,8 @@
 
 (** Parse isla-format TOML into an intermediate representation. *)
 
+module Assertion = Litmus.Assertion
+
 (** {1 Isla test internal representation } *)
 module Arch_id = Litmus.Arch_id
 
@@ -65,7 +67,7 @@ type t =
     symbolic : string list;
     locations : (string * Term.t) list;
     kind : Litmus.Testrepr.kind;
-    assertion : Assertion.expr
+    assertion : Term.t Assertion.expr
   }
 
 (** {1 Isla test parsing } *)

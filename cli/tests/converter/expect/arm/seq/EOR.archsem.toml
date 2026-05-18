@@ -19,7 +19,5 @@ name = "EOR"
   _PC = 0x504
 
 [final]
+  assertion = {and = [{"0:_PC" = 0x504}, {"0:R0" = 0x110}]}
   kind = "forall"
-
-[final.regs]
-  "0" = {_PC = 0x504, "R0" = 0x110}

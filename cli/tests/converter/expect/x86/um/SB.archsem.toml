@@ -44,7 +44,4 @@ name = "SB"
   rip = 0x608
 
 [final]
-
-[final.regs]
-  "0" = {rax = 0}
-  "1" = {rax = 0}
+  assertion = {and = [{"0:rax" = 0}, {"1:rax" = 0}]}

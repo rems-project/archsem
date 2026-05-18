@@ -42,11 +42,8 @@
 
 module Make (Arch : Archsem.Arch) = struct
   open Arch
-
-  open Runner_utils.Make (Arch)
-
   module AS = ToArchState.Make (Arch)
-  module MinSt = MinState.Make (Arch)
+  module AssertionChecker = Assertion.Checker (Arch)
 
   (** Run a test in a given model, print [short] or long output.
       raises [Exit] if something went wrong, after printing message on [stderr] *)
@@ -87,8 +84,15 @@ module Make (Arch : Archsem.Arch) = struct
       raise Exit
     );
 
+    let resolve_sym sym =
+      let block = Testrepr.mem_by_sym sym test.memory in
+      (block.addr, Testrepr.block_size block)
+    in
+
     let (observed, not_observed) =
-      List.partition (check_final_cond test.final) final_states
+      List.partition
+        (fun fs -> AssertionChecker.check_assertion ~resolve_sym fs test.final)
+        final_states
     in
 
     let obs_count = List.length observed in
@@ -96,9 +100,17 @@ module Make (Arch : Archsem.Arch) = struct
 
     if short then Mcompare.print_observation test.name obs_count not_obs_count
     else
+      let locations = Assertion.get_unique_locs test.final in
       let min_states =
-        MinSt.get_unique_minimised_states test.final final_states
+        List.map
+          (fun fs ->
+             List.map
+               (fun loc -> (loc, AssertionChecker.lookup_loc ~resolve_sym fs loc))
+               locations
+           )
+          final_states
       in
+      let min_states = List.sort_uniq compare min_states in
       Mcompare.print test min_states obs_count not_obs_count time
 
   (** Run a testfile in a given model.

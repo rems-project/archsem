@@ -20,5 +20,4 @@ _PC = 0x504
 
 [final]
 kind = "forall"
-regs.0._PC = 0x504
-regs.0.R0 = 0x110
+assertion.and = [{"0:_PC" = 0x504}, {"0:R0" = 0x110}]
