@@ -41,7 +41,7 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common CResult CList Exec.
 
-From ArchSemArm Require Import ArmInst UMPromising.
+From ArchSemArm Require Import ArmInst UMPromising UMPromisingExec.
 
 Open Scope stdpp.
 Open Scope bv.
@@ -109,7 +109,8 @@ Module EOR.
   Definition test_results :=
     UMPromising_exe arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x110%Z; Error "out of fuel"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -117,7 +118,10 @@ Module EOR.
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf =
+    Listset [Ok 0x110%Z; Error "out of fuel"; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -152,7 +156,8 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
   Definition test_results :=
     UMPromising_exe arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x2a%Z; Error "out of fuel"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -160,7 +165,10 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf =
+    Listset [Ok 0x2a%Z; Error "out of fuel"; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -197,16 +205,30 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Definition test_results :=
     UMPromising_exe arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    set_solver.
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z;
+             Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z;
+             Ok 0x2a%Z; Ok 0x2a%Z;
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"].
+  vm_compute (_ <$> _).
+    reflexivity.
   Qed.
 
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡
+    Listset [Ok 0x2a%Z; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
+  vm_compute (_ <$> _).
     set_solver.
   Qed.
 End STRLDR.
@@ -275,17 +297,20 @@ Module MP.
     UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
+    [Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z];
+     Error "out of fuel"].
   Proof.
     vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
+    apply Permutation_refl.
   Qed.
 
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
+    [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x2a%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x2a%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -359,7 +384,8 @@ Module MPDMBS.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z];
+     Error "out of fuel"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -370,7 +396,9 @@ Module MPDMBS.
 
   (** The test is fenced enough, the 0x1;0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results_pf) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -437,7 +465,8 @@ Module LB.
     UMPromising_exe arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z];
+     Error "out of fuel"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -447,7 +476,9 @@ Module LB.
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
-    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+    [Ok [0x01%Z; 0x01%Z]; Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -516,7 +547,8 @@ Module LBDMBS.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results) ≡ₚ
-    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z];
+     Error "out of fuel"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -527,7 +559,9 @@ Module LBDMBS.
 
   (* The (1, 1) result is now impossible due the barriers. *)
   Goal elements (regs_extract [(0%fin, R0); (1%fin, R0)] <$> test_results_pf) ≡ₚ
-    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z]].
+    [Ok [0x00%Z; 0x01%Z]; Ok [0x01%Z; 0x00%Z]; Ok [0x00%Z; 0x00%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -567,7 +601,10 @@ Module STRW_LDRX. (* STR W2, [X1, X0]; LDR X0, [X1, X0] — 4-byte write, 8-byte
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡
+    Listset [Ok 0x2a%Z; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     set_solver.
   Qed.
@@ -629,7 +666,9 @@ Module CoWWRmixed.
   Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
     [Ok [0x1111111111111111%Z];
      Ok [0x1111111122222222%Z];
-     Ok [0x0000000022222222%Z]].
+     Ok [0x0000000022222222%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.

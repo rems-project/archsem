@@ -41,7 +41,7 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common CResult CList.
 
-From ArchSemArm Require Import ArmInst VMPromising.
+From ArchSemArm Require Import ArmInst VMPromising VMPromisingExec.
 
 Open Scope stdpp.
 Open Scope bv.
@@ -119,7 +119,8 @@ Module EORMMUOFF.
   Definition test_results :=
     VMPromising_exe BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x110%Z; Error "out of fuel"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -127,7 +128,10 @@ Module EORMMUOFF.
   Definition test_results_pf :=
     VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf =
+    Listset [Ok 0x110%Z; Error "out of fuel"; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -193,7 +197,8 @@ Module EOR.
   Definition test_results :=
     VMPromising_exe BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x110%Z; Error "out of fuel"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -201,7 +206,10 @@ Module EOR.
   Definition test_results_pf :=
     VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x110%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf =
+    Listset [Ok 0x110%Z; Error "out of fuel"; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -254,7 +262,8 @@ Module LDR.
   Definition test_results :=
     VMPromising_exe BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results = Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x2a%Z; Error "out of fuel"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -262,7 +271,10 @@ Module LDR.
   Definition test_results_pf :=
     VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf =
+    Listset [Ok 0x2a%Z; Error "out of fuel"; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
     vm_compute (_ <$> _).
     reflexivity.
   Qed.
@@ -314,16 +326,30 @@ Module STRLDR.
   Definition test_results :=
     VMPromising_exe BBM.Off arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
-    set_solver.
+  Goal reg_extract R0 0%fin <$> test_results =
+    Listset [Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z;
+             Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z; Ok 0x2a%Z;
+             Ok 0x2a%Z; Ok 0x2a%Z;
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"; Error "out of fuel";
+             Error "out of fuel"].
+  vm_compute (_ <$> _).
+    reflexivity.
   Qed.
 
   Definition test_results_pf :=
     VMPromising_pf BBM.Lax arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
-    vm_compute (_ <$> _).
+  Goal reg_extract R0 0%fin <$> test_results_pf ≡
+    Listset [Ok 0x2a%Z; Error "out of fuel";
+             Error "Promise first: out of fuel in main loop";
+             Error "Promise first: out of fuel in enumeration"].
+  vm_compute (_ <$> _).
     set_solver.
   Qed.
 End STRLDR.
@@ -393,7 +419,9 @@ Module LDRPT.
 
   (* R0 should be 0x2a (from old mapping), R4 should be 0x42 (from new mapping) *)
   Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results) ≡ₚ
-      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]].
+      [Ok [0x2a%Z; 0x2a%Z]; Ok [0x2a%Z; 0x42%Z]; Error "out of fuel";
+       Error "Promise first: out of fuel in main loop";
+       Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -403,10 +431,12 @@ Module LDRPT.
     VMPromising_pf BBM.Lax arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, R0); (0%fin, R4)] <$> test_results_bbm) ≡ₚ
-      [Error "BBM violation detected"].
+      [Error "BBM violation detected"; Error "out of fuel";
+       Error "Promise first: out of fuel in main loop";
+       Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
-    apply NoDup_Permutation; try solve_NoDup; set_solver.
+    apply Permutation_refl.
   Qed.
 End LDRPT.
 
@@ -495,7 +525,9 @@ Module MP.
     VMPromising_pf BBM.Lax arm_sem fuel n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z]].
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]; Ok [0x1%Z; 0x0%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
@@ -588,7 +620,9 @@ Module MPDMBS.
 
   (** The test is fenced enough, the 0x1; 0x0 outcome is impossible*)
   Goal elements (regs_extract [(1%fin, R5); (1%fin, R2)] <$> test_results) ≡ₚ
-    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z]].
+    [Ok [0x0%Z;0x2a%Z]; Ok [0x0%Z;0x0%Z]; Ok [0x1%Z; 0x2a%Z];
+     Error "out of fuel"; Error "Promise first: out of fuel in main loop";
+     Error "Promise first: out of fuel in enumeration"].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.

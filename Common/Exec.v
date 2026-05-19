@@ -317,6 +317,612 @@ Proof.
   set_solver.
 Qed.
 
+#[global] Instance unfold_elem_of_mcallM_MState_get {St E} st (x : St * St) :
+  UnfoldElemOf x
+    (@mcallM (MState St) (MState_ret St) (Exec.t St E)
+       (@st_call_MState St E) MGet st) (x = (st, st)).
+Proof.
+  tcclean.
+  unfold mcallM, st_call_MState.
+  set_solver.
+Qed.
+
+#[global] Instance unfold_elem_of_mcallM_MState_set {St E}
+    st st' (x : St * unit) :
+  UnfoldElemOf x
+    (@mcallM (MState St) (MState_ret St) (Exec.t St E)
+       (@st_call_MState St E) (MSet st') st) (x = (st', ())).
+Proof.
+  tcclean.
+  unfold mcallM, st_call_MState.
+  set_solver.
+Qed.
+
+Lemma elem_of_bind_intro {St E A B} st st' st'' a b
+    (e : Exec.t St E A) (k : A → Exec.t St E B) :
+  Exec.elem_of_results (st', a) (e st) →
+  Exec.elem_of_results (st'', b) (k a st') →
+  Exec.elem_of_results (st'', b) ((e ≫= k) st).
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold mbind, mbind_inst, res_mbind_inst, merge.
+  destruct (e st) as [l es].
+  cbn.
+  revert st' a st'' b.
+  induction l as [|[st0 a0] l IH]; intros st' a st'' b He Hk.
+  - inversion He.
+  - cbn in He.
+    apply elem_of_cons in He as [He|He].
+    + inversion He; subst.
+      cbn.
+      rewrite elem_of_app.
+      left.
+      exact Hk.
+    + cbn.
+      rewrite elem_of_app.
+      right.
+      eapply IH; eauto.
+Qed.
+
+Lemma elem_of_bind_elim {St E A B} st (x : St * B)
+    (e : Exec.t St E A) (k : A → Exec.t St E B) :
+  Exec.elem_of_results x ((e ≫= k) st) →
+  ∃ st' a,
+    Exec.elem_of_results (st', a) (e st) ∧
+    Exec.elem_of_results x (k a st').
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold mbind, mbind_inst, res_mbind_inst, merge.
+  destruct (e st) as [l es].
+  cbn.
+  induction l as [|[st' a] l IH]; cbn.
+  - inversion 1.
+  - intro H.
+    apply elem_of_app in H as [H|H].
+    + exists st', a.
+      split; [left; reflexivity|exact H].
+    + apply IH in H as [st'' [a' [He Hk]]].
+      exists st'', a'.
+      split; [right; exact He|exact Hk].
+Qed.
+
+Lemma elem_of_res_bind_elim {E A B} (x : B)
+    (e : Exec.res E A) (k : A → Exec.res E B) :
+  Exec.elem_of_results x (e ≫= k) →
+  ∃ a,
+    Exec.elem_of_results a e ∧
+    Exec.elem_of_results x (k a).
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold mbind, res_mbind_inst, merge.
+  destruct e as [l es].
+  cbn.
+  induction l as [|a l IH]; cbn.
+  - inversion 1.
+  - intro H.
+    apply elem_of_app in H as [H|H].
+    + exists a.
+      split; [left; reflexivity|exact H].
+    + apply IH in H as [a' [He Hk]].
+      exists a'.
+      split; [right; exact He|exact Hk].
+Qed.
+
+Lemma elem_of_res_bind_intro {E A B} (a : A) (b : B)
+    (e : Exec.res E A) (k : A → Exec.res E B) :
+  Exec.elem_of_results a e →
+  Exec.elem_of_results b (k a) →
+  Exec.elem_of_results b (e ≫= k).
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold mbind, res_mbind_inst, merge.
+  destruct e as [l es].
+  cbn.
+  revert a b.
+  induction l as [|a0 l IH]; intros a b He Hk.
+  - inversion He.
+  - cbn in He.
+    apply elem_of_cons in He as [He|He].
+    + subst a0.
+      cbn.
+      rewrite elem_of_app.
+      left.
+      exact Hk.
+    + cbn.
+      rewrite elem_of_app.
+      right.
+      eapply IH; eauto.
+Qed.
+
+Lemma elem_of_fin_enum n (i : fin n) : i ∈ fin_enum n.
+Proof.
+  induction i; cbn; set_solver.
+Qed.
+
+Lemma NoDup_fin_enum n : NoDup (fin_enum n).
+Proof.
+  induction n as [|n IH]; cbn.
+  - constructor.
+  - rewrite NoDup_cons.
+    split.
+    + rewrite elem_of_list_fmap.
+      intros [i [Heq _]].
+      inversion Heq.
+    + apply NoDup_fmap_2.
+      * intros i j Heq.
+        dependent destruction Heq.
+        reflexivity.
+      * exact IH.
+Qed.
+
+Lemma elem_of_mchoosel {St E A} st (x : A) (l : list A) :
+  x ∈ l →
+  Exec.elem_of_results (st, x) ((mchoosel l : Exec.t St E A) st).
+Proof.
+  intro Hx.
+  unfold mchoosel, mchoose, mcall, choose_inst.
+  unfold elem_of, Exec.elem_of_results.
+  unfold fmap, Exec.fmap_inst, res_fmap_inst.
+  cbn.
+  rewrite elem_of_list_fmap.
+  apply elem_of_list_lookup in Hx as [i Hi].
+  assert (Hlt : i < length l) by (eapply lookup_lt_Some; eauto).
+  exists (st, nat_to_fin Hlt).
+  split.
+  - f_equal.
+    symmetry.
+    apply vlookup_lookup.
+    rewrite vec_to_list_to_vec.
+    rewrite fin_to_nat_to_fin.
+    exact Hi.
+  - rewrite elem_of_list_fmap.
+    exists (nat_to_fin Hlt).
+    split; [reflexivity|apply elem_of_fin_enum].
+Qed.
+
+Lemma elem_of_res_mchoosel {E A} (x : A) (l : list A) :
+  x ∈ l →
+  Exec.elem_of_results x (mchoosel l : Exec.res E A).
+Proof.
+  intro Hx.
+  unfold mchoosel, mchoose, mcall, res_choose_inst.
+  unfold elem_of, Exec.elem_of_results.
+  unfold fmap, res_fmap_inst.
+  cbn.
+  rewrite elem_of_list_fmap.
+  apply elem_of_list_lookup in Hx as [i Hi].
+  assert (Hlt : i < length l) by (eapply lookup_lt_Some; eauto).
+  exists (nat_to_fin Hlt).
+  split.
+  - symmetry.
+    apply vlookup_lookup.
+    rewrite vec_to_list_to_vec.
+    rewrite fin_to_nat_to_fin.
+    exact Hi.
+  - apply elem_of_fin_enum.
+Qed.
+
+Lemma elem_of_res_mchoosel_inv {E A} (x : A) (l : list A) :
+  Exec.elem_of_results x (mchoosel l : Exec.res E A) →
+  x ∈ l.
+Proof.
+  unfold mchoosel, mchoose, mcall, res_choose_inst.
+  unfold elem_of, Exec.elem_of_results.
+  unfold fmap, res_fmap_inst.
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [idx [Hx _]].
+  inversion Hx; subst x.
+  apply elem_of_list_lookup.
+  exists (idx : nat).
+  pose proof
+    (proj1 (vlookup_lookup (list_to_vec l) idx
+              (list_to_vec l !!! idx)) eq_refl) as Hlookup.
+  rewrite vec_to_list_to_vec in Hlookup.
+  exact Hlookup.
+Qed.
+
+Lemma elem_of_lift_res {St E A} st (x : A) (r : Exec.res E A) :
+  Exec.elem_of_results x r →
+  Exec.elem_of_results (st, x) ((mlift r : Exec.t St E A) st).
+Proof.
+  unfold elem_of, elem_of_results.
+  destruct r as [rs es].
+  cbn.
+  rewrite elem_of_list_fmap.
+  intro H.
+  exists x.
+  split; [reflexivity|exact H].
+Qed.
+
+Lemma elem_of_fmap_inv {St E A B} st st' (b : B)
+    (e : Exec.t St E A) (f : A → B) :
+  Exec.elem_of_results (st', b) ((f <$> e) st) →
+  ∃ a,
+    b = f a ∧ Exec.elem_of_results (st', a) (e st).
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold fmap, Exec.fmap_inst.
+  destruct (e st) as [rs es].
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [[st0 a] [Heq Hin]].
+  inversion Heq; subst.
+  exists a.
+  split; [reflexivity|exact Hin].
+Qed.
+
+Lemma elem_of_fmap_intro {St E A B} st st' (a : A)
+    (e : Exec.t St E A) (f : A → B) :
+  Exec.elem_of_results (st', a) (e st) →
+  Exec.elem_of_results (st', f a) ((f <$> e) st).
+Proof.
+  unfold elem_of, elem_of_results.
+  unfold fmap, Exec.fmap_inst.
+  destruct (e st) as [rs es].
+  cbn.
+  rewrite elem_of_list_fmap.
+  intro Hin.
+  exists (st', a).
+  split; [reflexivity|exact Hin].
+Qed.
+
+Lemma elem_of_lift_res_inv {St E A} st st' (x : A) (r : Exec.res E A) :
+  Exec.elem_of_results (st', x) ((mlift r : Exec.t St E A) st) →
+  st' = st ∧ Exec.elem_of_results x r.
+Proof.
+  unfold elem_of, elem_of_results.
+  destruct r as [rs es].
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [y [Heq Hy]].
+  inversion Heq; subst.
+  naive_solver.
+Qed.
+
+Lemma elem_of_liftSt {St St' E A} st st' a
+    (getter : St → St') `{Setter St St' getter}
+    (e : Exec.t St' E A) :
+  Exec.elem_of_results (st', a) (e (getter st)) →
+  Exec.elem_of_results (setv getter st' st, a) ((Exec.liftSt getter e) st).
+Proof.
+  unfold Exec.liftSt, liftSt_full, map_state.
+  unfold elem_of, Exec.elem_of_results.
+  destruct (e (getter st)) as [rs es] eqn:He.
+  cbn.
+  rewrite elem_of_list_fmap.
+  intro Hin.
+  exists (st', a).
+  split; [reflexivity|].
+  cbn in Hin.
+  exact Hin.
+Qed.
+
+Lemma elem_of_liftSt_inv {St St' E A} st st' a
+    (getter : St → St') `{Setter St St' getter}
+    (e : Exec.t St' E A) :
+  Exec.elem_of_results (st', a) ((Exec.liftSt getter e) st) →
+  ∃ st_inner,
+    st' = setv getter st_inner st ∧
+    Exec.elem_of_results (st_inner, a) (e (getter st)).
+Proof.
+  unfold Exec.liftSt, liftSt_full, map_state.
+  unfold elem_of, Exec.elem_of_results.
+  destruct (e (getter st)) as [rs es] eqn:He.
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [[st_inner a0] [Heq Hin]].
+  inversion Heq; subst.
+  exists st_inner.
+  cbn in Hin.
+  naive_solver.
+Qed.
+
+Lemma elem_of_mchoose_inv {St E n} st st' (i : fin n) :
+  Exec.elem_of_results (st', i) ((mchoose n : Exec.t St E (fin n)) st) →
+  st' = st.
+Proof.
+  unfold mchoose.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [i' [Heq _]].
+  inversion Heq.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mchoose {St E n} st (i : fin n) :
+  Exec.elem_of_results (st, i) ((mchoose n : Exec.t St E (fin n)) st).
+Proof.
+  unfold mchoose.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  rewrite elem_of_list_fmap.
+  exists i.
+  split; [reflexivity|apply elem_of_fin_enum].
+Qed.
+
+Lemma elem_of_mchoosel_inv {St E A} st st' (x : A) (l : list A) :
+  Exec.elem_of_results (st', x) ((mchoosel l : Exec.t St E A) st) →
+  st' = st ∧ x ∈ l.
+Proof.
+  unfold mchoosel, mchoose, mcall, choose_inst.
+  unfold elem_of, Exec.elem_of_results.
+  unfold fmap, Exec.fmap_inst, res_fmap_inst.
+  cbn.
+  rewrite elem_of_list_fmap.
+  intros [[st0 idx] [Heq Hidx]].
+  inversion Heq; subst st' x.
+  rewrite elem_of_list_fmap in Hidx.
+  destruct Hidx as [idx' [Heq_idx _]].
+  inversion Heq_idx; subst st0 idx'.
+  split; [reflexivity|].
+  apply elem_of_list_lookup.
+  exists (idx : nat).
+  pose proof
+    (proj1 (vlookup_lookup (list_to_vec l) idx
+              (list_to_vec l !!! idx)) eq_refl) as Hlookup.
+  rewrite vec_to_list_to_vec in Hlookup.
+  exact Hlookup.
+Qed.
+
+Lemma elem_of_mGet {St E} st :
+  Exec.elem_of_results (st, st) ((mGet : Exec.t St E St) st).
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  apply elem_of_list_singleton.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mGet_inv {St E} st st' x :
+  Exec.elem_of_results (st', x) ((mGet : Exec.t St E St) st) →
+  st' = st ∧ x = st.
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  intro H.
+  apply elem_of_list_singleton in H.
+  inversion H; subst.
+  naive_solver.
+Qed.
+
+Lemma elem_of_mget {St E T} st (proj : St → T) :
+  Exec.elem_of_results (st, proj st) ((mget proj : Exec.t St E T) st).
+Proof.
+  unfold mget.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  apply elem_of_list_singleton.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mget_inv {St E T} st st' x (proj : St → T) :
+  Exec.elem_of_results (st', x) ((mget proj : Exec.t St E T) st) →
+  st' = st ∧ x = proj st.
+Proof.
+  unfold mget.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  intro H.
+  apply elem_of_list_singleton in H.
+  inversion H; subst.
+  naive_solver.
+Qed.
+
+Lemma elem_of_mret {St E A} st (x : A) :
+  Exec.elem_of_results (st, x) ((mret x : Exec.t St E A) st).
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  apply elem_of_list_singleton.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mret_inv {St E A} st st' x (y : A) :
+  Exec.elem_of_results (st', x) ((mret y : Exec.t St E A) st) →
+  st' = st ∧ x = y.
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  intro H.
+  apply elem_of_list_singleton in H.
+  inversion H; subst.
+  naive_solver.
+Qed.
+
+Lemma elem_of_guard_discard_inv {St E P} `{Decision P} st st' (p : P) :
+  Exec.elem_of_results (st', p) ((guard_discard P : Exec.t St E P) st) →
+  st' = st.
+Proof.
+  unfold guard_discard.
+  destruct (decide P) as [Hp|Hnp].
+  - intro Hin.
+    apply elem_of_mret_inv in Hin as [-> _].
+    reflexivity.
+  - rewrite mdiscard_eq.
+    unfold elem_of, Exec.elem_of_results.
+    cbn.
+    inversion 1.
+Qed.
+
+Lemma elem_of_guard_discard {St E P} `{Decision P} st :
+  P →
+  ∃ p, Exec.elem_of_results (st, p)
+    ((guard_discard P : Exec.t St E P) st).
+Proof.
+  intro p.
+  unfold guard_discard.
+  destruct (decide P) as [p'|Hnp].
+  - exists p'.
+    apply elem_of_mret.
+  - exfalso.
+    exact (Hnp p).
+Qed.
+
+Lemma elem_of_guard_or_inv {St E P} `{Decision P} st st' (err : E) (p : P) :
+  Exec.elem_of_results (st', p) ((guard_or err P : Exec.t St E P) st) →
+  st' = st.
+Proof.
+  unfold guard_or.
+  destruct (decide P) as [Hp|Hnp].
+  - intro Hin.
+    apply elem_of_mret_inv in Hin as [-> _].
+    reflexivity.
+  - unfold elem_of, Exec.elem_of_results.
+    cbn.
+    inversion 1.
+Qed.
+
+Lemma elem_of_guard_or {St E P} `{Decision P} st (err : E) :
+  P →
+  ∃ p, Exec.elem_of_results (st, p)
+    ((guard_or err P : Exec.t St E P) st).
+Proof.
+  intro p.
+  unfold guard_or.
+  destruct (decide P) as [p'|Hnp].
+  - exists p'.
+    apply elem_of_mret.
+  - exfalso.
+    exact (Hnp p).
+Qed.
+
+Lemma elem_of_guard_or_prop {St E P} `{Decision P} st st' (err : E)
+    (p : P) :
+  Exec.elem_of_results (st', p) ((guard_or err P : Exec.t St E P) st) →
+  P.
+Proof.
+  intro Hres.
+  exact p.
+Qed.
+
+Lemma elem_of_guard_discard_unit_inv {St E P} `{Decision P} st st' :
+  Exec.elem_of_results (st', ())
+    ((guard_discard' P : Exec.t St E unit) st) →
+  st' = st.
+Proof.
+  unfold guard_discard'.
+  intro Hres.
+  apply elem_of_bind_elim in Hres as [st0 [p [Hguard Hret]]].
+  apply elem_of_guard_discard_inv in Hguard as ->.
+  apply elem_of_mret_inv in Hret as [-> _].
+  reflexivity.
+Qed.
+
+Lemma elem_of_guard_discard_unit_prop {St E P} `{Decision P} st st' :
+  Exec.elem_of_results (st', ())
+    ((guard_discard' P : Exec.t St E unit) st) →
+  P.
+Proof.
+  unfold guard_discard'.
+  intro Hres.
+  apply elem_of_bind_elim in Hres as [st0 [p [Hguard Hret]]].
+  exact p.
+Qed.
+
+Lemma elem_of_guard_discard_unit {St E P} `{Decision P} st :
+  P →
+  Exec.elem_of_results (st, ())
+    ((guard_discard' P : Exec.t St E unit) st).
+Proof.
+  intro p.
+  unfold guard_discard'.
+  destruct (elem_of_guard_discard (E:=E) st p) as [p' Hguard].
+  eapply elem_of_bind_intro.
+  - exact Hguard.
+  - apply elem_of_mret.
+Qed.
+
+Lemma elem_of_mSetv {St E} st (v : St) :
+  Exec.elem_of_results (v, ()) ((mSetv v : Exec.t St E unit) st).
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  apply elem_of_list_singleton.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mSetv_inv {St E} st st' (v : St) :
+  Exec.elem_of_results (st', ()) ((mSetv v : Exec.t St E unit) st) →
+  st' = v.
+Proof.
+  unfold elem_of, Exec.elem_of_results.
+  cbn.
+  intro H.
+  apply elem_of_list_singleton in H.
+  inversion H.
+  reflexivity.
+Qed.
+
+Lemma elem_of_mSet {St E} st (upd : St → St) :
+  Exec.elem_of_results (upd st, ())
+    ((mSet upd : Exec.t St E unit) st).
+Proof.
+  unfold mSet.
+  eapply Exec.elem_of_bind_intro with (st' := st) (a := st).
+  - apply elem_of_mGet.
+  - apply elem_of_mSetv.
+Qed.
+
+Lemma elem_of_mSet_inv {St E} st st' (upd : St → St) :
+  Exec.elem_of_results (st', ()) ((mSet upd : Exec.t St E unit) st) →
+  st' = upd st.
+Proof.
+  unfold mSet.
+  intro Hres.
+  apply Exec.elem_of_bind_elim in Hres as [st0 [s [Hget Hset]]].
+  apply elem_of_mGet_inv in Hget as [-> ->].
+  apply elem_of_mSetv_inv in Hset.
+  exact Hset.
+Qed.
+
+Lemma elem_of_mset {St E T} st (proj : St → T)
+    `{Setter St T proj} (upd : T → T) :
+  Exec.elem_of_results (set proj upd st, ())
+    ((mset proj upd : Exec.t St E unit) st).
+Proof.
+  unfold mset, mSet.
+  eapply Exec.elem_of_bind_intro with (st' := st) (a := st).
+  - unfold elem_of, Exec.elem_of_results.
+    cbn.
+    apply elem_of_list_singleton.
+    reflexivity.
+  - apply elem_of_mSetv.
+Qed.
+
+Lemma elem_of_unfolded_mset {St E T} st (proj : St → T)
+    `{Setter St T proj} (upd : T → T) :
+  Exec.elem_of_results (set proj upd st, ())
+    ((((λ s : St, {| Exec.results := [(s, s)]; Exec.errors := [] |})
+        : Exec.t St E St)
+      ≫= λ s : St,
+            ((λ _ : St,
+                {| Exec.results := [(set proj upd s, ())]; Exec.errors := [] |})
+             : Exec.t St E unit))
+       st).
+Proof.
+  change (Exec.elem_of_results (set proj upd st, ())
+    ((mset proj upd : Exec.t St E unit) st)).
+  apply elem_of_mset.
+Qed.
+
+Lemma elem_of_mset_inv {St E T} st st' (proj : St → T)
+    `{Setter St T proj} (upd : T → T) :
+  Exec.elem_of_results (st', ()) ((mset proj upd : Exec.t St E unit) st) →
+  st' = set proj upd st.
+Proof.
+  unfold mset, mSet.
+  intro Hres.
+  apply Exec.elem_of_bind_elim in Hres as [st0 [s [Hget Hset]]].
+  unfold elem_of, Exec.elem_of_results in Hget.
+  cbn in Hget.
+  apply elem_of_list_singleton in Hget.
+  inversion Hget; subst st0 s.
+  apply elem_of_mSetv_inv in Hset.
+  exact Hset.
+Qed.
+
 #[export] Instance res_unfold_elem_of_mbind {E A B} (x :  B) (e : res E A) (f : A → res E B) P:
   (∀ y, UnfoldElemOf y e (P y)) →
   UnfoldElemOf x (e ≫= f) (∃ y, P y ∧ x ∈ f y) | 20.

@@ -4,3 +4,8 @@
  (name default)
  (deps
   (alias_rec install)))
+
+(alias
+ (name proof)
+ (deps
+  (alias ArchSemArm/Proof/proof)))

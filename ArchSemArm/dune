@@ -4,7 +4,9 @@
  (modules
   ArmInst
   UMPromising
+  UMPromisingExec
   VMPromising
+  VMPromisingExec
   GenAxiomaticArm
   UMArm
   UMSeqArm
@@ -39,14 +41,14 @@
 (alias
  (name arm)
  (deps
-  (alias all)))
+  (alias install)))
 
 (alias
  (name coq)
  (deps
-  (alias all)))
+  (alias install)))
 
 (alias
  (name default)
  (deps
-  (alias all)))
+  (alias install)))
