@@ -78,10 +78,6 @@ let default_memory_size () =
 
 (* {1 IR to assembly_input} *)
 
-let z_of_value asm_result = function
-  | Ir.Int z -> z
-  | Ir.Sym sym -> Z.of_int (Assembler.resolve_symbol asm_result sym)
-
 let init_bytes_of_value mem_size sym value =
   if Z.numbits value > mem_size * 8 then
     Error.fatal "Number doesn't fit in symbol %s" sym;
@@ -89,6 +85,11 @@ let init_bytes_of_value mem_size sym value =
   let bits = Z.to_bits value in
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
   data
+
+let data_symbol_of_value ~resolve_sym mem_size sym value =
+  { Assembler.name = sym;
+    init_bytes = init_bytes_of_value mem_size sym (Term.eval ~resolve_sym value)
+  }
 
 let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
   let mem_size = default_memory_size () in
@@ -106,20 +107,11 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
     List.map
       (fun sym ->
          let init_value =
-           List.assoc_opt sym ir.locations |> Option.value ~default:(Ir.Int Z.zero)
+           List.assoc_opt sym ir.locations |> Option.value ~default:Term.zero
          in
-         let value =
-           match init_value with
-           | Ir.Int z -> z
-           | Ir.Sym s ->
-               Error.fatal
-                 "symbol-valued location initializer not supported (cannot \
-                  resolve %s before linking)"
-                  s
-         in
-         { Assembler.name = sym;
-           init_bytes = init_bytes_of_value mem_size sym value
-         }
+         (* A symbol-valued initializer needs the post-link symbol address, but
+            the assembler only needs the block size to compute layout here. *)
+         data_symbol_of_value ~resolve_sym:(fun _ -> 0) mem_size sym init_value
        )
       ir.symbolic
   in
@@ -134,6 +126,22 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
       ir.sections
   in
   {sections = code_sections @ fixed_sections; symbols = data_symbols}
+
+let resolve_data_symbols
+      (asm_result : Assembler.assembly_result)
+      (ir : Ir.t)
+      mem_size
+  =
+  List.map
+    (fun sym ->
+       let init_value =
+         List.assoc_opt sym ir.locations |> Option.value ~default:Term.zero
+       in
+       data_symbol_of_value
+         ~resolve_sym:(Assembler.resolve_symbol asm_result)
+         mem_size sym init_value
+     )
+    ir.symbolic
 
 (* {1 Memory, registers, and termination} *)
 
@@ -187,6 +195,7 @@ let build_registers
       (asm_result : Assembler.assembly_result)
       (threads : Ir.thread list)
   =
+  let resolve_sym = Assembler.resolve_symbol asm_result in
   List.mapi
     (fun i (thread : Ir.thread) ->
        let sec = find_section (Printf.sprintf "thread%d" i) asm_result in
@@ -194,7 +203,7 @@ let build_registers
        let used_regs =
          List.map
            (fun (reg, value) ->
-              (reg, RegValGen.Number (z_of_value asm_result value))
+              (reg, RegValGen.Number (Term.eval ~resolve_sym value))
             )
            thread.init
        in
@@ -239,23 +248,23 @@ let mem_requirement op value =
   | Assertion.Ne -> Testrepr.MemNe value
 
 (** Convert a single assertion atom into a register or memory condition. *)
-let atom_to_cond ~resolve_sym ~memory_size atom =
-  match atom with
-  | Assertion.CmpCst (Assertion.Reg (tid, reg), op, value) ->
-      `Reg (tid, reg, reg_requirement op value)
-  | Assertion.CmpCst (Assertion.Mem sym, op, value) ->
-      `Mem
-        ( { Testrepr.sym;
-            addr = resolve_sym sym;
-            size = memory_size sym;
-            req = mem_requirement op value
-          }
-         : Testrepr.mem_cond
-         )
-  | Assertion.CmpLoc (Assertion.Reg _, _, _) ->
-      Error.fatal "assertion: register-to-location comparisons are not supported"
-  | Assertion.CmpLoc (Assertion.Mem _, _, _) ->
-      Error.fatal "assertion: memory-to-location comparisons are not supported"
+let atom_to_cond ~resolve_sym ~memory_size = function
+  | Assertion.CmpLoc _ ->
+      Error.fatal "assertion: location-to-location comparisons are not supported"
+  | Assertion.CmpTerm (lhs, op, rhs) -> (
+      let value = Term.eval ~resolve_sym rhs in
+      match lhs with
+      | Assertion.Reg (tid, reg) -> `Reg (tid, reg, reg_requirement op value)
+      | Assertion.Mem sym ->
+          `Mem
+            ( { Testrepr.sym;
+                addr = resolve_sym sym;
+                size = memory_size sym;
+                req = mem_requirement op value
+              }
+             : Testrepr.mem_cond
+             )
+    )
 
 (** Partition atoms into per-thread register conditions and memory conditions. *)
 let atoms_to_conds ~resolve_sym ~memory_size atoms =
@@ -307,9 +316,10 @@ let build_finals ~expect_is_sat ~resolve_sym ~memory_size assertion =
 (* {1 Orchestration} *)
 
 let to_testrepr (ir : Ir.t) : Testrepr.t =
+  let mem_size = default_memory_size () in
   let asm_input = to_assembly_input ir in
   let asm_result = Assembler.assemble asm_input in
-  let data_symbols = asm_input.symbols in
+  let data_symbols = resolve_data_symbols asm_result ir mem_size in
   let resolve sym = Assembler.resolve_symbol asm_result sym in
   let registers = build_registers ~arch:ir.arch asm_result ir.threads in
   let user_section_names =
