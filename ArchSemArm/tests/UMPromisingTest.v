@@ -41,7 +41,7 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common CResult CList Exec.
 
-From ArchSemArm Require Import ArmInst UMPromising.
+From ArchSemArm Require Import ArmInst UMPromising UMPromisingFinalEquiv.
 
 Open Scope stdpp.
 Open Scope bv.

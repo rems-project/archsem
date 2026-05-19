@@ -114,6 +114,37 @@ Module Memory.
     | _ => None
     end.
 
+  Lemma read_last_cons_miss addr init mem msg :
+    Msg.read_byte addr msg = None →
+    read_last addr init (msg :: mem) = read_last addr init mem.
+  Proof.
+    intro Hmiss.
+    cbn.
+    rewrite Hmiss.
+    reflexivity.
+  Qed.
+
+  Lemma read_initial_cons_miss addr init mem msg :
+    Msg.read_byte addr msg = None →
+    read_initial addr init (msg :: mem) = read_initial addr init mem.
+  Proof.
+    intro Hmiss.
+    unfold read_initial.
+    rewrite read_last_cons_miss by exact Hmiss.
+    reflexivity.
+  Qed.
+
+  Lemma read_initial_cons_overwrite addr init mem msg byte :
+    Msg.read_byte addr msg = Some byte →
+    read_initial addr init (msg :: mem) = None.
+  Proof.
+    intro Hread.
+    unfold read_initial.
+    cbn.
+    rewrite Hread.
+    reflexivity.
+  Qed.
+
   (** Reads [size] bytes starting at [addr] from the memory state at
       timestamp [tread]. Returns each byte paired with its actual
       write-timestamp [twrite], or [None] if any byte is unmapped. *)
@@ -123,6 +154,17 @@ Module Memory.
     for a in addr_range addr size do
       read_last a init snap
     end.
+
+  Lemma read_from_cons_old addr size tread init mem msg :
+    (tread ≤ length mem)%nat →
+    read_from addr size tread init (msg :: mem) =
+    read_from addr size tread init mem.
+  Proof.
+    intro Hle.
+    unfold read_from, cut_before.
+    rewrite PromMemory.cut_before_cons_old by exact Hle.
+    reflexivity.
+  Qed.
 
   (** Transforms an initial memory map and a promising memory history back
       to a memoryMap *)
@@ -142,6 +184,62 @@ Module Memory.
     prom |> filter (λ t, mem !! t = Some msg)
          |> reverse
          |> head.
+
+  Lemma fulfill_none_no_match msg prom mem t :
+    fulfill msg prom mem = None →
+    t ∈ prom →
+    mem !! t ≠ Some msg.
+  Proof.
+    unfold fulfill.
+    rewrite list_basics.head_reverse.
+    intro Hfulfill.
+    apply list_basics.last_None in Hfulfill.
+    intros Hprom Hlookup.
+    pose proof (list_basics.filter_nil_not_elem_of
+      (λ t, mem !! t = Some msg) prom t Hfulfill Hlookup) as Hnot.
+    exact (Hnot Hprom).
+  Qed.
+
+  Lemma last_cons_all_eq {A} (x : A) (l : list A) :
+    (∀ y, y ∈ l → y = x) →
+    last (x :: l) = Some x.
+  Proof.
+    induction l as [|a l IH]; intro Hall.
+    - reflexivity.
+    - rewrite list_basics.last_cons_cons.
+      assert (a = x) by (apply Hall; left; reflexivity).
+      subst a.
+      apply IH.
+      intros y Hy.
+      apply Hall.
+      right.
+      exact Hy.
+  Qed.
+
+  Lemma fulfill_after_promise msg prom mem :
+    fulfill msg prom mem = None →
+    fulfill msg (length (msg :: mem) :: prom) (msg :: mem) =
+    Some (length (msg :: mem)).
+  Proof.
+    intro Hfulfill.
+    set (time := length (msg :: mem)).
+    assert (Hno_match : ∀ t, t ∈ prom → mem !! t ≠ Some msg).
+    { intros t Hprom.
+      eapply fulfill_none_no_match; eauto. }
+    unfold fulfill.
+    rewrite list_basics.head_reverse.
+    rewrite list_basics.filter_cons_True.
+    - apply last_cons_all_eq.
+      intros t Hmatch.
+      rewrite list_basics.elem_of_list_filter in Hmatch.
+      destruct Hmatch as [Hlookup Hprom].
+      apply PromMemory.lookup_cons_inv_same in Hlookup as [Hold_lookup|Htime].
+      + exfalso.
+        eapply Hno_match; eauto.
+      + exact Htime.
+    - subst time.
+      apply PromMemory.lookup_latest.
+  Qed.
 
   (** Checks that no write overlapping [addr, addr+size) has been made by any
       thread other than [tid] since view [v].  This is the exclusive-monitor
@@ -294,12 +392,55 @@ Module TState.
   #[global] Instance Decision_no_promises_until (v : view) (ts : t) :
       Decision (no_promises_until v ts).
   Proof. unfold_decide. Defined.
+
+  Lemma filter_prom_after_promise v ts :
+    set prom (filter (λ t, t ≠ v)) (promise v ts) =
+    set prom (filter (λ t, t ≠ v)) ts.
+  Proof.
+    destruct ts.
+    unfold promise.
+    cbn.
+    f_equal.
+    destruct (decide (v ≠ v)) as [Hneq|_].
+    - exfalso.
+      apply Hneq.
+      reflexivity.
+    - reflexivity.
+  Qed.
 End TState.
 
 
 (*** Instruction semantics ***)
 
 Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
+
+(** Addresses that may be fetched as instruction bytes.  The executable
+    promising model currently treats instruction memory as immutable; keeping
+    that assumption explicit makes it possible to replace it later with an
+    instruction-side timestamp/cache model. *)
+Definition code_region := address → Prop.
+
+Definition event_misses_code (code : code_region) (msg : Msg.t) : Prop :=
+  ∀ a, code a → Msg.read_byte a msg = None.
+
+Definition ifetch_in_code (code : code_region) (addr : address) (size : N) :
+    Prop :=
+  ∀ a, a ∈ addr_range addr size → code a.
+
+Definition event_misses_ifetch (msg : Msg.t) (addr : address) (size : N) :
+    Prop :=
+  ∀ a, a ∈ addr_range addr size → Msg.read_byte a msg = None.
+
+Lemma event_misses_code_ifetch code msg addr size :
+  event_misses_code code msg →
+  ifetch_in_code code addr size →
+  event_misses_ifetch msg addr size.
+Proof.
+  intros Hmiss Hifetch a Ha.
+  apply Hmiss.
+  apply Hifetch.
+  exact Ha.
+Qed.
 
 (** Interesting timestamps are [vpre] itself and any later timestamp whose
     write overlaps [addr, addr+size). *)
@@ -310,6 +451,35 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
               if decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg))
               then Some t else None)
     |> cons vpre.
+
+Lemma read_candidates_cons_old addr size vpre mem msg t :
+  (vpre ≤ length mem)%nat →
+  t ∈ read_candidates addr size vpre mem →
+  t ∈ read_candidates addr size vpre (msg :: mem).
+Proof.
+  intros Hle Ht.
+  unfold read_candidates in Ht |- *.
+  rewrite PromMemory.cut_after_with_timestamps_cons_old by exact Hle.
+  cbn.
+  destruct (decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg)));
+    set_solver.
+Qed.
+
+Lemma read_candidates_time_le addr size vpre mem t :
+  (vpre ≤ length mem)%nat →
+  t ∈ read_candidates addr size vpre mem →
+  (t ≤ length mem)%nat.
+Proof.
+  intros Hle Ht.
+  unfold read_candidates in Ht.
+  apply elem_of_cons in Ht as [->|Ht]; [exact Hle|].
+  rewrite elem_of_list_omap in Ht.
+  destruct Ht as [[msg t0] [Hin Hsome]].
+  destruct (decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg)));
+    cbn in Hsome; inversion Hsome; subst t0.
+  eapply PromMemory.cut_after_with_timestamps_time_le.
+  exact Hin.
+Qed.
 
 (** Reads an instruction from initial memory.  Returns the [size]-byte
     instruction word as a [bv (8 * size)] formed by concatenating the
@@ -324,6 +494,106 @@ Definition read_imem (addr : address) (size : N)
       Memory.read_initial a init mem
     end;
   mret (bv_of_bytes _ bytes).
+
+Lemma read_imem_cons_miss addr size init mem msg :
+  (∀ a, a ∈ addr_range addr size → Msg.read_byte a msg = None) →
+  read_imem addr size init (msg :: mem) = read_imem addr size init mem.
+Proof.
+  intro Hmiss.
+  unfold read_imem.
+  assert
+    (Hbytes :
+       (for a in addr_range addr size do
+          Memory.read_initial a init (msg :: mem)
+        end) =
+       (for a in addr_range addr size do
+          Memory.read_initial a init mem
+        end)).
+  { induction (addr_range addr size) as [|a addrs IH].
+    - reflexivity.
+    - cbn.
+      rewrite Memory.read_initial_cons_miss.
+      + rewrite IH.
+        * reflexivity.
+        * intros a' Ha'.
+          apply Hmiss.
+          set_solver.
+      + apply Hmiss.
+        set_solver. }
+  rewrite Hbytes.
+  reflexivity.
+Qed.
+
+Lemma read_imem_cons_misses_code code addr size init mem msg :
+  event_misses_code code msg →
+  ifetch_in_code code addr size →
+  read_imem addr size init (msg :: mem) = read_imem addr size init mem.
+Proof.
+  intros Hmiss Hifetch.
+  apply read_imem_cons_miss.
+  eapply event_misses_code_ifetch; eauto.
+Qed.
+
+Lemma read_imem_state_irrelevant addr size init mem ts ts' ts_new opcode :
+  Exec.elem_of_results (ts', opcode) (read_imem addr size init mem ts) →
+  Exec.elem_of_results (ts_new, opcode)
+    (read_imem addr size init mem ts_new).
+Proof.
+  intro Hrun.
+  unfold read_imem in Hrun |- *.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_guard [p_size [Hsize Hrun]]].
+  pose proof (Exec.elem_of_guard_or_prop _ _ _ _ Hsize) as Hsize_prop.
+  apply Exec.elem_of_guard_or_inv in Hsize as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_bytes [bytes [Hbytes Hrun]]].
+  unfold othrow in Hbytes.
+  destruct
+    (for a in addr_range addr size do Memory.read_initial a init mem end)
+    as [bytes0|] eqn:Hread.
+  2: {
+    unfold elem_of, Exec.elem_of_results in Hbytes.
+    cbn in Hbytes.
+    inversion Hbytes.
+  }
+  apply Exec.elem_of_mret_inv in Hbytes as [-> Hbytes_eq].
+  inversion Hbytes_eq; subst bytes0.
+  apply Exec.elem_of_mret_inv in Hrun as [-> ->].
+  destruct (Exec.elem_of_guard_or
+    (St:=TState.t) (E:=string) (P:=(size =? 4)%N) ts_new
+    "Ifetch of size other than 4" Hsize_prop) as [p_size' Hsize'].
+  eapply Exec.elem_of_bind_intro with
+    (e := guard_or "Ifetch of size other than 4" (size =? 4)%N)
+    (st' := ts_new) (a := p_size').
+  - exact Hsize'.
+  - cbn.
+    apply Exec.elem_of_mret.
+Qed.
+
+Lemma read_imem_preserves_state addr size init mem ts ts' opcode :
+  Exec.elem_of_results (ts', opcode) (read_imem addr size init mem ts) →
+  ts' = ts.
+Proof.
+  intro Hrun.
+  unfold read_imem in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_guard [p_size [Hsize Hrun]]].
+  apply Exec.elem_of_guard_or_inv in Hsize as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_bytes [bytes [Hbytes Hrun]]].
+  unfold othrow in Hbytes.
+  destruct
+    (for a in addr_range addr size do Memory.read_initial a init mem end)
+    as [bytes0|] eqn:Hread.
+  2: {
+    unfold elem_of, Exec.elem_of_results in Hbytes.
+    cbn in Hbytes.
+    inversion Hbytes.
+  }
+  apply Exec.elem_of_mret_inv in Hbytes as [-> _].
+  apply Exec.elem_of_mret_inv in Hrun as [-> _].
+  reflexivity.
+Qed.
 
 (** Per-byte forwarding (paper math [read-fwd]).  Forwarding fires when
     [fwdb !! a] has an entry [fwd] with [fwd.time > tread], replacing
@@ -343,6 +613,53 @@ Definition apply_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
   | None => mret default
   end.
 
+Definition fwdb_times_le (mem : Memory.t) (ts : TState.t) : Prop :=
+  ∀ a fwd, ts.(TState.fwdb) !! a = Some fwd →
+    (fwd.(FwdItem.time) ≤ length mem)%nat.
+
+Definition read_mem_vpre (vaddr : view) (macc : mem_acc) (ts : TState.t) :
+    view :=
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
+              ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
+  vaddr ⊔ vbob.
+
+Lemma apply_fwd_cons_old fwdb macc mem tread a raw msg :
+  (∀ fwd, fwdb !! a = Some fwd →
+    (fwd.(FwdItem.time) ≤ length mem)%nat) →
+  apply_fwd fwdb macc (msg :: mem) tread a raw =
+  apply_fwd fwdb macc mem tread a raw.
+Proof.
+  intros Hbound.
+  destruct raw as [byte twrite].
+  unfold apply_fwd.
+  destruct (fwdb !! a) as [fwd|] eqn:Hfwd; [|reflexivity].
+  destruct (tread <? FwdItem.time fwd)%nat; [|reflexivity].
+  rewrite PromMemory.lookup_cons_old by (apply (Hbound fwd); reflexivity).
+  reflexivity.
+Qed.
+
+Lemma apply_fwd_list_cons_old fwdb macc mem tread addrs raws msg :
+  (∀ a fwd, a ∈ addrs → fwdb !! a = Some fwd →
+    (fwd.(FwdItem.time) ≤ length mem)%nat) →
+  (for ar in zip addrs raws do
+     let '(a, raw) := ar in apply_fwd fwdb macc (msg :: mem) tread a raw
+   end) =
+  (for ar in zip addrs raws do
+     let '(a, raw) := ar in apply_fwd fwdb macc mem tread a raw
+   end).
+Proof.
+  revert raws.
+  induction addrs as [|a addrs IH]; intros [|raw raws] Hbound;
+    cbn; try reflexivity.
+  rewrite apply_fwd_cons_old.
+  - rewrite IH.
+    + reflexivity.
+    + intros a' fwd Ha' Hfwd.
+      apply (Hbound a' fwd); [right; exact Ha'|exact Hfwd].
+  - intros fwd Hfwd.
+    apply (Hbound a fwd); [left; reflexivity|exact Hfwd].
+Qed.
+
 (** Performs a multi-byte memory read. Picks an interesting timestamp
     [tread] from [read_candidates], then applies per-byte forwarding. *)
 Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
@@ -352,10 +669,7 @@ Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
   guard_discard (TState.no_promises_until vaddr ts);;
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let addrs := addr_range addr size in
-  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
-                (* SC Acquire loads are ordered after Release stores *)
-              ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
-  let vpre := vaddr ⊔ vbob in
+  let vpre := read_mem_vpre vaddr macc ts in
   tread ← mchoosel (read_candidates addr size vpre mem);
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
@@ -378,9 +692,515 @@ Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
   mSet $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mSet $ TState.update TState.vcap vaddr;;
   ( if is_exclusive macc
-    then mSet $ TState.set_xclb tread addr size
-    else mret ());;
+	    then mSet $ TState.set_xclb tread addr size
+	    else mret ());;
   mret (vpost, res).
+
+Lemma read_mem_vpre_promise vaddr macc v ts :
+  read_mem_vpre vaddr macc (TState.promise v ts) =
+  read_mem_vpre vaddr macc ts.
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma fwdb_times_le_promise mem v ts :
+  fwdb_times_le mem (TState.promise v ts) ↔ fwdb_times_le mem ts.
+Proof.
+  destruct ts.
+  unfold fwdb_times_le.
+  cbn.
+  split; auto.
+Qed.
+
+Lemma TState_promise_update_coh p loc v ts :
+  TState.update_coh loc v (TState.promise p ts) =
+  TState.promise p (TState.update_coh loc v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_cohs avs p ts :
+  TState.update_cohs avs (TState.promise p ts) =
+  TState.promise p (TState.update_cohs avs ts).
+Proof.
+  unfold TState.update_cohs.
+  revert ts.
+  induction avs as [|[a v] avs IH]; intro ts; cbn.
+  - reflexivity.
+  - rewrite IH.
+    apply TState_promise_update_coh.
+Qed.
+
+Lemma TState_promise_update_vrd p v ts :
+  TState.update TState.vrd v (TState.promise p ts) =
+  TState.promise p (TState.update TState.vrd v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_vacq p v ts :
+  TState.update TState.vacq v (TState.promise p ts) =
+  TState.promise p (TState.update TState.vacq v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_vcap p v ts :
+  TState.update TState.vcap v (TState.promise p ts) =
+  TState.promise p (TState.update TState.vcap v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_vdmb p v ts :
+  TState.update TState.vdmb v (TState.promise p ts) =
+  TState.promise p (TState.update TState.vdmb v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_vdmbst p v ts :
+  TState.update TState.vdmbst v (TState.promise p ts) =
+  TState.promise p (TState.update TState.vdmbst v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_update_visb p v ts :
+  TState.update TState.visb v (TState.promise p ts) =
+  TState.promise p (TState.update TState.visb v ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_promise_set_xclb p tread addr size ts :
+  TState.set_xclb tread addr size (TState.promise p ts) =
+  TState.promise p (TState.set_xclb tread addr size ts).
+Proof.
+  destruct ts.
+  reflexivity.
+Qed.
+
+Lemma TState_set_reg_promise p reg rv ts ts' :
+  TState.set_reg reg rv ts = Some ts' →
+  TState.set_reg reg rv (TState.promise p ts) =
+  Some (TState.promise p ts').
+Proof.
+  destruct ts as [prom regs coh vrd vwr vdmbst vdmb vcap visb vacq vrel
+    fwdb xclb].
+  unfold TState.set_reg, TState.promise.
+  cbn.
+  destruct (decide (is_Some (dmap_lookup reg regs))) as [Hsome|Hnone];
+    cbn; intro Hset; inversion Hset; subst; reflexivity.
+Qed.
+
+Lemma TState_set_reg_promise_update_vcap p v reg rv ts ts' :
+  TState.set_reg reg rv (TState.update TState.vcap v ts) = Some ts' →
+  TState.set_reg reg rv
+    (TState.update TState.vcap v (TState.promise p ts)) =
+  Some (TState.promise p ts').
+Proof.
+  rewrite TState_promise_update_vcap.
+  apply TState_set_reg_promise.
+Qed.
+
+Lemma read_mem_promise_state addr size vaddr macc init mem p
+    ts ts' res :
+  (vaddr < p)%nat →
+  Exec.elem_of_results (ts', res) (read_mem addr size vaddr macc init mem ts) →
+  Exec.elem_of_results (TState.promise p ts', res)
+    (read_mem addr size vaddr macc init mem (TState.promise p ts)).
+Proof.
+  intros Hfuture Hrun.
+  unfold read_mem in Hrun |- *.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_get [ts0 [Hget Hrun]]].
+  apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_guard [p_no_promises [Hno_promises_guard Hrun]]].
+  pose proof p_no_promises as Hno_promises.
+  apply Exec.elem_of_guard_discard_inv in Hno_promises_guard as ->.
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_atomic [p_atomic [Hatomic_guard Hrun]]].
+  pose proof (Exec.elem_of_guard_or_prop _ _ _ _ Hatomic_guard)
+    as Hatomic.
+  apply Exec.elem_of_guard_or_inv in Hatomic_guard as ->.
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_choose [tread [Hchoose Hrun]]].
+  change (Exec.elem_of_results (ts_choose, tread)
+    ((mchoosel (read_candidates addr size (read_mem_vpre vaddr macc ts) mem) :
+        Exec.t TState.t string nat) ts)) in Hchoose.
+  apply Exec.elem_of_mchoosel_inv in Hchoose as [-> Htread].
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_raw [raw_bytes [Hraw Hrun]]].
+  unfold othrow in Hraw.
+  destruct (Memory.read_from addr size tread init mem) as [raw_bytes0|]
+    eqn:Hread.
+  2: {
+    unfold elem_of, Exec.elem_of_results in Hraw.
+    cbn in Hraw.
+    inversion Hraw.
+  }
+  apply Exec.elem_of_mret_inv in Hraw as [Hts_raw Hraw_eq].
+  subst ts_raw.
+  inversion Hraw_eq; subst raw_bytes0.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_bytes [byte_results [Hbytes Hrun]]].
+  apply Exec.elem_of_lift_res_inv in Hbytes as [-> Hbytes].
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_coh [pcoh [Hcoh Hrun]]].
+  pose proof Hcoh as Hcoh_prop.
+  apply Exec.elem_of_guard_discard_inv in Hcoh_prop as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_cohs [[] [Hcohs Hrun]]].
+  apply Exec.elem_of_mSet_inv in Hcohs as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_vrd [[] [Hvrd Hrun]]].
+  apply Exec.elem_of_mSet_inv in Hvrd as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_vacq [[] [Hvacq Hrun]]].
+  apply Exec.elem_of_mSet_inv in Hvacq as ->.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_vcap [[] [Hvcap Hrun]]].
+  apply Exec.elem_of_mSet_inv in Hvcap as ->.
+
+  eapply Exec.elem_of_bind_intro with
+    (e := (mGet : Exec.t TState.t string TState.t))
+    (st' := TState.promise p ts) (a := TState.promise p ts).
+  - apply Exec.elem_of_mGet.
+  - cbn.
+    assert
+      (Hno_promises_promise :
+         TState.no_promises_until vaddr (TState.promise p ts)).
+    { destruct ts as [prom regs coh vrd vwr vdmbst vdmb vcap visb vacq
+        vrel fwdb xclb].
+      cbn in Hno_promises |- *.
+      intros p0 Hin.
+      apply elem_of_cons in Hin as [->|Hin].
+      - exact Hfuture.
+      - apply Hno_promises.
+        exact Hin. }
+    destruct (Exec.elem_of_guard_discard
+      (St:=TState.t) (E:=string)
+      (P:=TState.no_promises_until vaddr (TState.promise p ts))
+      (TState.promise p ts) Hno_promises_promise) as
+      [p_no_promises' Hno_promises_guard'].
+    eapply Exec.elem_of_bind_intro with
+      (e := guard_discard
+              (TState.no_promises_until vaddr (TState.promise p ts)))
+      (st' := TState.promise p ts) (a := p_no_promises').
+    + exact Hno_promises_guard'.
+    + cbn.
+      destruct (Exec.elem_of_guard_or
+        (St:=TState.t) (E:=string)
+        (P:=¬ is_atomic_rmw macc) (TState.promise p ts)
+        "Atomic RMW unsupported" Hatomic)
+        as [p_atomic' Hatomic_guard'].
+      eapply Exec.elem_of_bind_intro with
+        (e := guard_or "Atomic RMW unsupported" (¬ is_atomic_rmw macc))
+        (st' := TState.promise p ts) (a := p_atomic').
+      * exact Hatomic_guard'.
+      * cbn.
+        rewrite read_mem_vpre_promise.
+        eapply Exec.elem_of_bind_intro with
+          (st' := TState.promise p ts) (a := tread).
+        -- change (Exec.elem_of_results (TState.promise p ts, tread)
+             ((mchoosel
+                 (read_candidates addr size (read_mem_vpre vaddr macc ts) mem) :
+                Exec.t TState.t string nat) (TState.promise p ts))).
+           apply Exec.elem_of_mchoosel.
+           exact Htread.
+        -- cbn.
+           eapply Exec.elem_of_bind_intro with
+             (e := othrow "Memory read of unmapped bytes"
+                     (Memory.read_from addr size tread init mem))
+             (st' := TState.promise p ts) (a := raw_bytes).
+           ++ unfold othrow.
+              rewrite Hread.
+              apply Exec.elem_of_mret.
+           ++ cbn.
+              eapply Exec.elem_of_bind_intro with
+                (e := mlift
+                        (for (a, raw) in zip (addr_range addr size) raw_bytes do
+                           apply_fwd (TState.fwdb (TState.promise p ts))
+                             macc mem tread a raw
+                         end))
+                (st' := TState.promise p ts) (a := byte_results).
+              ** apply Exec.elem_of_lift_res.
+                 destruct ts.
+                 exact Hbytes.
+              ** cbn.
+                 assert
+                   (Hcoh_prom :
+                      ∀ '(a, t) ∈ zip (addr_range addr size) byte_results.*2,
+                        (TState.coh (TState.promise p ts) !!! a ≤ t)%nat).
+                 { intros [a t] Hin.
+                   destruct ts.
+                   cbn in pcoh |- *.
+                   apply (pcoh (a, t) Hin). }
+                 destruct (Exec.elem_of_guard_discard
+                   (St:=TState.t) (E:=string)
+                   (P:=∀ '(a, t) ∈ zip (addr_range addr size) byte_results.*2,
+                        (TState.coh (TState.promise p ts) !!! a ≤ t)%nat)
+                   (TState.promise p ts) Hcoh_prom) as [pcoh' Hcoh'].
+                 eapply Exec.elem_of_bind_intro with
+                   (e := guard_discard
+                           (∀ '(a, t) ∈ zip (addr_range addr size) byte_results.*2,
+                             (TState.coh (TState.promise p ts) !!! a ≤ t)%nat))
+                   (st' := TState.promise p ts) (a := pcoh').
+                 ---- exact Hcoh'.
+                 ---- cbn.
+                 set (vpost :=
+                        read_mem_vpre vaddr macc ts ⊔
+                        foldr max 0%nat byte_results.*1.*2).
+                 eapply Exec.elem_of_bind_intro
+                   with
+                     (st' :=
+                        TState.promise p
+                          (TState.update_cohs
+                             (zip (addr_range addr size) byte_results.*2) ts))
+                     (a := ()).
+                 --- rewrite <- TState_promise_update_cohs.
+                     apply Exec.elem_of_mSet.
+                 --- cbn.
+                     eapply Exec.elem_of_bind_intro
+                       with
+                         (st' :=
+                            TState.promise p
+                                 (TState.update TState.vrd vpost
+                                    (TState.update_cohs
+                                    (zip (addr_range addr size) byte_results.*2)
+                                    ts)))
+                         (a := ()).
+                     +++ rewrite <- TState_promise_update_vrd.
+                         apply Exec.elem_of_mSet.
+                     +++ cbn.
+                         eapply Exec.elem_of_bind_intro
+                           with
+                             (st' :=
+                                TState.promise p
+                                  (TState.update TState.vacq
+                                     (view_if (is_rel_acq macc) vpost)
+                                     (TState.update TState.vrd vpost
+                                           (TState.update_cohs
+                                           (zip (addr_range addr size)
+                                              byte_results.*2)
+                                           ts))))
+                             (a := ()).
+                         *** rewrite <- TState_promise_update_vacq.
+                             apply Exec.elem_of_mSet.
+                         *** cbn.
+                             eapply Exec.elem_of_bind_intro
+                               with
+                                 (st' :=
+                                    TState.promise p
+                                      (TState.update TState.vcap vaddr
+                                         (TState.update TState.vacq
+                                            (view_if (is_rel_acq macc) vpost)
+                                            (TState.update TState.vrd vpost
+                                               (TState.update_cohs
+                                                  (zip (addr_range addr size)
+                                                     byte_results.*2) ts)))))
+                                 (a := ()).
+                             ++++ rewrite <- TState_promise_update_vcap.
+                                 apply Exec.elem_of_mSet.
+                             ++++ cbn.
+                                  destruct (is_exclusive macc) eqn:Hexcl.
+                                  { cbn in Hrun.
+                                    apply Exec.elem_of_bind_elim in Hrun as
+                                      [ts_xcl [[] [Hxcl Hret]]].
+                                    apply Exec.elem_of_mSet_inv in Hxcl as ->.
+                                    apply Exec.elem_of_mret_inv in Hret as
+                                      [-> ->].
+                                    eapply Exec.elem_of_bind_intro
+                                      with
+                                        (st' :=
+                                           TState.promise p
+                                             (TState.set_xclb tread addr size
+                                                (TState.update TState.vcap vaddr
+                                                   (TState.update TState.vacq
+                                                      (view_if
+                                                         (is_rel_acq macc)
+                                                         vpost)
+                                                      (TState.update TState.vrd
+                                                         vpost
+                                                         (TState.update_cohs
+                                                            (zip
+                                                             (addr_range addr
+                                                                  size)
+                                                               byte_results.*2)
+                                                            ts))))))
+                                        (a := ()).
+                                      * rewrite <- TState_promise_set_xclb.
+                                        apply Exec.elem_of_mSet.
+                                      * cbn.
+                                        apply Exec.elem_of_mret. }
+                                  { cbn in Hrun.
+                                    apply Exec.elem_of_bind_elim in Hrun as
+                                      [ts_skip [[] [Hskip Hret]]].
+                                    unfold elem_of, Exec.elem_of_results
+                                      in Hskip.
+                                    cbn in Hskip.
+                                    apply elem_of_list_singleton in Hskip.
+                                    inversion Hskip; subst ts_skip;
+                                      clear Hskip.
+                                    unfold elem_of, Exec.elem_of_results
+                                      in Hret.
+                                    cbn in Hret.
+                                    apply elem_of_list_singleton in Hret.
+                                    inversion Hret; subst; clear Hret.
+                                    eapply Exec.elem_of_bind_intro
+                                      with
+                                        (st' :=
+                                           TState.promise p
+                                             (TState.update TState.vcap vaddr
+                                                (TState.update TState.vacq
+                                                   (view_if (is_rel_acq macc)
+                                                      vpost)
+                                                   (TState.update TState.vrd
+                                                      vpost
+                                                      (TState.update_cohs
+                                                         (zip
+                                                            (addr_range addr
+                                                               size)
+                                                            byte_results.*2)
+                                                         ts)))))
+                                        (a := ()).
+                                      * apply Exec.elem_of_mret.
+                                      * cbn.
+                                        apply Exec.elem_of_mret. }
+Qed.
+
+Lemma read_mem_cons_old addr size vaddr macc init mem msg ts ts' res :
+  (read_mem_vpre vaddr macc ts ≤ length mem)%nat →
+  fwdb_times_le mem ts →
+  Exec.elem_of_results (ts', res) (read_mem addr size vaddr macc init mem ts) →
+  Exec.elem_of_results (ts', res)
+    (read_mem addr size vaddr macc init (msg :: mem) ts).
+Proof.
+  intros Hvpre Hfwdb Hrun.
+  unfold read_mem in Hrun |- *.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_get [ts0 [Hget Hrun]]].
+  apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_guard [p_no_promises [Hno_promises_guard Hrun]]].
+  pose proof p_no_promises as Hno_promises.
+  apply Exec.elem_of_guard_discard_inv in Hno_promises_guard as ->.
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_atomic [p_atomic [Hatomic_guard Hrun]]].
+  pose proof (Exec.elem_of_guard_or_prop _ _ _ _ Hatomic_guard)
+    as Hatomic.
+  apply Exec.elem_of_guard_or_inv in Hatomic_guard as ->.
+  cbn in Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_choose [tread [Hchoose Hrun]]].
+  change (Exec.elem_of_results (ts_choose, tread)
+    ((mchoosel (read_candidates addr size (read_mem_vpre vaddr macc ts) mem) :
+        Exec.t TState.t string nat) ts)) in Hchoose.
+  apply Exec.elem_of_mchoosel_inv in Hchoose as [-> Htread].
+  pose proof (read_candidates_time_le addr size
+    (read_mem_vpre vaddr macc ts) mem tread Hvpre Htread) as Htread_le.
+  pose proof (read_candidates_cons_old addr size
+    (read_mem_vpre vaddr macc ts) mem msg tread Hvpre Htread)
+    as Htread_new.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_raw [raw_bytes [Hraw Hrun]]].
+  pose proof (Memory.read_from_cons_old addr size tread init mem msg Htread_le)
+    as Hread_from.
+  unfold othrow in Hraw.
+  destruct (Memory.read_from addr size tread init mem) as [raw_bytes0|]
+    eqn:Hread_old.
+  2: {
+    unfold elem_of, Exec.elem_of_results in Hraw.
+    cbn in Hraw.
+    inversion Hraw.
+  }
+  apply Exec.elem_of_mret_inv in Hraw as [Hts_raw Hraw_eq].
+  subst ts_raw.
+  inversion Hraw_eq; subst raw_bytes0.
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_bytes [byte_results [Hbytes Hrun]]].
+  apply Exec.elem_of_lift_res_inv in Hbytes as [-> Hbytes].
+  apply Exec.elem_of_bind_elim in Hrun as
+    [ts_coh [pcoh [Hcoh Hrun]]].
+  pose proof Hcoh as Hcoh_state.
+  apply Exec.elem_of_guard_discard_inv in Hcoh_state as ->.
+
+  eapply Exec.elem_of_bind_intro with
+    (e := (mGet : Exec.t TState.t string TState.t))
+    (st' := ts) (a := ts).
+  - apply Exec.elem_of_mGet.
+  - cbn.
+    destruct (Exec.elem_of_guard_discard
+      (St:=TState.t) (E:=string)
+      (P:=TState.no_promises_until vaddr ts) ts Hno_promises) as
+      [p_no_promises' Hno_promises_guard'].
+    eapply Exec.elem_of_bind_intro with
+      (e := guard_discard (TState.no_promises_until vaddr ts))
+      (st' := ts) (a := p_no_promises').
+    + exact Hno_promises_guard'.
+    + cbn.
+      destruct (Exec.elem_of_guard_or
+        (St:=TState.t) (E:=string)
+        (P:=¬ is_atomic_rmw macc) ts "Atomic RMW unsupported" Hatomic)
+        as [p_atomic' Hatomic_guard'].
+      eapply Exec.elem_of_bind_intro with
+        (e := guard_or "Atomic RMW unsupported" (¬ is_atomic_rmw macc))
+        (st' := ts) (a := p_atomic').
+      * exact Hatomic_guard'.
+      * cbn.
+        eapply Exec.elem_of_bind_intro with (st' := ts) (a := tread).
+        -- change (Exec.elem_of_results (ts, tread)
+             ((mchoosel
+                 (read_candidates addr size (read_mem_vpre vaddr macc ts)
+                    (msg :: mem)) : Exec.t TState.t string nat) ts)).
+           apply Exec.elem_of_mchoosel.
+           exact Htread_new.
+        -- cbn.
+           eapply Exec.elem_of_bind_intro with
+             (e := othrow "Memory read of unmapped bytes"
+                     (Memory.read_from addr size tread init (msg :: mem)))
+             (st' := ts) (a := raw_bytes).
+           ++ unfold othrow.
+              rewrite Hread_from.
+              apply Exec.elem_of_mret.
+           ++ cbn.
+              eapply Exec.elem_of_bind_intro with
+                (e := mlift
+                        (for (a, raw) in zip (addr_range addr size) raw_bytes do
+                           apply_fwd (TState.fwdb ts) macc (msg :: mem)
+                             tread a raw
+                         end))
+                (st' := ts) (a := byte_results).
+              ** apply Exec.elem_of_lift_res.
+                 rewrite apply_fwd_list_cons_old.
+                 --- exact Hbytes.
+                 --- intros a fwd _ Hfwd.
+                     exact (Hfwdb a fwd Hfwd).
+              ** cbn.
+                 eapply Exec.elem_of_bind_intro with
+                   (e := guard_discard
+                           (∀ '(a, t) ∈ zip (addr_range addr size) byte_results.*2,
+                             (TState.coh ts !!! a ≤ t)%nat))
+                   (st' := ts) (a := pcoh).
+                 --- exact Hcoh.
+                 --- exact Hrun.
+Qed.
 
 (** Performs a memory write for a thread [tid] at [addr] with view
     [vdata].  May mutate memory if no existing promise can be fulfilled. *)
@@ -408,6 +1228,101 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (vdata : view)
   mSet $ TState.update TState.vwr time;;
   mSet $ TState.update TState.vrel (view_if is_release time);;
   mret (mem, time, (if new_promise then Some vpre else None)).
+
+Lemma write_mem_none_preserves_mem tid addr size vdata macc mem data
+    ts ts' mem' time :
+  Exec.elem_of_results (ts', (mem', time, None))
+    (write_mem tid addr size vdata macc mem data ts) →
+  mem' = mem.
+Proof.
+  intro H.
+  unfold write_mem in H.
+  set (msg := Msg.make size tid addr data) in *.
+  apply Exec.elem_of_bind_elim in H as [ts0 [ts_read [Hget H]]].
+  apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+  destruct (Memory.fulfill msg (TState.prom ts) mem) as [t|] eqn:Hfulfill;
+    cbn in H.
+  - repeat (apply Exec.elem_of_bind_elim in H as [? [[] [? H]]]).
+    apply Exec.elem_of_mret_inv in H as [_ Heq].
+    inversion Heq; subst.
+    reflexivity.
+  - cbn in H.
+    repeat (apply Exec.elem_of_bind_elim in H as [? [[] [? H]]]).
+    apply Exec.elem_of_mret_inv in H as [_ Heq].
+    inversion Heq.
+Qed.
+
+Lemma write_mem_promise_replay_one tid addr size vdata macc mem data
+    ts ts' mem' time vpre :
+  Exec.elem_of_results (ts', (mem', time, Some vpre))
+    (write_mem tid addr size vdata macc mem data ts) →
+  let msg := Msg.make size tid addr data in
+  mem' = msg :: mem ∧
+  time = length mem' ∧
+  (vpre < time)%nat ∧
+  Exec.elem_of_results (ts', (mem', time, None))
+    (write_mem tid addr size vdata macc mem' data
+       (TState.promise time ts)).
+Proof.
+  intro H.
+  unfold write_mem in H.
+  set (msg := Msg.make size tid addr data) in *.
+  apply Exec.elem_of_bind_elim in H as [ts0 [ts_read [Hget H]]].
+  apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+  destruct (Memory.fulfill msg (TState.prom ts) mem) as [t|]
+      eqn:Hfulfill; cbn in H.
+  - repeat (apply Exec.elem_of_bind_elim in H as [? [[] [? H]]]).
+    apply Exec.elem_of_mret_inv in H as [_ Heq].
+    inversion Heq.
+  - apply Exec.elem_of_bind_elim in H as [ts_guard [p [Hguard H]]].
+    destruct p as [Hvpre Hcoh].
+    apply Exec.elem_of_guard_discard_inv in Hguard as ->.
+    apply Exec.elem_of_bind_elim in H as [ts_prom [[] [Hprom H]]].
+    apply Exec.elem_of_mset_inv in Hprom as ->.
+    apply Exec.elem_of_bind_elim in H as [ts_coh [[] [Hcoh_set H]]].
+    apply Exec.elem_of_mSet_inv in Hcoh_set as ->.
+    apply Exec.elem_of_bind_elim in H as [ts_vwr [[] [Hvwr H]]].
+    apply Exec.elem_of_mSet_inv in Hvwr as ->.
+    apply Exec.elem_of_bind_elim in H as [ts_vrel [[] [Hvrel H]]].
+    apply Exec.elem_of_mSet_inv in Hvrel as ->.
+    apply Exec.elem_of_mret_inv in H as [Heq Hret].
+    inversion Hret; subst mem' time vpre.
+    inversion Heq; subst ts'.
+    repeat split; try reflexivity.
+    + exact Hvpre.
+    + unfold write_mem.
+      eapply Exec.elem_of_bind_intro.
+      * apply Exec.elem_of_mGet.
+      * unfold msg in Hfulfill |- *.
+        cbn.
+        rewrite Memory.fulfill_after_promise by exact Hfulfill.
+        cbn.
+        unfold guard_discard.
+        destruct (decide _) as [pguard|Hnp].
+        -- eapply Exec.elem_of_bind_intro with (a := pguard).
+           ++ apply Exec.elem_of_mret.
+           ++ eapply Exec.elem_of_bind_intro with
+                (st' := set TState.prom
+                   (filter (λ t : view, t ≠ S (length mem))) ts)
+                (a := ()).
+              ** rewrite <- TState.filter_prom_after_promise.
+                 apply Exec.elem_of_mset.
+              ** eapply Exec.elem_of_bind_intro.
+                 --- apply Exec.elem_of_mSet.
+                 --- eapply Exec.elem_of_bind_intro.
+                     +++ apply Exec.elem_of_mSet.
+                     +++ eapply Exec.elem_of_bind_intro.
+                         *** apply Exec.elem_of_mSet.
+                         *** apply Exec.elem_of_mret.
+        -- exfalso.
+           apply Hnp.
+           unfold TState.promise.
+           cbn.
+           split.
+           ++ exact Hvpre.
+           ++ intros a Ha.
+              exact (Hcoh a Ha).
+Qed.
 
 
 (** Tries to perform a memory write.
@@ -445,6 +1360,187 @@ Definition write_mem_xcl (tid : nat) (addr : address) (size : N)
     '(mem, time, vpre_opt) ← write_mem tid addr size vdata macc mem data;
     mSet $ TState.set_fwdbs addrs time vdata false;;
     mret (mem, vpre_opt).
+
+Lemma write_mem_xcl_none_preserves_mem tid addr size vdata macc mem data
+    ts ts' mem' :
+  Exec.elem_of_results (ts', (mem', None))
+    (write_mem_xcl tid addr size vdata macc mem data ts) →
+  mem' = mem.
+Proof.
+  intro H.
+  unfold write_mem_xcl in H.
+  case_guard as Hatomic.
+  - apply Exec.elem_of_bind_elim in H as [tsg [Hat [Hguard H]]].
+    apply Exec.elem_of_mret_inv in Hguard as [-> _].
+    destruct (is_exclusive macc) eqn:Hxcl.
+    + apply Exec.elem_of_bind_elim in H as [ts0 [res [Hwrite H]]].
+      destruct res as [[mem0 time] vpre_opt].
+      apply Exec.elem_of_bind_elim in H as [ts1 [ts_mid [Hget H]]].
+      apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+      destruct (TState.xclb ts0) as [[[xtime xaddr] xsize]|] eqn:Hxclb.
+      * destruct (decide (addr = xaddr ∧ size = xsize)) as [Heq|Hneq].
+        -- apply Exec.elem_of_bind_elim in H as
+             [ts2 [[] [Hguard2 H]]].
+           apply Exec.elem_of_bind_elim in H as
+             [ts3 [[] [Hfwdb H]]].
+           apply Exec.elem_of_mret_inv in H as [_ Hret].
+           inversion Hret; subst.
+           eapply write_mem_none_preserves_mem; eauto.
+        -- apply Exec.elem_of_bind_elim in H as
+             [ts2 [[] [Hfwdb H]]].
+           apply Exec.elem_of_mret_inv in H as [_ Hret].
+           inversion Hret; subst.
+           eapply write_mem_none_preserves_mem; eauto.
+      * rewrite Exec.mdiscard_eq in H.
+        unfold elem_of, Exec.elem_of_results in H.
+        cbn in H.
+        inversion H.
+    + apply Exec.elem_of_bind_elim in H as [ts0 [res [Hwrite H]]].
+      destruct res as [[mem0 time] vpre_opt].
+      apply Exec.elem_of_bind_elim in H as [ts1 [[] [Hfwdb H]]].
+      apply Exec.elem_of_mret_inv in H as [_ Hret].
+      inversion Hret; subst.
+      eapply write_mem_none_preserves_mem; eauto.
+  - unfold elem_of, Exec.elem_of_results in H.
+    cbn in H.
+    set_solver.
+Qed.
+
+Lemma write_mem_xcl_promise_replay_one tid addr size vdata macc mem data
+    ts ts' mem' vpre :
+  Exec.elem_of_results (ts', (mem', Some vpre))
+    (write_mem_xcl tid addr size vdata macc mem data ts) →
+  let msg := Msg.make size tid addr data in
+  mem' = msg :: mem ∧
+  (vpre < length mem')%nat ∧
+  Exec.elem_of_results (ts', (mem', None))
+    (write_mem_xcl tid addr size vdata macc mem' data
+       (TState.promise (length mem') ts)).
+Proof.
+  intro H.
+  unfold write_mem_xcl in H.
+  case_guard as Hatomic.
+  - apply Exec.elem_of_bind_elim in H as [tsg [Hat [Hguard H]]].
+    apply Exec.elem_of_mret_inv in Hguard as [-> _].
+    destruct (is_exclusive macc) eqn:Hxcl.
+    + apply Exec.elem_of_bind_elim in H as [ts0 [res [Hwrite H]]].
+      destruct res as [[mem0 time] vpre_opt].
+      apply Exec.elem_of_bind_elim in H as [ts1 [ts_mid [Hget H]]].
+      apply Exec.elem_of_mGet_inv in Hget as [-> ->].
+      destruct (TState.xclb ts0) as [[[xtime xaddr] xsize]|] eqn:Hxclb.
+      * destruct (decide (addr = xaddr ∧ size = xsize)) as [Heq|Hneq].
+        -- apply Exec.elem_of_bind_elim in H as
+             [ts2 [[] [Hmatch H]]].
+           apply Exec.elem_of_bind_elim in Hmatch as
+             [ts_guard [[] [Hguard2 Hfwdb]]].
+           pose proof (Exec.elem_of_guard_discard_unit_prop _ _ Hguard2)
+             as Hexclusive.
+           apply Exec.elem_of_guard_discard_unit_inv in Hguard2 as ->.
+           apply Exec.elem_of_mSet_inv in Hfwdb as ->.
+           apply Exec.elem_of_bind_elim in H as
+             [ts4 [[] [Hclear H]]].
+           apply Exec.elem_of_mSet_inv in Hclear as ->.
+           apply Exec.elem_of_mret_inv in H as [Heq_final Hret].
+           inversion Hret; subst mem' vpre_opt.
+           inversion Heq_final; subst ts'.
+           pose proof (write_mem_promise_replay_one
+             tid addr size vdata macc mem data ts ts0 mem0 time vpre Hwrite)
+             as [Hmem0 [Htime [Hvpre Hwrite_replay]]].
+           subst mem0 time.
+           repeat split; try reflexivity.
+           ++ exact Hvpre.
+	           ++ unfold write_mem_xcl.
+	              case_guard as Hatomic'.
+	              ** eapply Exec.elem_of_bind_intro.
+	                 --- apply Exec.elem_of_mret.
+	                 --- rewrite Hxcl.
+	                     eapply Exec.elem_of_bind_intro.
+	                     +++ exact Hwrite_replay.
+	                     +++ eapply Exec.elem_of_bind_intro.
+	                         *** apply Exec.elem_of_mGet.
+	                         *** rewrite Hxclb.
+	                             destruct (decide (addr = xaddr ∧ size = xsize))
+	                               as [_|Hneq'].
+	                             ---- eapply Exec.elem_of_bind_intro.
+	                                  ++++ eapply Exec.elem_of_bind_intro.
+	                                       ***** apply Exec.elem_of_guard_discard_unit.
+	                                             exact Hexclusive.
+	                                       ***** apply Exec.elem_of_mSet.
+	                                  ++++ eapply Exec.elem_of_bind_intro.
+	                                       ***** apply Exec.elem_of_mSet.
+	                                       ***** apply Exec.elem_of_mret.
+	                             ---- exfalso.
+	                                  apply Hneq'.
+	                                  exact Heq.
+              ** contradiction.
+        -- apply Exec.elem_of_bind_elim in H as
+             [ts2 [[] [Hfwdb H]]].
+           apply Exec.elem_of_mSet_inv in Hfwdb as ->.
+           apply Exec.elem_of_bind_elim in H as
+             [ts3 [[] [Hclear H]]].
+           apply Exec.elem_of_mSet_inv in Hclear as ->.
+           apply Exec.elem_of_mret_inv in H as [Heq_final Hret].
+           inversion Hret; subst mem' vpre_opt.
+           inversion Heq_final; subst ts'.
+           pose proof (write_mem_promise_replay_one
+             tid addr size vdata macc mem data ts ts0 mem0 time vpre Hwrite)
+             as [Hmem0 [Htime [Hvpre Hwrite_replay]]].
+           subst mem0 time.
+           repeat split; try reflexivity.
+           ++ exact Hvpre.
+	           ++ unfold write_mem_xcl.
+	              case_guard as Hatomic'.
+	              ** eapply Exec.elem_of_bind_intro.
+	                 --- apply Exec.elem_of_mret.
+	                 --- rewrite Hxcl.
+	                     eapply Exec.elem_of_bind_intro.
+	                     +++ exact Hwrite_replay.
+	                     +++ eapply Exec.elem_of_bind_intro.
+	                         *** apply Exec.elem_of_mGet.
+	                         *** rewrite Hxclb.
+	                             destruct (decide (addr = xaddr ∧ size = xsize))
+	                               as [Heq'|_].
+	                             ---- exfalso.
+	                                  apply Hneq.
+	                                  exact Heq'.
+	                             ---- eapply Exec.elem_of_bind_intro.
+	                                  ++++ apply Exec.elem_of_mSet.
+	                                  ++++ eapply Exec.elem_of_bind_intro.
+	                                       ***** apply Exec.elem_of_mSet.
+	                                       ***** apply Exec.elem_of_mret.
+              ** contradiction.
+      * rewrite Exec.mdiscard_eq in H.
+        unfold elem_of, Exec.elem_of_results in H.
+        cbn in H.
+        inversion H.
+    + apply Exec.elem_of_bind_elim in H as [ts0 [res [Hwrite H]]].
+      destruct res as [[mem0 time] vpre_opt].
+      apply Exec.elem_of_bind_elim in H as [ts1 [[] [Hfwdb H]]].
+      apply Exec.elem_of_mSet_inv in Hfwdb as ->.
+      apply Exec.elem_of_mret_inv in H as [Heq_final Hret].
+      inversion Hret; subst mem' vpre_opt.
+      inversion Heq_final; subst ts'.
+      pose proof (write_mem_promise_replay_one
+        tid addr size vdata macc mem data ts ts0 mem0 time vpre Hwrite)
+        as [Hmem0 [Htime [Hvpre Hwrite_replay]]].
+      subst mem0 time.
+      repeat split; try reflexivity.
+      * exact Hvpre.
+	      * unfold write_mem_xcl.
+	        case_guard as Hatomic'.
+	        -- eapply Exec.elem_of_bind_intro.
+	           ++ apply Exec.elem_of_mret.
+	           ++ rewrite Hxcl.
+	              eapply Exec.elem_of_bind_intro.
+	              ** exact Hwrite_replay.
+	              ** eapply Exec.elem_of_bind_intro.
+	                 --- apply Exec.elem_of_mSet.
+	                 --- apply Exec.elem_of_mret.
+        -- contradiction.
+  - unfold elem_of, Exec.elem_of_results in H.
+    cbn in H.
+    set_solver.
+Qed.
 
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
@@ -570,6 +1666,821 @@ Section RunOutcome.
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
     run_outcome out |$> fst.
 
+  #[local] Typeclasses Transparent othrow.
+  #[local] Instance exec_unfold : Exec.Unfold := {}.
+
+  Ltac inv_run_outcome :=
+    repeat match goal with
+    | x : unit |- _ => destruct x
+    | H : (_, _) = (_, _) |- _ => inversion H; subst; clear H
+    | H : Some _ = Some _ |- _ => inversion H; subst; clear H
+    | H : (_, _) = ?p |- _ => destruct p; inversion H; subst; clear H
+    | H : ?p = (_, _) |- _ => destruct p; inversion H; subst; clear H
+    | H : Exec.elem_of_results _ ((_ ≫= _) _) |- _ =>
+        apply Exec.elem_of_bind_elim in H as [? [? [? H]]]
+    | H : Exec.elem_of_results _ ((mget _) _) |- _ =>
+        apply Exec.elem_of_mget_inv in H as [-> ->]
+    | H : Exec.elem_of_results _ ((mret _) _) |- _ =>
+        apply Exec.elem_of_mret_inv in H as [-> ?]
+    | H : Exec.elem_of_results _ ((msetv _ _) _) |- _ =>
+        unfold msetv in H
+    | H : Exec.elem_of_results _ ((mset _ _) _) |- _ =>
+        apply Exec.elem_of_mset_inv in H as ->
+    | H : Exec.elem_of_results _ ((mSet _) _) |- _ =>
+        apply Exec.elem_of_mSet_inv in H as ->
+    | H : Exec.elem_of_results _ ((guard_discard _) _) |- _ =>
+        apply Exec.elem_of_guard_discard_inv in H as ->
+    | H : Exec.elem_of_results _ ((guard_or _ _) _) |- _ =>
+        apply Exec.elem_of_guard_or_inv in H as ->
+    | H : Exec.elem_of_results _ ((Exec.liftSt _ _) _) |- _ =>
+        apply Exec.elem_of_liftSt_inv in H as [? [-> H]]
+    | H : Exec.elem_of_results _ ((mthrow _) _) |- _ =>
+        unfold elem_of, Exec.elem_of_results in H; cbn in H; inversion H
+    | H : context[othrow _ ?opt] |- _ => unfold othrow in H
+    | H : context[if ?b then _ else _] |- _ => destruct b eqn:?
+    | H : context[match ?x with _ => _ end] |- _ => destruct x eqn:?
+    end.
+
+  Ltac solve_ppstate_mem :=
+    cbn;
+    match goal with
+    | |- PPState.mem _ = PPState.mem _ =>
+        repeat match goal with
+        | st : PPState.t _ _ _ |- _ => destruct st
+        end;
+        cbn;
+        reflexivity
+    end.
+
+  Lemma run_outcome_none_preserves_mem out ppst ppst'
+      (eret : eff_ret out) :
+    Exec.elem_of_results (ppst', (eret, None)) (run_outcome out ppst) →
+    PPState.mem ppst' = PPState.mem ppst.
+  Proof.
+    intro H.
+    funelim (run_outcome out ppst).
+    all: rewrite <- Heqcall in H.
+    all: inv_run_outcome; try solve [solve_ppstate_mem].
+    all: cbn; eapply write_mem_xcl_none_preserves_mem; eauto.
+  Qed.
+
+  Lemma run_outcome_promise_replay_one out ppst ppst'
+      (eret : eff_ret out) vpre :
+    Exec.elem_of_results (ppst', (eret, Some vpre)) (run_outcome out ppst) →
+    ∃ event,
+      PPState.mem ppst' = event :: PPState.mem ppst ∧
+      Msg.tid event = tid ∧
+      (vpre < length (PPState.mem ppst'))%nat ∧
+      Exec.elem_of_results (ppst', (eret, None))
+        (run_outcome out
+           (PPState.Make
+              (TState.promise (length (PPState.mem ppst')) (PPState.state ppst))
+              (PPState.mem ppst')
+              (PPState.iis ppst))).
+  Proof.
+    intro H.
+    funelim (run_outcome out ppst).
+    all: rewrite <- Heqcall in H.
+    all: try solve [inv_run_outcome].
+    inv_run_outcome.
+    pose proof (write_mem_xcl_promise_replay_one
+      tid addr size (IIS.strict (PPState.iis out)) macc
+      (PPState.mem out) val (PPState.state out) x t vpre H2)
+      as [Hmem [Hlt Hreplay]].
+    subst t.
+    exists (Msg.make size tid addr val).
+    repeat split; try reflexivity; [exact Hlt|].
+    simp run_outcome.
+    cbn.
+    rewrite Heqb.
+    eapply Exec.elem_of_bind_intro.
+    - unfold guard_or.
+      destruct (decide (PAS_NonSecure = PAS_NonSecure)) as [Heq|Hneq].
+      + apply Exec.elem_of_mret.
+      + exfalso; apply Hneq; reflexivity.
+    - cbn.
+      eapply Exec.elem_of_bind_intro.
+      + apply Exec.elem_of_mget.
+      + cbn.
+        eapply Exec.elem_of_bind_intro.
+        * apply Exec.elem_of_mget.
+        * cbn.
+          eapply Exec.elem_of_bind_intro.
+          -- apply Exec.elem_of_liftSt.
+             exact Hreplay.
+          -- cbn.
+             eapply Exec.elem_of_bind_intro.
+             ++ apply Exec.elem_of_mset.
+             ++ cbn.
+                destruct out; cbn in *.
+                apply Exec.elem_of_mret.
+  Qed.
+
+  Lemma run_outcome_no_promise_non_mem_write out :
+    (∀ mr (val : bv (8 * mr.(MemReq.size)))
+        (tags : bv mr.(MemReq.num_tag)),
+      out ≠ MemWrite mr val tags) →
+    ∀ ppst ppst' (eret : eff_ret out) vpre,
+      Exec.elem_of_results (ppst', (eret, Some vpre))
+        (run_outcome out ppst) →
+      False.
+  Proof.
+    intros Hnot ppst ppst' eret vpre H.
+    funelim (run_outcome out ppst).
+    all: rewrite <- Heqcall in H.
+    all: try solve [inv_run_outcome].
+    exfalso.
+    eapply Hnot.
+    reflexivity.
+  Qed.
+
+Definition ppstate_read_times_le macc
+    (ppst : PPState.t TState.t Msg.t IIS.t) : Prop :=
+  (read_mem_vpre (IIS.strict (PPState.iis ppst)) macc
+     (PPState.state ppst) ≤ length (PPState.mem ppst))%nat ∧
+  fwdb_times_le (PPState.mem ppst) (PPState.state ppst).
+
+Lemma ppstate_read_times_le_promise macc p ppst :
+  ppstate_read_times_le macc
+    (PPState.Make (TState.promise p (PPState.state ppst))
+       (PPState.mem ppst) (PPState.iis ppst)) ↔
+  ppstate_read_times_le macc ppst.
+Proof.
+  destruct ppst as [ts mem iis].
+  unfold ppstate_read_times_le.
+  cbn.
+  rewrite read_mem_vpre_promise.
+  rewrite fwdb_times_le_promise.
+  reflexivity.
+Qed.
+
+  Lemma run_outcome_explicit_read_cons_old addr size macc addr_space
+      ppst ppst' msg eret :
+    is_ifetch macc = false →
+    is_explicit macc = true →
+    ppstate_read_times_le macc ppst →
+    Exec.elem_of_results (ppst', (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hnot_ifetch Hexplicit [Hvpre Hfwdb] Hrun.
+    simp run_outcome in Hrun |- *.
+    rewrite Hnot_ifetch in Hrun |- *.
+    rewrite Hexplicit in Hrun |- *.
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_guard [p_nss [Hguard Hrun]]].
+    pose proof (Exec.elem_of_guard_or_prop _ _ _ _ Hguard) as Hnss.
+    apply Exec.elem_of_guard_or_inv in Hguard as ->.
+    cbn in Hrun.
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_vaddr [vaddr [Hvaddr Hrun]]].
+    apply Exec.elem_of_mget_inv in Hvaddr as [-> ->].
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_mem [mem [Hmem Hrun]]].
+    apply Exec.elem_of_mget_inv in Hmem as [-> ->].
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_read [[view val] [Hread Hrun]]].
+    apply Exec.elem_of_liftSt_inv in Hread as [ts_read [-> Hread]].
+    pose proof (read_mem_cons_old addr size
+      (IIS.strict (PPState.iis ppst)) macc initmem (PPState.mem ppst)
+      msg (PPState.state ppst) ts_read (view, val) Hvpre Hfwdb Hread)
+      as Hread_new.
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_iis [[] [Hiis Hrun]]].
+    apply Exec.elem_of_mSet_inv in Hiis as ->.
+    apply Exec.elem_of_mret_inv in Hrun as [Heq Hret].
+    inversion Hret; subst eret.
+    inversion Heq; subst ppst'.
+
+    destruct (Exec.elem_of_guard_or
+      (St:=PPState.t TState.t Msg.t IIS.t) (E:=string)
+      (P:=addr_space = PAS_NonSecure)
+      (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+         (PPState.iis ppst) : PPState.t TState.t Msg.t IIS.t)
+      "Access outside Non-Secure" Hnss) as [p_nss' Hguard'].
+    eapply Exec.elem_of_bind_intro with
+      (e := guard_or "Access outside Non-Secure"
+              (addr_space = PAS_NonSecure))
+      (st' := PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+                 (PPState.iis ppst))
+      (a := p_nss').
+    - exact Hguard'.
+    - cbn.
+      eapply Exec.elem_of_bind_intro with
+        (e := (mget (IIS.strict ∘ PPState.iis) :
+                 Exec.t (PPState.t TState.t Msg.t IIS.t) string nat))
+        (st' := PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+                 (PPState.iis ppst))
+        (a := IIS.strict (PPState.iis ppst)).
+      + apply (Exec.elem_of_mget (E := string)
+          (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+             (PPState.iis ppst)) (IIS.strict ∘ PPState.iis)).
+      + cbn.
+        eapply Exec.elem_of_bind_intro with
+          (e := (mget PPState.mem :
+                   Exec.t (PPState.t TState.t Msg.t IIS.t) string Memory.t))
+          (st' := PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+                   (PPState.iis ppst))
+          (a := msg :: PPState.mem ppst).
+        * apply (Exec.elem_of_mget (E := string)
+            (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+               (PPState.iis ppst)) PPState.mem).
+        * cbn.
+          eapply Exec.elem_of_bind_intro with
+            (e := Exec.liftSt PPState.state
+                    (read_mem addr size (IIS.strict (PPState.iis ppst))
+                       macc initmem (msg :: PPState.mem ppst)))
+            (st' := setv PPState.state ts_read
+                     (PPState.Make (PPState.state ppst)
+                        (msg :: PPState.mem ppst) (PPState.iis ppst)))
+            (a := (view, val)).
+          -- eapply (@Exec.elem_of_liftSt
+               (PPState.t TState.t Msg.t IIS.t) TState.t string
+               (nat * bv (8 * size))%type
+               (PPState.Make (PPState.state ppst)
+                  (msg :: PPState.mem ppst) (PPState.iis ppst))
+               ts_read (view, val) PPState.state _
+               (read_mem addr size (IIS.strict (PPState.iis ppst))
+                  macc initmem (msg :: PPState.mem ppst))).
+             exact Hread_new.
+          -- cbn.
+             eapply Exec.elem_of_bind_intro with
+               (st' := set PPState.iis (IIS.add view)
+                        (setv PPState.state ts_read
+                           (PPState.Make (PPState.state ppst)
+                              (msg :: PPState.mem ppst)
+                              (PPState.iis ppst))))
+               (a := ()).
+             ++ apply Exec.elem_of_mset.
+             ++ cbn.
+                apply Exec.elem_of_mret.
+  Qed.
+
+  Lemma run_outcome_ifetch_cons_misses_code code addr size macc addr_space
+      ppst ppst' msg eret :
+    event_misses_code code msg →
+    ifetch_in_code code addr size →
+    is_ifetch macc = true →
+    Exec.elem_of_results (ppst', (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hmiss Hifetch Hifetch_macc Hrun.
+    simp run_outcome in Hrun |- *.
+    rewrite Hifetch_macc in Hrun |- *.
+    inv_run_outcome.
+    destruct (Exec.elem_of_guard_or
+      (St:=PPState.t TState.t Msg.t IIS.t) (E:=string)
+      (P:=PAS_NonSecure = PAS_NonSecure)
+      (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+         (PPState.iis ppst) : PPState.t TState.t Msg.t IIS.t)
+      "Access outside Non-Secure" eq_refl) as [p_nss Hnss].
+    eapply Exec.elem_of_bind_intro with
+      (e := guard_or "Access outside Non-Secure"
+              (PAS_NonSecure = PAS_NonSecure))
+      (st' := PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+                 (PPState.iis ppst))
+      (a := p_nss).
+    - exact Hnss.
+    - cbn.
+      eapply Exec.elem_of_bind_intro with
+        (e := (mget PPState.mem :
+                 Exec.t (PPState.t TState.t Msg.t IIS.t) string Memory.t)).
+      + apply Exec.elem_of_mget.
+      + cbn.
+        change (read_imem addr size initmem (msg :: PPState.mem ppst)) with
+          (read_imem addr size initmem
+             (PPState.mem
+                (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+                   (PPState.iis ppst)))).
+        rewrite (read_imem_cons_misses_code code addr size initmem
+          (PPState.mem ppst) msg) by eauto.
+        eapply Exec.elem_of_bind_intro with
+          (e := Exec.liftSt PPState.state
+                  (read_imem addr size initmem (PPState.mem ppst))).
+        * eapply Exec.elem_of_liftSt.
+          eassumption.
+        * cbn.
+          apply Exec.elem_of_mret.
+  Qed.
+
+  Lemma run_outcome_mem_read_cons_old code addr size macc addr_space
+      ppst ppst' msg eret :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hifetch_assume Hread_bound Hrun.
+    destruct (is_ifetch macc) eqn:Hifetch.
+    - destruct (Hifetch_assume eq_refl) as [Hmiss Hcode].
+      eapply run_outcome_ifetch_cons_misses_code; eauto.
+    - destruct (is_explicit macc) eqn:Hexplicit.
+	      + eapply run_outcome_explicit_read_cons_old.
+	        * exact Hifetch.
+	        * exact Hexplicit.
+	        * apply Hread_bound; reflexivity.
+	        * exact Hrun.
+		      + simp run_outcome in Hrun.
+		        rewrite Hifetch in Hrun.
+		        rewrite Hexplicit in Hrun.
+		        inv_run_outcome.
+  Qed.
+
+  Lemma run_outcome_mem_read_cons_old_full code addr size macc addr_space
+      ppst ppst' msg eret vpre_opt :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', (eret, vpre_opt))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret, vpre_opt))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hifetch_assume Hread_bound Hrun.
+    destruct vpre_opt as [vpre|].
+    - simp run_outcome in Hrun.
+      destruct (is_ifetch macc) eqn:Hifetch.
+      + inv_run_outcome.
+      + destruct (is_explicit macc) eqn:Hexplicit; inv_run_outcome.
+    - eapply run_outcome_mem_read_cons_old; eauto.
+  Qed.
+
+  Lemma run_outcome_mem_read_cons_old_fmap code addr size macc addr_space
+      ppst ppst' msg eret :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst)
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hifetch_assume Hread_bound Hrun.
+    apply Exec.elem_of_fmap_inv in Hrun as [[eret0 vpre_opt] [-> Hrun]].
+    pose proof
+      (run_outcome_mem_read_cons_old_full code addr size macc addr_space
+         ppst ppst' msg eret0 vpre_opt Hifetch_assume Hread_bound Hrun)
+      as Hrun'.
+    unfold elem_of, Exec.elem_of_results in Hrun' |- *.
+    unfold fmap, Exec.fmap_inst.
+    destruct
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))) as [rs es].
+    cbn in *.
+    rewrite elem_of_list_fmap.
+    exists
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret0, vpre_opt)).
+    split; [reflexivity|exact Hrun'].
+  Qed.
+
+  Lemma run_outcome_mem_read_promise_state_full addr size macc addr_space
+      ppst ppst' p eret vpre_opt :
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      (IIS.strict (PPState.iis ppst) < p)%nat) →
+    Exec.elem_of_results (ppst', (eret, vpre_opt))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (TState.promise p (PPState.state ppst'))
+         (PPState.mem ppst') (PPState.iis ppst'), (eret, vpre_opt))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (TState.promise p (PPState.state ppst))
+            (PPState.mem ppst) (PPState.iis ppst))).
+  Proof.
+    intros Hfuture Hrun.
+    simp run_outcome in Hrun |- *.
+    apply Exec.elem_of_bind_elim in Hrun as
+      [pp_guard [p_nss [Hguard Hrun]]].
+    pose proof (Exec.elem_of_guard_or_prop _ _ _ _ Hguard) as Hnss.
+    apply Exec.elem_of_guard_or_inv in Hguard as ->.
+    destruct (is_ifetch macc) eqn:Hifetch.
+    - apply Exec.elem_of_bind_elim in Hrun as
+        [pp_mem [mem [Hmem Hrun]]].
+      apply Exec.elem_of_mget_inv in Hmem as [-> ->].
+      apply Exec.elem_of_bind_elim in Hrun as
+        [pp_read [opcode [Hread Hrun]]].
+      apply Exec.elem_of_liftSt_inv in Hread as [ts_read [-> Hread]].
+      pose proof
+        (read_imem_preserves_state addr size initmem (PPState.mem ppst)
+           (PPState.state ppst) ts_read opcode Hread) as ->.
+      apply Exec.elem_of_mret_inv in Hrun as [Heq Hret].
+      inversion Heq; subst ppst'.
+      inversion Hret; subst eret vpre_opt.
+      destruct (Exec.elem_of_guard_or
+        (St:=PPState.t TState.t Msg.t IIS.t) (E:=string)
+        (P:=addr_space = PAS_NonSecure)
+        (PPState.Make (TState.promise p (PPState.state ppst))
+           (PPState.mem ppst) (PPState.iis ppst))
+        "Access outside Non-Secure" Hnss) as [p_nss' Hguard'].
+      eapply Exec.elem_of_bind_intro
+        with
+          (e := guard_or "Access outside Non-Secure"
+                  (addr_space = PAS_NonSecure))
+          (st' := PPState.Make (TState.promise p (PPState.state ppst))
+                    (PPState.mem ppst) (PPState.iis ppst))
+          (a := p_nss').
+      + exact Hguard'.
+      + cbn.
+        eapply Exec.elem_of_bind_intro with
+          (e := (mget PPState.mem :
+                   Exec.t (PPState.t TState.t Msg.t IIS.t) string Memory.t))
+	          (st' := PPState.Make (TState.promise p (PPState.state ppst))
+	                    (PPState.mem ppst) (PPState.iis ppst))
+	          (a := PPState.mem ppst).
+	        * apply (Exec.elem_of_mget (E:=string)
+                    (PPState.Make (TState.promise p (PPState.state ppst))
+                       (PPState.mem ppst) (PPState.iis ppst)) PPState.mem).
+        * cbn.
+          eapply Exec.elem_of_bind_intro with
+		            (e := Exec.liftSt PPState.state
+		                    (read_imem addr size initmem (PPState.mem ppst)))
+		            (st' := PPState.Make
+		                     (TState.promise p (PPState.state ppst))
+		                     (PPState.mem ppst) (PPState.iis ppst))
+	            (a := opcode).
+	          -- change
+                   (Exec.elem_of_results
+	                      (setv PPState.state
+                         (TState.promise p (PPState.state ppst))
+	                         (PPState.Make
+                            (TState.promise p (PPState.state ppst))
+                            (PPState.mem ppst) (PPState.iis ppst)),
+                       opcode)
+                      (Exec.liftSt PPState.state
+                         (read_imem addr size initmem (PPState.mem ppst))
+                         (PPState.Make
+                            (TState.promise p (PPState.state ppst))
+                            (PPState.mem ppst) (PPState.iis ppst)))).
+             eapply (@Exec.elem_of_liftSt
+                   (PPState.t TState.t Msg.t IIS.t) TState.t string
+                   (bv (8 * size))
+	                   (PPState.Make (TState.promise p (PPState.state ppst))
+	                      (PPState.mem ppst) (PPState.iis ppst))
+	                   (TState.promise p (PPState.state ppst)) opcode
+                   PPState.state _
+                   (read_imem addr size initmem (PPState.mem ppst))).
+	             eapply read_imem_state_irrelevant.
+	             exact Hread.
+          -- cbn.
+             apply Exec.elem_of_mret.
+    - destruct (is_explicit macc) eqn:Hexplicit.
+      + apply Exec.elem_of_bind_elim in Hrun as
+          [pp_vaddr [vaddr0 [Hvaddr Hrun]]].
+        apply Exec.elem_of_mget_inv in Hvaddr as [-> ->].
+        apply Exec.elem_of_bind_elim in Hrun as
+          [pp_mem [mem [Hmem Hrun]]].
+        apply Exec.elem_of_mget_inv in Hmem as [-> ->].
+        apply Exec.elem_of_bind_elim in Hrun as
+          [pp_read [[view val] [Hread Hrun]]].
+        apply Exec.elem_of_liftSt_inv in Hread as [ts_read [-> Hread]].
+        pose proof
+          (read_mem_promise_state addr size
+             (IIS.strict (PPState.iis ppst)) macc initmem
+             (PPState.mem ppst) p (PPState.state ppst) ts_read
+             (view, val) (Hfuture eq_refl eq_refl) Hread)
+          as Hread_promise.
+        apply Exec.elem_of_bind_elim in Hrun as
+          [pp_iis [[] [Hiis Hrun]]].
+        apply Exec.elem_of_mSet_inv in Hiis as ->.
+        apply Exec.elem_of_mret_inv in Hrun as [Heq Hret].
+        inversion Heq; subst ppst'.
+        inversion Hret; subst eret vpre_opt.
+        destruct (Exec.elem_of_guard_or
+          (St:=PPState.t TState.t Msg.t IIS.t) (E:=string)
+          (P:=addr_space = PAS_NonSecure)
+          (PPState.Make (TState.promise p (PPState.state ppst))
+             (PPState.mem ppst) (PPState.iis ppst))
+          "Access outside Non-Secure" Hnss) as [p_nss' Hguard'].
+        eapply Exec.elem_of_bind_intro
+          with
+            (e := guard_or "Access outside Non-Secure"
+                    (addr_space = PAS_NonSecure))
+            (st' := PPState.Make (TState.promise p (PPState.state ppst))
+                      (PPState.mem ppst) (PPState.iis ppst))
+            (a := p_nss').
+	        * exact Hguard'.
+	        * cbn.
+	          eapply Exec.elem_of_bind_intro
+            with
+              (e := (mget (IIS.strict ∘ PPState.iis) :
+                       Exec.t (PPState.t TState.t Msg.t IIS.t) string nat))
+	              (st' := PPState.Make (TState.promise p (PPState.state ppst))
+	                        (PPState.mem ppst) (PPState.iis ppst))
+	              (a := IIS.strict (PPState.iis ppst)).
+	          -- apply (Exec.elem_of_mget (E:=string)
+                   (PPState.Make (TState.promise p (PPState.state ppst))
+                      (PPState.mem ppst) (PPState.iis ppst))
+                   (IIS.strict ∘ PPState.iis)).
+          -- cbn.
+             eapply Exec.elem_of_bind_intro
+               with
+                 (e := (mget PPState.mem :
+                          Exec.t (PPState.t TState.t Msg.t IIS.t) string
+                            Memory.t))
+	                 (st' := PPState.Make
+	                          (TState.promise p (PPState.state ppst))
+	                          (PPState.mem ppst) (PPState.iis ppst))
+	                 (a := PPState.mem ppst).
+	             ++ apply (Exec.elem_of_mget (E:=string)
+                    (PPState.Make (TState.promise p (PPState.state ppst))
+                       (PPState.mem ppst) (PPState.iis ppst)) PPState.mem).
+             ++ cbn.
+                eapply Exec.elem_of_bind_intro
+                  with
+                    (e := Exec.liftSt PPState.state
+                            (read_mem addr size
+                               (IIS.strict (PPState.iis ppst)) macc initmem
+                               (PPState.mem ppst)))
+	                    (st' := PPState.Make
+	                             (TState.promise p ts_read)
+	                             (PPState.mem ppst) (PPState.iis ppst))
+	                    (a := (view, val)).
+	                ** change
+                     (Exec.elem_of_results
+                        (setv PPState.state (TState.promise p ts_read)
+                           (PPState.Make
+                              (TState.promise p (PPState.state ppst))
+                              (PPState.mem ppst) (PPState.iis ppst)),
+                         (view, val))
+                        (Exec.liftSt PPState.state
+                           (read_mem addr size
+                              (IIS.strict (PPState.iis ppst)) macc initmem
+                              (PPState.mem ppst))
+                           (PPState.Make
+                              (TState.promise p (PPState.state ppst))
+                              (PPState.mem ppst) (PPState.iis ppst)))).
+                   eapply (@Exec.elem_of_liftSt
+                     (PPState.t TState.t Msg.t IIS.t) TState.t string
+                     (nat * bv (8 * size))%type
+                     (PPState.Make (TState.promise p (PPState.state ppst))
+                        (PPState.mem ppst) (PPState.iis ppst))
+                     (TState.promise p ts_read) (view, val)
+                     PPState.state _
+                     (read_mem addr size (IIS.strict (PPState.iis ppst))
+                        macc initmem (PPState.mem ppst))).
+	                   exact Hread_promise.
+                ** cbn.
+                   eapply Exec.elem_of_bind_intro
+                     with
+                       (st' := set PPState.iis (IIS.add view)
+                                  (PPState.Make (TState.promise p ts_read)
+                                     (PPState.mem ppst) (PPState.iis ppst)))
+                       (a := ()).
+                   --- apply Exec.elem_of_mset.
+                   --- cbn.
+                       apply Exec.elem_of_mret.
+      + unfold elem_of, Exec.elem_of_results in Hrun.
+        cbn in Hrun.
+        inversion Hrun.
+  Qed.
+
+  Lemma run_outcome_mem_read_promise_state_fmap addr size macc addr_space
+      ppst ppst' p eret :
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      (IIS.strict (PPState.iis ppst) < p)%nat) →
+    Exec.elem_of_results (ppst', eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (TState.promise p (PPState.state ppst'))
+         (PPState.mem ppst') (PPState.iis ppst'), eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst)
+         (PPState.Make (TState.promise p (PPState.state ppst))
+            (PPState.mem ppst) (PPState.iis ppst))).
+  Proof.
+    intros Hfuture Hrun.
+    apply Exec.elem_of_fmap_inv in Hrun as [[eret0 vpre_opt] [-> Hrun]].
+    pose proof
+      (run_outcome_mem_read_promise_state_full addr size macc addr_space
+         ppst ppst' p eret0 vpre_opt Hfuture Hrun) as Hrun'.
+    unfold elem_of, Exec.elem_of_results in Hrun' |- *.
+    unfold fmap, Exec.fmap_inst.
+    destruct
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (TState.promise p (PPState.state ppst))
+            (PPState.mem ppst) (PPState.iis ppst))) as [rs es].
+    cbn in *.
+    rewrite elem_of_list_fmap.
+    exists
+      (PPState.Make (TState.promise p (PPState.state ppst'))
+      (PPState.mem ppst') (PPState.iis ppst'), (eret0, vpre_opt)).
+    split; [reflexivity|exact Hrun'].
+  Qed.
+
+  Lemma run_outcome_mem_read_fmap_preserves_mem addr size macc addr_space
+      ppst ppst' eret :
+    Exec.elem_of_results (ppst', eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst) ppst) →
+    PPState.mem ppst' = PPState.mem ppst.
+  Proof.
+    intro Hrun.
+    apply Exec.elem_of_fmap_inv in Hrun as [[eret0 vpre_opt] [-> Hrun]].
+    destruct vpre_opt as [vpre|].
+    - simp run_outcome in Hrun.
+      destruct (is_ifetch macc) eqn:Hifetch.
+      + inv_run_outcome.
+      + destruct (is_explicit macc) eqn:Hexplicit; inv_run_outcome.
+    - eapply run_outcome_none_preserves_mem.
+      exact Hrun.
+  Qed.
+
+  Lemma run_outcome_mem_read_promise_cons_old_fmap code addr size
+      macc addr_space ppst ppst' msg eret :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (TState.promise (length (msg :: PPState.mem ppst'))
+         (PPState.state ppst')) (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst)
+         (PPState.Make (TState.promise (length (msg :: PPState.mem ppst))
+            (PPState.state ppst)) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    intros Hifetch_assume Hread_bound Hrun.
+    pose proof
+      (run_outcome_mem_read_fmap_preserves_mem addr size macc addr_space
+         ppst ppst' eret Hrun) as Hmem.
+    set (p := length (msg :: PPState.mem ppst)).
+    assert
+      (Hfuture_promise :
+         is_ifetch macc = false →
+         is_explicit macc = true →
+         (IIS.strict (PPState.iis ppst) < p)%nat).
+    { intros Hnot_ifetch Hexplicit.
+      specialize (Hread_bound Hnot_ifetch Hexplicit) as [Hvpre _].
+      assert
+        (Hstrict_le_vpre :
+           (IIS.strict (PPState.iis ppst) ≤
+            read_mem_vpre (IIS.strict (PPState.iis ppst)) macc
+              (PPState.state ppst))%nat).
+      { unfold read_mem_vpre.
+        apply Nat.le_max_l. }
+      subst p.
+      cbn.
+      lia. }
+    pose proof
+      (run_outcome_mem_read_promise_state_fmap addr size macc addr_space
+         ppst ppst' p eret Hfuture_promise Hrun) as Hpromise.
+    pose proof
+      (run_outcome_mem_read_cons_old_fmap code addr size macc addr_space
+         (PPState.Make (TState.promise p (PPState.state ppst))
+            (PPState.mem ppst) (PPState.iis ppst))
+         (PPState.Make (TState.promise p (PPState.state ppst'))
+            (PPState.mem ppst') (PPState.iis ppst'))
+         msg eret Hifetch_assume) as Hcons.
+    assert
+      (Hread_bound_promise :
+         is_ifetch macc = false →
+         is_explicit macc = true →
+         ppstate_read_times_le macc
+           (PPState.Make (TState.promise p (PPState.state ppst))
+              (PPState.mem ppst) (PPState.iis ppst))).
+    { intros Hnot_ifetch Hexplicit.
+      apply ppstate_read_times_le_promise.
+      apply Hread_bound; assumption. }
+    specialize (Hcons Hread_bound_promise Hpromise).
+    cbn in Hcons |- *.
+    subst p.
+    rewrite Hmem in Hcons.
+    rewrite Hmem.
+    exact Hcons.
+  Qed.
+
+  (** Read outcomes are stable under adding a future memory event, provided
+      instruction fetches are protected by the immutable-code assumption and
+      explicit reads only observe timestamps in the old memory prefix.  Write
+      outcomes are handled separately by [run_outcome_promise_replay_one]. *)
+  Lemma run_outcome_future_promise_stable code addr size macc addr_space
+      ppst ppst' msg eret :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0)) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), (eret, None))
+      (run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    eapply run_outcome_mem_read_cons_old.
+  Qed.
+
+  Lemma run_outcome_future_promise_stable_fmap code addr size macc addr_space
+      ppst ppst' msg eret :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    Exec.elem_of_results (ppst', eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst) ppst) →
+    Exec.elem_of_results
+      (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+         (PPState.iis ppst'), eret)
+      ((run_outcome (MemRead (MemReq.make macc addr addr_space size 0))
+          |$> fst)
+         (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+            (PPState.iis ppst))).
+  Proof.
+    eapply run_outcome_mem_read_cons_old_fmap.
+  Qed.
+
+  Definition outcome_future_promise_stable_fmap
+      (code : code_region) (msg : Msg.t) (out : outcome) : Prop :=
+    ∀ ppst ppst' (eret : eff_ret out),
+      Exec.elem_of_results (ppst', eret) ((run_outcome out |$> fst) ppst) →
+      Exec.elem_of_results
+        (PPState.Make (PPState.state ppst') (msg :: PPState.mem ppst')
+           (PPState.iis ppst'), eret)
+        ((run_outcome out |$> fst)
+           (PPState.Make (PPState.state ppst) (msg :: PPState.mem ppst)
+              (PPState.iis ppst))).
+
+  Fixpoint imon_future_promise_stable_fmap
+      (code : code_region) (msg : Msg.t) A (mon : iMon A) : Prop :=
+    match mon with
+    | Ret _ => True
+    | Next call k =>
+        match call with
+        | inl out =>
+            outcome_future_promise_stable_fmap code msg out ∧
+            ∀ eret, imon_future_promise_stable_fmap code msg A (k eret)
+        | inr _ =>
+            ∀ ret, imon_future_promise_stable_fmap code msg A (k ret)
+        end
+    end.
+
+  Lemma mem_read_outcome_future_promise_stable_fmap code msg addr size
+      macc addr_space :
+    (is_ifetch macc = true →
+      event_misses_code code msg ∧ ifetch_in_code code addr size) →
+    (∀ ppst,
+      is_ifetch macc = false →
+      is_explicit macc = true →
+      ppstate_read_times_le macc ppst) →
+    outcome_future_promise_stable_fmap code msg
+      (MemRead (MemReq.make macc addr addr_space size 0)).
+  Proof.
+    intros Hifetch_assume Hread_bound ppst ppst' eret Hrun.
+    eapply run_outcome_future_promise_stable_fmap.
+    - exact Hifetch_assume.
+    - intros Hifetch Hexplicit.
+      apply Hread_bound; assumption.
+    - exact Hrun.
+  Qed.
+
 End RunOutcome.
 
 
@@ -592,13 +2503,3 @@ Definition UMPromising : Promising.Model :=
     check_valid_end := λ _ _ _ _, [];
     memory_snapshot := Memory.to_memMap;
   |}.
-
-Definition UMPromising_nocert :=
-  Promising_to_Modelnc (*certified=*)false UMPromising.
-
-Definition UMPromising_cert :=
-  Promising_to_Modelnc (*certified=*)true UMPromising.
-
-Definition UMPromising_exe := Promising_to_Modelc UMPromising.
-
-Definition UMPromising_pf := Promising_to_Modelc_pf UMPromising.

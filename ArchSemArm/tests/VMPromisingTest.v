@@ -41,7 +41,7 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common CResult CList.
 
-From ArchSemArm Require Import ArmInst VMPromising.
+From ArchSemArm Require Import ArmInst VMPromising VMPromisingFinalEquiv.
 
 Open Scope stdpp.
 Open Scope bv.

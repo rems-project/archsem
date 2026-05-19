@@ -4,7 +4,11 @@
  (modules
   ArmInst
   UMPromising
+  UMPromisingFacts
+  UMPromisingFinalEquiv
   VMPromising
+  VMPromisingFacts
+  VMPromisingFinalEquiv
   GenAxiomaticArm
   UMArm
   UMSeqArm

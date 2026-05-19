@@ -62,7 +62,7 @@ module Arm = struct
     tc rm
 
   let umProm_model isem fuel term initState =
-    UMPromising.coq_UMPromising_pf isem (Z.of_int fuel)
+    UMPromisingFinalEquiv.coq_UMPromising_pf isem (Z.of_int fuel)
       (ArchState.num_thread initState |> Z.of_int)
       (termCond_to_coq term) initState
     |> Obj.magic
@@ -70,7 +70,7 @@ module Arm = struct
   module BBM = VMPromising.BBM
 
   let vmProm_model ?(bbm_param = BBM.Off) isem fuel term initState =
-    VMPromising.coq_VMPromising_pf bbm_param isem (Z.of_int fuel)
+    VMPromisingFinalEquiv.coq_VMPromising_pf bbm_param isem (Z.of_int fuel)
       (ArchState.num_thread initState |> Z.of_int)
       (termCond_to_coq term) initState
     |> Obj.magic

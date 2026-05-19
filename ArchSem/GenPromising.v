@@ -107,6 +107,133 @@ Section PM.
   Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
     take (length mem - v) (attach_timestamps mem).
 
+  Lemma attach_timestamps_time_le (event : ev) (mem : t) ts :
+    (event, ts) ∈ attach_timestamps mem →
+    (ts ≤ length mem)%nat.
+  Proof.
+    induction mem as [|event0 mem IH]; cbn.
+    - set_solver.
+    - intro Hin.
+      apply elem_of_cons in Hin as [Heq|Hin].
+      + inversion Heq.
+        lia.
+      + specialize (IH Hin).
+        lia.
+  Qed.
+
+  Lemma cut_after_with_timestamps_time_le (event : ev) (mem : t) v ts :
+    (event, ts) ∈ cut_after_with_timestamps v mem →
+    (ts ≤ length mem)%nat.
+  Proof.
+    unfold cut_after_with_timestamps.
+    intro Hin.
+    apply elem_of_take in Hin as [i [Hlookup _]].
+    eapply attach_timestamps_time_le.
+    eapply elem_of_list_lookup_2.
+    exact Hlookup.
+  Qed.
+
+  Lemma lookup_latest (event : ev) (mem : t) :
+    ((event :: mem : t) !! length (event :: mem)) = Some event.
+  Proof.
+    unfold lookup, lookup_inst.
+    cbn [length].
+    destruct (S (length mem) =? 0)%nat eqn:Hzero.
+    - apply Nat.eqb_eq in Hzero.
+      lia.
+    - clear Hzero.
+      replace (S (length mem) <=? length (event :: mem))%nat with true
+        by (symmetry; apply Nat.leb_le; cbn; lia).
+      replace (length (event :: mem) - S (length mem))%nat with 0%nat
+        by (cbn; lia).
+      reflexivity.
+  Qed.
+
+  Lemma lookup_cons_inv_same (event : ev) (mem : t) ts :
+    ((event :: mem : t) !! ts) = Some event →
+    mem !! ts = Some event ∨ ts = length (event :: mem).
+  Proof.
+    destruct ts as [|ts].
+    - unfold lookup, lookup_inst.
+      cbn.
+      discriminate.
+    - unfold lookup, lookup_inst.
+      cbn [length].
+      replace (S ts =? 0)%nat with false by reflexivity.
+      destruct (S ts <=? S (length mem))%nat eqn:Hnew.
+      + apply Nat.leb_le in Hnew.
+        destruct (S ts <=? length mem)%nat eqn:Hold.
+        * intro H.
+          left.
+          apply Nat.leb_le in Hold.
+          replace (S (length mem) - S ts)%nat with
+            (S (length mem - S ts))%nat in H by lia.
+          rewrite nth_error_cons_succ in H.
+          replace (S ts =? 0)%nat with false by reflexivity.
+          replace (S ts <=? length mem)%nat with true
+            by (symmetry; apply Nat.leb_le; lia).
+          exact H.
+        * intro H.
+          right.
+          apply Nat.leb_gt in Hold.
+          cbn.
+          lia.
+      + discriminate.
+  Qed.
+
+  Lemma lookup_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    ((event :: mem : t) !! ts) = mem !! ts.
+  Proof.
+    intro Hle.
+    destruct ts as [|ts].
+    - reflexivity.
+    - unfold lookup, lookup_inst.
+      cbn [length].
+      replace (S ts =? 0)%nat with false by reflexivity.
+      destruct (S ts <=? length mem)%nat eqn:Hold.
+      + replace (S ts <=? S (length mem))%nat with true.
+        * replace (S (length mem) - S ts)%nat with
+            (S (length mem - S ts))%nat by lia.
+          rewrite nth_error_cons_succ.
+          reflexivity.
+        * symmetry.
+          apply Nat.leb_le.
+          lia.
+      + apply Nat.leb_gt in Hold.
+        replace (S ts <=? S (length mem))%nat with false.
+        * reflexivity.
+        * symmetry.
+          apply Nat.leb_gt.
+          lia.
+  Qed.
+
+  Lemma cut_before_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    cut_before ts (event :: mem) = cut_before ts mem.
+  Proof.
+    intro Hle.
+    unfold cut_before.
+    cbn [length].
+    replace (S (length mem) - ts)%nat with
+      (S (length mem - ts))%nat by lia.
+    cbn.
+    reflexivity.
+  Qed.
+
+  Lemma cut_after_with_timestamps_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    cut_after_with_timestamps ts (event :: mem) =
+      (event, length (event :: mem)) :: cut_after_with_timestamps ts mem.
+  Proof.
+    intro Hle.
+    unfold cut_after_with_timestamps.
+    cbn [attach_timestamps length].
+    replace (S (length mem) - ts)%nat with
+      (S (length mem - ts))%nat by lia.
+    reflexivity.
+  Qed.
+
 End PM.
 Arguments t : clear implicits.
 End PromMemory.

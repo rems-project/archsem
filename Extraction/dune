@@ -115,7 +115,9 @@
   VectorDef
   Vector
   UMPromising
+  UMPromisingFinalEquiv
   VMPromising
+  VMPromisingFinalEquiv
   list_misc
   HVec
   fin_sets
