@@ -39,7 +39,9 @@
 (******************************************************************************)
 
 Require Import ASCommon.CExtraction.
-From ArchSemArm Require Import ArmInst UMPromising VMPromising.
+From ArchSemArm Require Import
+  ArmInst UMPromising UMPromisingExec
+  VMPromising VMPromisingExec.
 From ArchSemX86 Require Import X86Inst OperationalX86TSO.
 
 Unset Extraction SafeImplicits.
