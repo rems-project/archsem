@@ -1,0 +1,27 @@
+(coq.theory
+ (name ArchSemArm.Proof)
+ (modules
+  UMPromisingFacts
+  UMPromisingFinalEquiv
+  VMPromisingFacts
+  VMPromisingFinalEquiv)
+ (theories
+  Stdlib
+  stdpp
+  Hammer
+  RecordUpdate
+  Equations
+  Ltac2
+  SailStdpp
+  ASCommon
+  ArchSem
+  SailTinyArm
+  ArchSemArm))
+
+(alias
+ (name proof)
+ (deps
+  UMPromisingFacts.vo
+  UMPromisingFinalEquiv.vo
+  VMPromisingFacts.vo
+  VMPromisingFinalEquiv.vo))

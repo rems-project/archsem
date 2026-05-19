@@ -13,3 +13,8 @@
   ArchSemRiscV/tests/_RocqProject
   ArchSemX86/_RocqProject
   ArchSemX86/tests/_RocqProject))
+
+(alias
+ (name proof)
+ (deps
+  (alias ArchSemArm/Proof/proof)))
