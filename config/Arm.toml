@@ -77,6 +77,8 @@ W27 = "R27"
 W28 = "R28"
 W29 = "R29"
 W30 = "R30"
+"PSTATE.EL" = "CurrentEL"
+"PSTATE.SP" = "SPSel"
 
 [registers.defaults]
 R0 = 0
@@ -111,4 +113,7 @@ R28 = 0
 R29 = 0
 R30 = 0
 SCTLR_EL1 = 0
-PSTATE = { EL = 0, SP = 0 }
+CurrentEL = 0
+SPSel = 0
+NZCV = 0
+DAIF = 0

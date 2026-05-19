@@ -5,7 +5,7 @@ name="NOP+mem"
 _PC = 0x500
 R0 = 0x0
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+CurrentEL = 0b00
 
 [[memory]]
 addr = 0x500

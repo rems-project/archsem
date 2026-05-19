@@ -17,7 +17,7 @@ TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+CurrentEL = 0b01
 
 # Thread 0 instructions at PA 0x500
 [[memory]]
@@ -45,7 +45,7 @@ TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+CurrentEL = 0b01
 
 # Thread 1 instructions at PA 0x600
 [[memory]]

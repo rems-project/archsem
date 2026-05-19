@@ -18,7 +18,7 @@ name = "EOR"
   "R1" = 0x11
   "R2" = 0x101
   "SCTLR_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
+  CurrentEL = 0
 
 [final]
   assertion = {and = [{"0:_PC" = 0x504}, {"0:R0" = 0x110}]}

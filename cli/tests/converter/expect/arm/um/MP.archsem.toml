@@ -37,7 +37,7 @@ name = "MP"
   "R4" = 0x200
   "R5" = 1
   "SCTLR_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
+  CurrentEL = 0
 
 [thread."1"]
   breakpoints = [0x608]
@@ -51,7 +51,7 @@ name = "MP"
   "R4" = 0x200
   "R5" = 0
   "SCTLR_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
+  CurrentEL = 0
 
 [final]
   assertion = {and = [{"1:R5" = 1}, {"1:R2" = 0}]}

@@ -62,7 +62,7 @@ name = "BBMSuccess"
   "TCR_EL1" = 0
   "SCTLR_EL1" = 1
   "ID_AA64MMFR1_EL1" = 0
-  PSTATE = {EL = 1, SP = 1}
+  CurrentEL = 1
 
 [final]
   assertion = {"0:R3" = 0}

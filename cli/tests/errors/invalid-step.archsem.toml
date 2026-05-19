@@ -7,7 +7,10 @@ R0 = 0x0
 R1 = 0x11
 R2 = 0x101
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+CurrentEL = 0b00
+SPSel = 0b0
+NZCV = 0
+DAIF = 0
 
 [[memory]]
 addr = 0x500
