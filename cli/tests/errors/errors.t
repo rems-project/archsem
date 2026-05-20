@@ -63,3 +63,10 @@ Too much data for step
   arm-seq  1 test(s)
   
   [125]
+
+Invalid reset value in Isla file
+  $ archsem convert --format isla invalid-reset.litmus.toml
+  archsem: internal error, uncaught exception:
+           TOML error at "thread.reset.X0": register X0 has invalid reset value: Isla value is invalid, should be int or string, but is: true
+           
+  [125]
