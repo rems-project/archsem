@@ -379,6 +379,16 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
     Definition make_final (p : t) := exist (terminated prom term) p.
 
+    Definition validate_final (st : t) (pt : terminated prom term st) :
+        Exec.t t string final :=
+      guard_discard $ nopromises prom st;;
+      let errs := check_valid_end prom st in
+      if errs is [] then
+        mret (make_final st pt)
+      else
+        err ← mchoosel errs;
+        mthrow err.
+
     (** Convert a final promising state to a generic final state *)
     Program Definition to_final_archState (f : final) :
         {s & archState.is_terminated term s} :=
@@ -490,7 +500,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         to the promising model prom starting from st *)
     Fixpoint run (fuel : nat) : Exec.t t string final :=
       st ← mGet;
-      if decide $ terminated prom term st is left pt then mret (make_final st pt)
+      if decide (terminated prom term st) is left pt
+      then validate_final st pt
       else
         if fuel is S fuel then
           run_step (S fuel);;
@@ -520,17 +531,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           tstates ← mchoosel $ cprodn (vmap final_states execution_results);
           (* Lift them into full promising state *)
           let st := Make tstates st.(initmem) st.(events) in
-          (* Discard the one with pending promises in any thread *)
-          guard_discard $ nopromises prom st;;
           (* Discard the non-terminated ones *)
           term_proof ← guard_discard $ terminated prom term st;
           (* Check for final errors (e.g. BBM checks) *)
-          let errs := check_valid_end prom st in
-          if errs is [] then
-            mret (make_final st term_proof)
-          else
-            err ← mchoosel errs;
-            mthrow err
+          validate_final st term_proof
         | 2 =>
           let errs := List.concat (vmap errors execution_results) in
           err ← mchoosel errs;

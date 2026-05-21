@@ -472,6 +472,9 @@ Definition strict_regs : gset reg :=
        SP_EL1;
        SP_EL2;
        SP_EL3;
+       SPSR_EL1;
+       SPSR_EL2;
+       SPSR_EL3;
        ELR_EL1;
        ELR_EL2;
        ELR_EL3;
@@ -511,7 +514,7 @@ Definition ttbrs : gset reg :=
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
-  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = PSTATE ∨ r = pc_reg).
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
@@ -2144,8 +2147,8 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
   | _ => mthrow "Unsupported barrier"
   end.
 
-Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
-    Exec.t (PPState.t TState.t Ev.t IIS.t) string () :=
+Definition run_tlbi (tid : nat) (viio : view) (tlbi : TLBIInfo) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
   guard_or
     "Non-shareable TLBIs are not supported"
     (tlbi.(TLBIInfo_shareability) ≠ Shareability_NSH);;
@@ -2160,7 +2163,7 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
-              ⊔ view ⊔ ts.(TState.vspec) in
+              ⊔ viio ⊔ ts.(TState.vspec) in
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
@@ -2170,13 +2173,18 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   mem ← mget PPState.mem;
-  time ← (if Memory.fulfill tlbiev (TState.prom ts) mem is Some t
-          then mret t
-          else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
+  '(time, new_promise) ←
+    match Memory.fulfill tlbiev (TState.prom ts) mem with
+    | Some t => mret (t, false)
+    | None =>
+      t ← Exec.liftSt PPState.mem $ Memory.promise tlbiev;
+      mret (t, true)
+    end;
   guard_discard (vpre < time)%nat;;
   mset (TState.prom ∘ PPState.state) (filter (λ t, t ≠ time));;
   mset PPState.state $ TState.update TState.vtlbi time;;
-  mset PPState.iis $ IIS.add time.
+  mset PPState.iis $ IIS.add time;;
+  mret (if (new_promise : bool) then Some vpre else None).
 
 Definition va_in_range (va : bv 64) : Prop :=
   let top_bits := bv_extract 48 16 va in
@@ -2377,8 +2385,8 @@ Section RunOutcome.
       mret ((), None)
   | TlbOp tlbi =>
       viio ← mget (IIS.strict ∘ PPState.iis);
-      run_tlbi tid viio tlbi;;
-      mret ((), None)
+      vpre_opt ← run_tlbi tid viio tlbi;
+      mret ((), vpre_opt)
   | ReturnException =>
       mem ← mget PPState.mem;
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem);;

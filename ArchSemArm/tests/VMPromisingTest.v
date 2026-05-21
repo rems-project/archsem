@@ -620,6 +620,10 @@ Module BBMSuccess.
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
+    |> reg_insert ESR_EL1 0x0
+    |> reg_insert FAR_EL1 0x0
+    |> reg_insert ELR_EL1 0x0
+    |> reg_insert SPSR_EL1 0x0
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
 
@@ -632,6 +636,9 @@ Module BBMSuccess.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ESR_EL1 0x0
+    |> reg_insert FAR_EL1 0x0
+    |> reg_insert ELR_EL1 0x0
+    |> reg_insert SPSR_EL1 0x0
     |> reg_insert VBAR_EL1 0x0       (* Exception vector base - needed for fault handling *)
     |> reg_insert ID_AA64MMFR1_EL1 0x0
     |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
@@ -687,14 +694,19 @@ Module BBMSuccess.
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 8%nat.
+  Definition fuel := 10%nat.
 
   Definition test_results_pf :=
-    VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
+    VMPromising_pf BBM.Lax arm_sem fuel n_threads termCond initState.
 
-  (* BBM check success *)
-  Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
-      [Ok [0x2a%Z]].
+  (* Invalidating a PTE with TLBI does not trigger a BBM violation. *)
+  Goal elements
+      (regs_extract
+        [(1%fin, R0); (1%fin, FAR_EL1); (1%fin, ELR_EL1);
+         (1%fin, ESR_EL1)] <$> test_results_pf) ≡ₚ
+      [Ok [0x2a%Z; 0x0%Z; 0x0%Z; 0x0%Z];
+       Ok [0x8000001000%Z; 0x8000001000%Z; 0x8000000600%Z;
+           0x96000007%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.
