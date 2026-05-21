@@ -457,8 +457,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
                  else None) in
         let errors :=
           res |> Exec.errors |>
-            omap (λ '((new_proms, _), err_msg),
-                if is_emptyb new_proms then Some err_msg
+            omap (λ '((new_proms, st), err_msg),
+                if is_emptyb new_proms
+                   && prom.(tState_nopromises) (PPState.state st)
+                then Some err_msg
                 else None) in
         {|promises:=promises;
           final_states:=tstates;
