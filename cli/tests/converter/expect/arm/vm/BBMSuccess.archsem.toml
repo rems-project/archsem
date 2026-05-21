@@ -5,12 +5,17 @@ name = "BBMSuccess"
   kind = "code"
   addr = 0x500
   step = 4
-  data = [0xf8226823, 0xd5033a9f, 0xd5088320, 0xd5033b9f, 0xd5033fdf]
+  data = [0xf8606825, 0xd5033b9f, 0xf8226903, 0xd5033a9f, 0xd5088327, 0xd5033b9f, 0xd5033fdf, 0xf8226904, 0xd5033a9f, 0xd5033fdf, 0xf8606826]
 
 [[memory]]
   addr = 0x1000
   step = 8
   data = 0x2a
+
+[[memory]]
+  addr = 0x2000
+  step = 8
+  data = 0x42
 
 [[memory]]
   addr = 0x80000
@@ -20,7 +25,7 @@ name = "BBMSuccess"
 [[memory]]
   addr = 0x80008
   step = 8
-  data = 0x81803
+  data = 0x81003
 
 [[memory]]
   addr = 0x81000
@@ -40,7 +45,7 @@ name = "BBMSuccess"
 [[memory]]
   addr = 0x83008
   step = 8
-  data = 0x60000000001783
+  data = 0x60000000001f83
 
 [[memory]]
   addr = 0x83080
@@ -50,7 +55,7 @@ name = "BBMSuccess"
 [thread]
 
 [thread."0"]
-  breakpoints = [0x8000000514]
+  breakpoints = [0x800000052c]
 
 [thread."0".regs]
   _PC = 0x8000000500
@@ -58,12 +63,21 @@ name = "BBMSuccess"
   "R1" = 0
   "R2" = 0x8000010008
   "R3" = 0
+  "R4" = 0x60000000002f83
+  "R5" = 0
+  "R6" = 0
+  "R7" = 0x8000001
+  "R8" = 0
   "TTBR0_EL1" = 0x80000
   "TCR_EL1" = 0
   "SCTLR_EL1" = 1
-  "ID_AA64MMFR1_EL1" = 0
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "ID_AA64MMFR1_EL1" = 0x2000000000
   CurrentEL = 1
 
 [final]
-  assertion = {"0:R3" = 0}
+  assertion = {and = [{"0:R5" = 0x2a}, {"0:R6" = 0x42}]}
   kind = "forall"

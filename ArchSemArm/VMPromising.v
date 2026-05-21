@@ -1341,6 +1341,19 @@ Module TLB.
     '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
     unique_snapshots_va_between ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
 
+  (** Find snapshots at or after [time].
+
+      If [time] falls between two snapshots, keep the closest earlier TLB state
+      as a snapshot at [time]. *)
+  Fixpoint snapshots_from (time : nat) (snapshots : list (t * nat))
+      : list (t * nat) :=
+    match snapshots with
+    | [] => []
+    | (tlb, t) :: snapshots =>
+      if time <? t then (tlb, t) :: snapshots_from time snapshots
+      else [(tlb, time)]
+    end.
+
   (** ** TLB Snapshot Functions for All VAs (BBM Checking) *)
 
   (** Compute unique TLB snapshots over a time range for BBM checking.
@@ -2087,8 +2100,8 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
   | _ => mthrow "Unsupported barrier"
   end.
 
-Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
-    Exec.t (PPState.t TState.t Ev.t IIS.t) string () :=
+Definition run_tlbi (tid : nat) (viio : view) (tlbi : TLBIInfo) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
   guard_or
     "Non-shareable TLBIs are not supported"
     (tlbi.(TLBIInfo_shareability) ≠ Shareability_NSH);;
@@ -2103,7 +2116,7 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
-              ⊔ view ⊔ ts.(TState.vspec) in
+              ⊔ viio ⊔ ts.(TState.vspec) in
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
@@ -2113,13 +2126,18 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   mem ← mget PPState.mem;
-  time ← (if Memory.fulfill tlbiev (TState.prom_tlbi ts) mem is Some t
-          then mret t
-          else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
+  '(time, new_promise) ←
+    match Memory.fulfill tlbiev (TState.prom_tlbi ts) mem with
+    | Some t => mret (t, false)
+    | None =>
+      t ← Exec.liftSt PPState.mem $ Memory.promise tlbiev;
+      mret (t, true)
+    end;
   guard_discard (vpre < time)%nat;;
   mset (TState.prom_tlbi ∘ PPState.state) (filter (λ t, t ≠ time));;
   mset PPState.state $ TState.update TState.vtlbi time;;
-  mset PPState.iis $ IIS.add time.
+  mset PPState.iis $ IIS.add time;;
+  mret (if (new_promise : bool) then Some vpre else None).
 
 Definition va_in_range (va : bv 64) : Prop :=
   let top_bits := bv_extract 48 16 va in
@@ -2190,6 +2208,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
       snapshots ← mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t va ttbr;
+      let snapshots := TLB.snapshots_from vpre_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
@@ -2254,6 +2273,7 @@ Definition run_trans_end (trans_end : trans_end) :
     let trans_time := trs.(IIS.TransRes.time) in
     let fault := trans_end.(AddressDescriptor_fault) in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
+      mset snd $ IIS.add trans_time;;
       msetv (IIS.trs ∘ snd) None
     else
       is_ets3 ← mlift (ets3 ts);
@@ -2347,8 +2367,8 @@ Section RunOutcome.
       mret ((), None)
   | TlbOp tlbi =>
       viio ← mget (IIS.strict ∘ PPState.iis);
-      run_tlbi tid viio tlbi;;
-      mret ((), None)
+      vpre_opt ← run_tlbi tid viio tlbi;
+      mret ((), vpre_opt)
   | ReturnException =>
       mem ← mget PPState.mem;
       Exec.liftSt (PPState.state ×× PPState.iis) $ run_cse (length mem);;
