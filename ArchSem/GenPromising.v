@@ -282,22 +282,22 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Definition seq_step (tid : fin n) : relation t :=
         λ st1 st2, st2 ∈ Exec.success_state_list $ run_tid tid st1.
 
-      (** Compute the set of allowed promises by a thread indexed by tid *)
-      Definition allowed_promises_tid (certified : bool) (st : t) (tid : fin n)
-        (ev : mEvent) :
-          Prop :=
-        if certified then
-          let st_plus := set PState.events (ev ::.) st in
-          ∃ st', rtc (seq_step tid) st_plus st' ∧
-                   nopromises_tid st tid
-        else prom.(mEvent_tid) ev = tid.
-
       (** Emit a promise from a thread by tid *)
       Definition promise_tid (tid : fin n) (event : mEvent) (st : t) :=
         let st := set events (event ::.) st in
         set (tstate tid)
           (prom.(emit_promise) tid st.(initmem) st.(events) event)
           st.
+
+      (** Compute the set of allowed promises by a thread indexed by tid *)
+      Definition allowed_promises_tid (certified : bool) (st : t) (tid : fin n)
+        (ev : mEvent) :
+          Prop :=
+        if certified then
+          prom.(mEvent_tid) ev = tid ∧
+          ∃ st', rtc (seq_step tid) (promise_tid tid ev st) st' ∧
+                   nopromises_tid st' tid
+        else prom.(mEvent_tid) ev = tid.
 
       (** The inductive stepping relation of the promising model *)
       Inductive step (certified : bool) (ps : t) : (t) -> Prop :=
