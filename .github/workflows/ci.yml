@@ -6,6 +6,7 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+  merge_group:
 
 # cancel in-progress job when a new push is performed (except on main)
 concurrency:
