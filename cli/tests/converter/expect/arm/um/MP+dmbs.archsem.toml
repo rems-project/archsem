@@ -52,6 +52,4 @@ name = "MP+dmbs"
   _PC = 0x60c
 
 [final]
-
-[final.regs]
-  "1" = {"R5" = 1, "R2" = 0}
+  assertion = {and = [{"1:R5" = 1}, {"1:R2" = 0}]}

@@ -156,6 +156,16 @@ let get_table_key_values accessor toml =
      )
     tbl
 
+(** Get singleton table (single entry) *)
+let get_singleton accessor toml =
+  let tbl = get_table toml in
+  match tbl with
+  | [(k, v)] -> (
+    try accessor k v
+    with Path_error (path, msg) -> raise (Path_error (k :: path, msg))
+  )
+  | _ -> error "Expect singleton table, but got %d entries" (List.length tbl)
+
 let get_Z toml =
   match toml with
   | TomlInteger i -> i

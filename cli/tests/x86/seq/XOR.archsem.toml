@@ -19,4 +19,4 @@ rip = 0x503
 
 [final]
 kind = "forall"
-regs.0.rax = 0x110
+assertion."0:rax" = 0x110

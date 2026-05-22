@@ -40,27 +40,19 @@
 
 (** Functions for displaying mcompare-compatible output *)
 
-(** Convert a list of register state to string format,
-    suitable for printing final register states for mcompare *)
-let final_regs_to_string (rs : MinState.reg_state list) =
-  String.concat " "
-    (List.map
-       (fun (r : MinState.reg_state) ->
-          if r.value >= 0 && r.value < 16 then
-            Printf.sprintf "%d:%s=%d;" r.tid r.regname r.value
-          else Printf.sprintf "%d:%s=%#x;" r.tid r.regname r.value
-        )
-       rs
-    )
+let loc_to_string (loc : Assertion.loc) =
+  match loc with
+  | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
+  | Mem sym -> Printf.sprintf "[%s]" sym
 
-(** Convert a list of memory state to string format,
-    suitable for printing final memory states for mcompare *)
-let final_mem_to_string (ms : MinState.mem_state list) =
-  String.concat " "
-    (List.map
-       (fun (m : MinState.mem_state) -> Printf.sprintf "[%s]=%d;" m.sym m.value)
-       ms
-    )
+(** Print a state element in herd style e.g. [0:R0=4] *)
+let print_state_atom ((loc : Assertion.loc), value) =
+  Printf.printf "%s=%s; " (loc_to_string loc) (Toml.Numbers.int_to_string value)
+
+(** Print a partial state in herd style e.g. [0:R0=4; [x]=5] *)
+let print_state (state : (Assertion.loc * Z.t) list) =
+  List.iter print_state_atom state;
+  Printf.printf "\n"
 
 (** Print observation line:
     [Observation <test name> <Always/Sometimes/Never> <obs-count> <not-obs-count>] *)
@@ -77,28 +69,53 @@ let kind_to_top_string : Testrepr.kind -> string = function
   | Forall -> "Forall"
   | NotExists -> "Forbidden"
 
+let kind_to_cond_string : Testrepr.kind -> string = function
+  | Exists -> "exists"
+  | Forall -> "forall"
+  | NotExists -> "notexists"
+
 let kind_validation (kind : Testrepr.kind) obs_count not_obs_count =
   match kind with
   | Exists -> obs_count > 0
   | Forall -> not_obs_count == 0
   | NotExists -> obs_count == 0
 
+let assertion_atom_to_string : Z.t Assertion.atom -> string = function
+  | CmpCst (loc, cst) ->
+      Printf.sprintf "%s=%s" (loc_to_string loc) (Toml.Numbers.int_to_string cst)
+  | CmpLoc (loc, loc') ->
+      Printf.sprintf "%s=%s" (loc_to_string loc) (loc_to_string loc')
+
+(* TODO: less dumb pretty printing *)
+let rec assertion_to_string : Z.t Assertion.expr -> string = function
+  | Atom atom -> assertion_atom_to_string atom
+  | And exprs ->
+      exprs
+      |> List.map assertion_to_string
+      |> String.concat " /\\ " |> Printf.sprintf "(%s)"
+  | Or exprs ->
+      exprs
+      |> List.map assertion_to_string
+      |> String.concat " \\/ " |> Printf.sprintf "(%s)"
+  | Not expr -> Printf.sprintf "not %s" (assertion_to_string expr)
+  | True -> "true"
+  | False -> "false"
+
+let print_condition name kind cond =
+  Printf.printf "Condition %s %s %s\n" name (kind_to_cond_string kind)
+    (assertion_to_string cond)
+
 (** Print mcompare compatible output, missing [Condition] and [Hash] for now *)
 let print (test : Testrepr.t) states obs_count not_obs_count time =
   Printf.printf "Test %s %s\n" test.name (kind_to_top_string test.kind);
   Printf.printf "States %d\n" (List.length states);
-  List.iter
-    (fun (regs_state, mems_state) ->
-       Printf.printf "%s %s\n"
-         (final_regs_to_string regs_state)
-         (final_mem_to_string mems_state)
-     )
-    states;
+  List.iter print_state states;
   if kind_validation test.kind obs_count not_obs_count then Printf.printf "Ok\n"
   else Printf.printf "No\n";
   Printf.printf "Witnesses\n";
   Printf.printf "Positive: %d Negative: %d\n" obs_count not_obs_count;
-  (* Skipping Flag and Condition *)
+  print_condition test.name test.kind test.final;
+  (* Skipping Flag *)
   print_observation test.name obs_count not_obs_count;
-  Printf.printf "Time %s %f\n" test.name time
+  Printf.printf "Time %s %.3f\n" test.name time
 (* Skipping Hash *)

@@ -23,10 +23,5 @@ name = "NOP+mem"
   _PC = 0x504
 
 [final]
+  assertion = {and = [{"0:R0" = 0}, {x = 0x2a}]}
   kind = "forall"
-
-[final.regs]
-  "0" = {"R0" = 0}
-
-[final.mem]
-  x = 0x2a

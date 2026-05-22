@@ -111,6 +111,4 @@ name = "MP+section-call"
   _PC = 0x4014
 
 [final]
-
-[final.regs]
-  "1" = {"R0" = 1, "R2" = 0}
+  assertion = {and = [{"1:R0" = 1}, {"1:R2" = 0}]}

@@ -53,6 +53,7 @@ _PC = 0x504
 [[termCond]]
 _PC = 0x608
 
-# TODO when or-conditions are implemented, do a forall test with all options
+# This test is also used to test or conditions
 [final]
-regs.1.R0 = 0x1111111122222222
+kind = "forall"
+assertion.or = [{"1:R0" = 0x1111111122222222},{"1:R0" = 0x1111111111111111},{"1:R0" = 0x22222222}]

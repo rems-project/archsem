@@ -104,6 +104,4 @@ name = "MP"
   _PC = 0x3010
 
 [final]
-
-[final.regs]
-  "1" = {"R0" = 1, "R2" = 0}
+  assertion = {and = [{"1:R0" = 1}, {"1:R2" = 0}]}

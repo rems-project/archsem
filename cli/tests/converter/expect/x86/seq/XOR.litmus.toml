@@ -31,6 +31,4 @@ name = "x86-XOR"
   rip = 0x1003
 
 [final]
-
-[final.regs]
-  "0" = {rax = 0x110}
+  assertion = {"0:rax" = 0x110}

@@ -17,7 +17,5 @@ name = "x86-XOR"
   rip = 0x503
 
 [final]
+  assertion = {"0:rax" = 0x110}
   kind = "forall"
-
-[final.regs]
-  "0" = {rax = 0x110}

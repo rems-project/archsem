@@ -24,6 +24,7 @@ LDR X0, [X1]
 [locations]
 x = 0x0
 
+# This test is also used to test or conditions
 [final]
-expect = "sat"
-assertion = "1:X0 = 0x0000000022222222"
+kind = "forall"
+assertion = "1:X0 = 0x22222222 | 1:X0 = 0x1111111111111111 | 1:X0 = 0x1111111122222222"

@@ -35,7 +35,7 @@ Just architecture and nothing else
   $ archsem seq justarch.archsem.toml
   archsem: TOML error:
   File "justarch.archsem.toml":
-  Missing field: memory
+  Missing field: termCond
   [1]
 
 Missing "step" in memory field

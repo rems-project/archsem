@@ -59,5 +59,4 @@ _PC = 0x508
 _PC = 0x608
 
 [final]
-regs.1.R5 = {"op" = "eq", "val" = 1}
-regs.1.R2 = 0
+assertion.and = [{"1:R5"=1}, {"1:R2"=0}]

@@ -57,7 +57,5 @@ name = "STRLDR+VM"
   _PC = 0x8000000508
 
 [final]
+  assertion = {"0:R0" = 0x2a}
   kind = "forall"
-
-[final.regs]
-  "0" = {"R0" = 0x2a}

@@ -46,10 +46,5 @@ name = "R_PO_MFENCE"
   rip = 0x60b
 
 [final]
+  assertion = {and = [{"1:rax" = 0}, {y = 2}]}
   kind = "notexists"
-
-[final.regs]
-  "1" = {rax = 0}
-
-[final.mem]
-  y = 2

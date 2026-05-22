@@ -109,7 +109,7 @@ type t =
     registers : (string * Archsem.RegValGen.t) list list;
     memory : memory_block list;
     term_cond : (string * Archsem.RegValGen.t) list list;
-    final : final_cond;
+    final : Z.t Assertion.expr;
     kind : kind
   }
 

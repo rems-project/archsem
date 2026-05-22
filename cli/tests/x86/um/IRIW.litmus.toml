@@ -41,5 +41,5 @@ movl (%rcx), %ebx
 """
 
 [final]
-expect = "unsat"
+kind = "notexists"
 assertion = "1:rax = 1 & 1:rbx = 0 & 3:rax = 1 & 3:rbx = 0"

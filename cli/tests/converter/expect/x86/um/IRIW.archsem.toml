@@ -74,8 +74,5 @@ name = "IRIW"
   rip = 0x804
 
 [final]
+  assertion = {and = [{"1:rax" = 1}, {"1:rbx" = 0}, {"3:rax" = 1}, {"3:rbx" = 0}]}
   kind = "notexists"
-
-[final.regs]
-  "1" = {rax = 1, rbx = 0}
-  "3" = {rax = 1, rbx = 0}

@@ -31,4 +31,4 @@ _PC = 0x508
 # 8-byte read sees zero-extended 4-byte write (upper bytes are zero from init)
 [final]
 kind = "forall"
-regs.0.R0 = 0x2a
+assertion."0:R0" = 0x2a
