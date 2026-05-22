@@ -35,7 +35,8 @@
  (action
   (concurrent
    (run archsem seq seq-mixed)
-   (run archsem ump seq-mixed))))
+   (run archsem ump seq-mixed)
+   (run archsem vmp seq-mixed))))
 
 (rule
  (alias runtest)
@@ -43,4 +44,14 @@
   (glob_files um-mixed/*.toml)
   ../../../config/Arm.toml)
  (action
-  (run archsem ump um-mixed)))
+  (concurrent
+   (run archsem ump um-mixed)
+   (run archsem vmp um-mixed))))
+
+(rule
+ (alias runtest)
+ (deps
+  (glob_files vm-mixed/*.toml)
+  ../../../config/Arm.toml)
+ (action
+  (run archsem vmp vm-mixed)))

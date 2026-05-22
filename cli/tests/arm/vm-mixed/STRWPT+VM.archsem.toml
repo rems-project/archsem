@@ -1,0 +1,92 @@
+# Mixed-size page-table update through virtual memory.
+# The 4-byte store updates the low half of an 8-byte PTE through the
+# page-table VA alias.  A later translation can use the TLB walk path to
+# reconstruct the PTE from mixed-size memory events.
+
+arch="Arm"
+name="STRWPT+VM"
+
+[[registers]]
+_PC = 0x8000000500
+R0 = 0x8000001000      # VA to load from
+R1 = 0x0               # Base offset
+R2 = 0x8000010008      # VA of L3[1] descriptor (page table VA alias)
+R3 = 0x2383            # Low 32 bits of new descriptor: VA -> PA 0x2000
+R4 = 0x8000001000      # VA to load from after the PTE update
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b01, "SP" = 0b1 }
+
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xf8606820, # LDR X0, [X1, X0] - first load through old PTE
+  0xb8226823, # STR W3, [X1, X2] - update low half of PTE
+  0xf8646824] # LDR X4, [X1, X4]
+
+# Data at PA 0x1000 (old mapping)
+[[memory]]
+addr = 0x1000
+step = 8
+data = 0x2a
+
+# Data at PA 0x2000 (new mapping)
+[[memory]]
+addr = 0x2000
+step = 8
+data = 0x42
+
+# L0 table base
+[[memory]]
+addr = 0x80000
+step = 8
+data = 0
+
+# Page table hierarchy, cf LDRPT+NoBBM for explanations.
+# L0[1] -> L1
+[[memory]]
+addr = 0x80008
+step = 8
+data = 0x81003
+
+# L1[0] -> L2
+[[memory]]
+addr = 0x81000
+step = 8
+data = 0x82003
+
+# L2[0] -> L3
+[[memory]]
+addr = 0x82000
+step = 8
+data = 0x83003
+
+# L3[0]: code page
+[[memory]]
+addr = 0x83000
+step = 8
+data = 0x40000000000383
+
+# L3[1]: initially maps VA 0x8000001000 -> PA 0x1000
+[[memory]]
+addr = 0x83008
+step = 8
+data = 0x60000000001383
+
+# L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
+[[memory]]
+addr = 0x83080
+step = 8
+data = 0x60000000083303
+
+[[termCond]]
+_PC = 0x800000050c
+
+
+[final]
+regs.0.R0 = 0x2a
+regs.0.R4 = 0x2a
