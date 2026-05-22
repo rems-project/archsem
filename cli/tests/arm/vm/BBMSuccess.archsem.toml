@@ -84,5 +84,6 @@ data = 0x60000000083703
 [[termCond]]
 _PC = 0x8000000514
 
-[[outcome]]
-observable.0 = { R3 = { op = "eq", val = 0x0 } }
+[final]
+kind = "forall"
+regs.0.R3 = 0

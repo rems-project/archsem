@@ -110,5 +110,7 @@ name = "MP+section-call"
 [[termCond]]
   _PC = 0x4014
 
-[[outcome]]
-  observable = {"1" = {"R0" = 1, "R2" = 0}}
+[final]
+
+[final.regs]
+  "1" = {"R0" = 1, "R2" = 0}

@@ -68,8 +68,7 @@ name = "LDRPT+NoBBM"
 [[termCond]]
   _PC = 0x800000050c
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0x2a, "R4" = 0x2a}}
+[final]
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0x2a, "R4" = 0x42}}
+[final.regs]
+  "0" = {"R0" = 0x2a, "R4" = 0x2a}

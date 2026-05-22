@@ -87,14 +87,7 @@ name = "MP+VM"
 [[termCond]]
   _PC = 0x8000000608
 
-[[outcome]]
-  observable = {"1" = {"R5" = 0, "R2" = 0x2a}}
+[final]
 
-[[outcome]]
-  observable = {"1" = {"R5" = 0, "R2" = 0}}
-
-[[outcome]]
-  observable = {"1" = {"R5" = 1, "R2" = 0}}
-
-[[outcome]]
-  observable = {"1" = {"R5" = 1, "R2" = 0x2a}}
+[final.regs]
+  "1" = {"R5" = 1, "R2" = 0}

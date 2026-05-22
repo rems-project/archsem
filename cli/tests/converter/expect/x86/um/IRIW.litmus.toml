@@ -129,5 +129,8 @@ name = "IRIW"
 [[termCond]]
   rip = 0x3014
 
-[[outcome]]
-  unobservable = {"1" = {rax = 1, rbx = 0}, "3" = {rax = 1, rbx = 0}}
+[final]
+
+[final.regs]
+  "1" = {rax = 1, rbx = 0}
+  "3" = {rax = 1, rbx = 0}

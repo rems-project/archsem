@@ -43,11 +43,8 @@ name = "MP"
 [[termCond]]
   rip = 0x604
 
-[[outcome]]
-  observable = {"1" = {rax = 0, rbx = 0}}
+[final]
+  kind = "notexists"
 
-[[outcome]]
-  observable = {"1" = {rax = 0, rbx = 1}}
-
-[[outcome]]
-  observable = {"1" = {rax = 1, rbx = 1}}
+[final.regs]
+  "1" = {rax = 1, rbx = 0}

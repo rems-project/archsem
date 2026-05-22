@@ -53,11 +53,6 @@ _PC = 0x504
 [[termCond]]
 _PC = 0x608
 
-[[outcome]]
-observable.1.R0 = 0x1111111111111111
-
-[[outcome]]
-observable.1.R0 = 0x1111111122222222
-
-[[outcome]]
-observable.1.R0 = 0x0000000022222222
+# TODO when or-conditions are implemented, do a forall test with all options
+[final]
+regs.1.R0 = 0x1111111122222222

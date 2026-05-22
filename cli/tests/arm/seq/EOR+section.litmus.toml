@@ -16,5 +16,5 @@ code = """
 """
 
 [final]
-expect = "sat"
+kind = "forall"
 assertion = "0:X0 = 0x110"

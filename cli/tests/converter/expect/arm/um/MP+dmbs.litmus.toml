@@ -103,5 +103,7 @@ name = "MP+dmbs"
 [[termCond]]
   _PC = 0x3018
 
-[[outcome]]
-  unobservable = {"1" = {"R0" = 1, "R2" = 0}}
+[final]
+
+[final.regs]
+  "1" = {"R0" = 1, "R2" = 0}

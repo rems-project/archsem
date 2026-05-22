@@ -140,20 +140,18 @@ let parse_reg_requirement (toml : Toml.t) : Testrepr.reg_requirement =
   | _ -> Testrepr.ReqEq (toml_to_gen toml)
 
 (** Parse a condition block into thread conditions with string keys *)
-let parse_reg_cond toml : (int * (string * Testrepr.reg_requirement) list) list =
-  let regs_table =
-    match Toml.find_opt toml Toml.get_table ["regs"] with
-    | Some regs_table -> regs_table
-    | None -> Toml.get_table toml
-  in
-  regs_table
-  |> List.filter_map (fun (tid_str, regs) ->
-    match int_of_string_opt tid_str with
-    | None -> None
-    | Some tid ->
-        let reqs = Toml.get_table_values parse_reg_requirement regs in
-        Some (tid, reqs)
-  )
+let parse_reg_conds toml : Testrepr.reg_cond list =
+  match Toml.find_opt toml Toml.get_table ["final"; "regs"] with
+  | Some regs_table ->
+      regs_table
+      |> List.filter_map (fun (tid_str, regs) ->
+        match int_of_string_opt tid_str with
+        | None -> None
+        | Some tid ->
+            let reqs = Toml.get_table_values parse_reg_requirement regs in
+            Some (tid, reqs)
+      )
+  | None -> []
 
 (** {2 Memory final condition parsing} *)
 
@@ -172,60 +170,34 @@ let parse_mem_requirement (toml : Toml.t) : Testrepr.mem_requirement =
   )
   | _ -> MemEq (Toml.get_Z toml)
 
-let parse_mem_entry mem sym toml : Testrepr.mem_cond =
+let parse_mem_cond mem sym toml : Testrepr.mem_cond =
   let block =
     try Testrepr.mem_by_sym sym mem
     with Not_found ->
-      failwith ("[[outcome]].mem." ^ sym ^ " not found in memory")
+      Toml.error "Final condition error: symbol %s not found" sym
   in
   let req = parse_mem_requirement toml in
   {sym; addr = block.addr; size = Testrepr.block_size block; req}
 
 let parse_mem_conds mem toml : Testrepr.mem_cond list =
-  let parse_mem_cond toml =
-    Toml.get_table toml |> List.map (fun (sym, v) -> parse_mem_entry mem sym v)
-  in
-  Toml.find_or ~default:[] toml parse_mem_cond ["mem"]
+  Toml.find_or ~default:[] toml
+    (Toml.get_table_key_values (parse_mem_cond mem))
+    ["final"; "mem"]
 
-let parse_test_finals mem toml : Testrepr.final_cond list =
-  let parse_test_final toml =
-    let parse_with_mem toml =
-      let regs = parse_reg_cond toml in
-      let mem = parse_mem_conds mem toml in
-      (regs, mem)
-    in
-    match
-      ( Toml.find_opt toml parse_with_mem ["observable"],
-        Toml.find_opt toml parse_with_mem ["unobservable"]
-      )
-    with
-    | (Some (regs, mem), None) -> Testrepr.Observable (regs, mem)
-    | (None, Some (regs, mem)) -> Testrepr.Unobservable (regs, mem)
-    | (Some _, Some _) ->
-        failwith "[[outcome]] cannot have both observable and unobservable"
-    | (None, None) ->
-        failwith "[[outcome]] must have observable or unobservable key"
-  in
-  Toml.find toml (Toml.get_array parse_test_final) ["outcome"]
+let parse_test_final mem toml : Testrepr.final_cond =
+  {regs = parse_reg_conds toml; mem = parse_mem_conds mem toml}
 
-let resolve_mem_conds memory (mcs : Testrepr.mem_cond list) =
-  let sym_table =
-    List.filter_map
-      (fun (block : Testrepr.memory_block) ->
-         Option.map (fun sym -> (sym, (block.addr, block.step))) block.sym
-       )
-      memory
+let parse_kind toml : Testrepr.kind =
+  let parse_kind_string toml : Testrepr.kind =
+    match Toml.get_string toml with
+    | "exists" -> Exists
+    | "forall" -> Forall
+    | "notexists" -> NotExists
+    | s ->
+        Toml.error
+          "Expected test kind (\"exists\", \"forall\", \"notexists\"), got %s" s
   in
-  List.map
-    (fun (mc : Testrepr.mem_cond) ->
-       let (addr, size) =
-         match List.assoc_opt mc.sym sym_table with
-         | Some (addr, step) -> (addr, if mc.size = 0 then step else mc.size)
-         | None -> failwith ("[[outcome]] unknown memory symbol: " ^ mc.sym)
-       in
-       {mc with addr; size}
-     )
-    mcs
+  Toml.find_or ~default:Testrepr.Exists toml parse_kind_string ["final"; "kind"]
 
 let parse_to_testrepr : Toml.t -> Testrepr.t =
  fun toml ->
@@ -235,5 +207,6 @@ let parse_to_testrepr : Toml.t -> Testrepr.t =
     registers = parse_test_registers toml;
     memory;
     term_cond = parse_test_termcond toml;
-    finals = parse_test_finals memory toml
+    final = parse_test_final memory toml;
+    kind = parse_kind toml
   }

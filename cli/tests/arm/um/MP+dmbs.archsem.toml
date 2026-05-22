@@ -63,11 +63,6 @@ _PC = 0x50C
 [[termCond]]
 _PC = 0x60C
 
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x2a } }
-
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x0 }, R2 = { op = "eq", val = 0x0 } }
-
-[[outcome]]
-observable.1 = { R5 = { op = "eq", val = 0x1 }, R2 = { op = "eq", val = 0x2a } }
+[final]
+regs.1.R5 = 1
+regs.1.R2 = 0

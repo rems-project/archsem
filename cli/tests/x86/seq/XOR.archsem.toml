@@ -17,6 +17,6 @@ data = [0x48, 0x33, 0xc1]
 [[termCond]]
 rip = 0x503
 
-[[outcome]]
-[outcome.observable]
-0 = {rax = 0x110}
+[final]
+kind = "forall"
+regs.0.rax = 0x110

@@ -45,3 +45,32 @@ let fatal ?(code = 1) fmt =
   Printf.eprintf "archsem: %s%sfatal error:%s " Terminal.red Terminal.bold
     Terminal.reset;
   Printf.kfprintf (fun _ -> Printf.eprintf "\n"; exit code) stderr fmt
+
+let assert_fatal ?(code = 1) (cond : bool) fmt =
+  if cond then Printf.ikfprintf (fun _ -> ()) stderr fmt else fatal ~code fmt
+
+let parse_error file loc fmt =
+  Printf.eprintf "archsem: %s%sparse error:%s\n" Terminal.red Terminal.bold
+    Terminal.reset;
+  ( match loc with
+  | Some (line, col) ->
+      Printf.eprintf "%sFile %s, line %d, character %d:%s\n" Terminal.bold file
+        line col Terminal.reset
+  | None -> Printf.eprintf "%sFile %s:%s\n" Terminal.bold file Terminal.reset
+  );
+  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
+
+let toml_error file path fmt =
+  Printf.eprintf "archsem: %s%sTOML error:%s\n" Terminal.red Terminal.bold
+    Terminal.reset;
+  if path == [] then
+    Printf.eprintf "%sFile \"%s\":%s\n" Terminal.bold file Terminal.reset
+  else
+    Printf.eprintf "%sFile \"%s\", path \"%s\":%s\n" Terminal.bold file
+      (String.concat "." path) Terminal.reset;
+  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
+
+let model_error test msg =
+  Printf.eprintf "archsem: %s%smodel error:%s\n" Terminal.red Terminal.bold
+    Terminal.reset;
+  Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg

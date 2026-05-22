@@ -1,4 +1,5 @@
 (cram
  (deps
   %{bin:archsem}
-  (glob_files *.toml)))
+  (glob_files *.toml)
+  not-toml.litmus))

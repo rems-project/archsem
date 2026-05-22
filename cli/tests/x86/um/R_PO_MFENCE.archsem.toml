@@ -35,12 +35,14 @@ step = 1
 data = [0xC7, 0x02, 0x02, 0x00, 0x00, 0x00, 0x0F, 0xAE, 0xF0, 0x8B, 0x01]
 
 [[memory]]
+sym = "x"
 addr = 0x1100
 kind = "data"
 step = 8
 data = 0
 
 [[memory]]
+sym = "y"
 addr = 0x1200
 kind = "data"
 step = 8
@@ -53,21 +55,7 @@ rip = 0x50c
 rip = 0x60b
 
 # [EDX]=2 ∧ EAX=0 is forbidden (MFENCE prevents this)
-# Allowed final states for (1:EAX, mem[0x1200]):
-[[outcome]]
-[outcome.observable]
-1 = {rax = 0}
-[outcome.mem]
-"0x1200" = {size = 8, value = 1}
-
-[[outcome]]
-[outcome.observable]
-1 = {rax = 1}
-[outcome.mem]
-"0x1200" = {size = 8, value = 1}
-
-[[outcome]]
-[outcome.observable]
-1 = {rax = 1}
-[outcome.mem]
-"0x1200" = {size = 8, value = 2}
+[final]
+kind = "notexists"
+regs.1.rax = 0
+mem.y = 2

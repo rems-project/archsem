@@ -53,5 +53,8 @@ name = "EOR+section"
 [[termCond]]
   _PC = 0x2004
 
-[[outcome]]
-  observable = {"0" = {"R0" = 0x110}}
+[final]
+  kind = "forall"
+
+[final.regs]
+  "0" = {"R0" = 0x110}

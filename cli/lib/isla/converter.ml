@@ -48,7 +48,10 @@
 open Litmus
 module RegValGen = Archsem.RegValGen
 
-(* {1 Config helpers} *)
+(* Fix lem/linksem dirty stuff *)
+module Either = Stdlib.Either
+
+(** {1 Config helpers} *)
 
 let pc_reg arch =
   match arch with
@@ -76,7 +79,7 @@ let default_memory_size () =
   if size <= 0 then failwith "config: [isla] default_memory_size must be positive";
   size
 
-(* {1 IR to assembly_input} *)
+(** {1 IR to assembly_input} *)
 
 let init_bytes_of_value mem_size sym value =
   if Z.numbits value > mem_size * 8 then
@@ -143,7 +146,7 @@ let resolve_data_symbols
      )
     ir.symbolic
 
-(* {1 Memory, registers, and termination} *)
+(** {1 Memory, registers, and termination} *)
 
 (** Convert linked sections and data symbols into Testrepr memory blocks.
     User-named sections (those listed in [user_section_names]) carry
@@ -234,7 +237,7 @@ let build_term_cond
      )
     threads
 
-(* {1 Final conditions} *)
+(** {1 Final conditions} *)
 
 let reg_requirement op value =
   let value = RegValGen.Number value in
@@ -248,40 +251,33 @@ let mem_requirement op value =
   | Assertion.Ne -> Testrepr.MemNe value
 
 (** Convert a single assertion atom into a register or memory condition. *)
-let atom_to_cond ~resolve_sym ~memory_size = function
+let atom_to_cond ~resolve_sym ~memory_size :
+   Assertion.atom ->
+  (int * string * Testrepr.reg_requirement, Testrepr.mem_cond) Stdlib.Either.t
+  = function
   | Assertion.CmpLoc _ ->
       Error.fatal "assertion: location-to-location comparisons are not supported"
   | Assertion.CmpTerm (lhs, op, rhs) -> (
       let value = Term.eval ~resolve_sym rhs in
       match lhs with
-      | Assertion.Reg (tid, reg) -> `Reg (tid, reg, reg_requirement op value)
+      | Assertion.Reg (tid, reg) -> Left (tid, reg, reg_requirement op value)
       | Assertion.Mem sym ->
-          `Mem
-            ( { Testrepr.sym;
-                addr = resolve_sym sym;
-                size = memory_size sym;
-                req = mem_requirement op value
-              }
-             : Testrepr.mem_cond
-             )
+          Right
+            { sym;
+              addr = resolve_sym sym;
+              size = memory_size sym;
+              req = mem_requirement op value
+            }
     )
 
 (** Partition atoms into per-thread register conditions and memory conditions. *)
-let atoms_to_conds ~resolve_sym ~memory_size atoms =
-  let (reg_conds, mem_conds) =
-    List.partition_map
-      (fun atom ->
-         match atom_to_cond ~resolve_sym ~memory_size atom with
-         | `Reg (t, r, req) -> Left (t, r, req)
-         | `Mem m -> Right m
-       )
-      atoms
+let atoms_to_conds ~resolve_sym ~memory_size atoms : Testrepr.final_cond =
+  let (regs, mem) =
+    List.partition_map (atom_to_cond ~resolve_sym ~memory_size) atoms
   in
-  let thread_conds =
+  let regs =
     let sorted =
-      List.sort
-        (fun (t1, r1, _) (t2, r2, _) -> compare (t1, r1) (t2, r2))
-        reg_conds
+      List.sort (fun (t1, r1, _) (t2, r2, _) -> compare (t1, r1) (t2, r2)) regs
     in
     List.fold_left
       (fun acc (tid, reg, req) ->
@@ -293,27 +289,16 @@ let atoms_to_conds ~resolve_sym ~memory_size atoms =
       [] sorted
     |> List.rev
   in
-  (thread_conds, mem_conds)
+  {regs; mem}
 
-let build_finals ~expect_is_sat ~resolve_sym ~memory_size assertion =
-  let (is_observable, dnf) =
-    match assertion with
-    | Assertion.Not e -> (not expect_is_sat, Assertion.to_dnf e)
-    | e -> (expect_is_sat, Assertion.to_dnf e)
-  in
-  List.filter_map
-    (fun conj ->
-       if conj = [] then None
-       else
-         let (thread_conds, mem_conds) =
-           atoms_to_conds ~resolve_sym ~memory_size conj
-         in
-         if is_observable then Some (Testrepr.Observable (thread_conds, mem_conds))
-         else Some (Testrepr.Unobservable (thread_conds, mem_conds))
-     )
-    dnf
+let build_finals ~resolve_sym ~memory_size assertion =
+  let dnf = Assertion.to_dnf assertion in
+  match dnf with
+  | [] -> failwith "Isla converter: empty assertion"
+  | [conj] -> atoms_to_conds ~resolve_sym ~memory_size conj
+  | _ -> failwith "Isla converter: disjunction temporarily unsupported"
 
-(* {1 Orchestration} *)
+(** {1 Orchestration} *)
 
 let to_testrepr (ir : Ir.t) : Testrepr.t =
   let mem_size = default_memory_size () in
@@ -334,14 +319,12 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     | Some s -> Bytes.length s.init_bytes
     | None -> Error.fatal "unknown memory size for: %s" sym
   in
-  let finals =
-    build_finals ~expect_is_sat:(ir.expect = Ir.Sat) ~resolve_sym:resolve
-      ~memory_size ir.assertion
-  in
+  let final = build_finals ~resolve_sym:resolve ~memory_size ir.assertion in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
     registers;
     memory;
     term_cond;
-    finals
+    kind = ir.kind;
+    final
   }

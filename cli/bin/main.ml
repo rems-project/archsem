@@ -48,7 +48,6 @@
 
 open Archsem
 open Litmus
-open Runner
 module ArmRunner = Runner.Make (Arm)
 module X86Runner = Runner.Make (X86)
 
@@ -64,8 +63,10 @@ type format =
     Recognised extensions are:
     - .archsem.toml for ArchSem format TOML tests
     - .litmus.toml for Isla-style litmus tests *)
-let parse_testfile fmt filename =
-  assert (Filename.extension filename = ".toml");
+let parse_testfile (fmt : format option) (filename : string) =
+  Error.assert_fatal
+    (Filename.extension filename = ".toml")
+    "Input file name %s is not ending in .toml" filename;
   let fmt =
     match fmt with
     | Some fmt -> fmt
@@ -109,35 +110,27 @@ let get_all_tests paths =
   files
 
 let run_tests model_name run_test files =
-  Terminal.print_header model_name (List.length files);
+  match files with
+  | [] -> Error.fatal "No tests specified"
+  | [file] -> (
+    (* TODO: Add a CLI option for controlling short *)
+    try run_test ~short:false file with Exit -> exit 1
+  )
+  | _ ->
+      (* multiple files *)
+      Terminal.print_header model_name (List.length files);
 
-  let results =
-    List.map
-      (fun file ->
-         let result = run_test file in
-         (file, result)
-       )
-      files
-  in
+      let num_fail = ref 0 in
 
-  let count pred = List.length (List.filter (fun (_, r) -> pred r) results) in
-  let num_expected = count (fun r -> r = Expected) in
-  let num_unexpected = count (fun r -> r = Unexpected) in
-  let num_model_error = count (fun r -> r = ModelError) in
-  let num_no_behaviour = count (fun r -> r = NoBehaviour) in
-  let num_parse_error = count (fun r -> r = ParseError) in
-  let total = List.length results in
+      List.iter
+        (fun file -> try run_test ~short:true file with Exit -> incr num_fail)
+        files;
 
-  let failures =
-    List.filter (fun (_, r) -> r <> Expected) results
-    |> List.map (fun (f, r) -> (Filename.basename f, result_to_string r))
-  in
+      let total = List.length files in
+      let failures = !num_fail in
 
-  Terminal.print_summary ~model_name ~total ~expected:num_expected
-    ~unexpected:num_unexpected ~model_error:num_model_error
-    ~parse_error:num_parse_error ~no_behaviour:num_no_behaviour ~failures;
-
-  if num_expected <> total then exit 1
+      Terminal.print_summary ~model_name ~total ~failures;
+      if failures > 0 then exit 1
 
 (** {2 Running litmus tests cli } *)
 
@@ -185,13 +178,6 @@ let format_term =
   let format_enum = Arg.enum [("archsem", Archsem); ("isla", Isla)] in
   Arg.(value & opt (some format_enum) None & info ["format"; "f"] ~doc ~docv:"FMT")
 
-let print_final_states_term =
-  let doc =
-    "Print all possible final states of relevant registers / memory locations. \
-     Output for x86 is compatible with mcompare"
-  in
-  Arg.(value & flag & info ["print-final-states"] ~doc)
-
 (** Optional CLI flag to dump assembler intermediates (.s, .ld, .elf) to DIR. *)
 let asm_dump =
   let doc = "Dump assembler intermediate artifacts (.s, .ld, .elf) to DIR" in
@@ -203,23 +189,16 @@ let asm_dump =
 (** The sequential model command *)
 let cmd_seq =
   let run =
-    let+ files = path_and_conf_term
-    and+ fmt = format_term
-    and+ print_final_states = print_final_states_term
-    and+ () = asm_dump in
+    let+ files = path_and_conf_term and+ fmt = format_term and+ () = asm_dump in
     let parse = parse_testfile fmt in
     match Config.get_arch () with
     | Arm ->
         run_tests "arm-seq"
-          (ArmRunner.run_litmus_test ~parse ~print_final_states
-             Arm.(seq_model tiny_isa)
-          )
+          (ArmRunner.run_test_file ~parse Arm.(seq_model tiny_isa))
           files
     | X86 ->
         run_tests "x86-seq"
-          (X86Runner.run_litmus_test ~parse ~print_final_states
-             X86.(seq_model tiny_isa)
-          )
+          (X86Runner.run_test_file ~parse X86.(seq_model tiny_isa))
           files
   in
   let info =
@@ -231,16 +210,11 @@ let cmd_seq =
 (** The user-mode promising command *)
 let cmd_ump =
   let run =
-    let+ files = path_and_conf_term
-    and+ fmt = format_term
-    and+ print_final_states = print_final_states_term
-    and+ () = asm_dump in
+    let+ files = path_and_conf_term and+ fmt = format_term and+ () = asm_dump in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
-      (ArmRunner.run_litmus_test ~parse ~print_final_states
-         Arm.(umProm_model tiny_isa)
-      )
+      (ArmRunner.run_test_file ~parse Arm.(umProm_model tiny_isa))
       files
   in
   let info =
@@ -279,14 +253,11 @@ let cmd_vmp =
     let+ files = path_and_conf_term
     and+ bbm_param = bbm_mode
     and+ fmt = format_term
-    and+ print_final_states = print_final_states_term
     and+ () = asm_dump in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
-      (ArmRunner.run_litmus_test ~parse ~print_final_states
-         (vmProm_model ~bbm_param tiny_isa)
-      )
+      (ArmRunner.run_test_file ~parse (vmProm_model ~bbm_param tiny_isa))
       files
   in
   let info =
@@ -307,15 +278,12 @@ let cmd_tso =
     let+ files = path_and_conf_term
     and+ fmt = format_term
     and+ no_eager = no_eager
-    and+ print_final_states = print_final_states_term
     and+ () = asm_dump in
     let allow_eager = not no_eager in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
-      (X86Runner.run_litmus_test ~parse ~print_final_states
-         X86.(op_model ~allow_eager tiny_isa)
-      )
+      (X86Runner.run_test_file ~parse X86.(op_model ~allow_eager tiny_isa))
       files
   in
   let info =
