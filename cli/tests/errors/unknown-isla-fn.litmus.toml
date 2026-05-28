@@ -1,0 +1,15 @@
+arch = "AArch64"
+name = "unknown-isla-fn"
+symbolic = ["x"]
+
+[thread.0]
+code = """
+    NOP
+"""
+
+[locations]
+x = "unknown_fn(0x1)"
+
+[final]
+expect = "sat"
+assertion = "true"

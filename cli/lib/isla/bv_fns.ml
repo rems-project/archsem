@@ -38,51 +38,91 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** This module is here to help error handling *)
+(** Bitvector functions: bvand, bvor, bvxor, bvshl, bvlshr, extz, exts. *)
 
-(** Raise a fatal error with [code], adds "archsem: error" in front*)
-let fatal ?(code = 1) fmt =
-  Printf.eprintf "archsem: %s%sfatal error:%s " Terminal.red Terminal.bold
-    Terminal.reset;
-  Printf.kfprintf (fun _ -> Printf.eprintf "\n"; exit code) stderr fmt
+let int_of_bit_arg name arg value =
+  if Z.sign value < 0 then
+    Litmus.Error.failwith "function: %s: argument %s must be non-negative" name
+      arg;
+  match Z.to_int value with
+  | n -> n
+  | exception Z.Overflow ->
+      Litmus.Error.failwith "function: %s: argument %s is too large" name arg
 
-let assert_fatal ?(code = 1) (cond : bool) fmt =
-  if cond then Printf.ikfprintf (fun _ -> ()) stderr fmt else fatal ~code fmt
+(** List of bitvector primitive functions
 
-let parse_error file loc fmt =
-  Printf.eprintf "archsem: %s%sparse error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  ( match loc with
-  | Some (line, col) ->
-      Printf.eprintf "%sFile %s, line %d, character %d:%s\n" Terminal.bold file
-        line col Terminal.reset
-  | None -> Printf.eprintf "%sFile %s:%s\n" Terminal.bold file Terminal.reset
-  );
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
-
-let toml_error file path fmt =
-  Printf.eprintf "archsem: %s%sTOML error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  if path == [] then
-    Printf.eprintf "%sFile \"%s\":%s\n" Terminal.bold file Terminal.reset
-  else
-    Printf.eprintf "%sFile \"%s\", path \"%s\":%s\n" Terminal.bold file
-      (String.concat "." path) Terminal.reset;
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
-
-let eval_error file path fmt =
-  Printf.eprintf "archsem: %s%seval error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  if path == [] then
-    Printf.eprintf "%sFile \"%s\":%s\n" Terminal.bold file Terminal.reset
-  else
-    Printf.eprintf "%sFile \"%s\", path \"%s\":%s\n" Terminal.bold file
-      (String.concat "." path) Terminal.reset;
-  Printf.kfprintf (fun fmt -> Printf.fprintf fmt "\n") stderr fmt
-
-let model_error test msg =
-  Printf.eprintf "archsem: %s%smodel error:%s\n" Terminal.red Terminal.bold
-    Terminal.reset;
-  Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg
-
-let failwith fmt = Printf.ksprintf failwith fmt
+    Any error during evaluation should be reported with [Failure] which will be
+    converted into a [eval_error] in [Term.eval] *)
+let functions : (string * Fn_registry.fn_spec) list =
+  [ ( "bvand",
+      { params = ["a"; "b"];
+        eval =
+          (fun args ->
+            match args with
+            | [a; b] -> Z.logand a b
+            | _ -> Fn_registry.arity_error "bvand" 2 (List.length args)
+          )
+      }
+    );
+    ( "bvor",
+      { params = ["a"; "b"];
+        eval =
+          (fun args ->
+            match args with
+            | [a; b] -> Z.logor a b
+            | _ -> Fn_registry.arity_error "bvor" 2 (List.length args)
+          )
+      }
+    );
+    ( "bvxor",
+      { params = ["a"; "b"];
+        eval =
+          (fun args ->
+            match args with
+            | [a; b] -> Z.logxor a b
+            | _ -> Fn_registry.arity_error "bvxor" 2 (List.length args)
+          )
+      }
+    );
+    ( "bvshl",
+      { params = ["a"; "b"];
+        eval =
+          (fun args ->
+            match args with
+            | [a; b] -> Z.shift_left a (int_of_bit_arg "bvshl" "b" b)
+            | _ -> Fn_registry.arity_error "bvshl" 2 (List.length args)
+          )
+      }
+    );
+    ( "bvlshr",
+      { params = ["a"; "b"];
+        eval =
+          (fun args ->
+            match args with
+            | [a; b] -> Z.shift_right a (int_of_bit_arg "bvlshr" "b" b)
+            | _ -> Fn_registry.arity_error "bvlshr" 2 (List.length args)
+          )
+      }
+    );
+    ( "extz",
+      { params = ["bits"; "len"];
+        eval =
+          (fun args ->
+            match args with
+            | [bits; len] ->
+                ignore (int_of_bit_arg "extz" "len" len);
+                bits
+            | _ -> Fn_registry.arity_error "extz" 2 (List.length args)
+          )
+      }
+    );
+    ( "exts",
+      { params = ["bits"; "len"];
+        eval =
+          (fun _ ->
+            Litmus.Error.failwith
+              "exts is not support because of integer semantics"
+          )
+      }
+    )
+  ]

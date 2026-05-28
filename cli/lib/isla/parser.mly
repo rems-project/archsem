@@ -46,6 +46,7 @@
 %token <string> IDENT
 %token LPAREN "("
 %token RPAREN ")"
+%token COMMA ","
 %token AND "&"
 %token OR "|"
 %token NOT "~"
@@ -60,11 +61,15 @@
 %nonassoc NOT
 
 %start <Term.t Litmus.Assertion.expr> assertion
+%start <Term.t> binding
 
 %%
 
 assertion:
   | e = prop; EOF { e }
+
+binding:
+  | v = term; EOF { v }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or [e1; e2] }
@@ -85,4 +90,9 @@ loc:
 
 term:
   | v = NUM { Term.Const v }
+  | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
+  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
   | s = IDENT { Term.Sym s }
+
+kw_arg:
+  | k = IDENT; "="; v = term { (k, v) }

@@ -90,9 +90,27 @@ let init_bytes_of_value mem_size sym value =
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
   data
 
-let data_symbol_of_value ~resolve_sym mem_size sym value =
+type term_eval_context =
+  | Location_init of string
+  | Register_init of int * string
+  | Final_assertion
+
+exception Term_eval_error of string list * string
+
+let term_eval_context_path = function
+  | Location_init sym -> ["locations"; sym]
+  | Register_init (tid, reg) -> ["thread"; string_of_int tid; "init"; reg]
+  | Final_assertion -> ["final"; "assertion"]
+
+let eval_term ~context ~resolve_sym term =
+  try Term.eval ~resolve_sym term
+  with Failure msg ->
+    raise (Term_eval_error (term_eval_context_path context, msg))
+
+let data_symbol_of_value ~context ~resolve_sym mem_size sym value =
   { Assembler.name = sym;
-    init_bytes = init_bytes_of_value mem_size sym (Term.eval ~resolve_sym value)
+    init_bytes =
+      init_bytes_of_value mem_size sym (eval_term ~context ~resolve_sym value)
   }
 
 let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
@@ -115,7 +133,9 @@ let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
          in
          (* A symbol-valued initializer needs the post-link symbol address, but
             the assembler only needs the block size to compute layout here. *)
-         data_symbol_of_value ~resolve_sym:(fun _ -> 0) mem_size sym init_value
+         data_symbol_of_value ~context:(Location_init sym)
+           ~resolve_sym:(fun _ -> 0)
+           mem_size sym init_value
        )
       ir.symbolic
   in
@@ -141,7 +161,7 @@ let resolve_data_symbols
        let init_value =
          List.assoc_opt sym ir.locations |> Option.value ~default:Term.zero
        in
-       data_symbol_of_value
+       data_symbol_of_value ~context:(Location_init sym)
          ~resolve_sym:(Assembler.resolve_symbol asm_result)
          mem_size sym init_value
      )
@@ -207,7 +227,8 @@ let build_registers
        let used_regs =
          List.map
            (fun (reg, value) ->
-              (reg, RegValGen.Number (Term.eval ~resolve_sym value))
+              let context = Register_init (thread.tid, reg) in
+              (reg, RegValGen.Number (eval_term ~context ~resolve_sym value))
             )
            thread.init
        in
@@ -258,5 +279,8 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
     memory;
     term_cond;
     kind = ir.kind;
-    final = Assertion.map_cst (Term.eval ~resolve_sym) ir.assertion
+    final =
+      Assertion.map_cst
+        (eval_term ~context:Final_assertion ~resolve_sym)
+        ir.assertion
   }

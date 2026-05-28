@@ -75,10 +75,15 @@ type t =
 let parse_term : Toml.t -> Term.t = function
   | TomlInteger i -> Term.Const i
   | TomlString s -> (
-    try Term.Const (Z.of_string s) with Invalid_argument _ -> Term.Sym s
-  )
+      let lexbuf = Lexing.from_string s in
+      try Parser.binding Lexer.token lexbuf
+      with Parser.Error ->
+        Toml.error "term parse error at position %d in: %s"
+          lexbuf.lex_curr_p.pos_cnum s
+    )
   | value ->
-      Toml.error "Isla value is invalid, should be int or string, but is: %s"
+      Toml.error
+        "Isla value is invalid, should be int or string expression, but is: %s"
         (Toml.Printer.to_string value)
 
 let is_meta_key k = String.starts_with ~prefix:"__isla" k
