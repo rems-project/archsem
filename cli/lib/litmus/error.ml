@@ -85,4 +85,10 @@ let model_error test msg =
     Terminal.reset;
   Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg
 
+(** Using invalid register names or similar architecture related errors *)
+let arch_error test msg =
+  Printf.eprintf "archsem: %s%sarch error:%s\n" Terminal.red Terminal.bold
+    Terminal.reset;
+  Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg
+
 let failwith fmt = Printf.ksprintf failwith fmt

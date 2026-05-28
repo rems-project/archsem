@@ -1,7 +1,36 @@
 arch = "Arm"
 name = "MP+dmbs"
 
-[[registers]]
+[[memory]]
+  kind = "code"
+  addr = 0x3000
+  step = 4
+  data = [0xf9000020, 0xd5033fbf, 0xf9000062]
+
+[[memory]]
+  kind = "code"
+  addr = 0x300c
+  step = 4
+  data = [0xf9400020, 0xd5033fbf, 0xf9400062]
+
+[[memory]]
+  sym = "x"
+  addr = 0x1000
+  step = 8
+  data = 0
+
+[[memory]]
+  sym = "y"
+  addr = 0x2000
+  step = 8
+  data = 0
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x300c]
+
+[thread."0".regs]
   _PC = 0x3000
   "R0" = 1
   "R1" = 0x1000
@@ -37,7 +66,10 @@ name = "MP+dmbs"
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
 
-[[registers]]
+[thread."1"]
+  breakpoints = [0x3018]
+
+[thread."1".regs]
   _PC = 0x300c
   "R1" = 0x2000
   "R3" = 0x1000
@@ -72,36 +104,6 @@ name = "MP+dmbs"
   "R30" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
-
-[[memory]]
-  kind = "code"
-  addr = 0x3000
-  step = 4
-  data = [0xf9000020, 0xd5033fbf, 0xf9000062]
-
-[[memory]]
-  kind = "code"
-  addr = 0x300c
-  step = 4
-  data = [0xf9400020, 0xd5033fbf, 0xf9400062]
-
-[[memory]]
-  sym = "x"
-  addr = 0x1000
-  step = 8
-  data = 0
-
-[[memory]]
-  sym = "y"
-  addr = 0x2000
-  step = 8
-  data = 0
-
-[[termCond]]
-  _PC = 0x300c
-
-[[termCond]]
-  _PC = 0x3018
 
 [final]
   assertion = {and = [{"1:R0" = 1}, {"1:R2" = 0}]}

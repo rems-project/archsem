@@ -5,7 +5,7 @@ arch="Arm"
 name="MP+VM"
 
 # Thread 0: Writer - STR X2, [X1, X0]; STR X5, [X4, X3]
-[[registers]]
+[thread.0.regs]
 _PC = 0x8000000500
 R0 = 0x8000001000      # VA base
 R1 = 0x100             # Offset -> VA 0x8000001100
@@ -13,21 +13,6 @@ R2 = 0x2a              # Data value
 R3 = 0x8000001000      # VA base
 R4 = 0x200             # Offset -> VA 0x8000001200
 R5 = 0x1               # Flag value
-TTBR0_EL1 = 0x80000
-TCR_EL1 = 0x0
-SCTLR_EL1 = 0x1
-ID_AA64MMFR1_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
-
-# Thread 1: Reader - LDR X5, [X4, X3]; LDR X2, [X1, X0]
-[[registers]]
-_PC = 0x8000000600
-R0 = 0x8000001000
-R1 = 0x100
-R2 = 0x0
-R3 = 0x8000001000
-R4 = 0x200
-R5 = 0x0
 TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
 SCTLR_EL1 = 0x1
@@ -43,6 +28,25 @@ data = [
   0xf8206822, # STR X2, [X1, X0]
   0xf8236885] # STR X5, [X4, X3]
 
+# Thread 0 breakpoint at VA 0x8000000508
+[thread.0]
+breakpoints = [0x8000000508]
+
+# Thread 1: Reader - LDR X5, [X4, X3]; LDR X2, [X1, X0]
+[thread.1.regs]
+_PC = 0x8000000600
+R0 = 0x8000001000
+R1 = 0x100
+R2 = 0x0
+R3 = 0x8000001000
+R4 = 0x200
+R5 = 0x0
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0x0
+SCTLR_EL1 = 0x1
+ID_AA64MMFR1_EL1 = 0x0
+PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+
 # Thread 1 instructions at PA 0x600
 [[memory]]
 addr = 0x600
@@ -51,6 +55,10 @@ step = 4
 data = [
   0xf8636885, # LDR X5, [X4, X3]
   0xf8606822] # LDR X2, [X1, X0]
+
+# Thread 0 breakpoint at VA 0x8000000608
+[thread.1]
+breakpoints = [0x8000000608]
 
 # Backing memory for shared data
 [[memory]]
@@ -63,13 +71,13 @@ addr = 0x1200
 step = 8
 data = 0
 
+# Page table hierarchy
 # L0 table base
 [[memory]]
 addr = 0x80000
 step = 8
 data = 0
 
-# Page table hierarchy
 # L0[1] -> L1
 [[memory]]
 addr = 0x80008
@@ -100,11 +108,6 @@ addr = 0x83008
 step = 8
 data = 0x1043 # PTE to page 0x1000 with bit 6 on for Unpriv data, and 0x3 to be valid
 
-[[termCond]]
-_PC = 0x8000000508
-
-[[termCond]]
-_PC = 0x8000000608
 
 [final]
 assertion.and = [{"1:R5"=1}, {"1:R2"=0}]

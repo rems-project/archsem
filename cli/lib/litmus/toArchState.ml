@@ -43,6 +43,7 @@
     Parameterized by architecture via the Make functor. *)
 
 module Make (Arch : Archsem.Arch) = struct
+  module AssertionChecker = Assertion.Checker (Arch)
   open Arch
 
   let insert_memory_block mm (block : Testrepr.memory_block) =
@@ -53,46 +54,40 @@ module Make (Arch : Archsem.Arch) = struct
       (fun rm (name, gen) -> RegMap.insert (RegVal.of_string_gen name gen) rm)
       RegMap.empty reg_list
 
-  let regmaps_of_testrepr registers = List.map regmap_of_gen_list registers
+  let regmaps_of_threads (threads : Testrepr.thread list) =
+    List.map
+      (fun (thread : Testrepr.thread) -> regmap_of_gen_list thread.regs)
+      threads
 
   let memory_of_testrepr memory =
     List.fold_left insert_memory_block MemMap.empty memory
 
-  let term_cond_of_gen_list reqs =
-    let parsed =
-      List.map (fun (name, gen) -> RegVal.of_string_gen name gen) reqs
-    in
-    fun rm ->
-      List.for_all
-        (fun rv ->
-           let reg = RegVal.reg rv in
-           match RegMap.get_opt reg rm with
-           | Some actual -> rv = actual
-           | None ->
-               failwith
-                 ("[[termCond]] register not found in thread state: "
-                ^ Reg.to_string reg
-                 )
-         )
-        parsed
+  let term_cond_of_breakpoints breakpoints rm =
+    let pc = RegMap.getZ Reg.pc rm in
+    List.mem pc breakpoints
 
-  let term_conds_of_testrepr term_cond = List.map term_cond_of_gen_list term_cond
-
-  let validate_thread_count regs term =
-    let num_threads = List.length regs in
-    if List.length term <> num_threads then
-      failwith
-        (Printf.sprintf
-           "[[termCond]] count (%d) must match [[registers]] thread count (%d)"
-           (List.length term) num_threads
-        )
+  let term_conds_of_threads (threads : Testrepr.thread list) =
+    List.map
+      (fun (thread : Testrepr.thread) ->
+         term_cond_of_breakpoints thread.breakpoints
+       )
+      threads
 
   (** Convert Testrepr.t into ArchState.t and termination conditions. *)
   let testrepr_to_archstate (test : Testrepr.t) =
-    let regs = regmaps_of_testrepr test.registers in
-    let mem = memory_of_testrepr test.memory in
-    let init = ArchState.make regs mem in
-    let term = term_conds_of_testrepr test.term_cond in
-    validate_thread_count regs term;
-    (init, term)
+    let resolve_sym = Testrepr.resolve_sym test in
+    try
+      let regs = regmaps_of_threads test.threads in
+      let mem = memory_of_testrepr test.memory in
+      let init = ArchState.make regs mem in
+      let term = term_conds_of_threads test.threads in
+
+      (* Check final cond can be evaluated on initial state *)
+      let locs = Assertion.get_unique_locs test.final in
+      let _ = List.map (AssertionChecker.lookup_loc ~resolve_sym init) locs in
+
+      (init, term)
+    with Failure msg ->
+      Error.arch_error test.name msg;
+      raise Exit
 end

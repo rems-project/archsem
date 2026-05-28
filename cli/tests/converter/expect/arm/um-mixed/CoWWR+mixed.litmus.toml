@@ -1,7 +1,30 @@
 arch = "Arm"
 name = "CoWWR+mixed"
 
-[[registers]]
+[[memory]]
+  kind = "code"
+  addr = 0x2000
+  step = 4
+  data = 0xf9000022
+
+[[memory]]
+  kind = "code"
+  addr = 0x2004
+  step = 4
+  data = [0xb9000023, 0xf9400020]
+
+[[memory]]
+  sym = "x"
+  addr = 0x1000
+  step = 8
+  data = 0
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x2004]
+
+[thread."0".regs]
   _PC = 0x2000
   "R1" = 0x1000
   "R2" = 0x1111111111111111
@@ -37,7 +60,10 @@ name = "CoWWR+mixed"
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
 
-[[registers]]
+[thread."1"]
+  breakpoints = [0x200c]
+
+[thread."1".regs]
   _PC = 0x2004
   "R1" = 0x1000
   "R3" = 0x22222222
@@ -72,30 +98,6 @@ name = "CoWWR+mixed"
   "R30" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
-
-[[memory]]
-  kind = "code"
-  addr = 0x2000
-  step = 4
-  data = 0xf9000022
-
-[[memory]]
-  kind = "code"
-  addr = 0x2004
-  step = 4
-  data = [0xb9000023, 0xf9400020]
-
-[[memory]]
-  sym = "x"
-  addr = 0x1000
-  step = 8
-  data = 0
-
-[[termCond]]
-  _PC = 0x2004
-
-[[termCond]]
-  _PC = 0x200c
 
 [final]
   assertion = {or = [{"1:R0" = 0x22222222}, {"1:R0" = 0x1111111111111111}, {"1:R0" = 0x1111111122222222}]}

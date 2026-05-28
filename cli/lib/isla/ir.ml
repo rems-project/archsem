@@ -50,7 +50,7 @@ module Toml = Litmus.Toml
 type thread =
   { tid : int;
     code : string;
-    init : (string * Term.t) list
+    init : (string * Term.t) list (* TODO: Add extra breakpoints *)
   }
 
 type section =
@@ -102,13 +102,7 @@ let parse_reset_table toml =
   Toml.get_table_key_values parse_reset_entry toml |> List.filter_map Fun.id
 
 let parse_thread (tid, table) =
-  let tid =
-    match int_of_string_opt tid with
-    | Some tid ->
-        if tid < 0 then Toml.error "Thread number can't be negative: %i" tid;
-        tid
-    | None -> Toml.error "Thread table contained a non-number field: %s" tid
-  in
+  let tid = Litmus.Parser.parse_tid tid in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   let init =
     Toml.find_or ~default:[] table (Toml.get_table_values parse_term) ["init"]

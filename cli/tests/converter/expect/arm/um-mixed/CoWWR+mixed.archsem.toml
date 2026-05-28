@@ -1,21 +1,6 @@
 arch = "Arm"
 name = "CoWWR+mixed"
 
-[[registers]]
-  _PC = 0x500
-  "R1" = 0x1100
-  "R2" = 0x1111111111111111
-  "SCTLR_EL1" = 0
-  PSTATE = {EL = 0}
-
-[[registers]]
-  _PC = 0x600
-  "R0" = 0
-  "R1" = 0x1100
-  "R3" = 0x22222222
-  "SCTLR_EL1" = 0
-  PSTATE = {EL = 0}
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -33,11 +18,28 @@ name = "CoWWR+mixed"
   step = 8
   data = 0
 
-[[termCond]]
-  _PC = 0x504
+[thread]
 
-[[termCond]]
-  _PC = 0x608
+[thread."0"]
+  breakpoints = [0x504]
+
+[thread."0".regs]
+  _PC = 0x500
+  "R1" = 0x1100
+  "R2" = 0x1111111111111111
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0}
+
+[thread."1"]
+  breakpoints = [0x608]
+
+[thread."1".regs]
+  _PC = 0x600
+  "R0" = 0
+  "R1" = 0x1100
+  "R3" = 0x22222222
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0}
 
 [final]
   assertion = {or = [{"1:R0" = 0x1111111122222222}, {"1:R0" = 0x1111111111111111}, {"1:R0" = 0x22222222}]}

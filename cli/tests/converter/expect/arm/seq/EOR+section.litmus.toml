@@ -1,7 +1,25 @@
 arch = "Arm"
 name = "EOR+section"
 
-[[registers]]
+[[memory]]
+  sym = "helper"
+  kind = "code"
+  addr = 0x1000
+  step = 4
+  data = [0xca020020, 0x14000400]
+
+[[memory]]
+  kind = "code"
+  addr = 0x2000
+  step = 4
+  data = 0x17fffc00
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x2004]
+
+[thread."0".regs]
   _PC = 0x2000
   "R1" = 0x11
   "R2" = 0x101
@@ -36,22 +54,6 @@ name = "EOR+section"
   "R30" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
-
-[[memory]]
-  sym = "helper"
-  kind = "code"
-  addr = 0x1000
-  step = 4
-  data = [0xca020020, 0x14000400]
-
-[[memory]]
-  kind = "code"
-  addr = 0x2000
-  step = 4
-  data = 0x17fffc00
-
-[[termCond]]
-  _PC = 0x2004
 
 [final]
   assertion = {"0:R0" = 0x110}

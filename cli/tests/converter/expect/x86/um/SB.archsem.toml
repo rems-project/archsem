@@ -1,20 +1,6 @@
 arch = "x86"
 name = "SB"
 
-[[registers]]
-  rip = 0x500
-  rax = 0
-  rcx = 0x1100
-  rdx = 0x1200
-  rflags = 0x3000
-
-[[registers]]
-  rip = 0x600
-  rax = 0
-  rcx = 0x1100
-  rdx = 0x1200
-  rflags = 0x3000
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -37,11 +23,27 @@ name = "SB"
   step = 8
   data = 0
 
-[[termCond]]
-  rip = 0x508
+[thread]
 
-[[termCond]]
-  rip = 0x608
+[thread."0"]
+  breakpoints = [0x508]
+
+[thread."0".regs]
+  rip = 0x500
+  rax = 0
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
+
+[thread."1"]
+  breakpoints = [0x608]
+
+[thread."1".regs]
+  rip = 0x600
+  rax = 0
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
 
 [final]
   assertion = {and = [{"0:rax" = 0}, {"1:rax" = 0}]}

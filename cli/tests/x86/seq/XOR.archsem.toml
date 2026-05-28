@@ -1,8 +1,8 @@
 # Single-threaded XOR: xorq %rcx, %rax → rax = 0x11 XOR 0x101 = 0x110
-name = "x86-XOR"
+name = "XOR"
 arch = "x86"
 
-[[registers]]
+[thread.0.regs]
 rip = 0x500
 rax = 0x11
 rcx = 0x101
@@ -14,8 +14,9 @@ kind = "code"
 step = 1
 data = [0x48, 0x33, 0xc1]
 
-[[termCond]]
-rip = 0x503
+[thread.0]
+breakpoints = [0x503]
+
 
 [final]
 kind = "forall"

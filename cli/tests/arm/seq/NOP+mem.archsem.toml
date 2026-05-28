@@ -1,7 +1,7 @@
 arch="Arm"
 name="NOP+mem"
 
-[[registers]]
+[thread.0.regs]
 _PC = 0x500
 R0 = 0x0
 SCTLR_EL1 = 0x0
@@ -13,14 +13,14 @@ kind = "code"
 step = 4
 data = 0xd503201f
 
+[thread.0]
+breakpoints = [0x504]
+
 [[memory]]
 sym = "x"
 addr = 0x600
 step = 4
 data = 42
-
-[[termCond]]
-_PC = 0x504
 
 [final]
 kind = "forall"

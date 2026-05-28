@@ -6,16 +6,8 @@ name = "MP"
 # Thread 1: MOV EAX, [EDX]; MOV EBX, [ECX]
 # Forbidden under SC: EAX=1, EBX=0
 
-[[registers]]
+[thread.0.regs]
 rip = 0x500
-rcx = 0x1100
-rdx = 0x1200
-rflags = 0x3000
-
-[[registers]]
-rip = 0x600
-rax = 0x0
-rbx = 0x0
 rcx = 0x1100
 rdx = 0x1200
 rflags = 0x3000
@@ -27,12 +19,28 @@ kind = "code"
 step = 1
 data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x02, 0x01, 0x00, 0x00, 0x00]
 
+[thread.0]
+breakpoints = [0x50c]
+
+
+[thread.1.regs]
+rip = 0x600
+rax = 0x0
+rbx = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
+
 # Thread 1: MOV EAX,[EDX] (8B 02) + MOV EBX,[ECX] (8B 19)
 [[memory]]
 addr = 0x600
 kind = "code"
 step = 1
 data = [0x8B, 0x02, 0x8B, 0x19]
+
+[thread.1]
+breakpoints = [0x604]
+
 
 [[memory]]
 addr = 0x1100
@@ -45,12 +53,6 @@ addr = 0x1200
 kind = "data"
 step = 8
 data = 0
-
-[[termCond]]
-rip = 0x50c
-
-[[termCond]]
-rip = 0x604
 
 
 # TSO allows: (0,0), (0,1), (1,1) but NOT (1,0)

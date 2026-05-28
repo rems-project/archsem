@@ -4,8 +4,8 @@
 arch="Arm"
 name="STRLDR+VM"
 
-# Thread 1 - Store then Load through VA translation
-[[registers]]
+# Thread 0 - Store then Load through VA translation
+[thread.0.regs]
 _PC = 0x8000000500
 R0 = 0x8000001000      # VA base for data access
 R1 = 0x100             # Offset (VA + offset = 0x8000001100)
@@ -24,6 +24,9 @@ step = 4
 data = [
   0xf8206822, # STR X2, [X1, X0]: store X2 to [X0+X1]
   0xf8606820] # LDR X0, [X1, X0]: load from [X0+X1] into X0
+
+[thread.0]
+breakpoints = [0x8000000508]
 
 # Backing memory for data at PA 0x1100
 [[memory]]
@@ -67,9 +70,6 @@ data = 0x3 # PTE to page 0x0 with 0x3 to be valid. Code permission on by default
 addr = 0x83008
 step = 8
 data = 0x1043 # PTE to page 0x1000 with bit 6 on for Unpriv data, and 0x3 to be valid
-
-[[termCond]]
-_PC = 0x8000000508
 
 [final]
 kind = "forall"

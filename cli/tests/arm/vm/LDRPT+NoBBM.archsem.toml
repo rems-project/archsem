@@ -5,8 +5,8 @@
 arch="Arm"
 name="LDRPT+NoBBM"
 
-# Thread 1: Reads, modifies PTE, reads again
-[[registers]]
+# Thread 0: Reads, modifies PTE, reads again
+[thread.0.regs]
 _PC = 0x8000000500
 R0 = 0x8000001000      # VA to load from
 R1 = 0x0               # Base offset
@@ -28,6 +28,9 @@ addr = 0x500
 kind = "code"
 step = 4
 data = [0xf8606820, 0xf8226823, 0xf8646824]
+
+[thread.0]
+breakpoints = [0x800000050c]
 
 # Data at PA 0x1000 (original mapping)
 [[memory]]
@@ -101,8 +104,6 @@ step = 8
 # Bit 0+1 means valid page entry
 data = 0x60000000083303
 
-[[termCond]]
-_PC = 0x800000050c
 
 [final]
 kind = "forall"

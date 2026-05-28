@@ -6,15 +6,8 @@ name = "R_PO_MFENCE"
 # Thread 1: MOV [EDX], 0x2; MFENCE; MOV EAX, [ECX]
 # Tests that MFENCE prevents store-buffer reordering
 
-[[registers]]
+[thread.0.regs]
 rip = 0x500
-rax = 0x0
-rcx = 0x1100
-rdx = 0x1200
-rflags = 0x3000
-
-[[registers]]
-rip = 0x600
 rax = 0x0
 rcx = 0x1100
 rdx = 0x1200
@@ -27,12 +20,27 @@ kind = "code"
 step = 1
 data = [0xC7, 0x01, 0x01, 0x00, 0x00, 0x00, 0xC7, 0x02, 0x01, 0x00, 0x00, 0x00]
 
+[thread.0]
+breakpoints = [0x50c]
+
+
+[thread.1.regs]
+rip = 0x600
+rax = 0x0
+rcx = 0x1100
+rdx = 0x1200
+rflags = 0x3000
+
 # Thread 1: MOV [EDX],2 (C7 02 02000000) + MFENCE (0F AE F0) + MOV EAX,[ECX] (8B 01)
 [[memory]]
 addr = 0x600
 kind = "code"
 step = 1
 data = [0xC7, 0x02, 0x02, 0x00, 0x00, 0x00, 0x0F, 0xAE, 0xF0, 0x8B, 0x01]
+
+[thread.1]
+breakpoints = [0x60b]
+
 
 [[memory]]
 sym = "x"
@@ -48,11 +56,6 @@ kind = "data"
 step = 8
 data = 0
 
-[[termCond]]
-rip = 0x50c
-
-[[termCond]]
-rip = 0x60b
 
 # [EDX]=2 ∧ EAX=0 is forbidden (MFENCE prevents this)
 [final]

@@ -41,9 +41,9 @@
 (** Litmus test TOML parser.
 
     Parses TOML files describing litmus tests:
-    - [[registers]]: Initial register state per thread
+    - [[thread.n.regs]]: Initial register state for thread n
+    - [[thread.n.breakpoints]]: Breakpoints for thread n
     - [[memory]]: Initial memory contents
-    - [[termCond]]: Termination conditions per thread (typically PC values)
     - [[final]]: Final condition
       - [[kind]]: Test kind (exists/forall/notexists)
       - [[assertion]]: The assertion in funky TOML syntax
@@ -52,9 +52,9 @@
 
 module RegValGen = Archsem.RegValGen
 
-(** {1 TOML -> Testrepr.t} *)
+(** {1 Threads and registers} *)
 
-(** Convert a TOML value to RegValGen.t *)
+(** Converts a TOML value to RegValGen.t *)
 let rec toml_to_gen : Toml.t -> RegValGen.t = function
   | TomlInteger i -> Number i
   | TomlString s -> String s
@@ -63,12 +63,32 @@ let rec toml_to_gen : Toml.t -> RegValGen.t = function
       Struct (List.map (fun (k, v) -> (k, toml_to_gen v)) t)
   | v -> Toml.error "Unsupported register value type: %s" (Toml.toml_type_name v)
 
-(** Parse [[registers]] into register lists with string keys *)
-let parse_test_registers toml =
-  let parse_regs = Toml.get_table_values toml_to_gen in
-  Toml.find toml (Toml.get_array parse_regs) ["registers"]
+(** Parses a [regs] table into register lists with string keys *)
+let parse_registers = Toml.get_table_values toml_to_gen
 
-(** Parse a memory block in [[memory]] *)
+(** Parses the content of [thread.n] *)
+let parse_thread toml : Testrepr.thread =
+  let regs = Toml.find toml parse_registers ["regs"] in
+  let breakpoints = Toml.find toml (Toml.get_array Toml.get_Z) ["breakpoints"] in
+  {regs; breakpoints}
+
+let parse_tid tid : int =
+  match int_of_string_opt tid with
+  | Some tid ->
+      if tid < 0 then Toml.error "Thread number can't be negative: %i" tid;
+      tid
+  | None -> Toml.error "Thread table contained a non-number field: %s" tid
+
+(** Parses threads from the [thread] toml object *)
+let parse_threads toml =
+  Toml.find toml (Toml.get_table_values parse_thread) []
+  |> List.map (fun (tid, thread) -> (parse_tid tid, thread))
+  |> List.sort (fun (tid1, _) (tid2, _) -> compare tid1 tid2)
+  |> List.mapi (fun i (tid, thread) ->
+    if i != tid then Toml.error "Thread %i is missing" i else thread
+  )
+
+(** {1 Memory} *)
 
 (** Parse [[memory]] into abstract memory blocks *)
 let parse_test_memory toml : Testrepr.memory_block list =
@@ -122,11 +142,7 @@ let parse_test_memory toml : Testrepr.memory_block list =
   in
   Toml.find toml (Toml.get_array parse_memory_block) ["memory"]
 
-(** Parse [[termCond]] into term cond lists with string keys *)
-let parse_test_termcond toml : (string * RegValGen.t) list list =
-  Toml.find toml (Toml.get_array (Toml.get_table_values toml_to_gen)) ["termCond"]
-
-(** {2 Final condition parsing} *)
+(** {1 Final condition} *)
 
 (** Parse a location string, either ["0:R0"] or ["x"] *)
 let parse_location_string str : Assertion.loc =
@@ -171,7 +187,24 @@ let rec parse_assertion : Toml.t -> Z.t Assertion.expr = function
       in
       Toml.get_singleton parse_singleton toml
 
-(** {2 Parse test kinds} *)
+(** Parse a final assertion and check all memory symbols exists *)
+let parse_final ~syms toml =
+  let assertion =
+    Toml.find_or ~default:Assertion.True toml parse_assertion
+      ["final"; "assertion"]
+  in
+  let locs = Assertion.get_unique_locs assertion in
+  List.iter
+    (function
+      | Assertion.Mem sym ->
+          if not (List.mem sym syms) then
+            Toml.error ~path:["final"; "assertion"] "Symbol %s not found" sym
+      | _ -> ()
+      )
+    locs;
+  assertion
+
+(** {1 kinds} *)
 
 let parse_kind toml : Testrepr.kind =
   let parse_kind_string toml : Testrepr.kind =
@@ -185,17 +218,14 @@ let parse_kind toml : Testrepr.kind =
   in
   Toml.find_or ~default:Testrepr.Exists toml parse_kind_string ["final"; "kind"]
 
-(** {2 Top-level parser} *)
+(** {1 Top-level parser} *)
 
-let parse_to_testrepr : Toml.t -> Testrepr.t =
- fun toml ->
+let parse_to_testrepr (toml : Toml.t) : Testrepr.t =
+  let memory = parse_test_memory toml in
   { Testrepr.arch = Toml.find toml Toml.get_string ["arch"];
     name = Toml.find toml Toml.get_string ["name"];
-    registers = parse_test_registers toml;
-    memory = parse_test_memory toml;
-    term_cond = parse_test_termcond toml;
-    final =
-      Toml.find_or ~default:Assertion.True toml parse_assertion
-        ["final"; "assertion"];
+    threads = Toml.find toml parse_threads ["thread"];
+    memory;
+    final = parse_final ~syms:(Testrepr.mem_syms memory) toml;
     kind = parse_kind toml
   }

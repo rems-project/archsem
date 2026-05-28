@@ -214,48 +214,37 @@ let find_section name (asm_result : Assembler.assembly_result) =
     asm_result.sections
 
 (** Build per-thread initial register maps: PC + user init + config defaults. *)
-let build_registers
-      ~arch
-      (asm_result : Assembler.assembly_result)
-      (threads : Ir.thread list)
-  =
-  let resolve_sym = Assembler.resolve_symbol asm_result in
-  List.mapi
-    (fun i (thread : Ir.thread) ->
-       let sec = find_section (Printf.sprintf "thread%d" i) asm_result in
-       let pc_entry = (pc_reg arch, RegValGen.Number (Z.of_int sec.addr)) in
-       let used_regs =
-         List.map
-           (fun (reg, value) ->
-              let context = Register_init (thread.tid, reg) in
-              (reg, RegValGen.Number (eval_term ~context ~resolve_sym value))
-            )
-           thread.init
-       in
-       let explicit_regs = pc_entry :: used_regs in
-       let has name = List.exists (fun (reg, _) -> reg = name) explicit_regs in
-       let default_regs =
-         List.filter_map
-           (fun (reg, value) -> if has reg then None else Some (reg, value))
-           (register_defaults ())
-       in
-       explicit_regs @ default_regs
-     )
-    threads
+let build_registers ~resolve_sym ~pc (start_pc : int) (thread : Ir.thread) =
+  let pc_entry = (pc, RegValGen.Number (Z.of_int start_pc)) in
+  let used_regs =
+    List.map
+      (fun (reg, value) ->
+         let context = Register_init (thread.tid, reg) in
+         (reg, RegValGen.Number (eval_term ~context ~resolve_sym value))
+       )
+      thread.init
+  in
+  let explicit_regs = pc_entry :: used_regs in
+  let has name = List.exists (fun (reg, _) -> reg = name) explicit_regs in
+  let default_regs =
+    List.filter_map
+      (fun (reg, value) -> if has reg then None else Some (reg, value))
+      (register_defaults ())
+  in
+  explicit_regs @ default_regs
 
-(** Build per-thread termination conditions (PC at end of code).
-    TODO: support additional conditions (e.g. exceptions, watchpoints). *)
-let build_term_cond
-      ~arch
-      (asm_result : Assembler.assembly_result)
-      (threads : Ir.thread list)
+let build_threads ~arch ~resolve_sym asm_result (threads : Ir.thread list) :
+  Testrepr.thread list
   =
   let pc = pc_reg arch in
   List.mapi
-    (fun i _thread ->
-       let sec = find_section (Printf.sprintf "thread%d" i) asm_result in
-       let end_pc = Z.of_int (sec.addr + Bytes.length sec.data) in
-       [(pc, RegValGen.Number end_pc)]
+    (fun tid (thread : Ir.thread) ->
+       assert (tid == thread.tid);
+       (* Should have been checked before *)
+       let sec = find_section (Printf.sprintf "thread%d" tid) asm_result in
+       let regs = build_registers ~resolve_sym ~pc sec.addr thread in
+       let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
+       {Testrepr.regs; breakpoints}
      )
     threads
 
@@ -267,17 +256,15 @@ let to_testrepr (ir : Ir.t) : Testrepr.t =
   let asm_result = Assembler.assemble asm_input in
   let data_symbols = resolve_data_symbols asm_result ir mem_size in
   let resolve_sym sym = Assembler.resolve_symbol asm_result sym in
-  let registers = build_registers ~arch:ir.arch asm_result ir.threads in
+  let threads = build_threads ~arch:ir.arch ~resolve_sym asm_result ir.threads in
   let user_section_names =
     List.map (fun (s : Ir.section) -> s.sec_name) ir.sections
   in
   let memory = build_memory ~data_symbols ~user_section_names asm_result in
-  let term_cond = build_term_cond ~arch:ir.arch asm_result ir.threads in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
-    registers;
+    threads;
     memory;
-    term_cond;
     kind = ir.kind;
     final =
       Assertion.map_cst

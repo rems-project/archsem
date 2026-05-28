@@ -1,18 +1,6 @@
 arch = "Arm"
 name = "BBMSuccess"
 
-[[registers]]
-  _PC = 0x8000000500
-  "R0" = 0x8000001000
-  "R1" = 0
-  "R2" = 0x8000010008
-  "R3" = 0
-  "TTBR0_EL1" = 0x80000
-  "TCR_EL1" = 0
-  "SCTLR_EL1" = 1
-  "ID_AA64MMFR1_EL1" = 0
-  PSTATE = {EL = 1, SP = 1}
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -59,8 +47,22 @@ name = "BBMSuccess"
   step = 8
   data = 0x60000000083703
 
-[[termCond]]
-  _PC = 0x8000000514
+[thread]
+
+[thread."0"]
+  breakpoints = [0x8000000514]
+
+[thread."0".regs]
+  _PC = 0x8000000500
+  "R0" = 0x8000001000
+  "R1" = 0
+  "R2" = 0x8000010008
+  "R3" = 0
+  "TTBR0_EL1" = 0x80000
+  "TCR_EL1" = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0
+  PSTATE = {EL = 1, SP = 1}
 
 [final]
   assertion = {"0:R3" = 0}
