@@ -166,13 +166,17 @@ let get_singleton accessor toml =
   )
   | _ -> error "Expect singleton table, but got %d entries" (List.length tbl)
 
-let get_Z toml =
+let get_Z ?(strict = true) toml =
   match toml with
   | TomlInteger i -> i
+  | TomlString s when strict == false -> (
+    try Z.of_string s
+    with Invalid_argument msg -> error "Expect integer, parsing error %s" msg
+  )
   | _ -> error "Expected integer, found %s" (toml_type_name toml)
 
-let get_integer toml =
-  let z = get_Z toml in
+let get_integer ?(strict = true) toml =
+  let z = get_Z ~strict toml in
   try Z.to_int z
   with Z.Overflow -> error "Integer out of bounds (-2^62 to 2^62-1)"
 
