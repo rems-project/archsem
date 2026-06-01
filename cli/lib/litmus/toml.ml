@@ -164,14 +164,14 @@ let get_singleton accessor toml =
     try accessor k v
     with Path_error (path, msg) -> raise (Path_error (k :: path, msg))
   )
-  | _ -> error "Expect singleton table, but got %d entries" (List.length tbl)
+  | _ -> error "Expected singleton table, but got %d entries" (List.length tbl)
 
 let get_Z ?(strict = true) toml =
   match toml with
   | TomlInteger i -> i
   | TomlString s when strict == false -> (
     try Z.of_string s
-    with Invalid_argument msg -> error "Expect integer, parsing error %s" msg
+    with Invalid_argument msg -> error "Expected integer, parsing error %s" msg
   )
   | _ -> error "Expected integer, found %s" (toml_type_name toml)
 
@@ -179,6 +179,11 @@ let get_integer ?(strict = true) toml =
   let z = get_Z ~strict toml in
   try Z.to_int z
   with Z.Overflow -> error "Integer out of bounds (-2^62 to 2^62-1)"
+
+let get_positive ?(strict = true) toml =
+  let v = get_integer ~strict toml in
+  if v <= 0 then error "Expected positive integer, got %i" v;
+  v
 
 let rec find toml accessor path =
   match path with

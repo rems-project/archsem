@@ -112,4 +112,4 @@ name = "MP+dmbs"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"1:R0" = 1}, {"1:R2" = 0}]}
+  assertion = {and = [{"1:X0" = 1}, {"1:X2" = 0}]}

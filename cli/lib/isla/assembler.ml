@@ -193,7 +193,7 @@ let generate_asm
 
 (* {1 Stage 1b: linker script generation} *)
 
-let page_bits () = Toml.find (Config.get ()) Toml.get_integer ["isla"; "page_bits"]
+let page_bits = Config.make_getter Toml.get_positive ["isla"; "page_bits"]
 
 (** Round [addr] up to the next multiple of [page_size]. *)
 let next_page page_size addr = ((addr / page_size) + 1) * page_size
@@ -260,6 +260,8 @@ let generate_linker_script
 
 (* {1 Stage 2: clang assemble + link} *)
 
+let get_command = Config.make_getter Toml.get_string ["assembler"; "command"]
+
 (** Run clang to assemble and link in one step, writing an ELF file at
     [elf_path].  The caller owns [elf_path] (creates and cleans it up). *)
 let run_pipeline
@@ -268,9 +270,7 @@ let run_pipeline
       (fixed : section list)
       (linker_placed : section list) : unit
   =
-  let command =
-    Toml.find (Config.get ()) Toml.get_string ["assembler"; "command"]
-  in
+  let command = get_command () in
   let asm_path = Filename.temp_file "archsem" ".s" in
   let ld_path = Filename.temp_file "archsem" ".ld" in
   Fun.protect

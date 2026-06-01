@@ -78,8 +78,53 @@ let load file = global := Toml.Parser.from_file file
 
 let get () = !global
 
-(** {1 Common fields} *)
-let get_arch () = Toml.find !global Arch_id.of_toml ["arch"]
+(** {1 Generic getter} *)
 
-let get_fuel () =
-  Toml.find_or ~default:1000 !global Toml.get_integer ["execution"; "fuel"]
+(** Builds a generic config getter that memoizes the results without parsing the
+    TOML again *)
+let make_getter ?default getter path =
+  let x = ref None in
+  fun () ->
+    match !x with
+    | Some content -> content
+    | None ->
+        let content =
+          try
+            match default with
+            | None -> Toml.find !global getter path
+            | Some default -> Toml.find_or ~default !global getter path
+          with
+          | Toml.Path_error (path, Toml.FieldMissing field) ->
+              Error.fatal "TOML error in config: path %s: Missing field: %s"
+                (String.concat "." path) field
+          | Toml.Path_error (path, Toml.GenError msg) ->
+              Error.fatal "TOML error in config: path %s: %s"
+                (String.concat "." path) msg
+        in
+        x := Some content;
+        content
+
+(** {1 Common fields} *)
+let get_arch = make_getter Arch_id.of_toml ["arch"]
+
+let get_fuel = make_getter ~default:1000 Toml.get_positive ["execution"; "fuel"]
+
+(** Return a hash table for register renames in [registers.renames] *)
+let get_reg_renames =
+  make_getter ~default:(Hashtbl.create 0)
+    (fun toml ->
+       let list = Toml.get_table_values Toml.get_string toml in
+       let tbl = Hashtbl.create (List.length list) in
+       List.iter
+         (fun (old_name, new_name) -> Hashtbl.add tbl old_name new_name)
+         list;
+       tbl
+     )
+    ["registers"; "renames"]
+
+(** Return the renamed version of a register according to [register.renames] *)
+let get_reg_rename reg = Hashtbl.find_opt (get_reg_renames ()) reg
+
+(** Return the renamed version of a register according to [register.renames] or
+    the orignal if there is no rename *)
+let get_reg_rename_or reg = get_reg_rename reg |> Option.value ~default:reg

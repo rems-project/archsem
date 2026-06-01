@@ -58,4 +58,4 @@ name = "LDR+fn"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:R0" = 0x2a}, {"0:R1" = 0x1000}]}
+  assertion = {and = [{"0:X0" = 0x2a}, {"0:X1" = 0x1000}]}

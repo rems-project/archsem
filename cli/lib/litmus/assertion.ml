@@ -145,7 +145,8 @@ module Checker (Arch : Archsem.Arch) = struct
   let lookup_loc ~resolve_sym (fs : ArchState.t) : loc -> Z.t = function
     | Reg (tid, name) ->
         let regs = ArchState.reg tid fs in
-        let reg = Reg.of_string name in
+        let arch_name = Config.get_reg_rename_or name in
+        let reg = Reg.of_string arch_name in
         RegMap.getZ reg regs
     | Mem sym ->
         let (addr, size) = resolve_sym sym in
