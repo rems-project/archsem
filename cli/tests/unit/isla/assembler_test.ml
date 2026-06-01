@@ -43,6 +43,8 @@
 open OUnit2
 open Isla.Assembler
 
+let _ = Test_utils.setup_arm ()
+
 let make_input ?(symbols = []) sections : assembly_input = {sections; symbols}
 
 let section ?(fixed_addr = None) name code : section = {name; code; fixed_addr}
@@ -53,7 +55,6 @@ let find_section name (result : assembly_result) =
   List.find (fun (s : linked_section) -> s.name = name) result.sections
 
 let test_assemble_single_thread _ =
-  Test_utils.setup_arm ();
   let input =
     make_input ~symbols:[sym "x" 8] [section "thread0" "\tMOV W1, #42\n"]
   in
@@ -64,7 +65,6 @@ let test_assemble_single_thread _ =
   assert_equal ~printer:string_of_int 4 (Bytes.length thread0.data)
 
 let test_assemble_multiple_threads _ =
-  Test_utils.setup_arm ();
   let input =
     make_input
       [ section "thread0" "\tMOV W1, #1\n";
@@ -79,7 +79,6 @@ let test_assemble_multiple_threads _ =
   assert_bool "different addresses" (t0.addr <> t1.addr)
 
 let test_assemble_multiple_symbols _ =
-  Test_utils.setup_arm ();
   let input =
     make_input ~symbols:[sym "x" 8; sym "y" 8] [section "thread0" "\tNOP\n"]
   in
@@ -89,14 +88,12 @@ let test_assemble_multiple_symbols _ =
   assert_bool "different addresses" (x_addr <> y_addr)
 
 let test_assemble_no_symbols _ =
-  Test_utils.setup_arm ();
   let input = make_input [section "thread0" "\tNOP\n"] in
   let result = assemble input in
   let t0 = find_section "thread0" result in
   assert_equal ~printer:string_of_int ~msg:"NOP = 4 bytes" 4 (Bytes.length t0.data)
 
 let test_assemble_fixed_addr _ =
-  Test_utils.setup_arm ();
   let input =
     make_input
       [ section ~fixed_addr:(Some 0x10000) "handler0" "\tRET\n";
@@ -110,7 +107,6 @@ let test_assemble_fixed_addr _ =
     (Bytes.length handler.data)
 
 let test_resolve_unknown_raises _ =
-  Test_utils.setup_arm ();
   let input = make_input [section "thread0" "\tNOP\n"] in
   let result = assemble input in
   assert_raises (Failure "assembler: symbol \"nonexistent\" not found") (fun () ->

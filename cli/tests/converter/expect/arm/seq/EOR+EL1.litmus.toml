@@ -52,5 +52,5 @@ name = "EOR+EL1"
   DAIF = 0
 
 [final]
-  assertion = {"0:R0" = 0x110}
+  assertion = {"0:X0" = 0x110}
   kind = "forall"

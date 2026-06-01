@@ -94,9 +94,7 @@ let parse_threads toml =
 let parse_test_memory toml : Testrepr.memory_block list =
   let parse_memory_block (table : Toml.t) : Testrepr.memory_block =
     let addr = Toml.find table Toml.get_integer ["addr"] in
-    let step = Toml.find table Toml.get_integer ["step"] in
-    if step <= 0 then
-      Toml.error ~path:["step"] "Memory block step must be positive";
+    let step = Toml.find table Toml.get_positive ["step"] in
     let get_sized_Z step toml =
       let z = Toml.get_Z toml in
       if Z.sign z < 0 then
