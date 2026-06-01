@@ -87,11 +87,19 @@ let parse_testfile (fmt : format option) (filename : string) : Testrepr.t =
   try
     let fmt = guess_format fmt filename in
     let toml = Toml.Parser.from_file filename in
-    match fmt with
-    | Archsem -> Parser.parse_to_testrepr toml
-    | Isla ->
-        toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
-        |> Isla.Converter.to_testrepr
+    let testrepr =
+      match fmt with
+      | Archsem -> Parser.parse_to_testrepr toml
+      | Isla ->
+          toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
+          |> Isla.Converter.to_testrepr
+    in
+    let basename =
+      filename |> Filename.basename |> Filename.remove_extension
+      |> Filename.remove_extension
+    in
+    if testrepr.name <> basename then Error.name_warning filename testrepr.name;
+    testrepr
   with
   | Toml.Parse_error (pos, msg) ->
       Error.parse_error filename pos "%s" msg;

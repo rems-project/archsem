@@ -92,3 +92,9 @@ let arch_error test msg =
   Printf.eprintf "%sTest \"%s\":%s\n%s\n" Terminal.bold test Terminal.reset msg
 
 let failwith fmt = Printf.ksprintf failwith fmt
+
+let name_warning file name =
+  Printf.eprintf "archsem: %s%sname warning:%s\n" Terminal.yellow Terminal.bold
+    Terminal.reset;
+  Printf.eprintf
+    "File \"%s\" has a different name that the internal name \"%s\"\n" file name

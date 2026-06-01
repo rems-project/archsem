@@ -38,6 +38,20 @@ Just architecture and nothing else
   Missing field: memory
   [1]
 
+Different name
+  $ archsem seq name-mismatch.archsem.toml
+  Test EOR Forall
+  States 1
+  0:R0=0x110; 0:_PC=0x504; 
+  Ok
+  Witnesses
+  Positive: 1 Negative: 0
+  Condition EOR forall (0:_PC=0x504 /\ 0:R0=0x110)
+  Observation EOR Always 1 0
+  Time EOR 0.000
+  archsem: name warning:
+  File "name-mismatch.archsem.toml" has a different name that the internal name "EOR"
+
 Missing "step" in memory field
   $ archsem seq missing-step.archsem.toml
   archsem: TOML error:
