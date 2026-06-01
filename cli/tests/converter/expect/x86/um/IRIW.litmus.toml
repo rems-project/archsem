@@ -1,86 +1,6 @@
 arch = "X86"
 name = "IRIW"
 
-[[registers]]
-  rip = 0x3000
-  rcx = 0x1000
-  rax = 0
-  rdx = 0
-  rbx = 0
-  rsp = 0
-  rbp = 0
-  rsi = 0
-  rdi = 0
-  "r8" = 0
-  "r9" = 0
-  "r10" = 0
-  "r11" = 0
-  "r12" = 0
-  "r13" = 0
-  "r14" = 0
-  "r15" = 0
-  rflags = 0
-
-[[registers]]
-  rip = 0x3006
-  rcx = 0x1000
-  rdx = 0x2000
-  rax = 0
-  rbx = 0
-  rsp = 0
-  rbp = 0
-  rsi = 0
-  rdi = 0
-  "r8" = 0
-  "r9" = 0
-  "r10" = 0
-  "r11" = 0
-  "r12" = 0
-  "r13" = 0
-  "r14" = 0
-  "r15" = 0
-  rflags = 0
-
-[[registers]]
-  rip = 0x300a
-  rdx = 0x2000
-  rax = 0
-  rcx = 0
-  rbx = 0
-  rsp = 0
-  rbp = 0
-  rsi = 0
-  rdi = 0
-  "r8" = 0
-  "r9" = 0
-  "r10" = 0
-  "r11" = 0
-  "r12" = 0
-  "r13" = 0
-  "r14" = 0
-  "r15" = 0
-  rflags = 0
-
-[[registers]]
-  rip = 0x3010
-  rcx = 0x1000
-  rdx = 0x2000
-  rax = 0
-  rbx = 0
-  rsp = 0
-  rbp = 0
-  rsi = 0
-  rdi = 0
-  "r8" = 0
-  "r9" = 0
-  "r10" = 0
-  "r11" = 0
-  "r12" = 0
-  "r13" = 0
-  "r14" = 0
-  "r15" = 0
-  rflags = 0
-
 [[memory]]
   kind = "code"
   addr = 0x3000
@@ -117,17 +37,99 @@ name = "IRIW"
   step = 8
   data = 0
 
-[[termCond]]
+[thread]
+
+[thread."0"]
+  breakpoints = [0x3006]
+
+[thread."0".regs]
+  rip = 0x3000
+  rcx = 0x1000
+  rax = 0
+  rdx = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
+
+[thread."1"]
+  breakpoints = [0x300a]
+
+[thread."1".regs]
   rip = 0x3006
+  rcx = 0x1000
+  rdx = 0x2000
+  rax = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
 
-[[termCond]]
+[thread."2"]
+  breakpoints = [0x3010]
+
+[thread."2".regs]
   rip = 0x300a
+  rdx = 0x2000
+  rax = 0
+  rcx = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
 
-[[termCond]]
+[thread."3"]
+  breakpoints = [0x3014]
+
+[thread."3".regs]
   rip = 0x3010
-
-[[termCond]]
-  rip = 0x3014
+  rcx = 0x1000
+  rdx = 0x2000
+  rax = 0
+  rbx = 0
+  rsp = 0
+  rbp = 0
+  rsi = 0
+  rdi = 0
+  "r8" = 0
+  "r9" = 0
+  "r10" = 0
+  "r11" = 0
+  "r12" = 0
+  "r13" = 0
+  "r14" = 0
+  "r15" = 0
+  rflags = 0
 
 [final]
   assertion = {and = [{"1:rax" = 1}, {"1:rbx" = 0}, {"3:rax" = 1}, {"3:rbx" = 0}]}

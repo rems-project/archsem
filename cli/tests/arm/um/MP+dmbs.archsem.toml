@@ -1,8 +1,8 @@
 arch="Arm"
 name="MP+dmbs"
 
-# Thread 0: W data=0x2a; DMB; W flag=1
-[[registers]]
+# Thread 0; W data; DMB; W flag
+[thread.0.regs]
 _PC = 0x500
 R0 = 0x1000
 R1 = 0x100
@@ -13,8 +13,20 @@ R5 = 0x1
 SCTLR_EL1 = 0x0
 PSTATE = { "EL" = 0b00 }
 
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xf8206822, # STR X2, [X0,X1] # data at 0x1100
+  0xd5033fbf, # DMB SY
+  0xf8236885] # STR X5, [X3,X4] # flag at 0x1200
+
+[thread.0]
+breakpoints = [0x50C]
+
 # Thread 1: R flag; DMB; R data
-[[registers]]
+[thread.1.regs]
 _PC = 0x600
 R0 = 0x1000
 R1 = 0x100
@@ -25,16 +37,6 @@ R5 = 0x0
 SCTLR_EL1 = 0x0
 PSTATE = { "EL" = 0b00 }
 
-# Thread 0 Instructions
-[[memory]]
-addr = 0x500
-kind = "code"
-step = 4
-data = [
-  0xf8206822, # STR X2, [X0,X1] # data at 0x1100
-  0xd5033fbf, # DMB SY
-  0xf8236885] # STR X5, [X3,X4] # flag at 0x1200
-
 # Thread 1 Instructions
 [[memory]]
 addr = 0x600
@@ -44,6 +46,9 @@ data = [
   0xf8636885, # LDR X5,[X3,X4] # flag at 0x1200
   0xd5033fbf, # DMB SY
   0xf8606822] # LDR X2,[X0,X1] # data at 0x1100
+
+[thread.1]
+breakpoints = [0x60C]
 
 # Shared Data
 [[memory]]
@@ -56,12 +61,6 @@ data = 0
 addr = 0x1200
 step = 8
 data = 0
-
-[[termCond]]
-_PC = 0x50C
-
-[[termCond]]
-_PC = 0x60C
 
 [final]
 assertion.and = [{"1:R5"=1}, {"1:R2"=0}]

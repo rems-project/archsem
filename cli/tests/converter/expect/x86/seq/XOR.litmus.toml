@@ -1,7 +1,18 @@
 arch = "X86"
-name = "x86-XOR"
+name = "XOR"
 
-[[registers]]
+[[memory]]
+  kind = "code"
+  addr = 0x1000
+  step = 1
+  data = [0x48, 0x31, 0xc8]
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x1003]
+
+[thread."0".regs]
   rip = 0x1000
   rax = 0x11
   rcx = 0x101
@@ -20,15 +31,6 @@ name = "x86-XOR"
   "r13" = 0
   "r14" = 0
   "r15" = 0
-
-[[memory]]
-  kind = "code"
-  addr = 0x1000
-  step = 1
-  data = [0x48, 0x31, 0xc8]
-
-[[termCond]]
-  rip = 0x1003
 
 [final]
   assertion = {"0:rax" = 0x110}

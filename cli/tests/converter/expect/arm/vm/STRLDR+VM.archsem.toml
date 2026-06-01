@@ -1,17 +1,6 @@
 arch = "Arm"
 name = "STRLDR+VM"
 
-[[registers]]
-  _PC = 0x8000000500
-  "R0" = 0x8000001000
-  "R1" = 0x100
-  "R2" = 0x2a
-  "TTBR0_EL1" = 0x80000
-  "TCR_EL1" = 0
-  "SCTLR_EL1" = 1
-  "ID_AA64MMFR1_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -53,8 +42,21 @@ name = "STRLDR+VM"
   step = 8
   data = 0x1043
 
-[[termCond]]
-  _PC = 0x8000000508
+[thread]
+
+[thread."0"]
+  breakpoints = [0x8000000508]
+
+[thread."0".regs]
+  _PC = 0x8000000500
+  "R0" = 0x8000001000
+  "R1" = 0x100
+  "R2" = 0x2a
+  "TTBR0_EL1" = 0x80000
+  "TCR_EL1" = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
 
 [final]
   assertion = {"0:R0" = 0x2a}

@@ -1,20 +1,6 @@
 arch = "x86"
 name = "R_PO_MFENCE"
 
-[[registers]]
-  rip = 0x500
-  rax = 0
-  rcx = 0x1100
-  rdx = 0x1200
-  rflags = 0x3000
-
-[[registers]]
-  rip = 0x600
-  rax = 0
-  rcx = 0x1100
-  rdx = 0x1200
-  rflags = 0x3000
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -39,11 +25,27 @@ name = "R_PO_MFENCE"
   step = 8
   data = 0
 
-[[termCond]]
-  rip = 0x50c
+[thread]
 
-[[termCond]]
-  rip = 0x60b
+[thread."0"]
+  breakpoints = [0x50c]
+
+[thread."0".regs]
+  rip = 0x500
+  rax = 0
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
+
+[thread."1"]
+  breakpoints = [0x60b]
+
+[thread."1".regs]
+  rip = 0x600
+  rax = 0
+  rcx = 0x1100
+  rdx = 0x1200
+  rflags = 0x3000
 
 [final]
   assertion = {and = [{"1:rax" = 0}, {y = 2}]}

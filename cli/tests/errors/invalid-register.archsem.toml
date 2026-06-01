@@ -1,9 +1,9 @@
 arch="Arm"
-name="EOR"
+name="invalid-register"
 
 [thread.0.regs]
 _PC = 0x500
-R0 = 0x0
+RRRRRRR0 = 0x0
 R1 = 0x11
 R2 = 0x101
 SCTLR_EL1 = 0x0
@@ -11,8 +11,8 @@ PSTATE = { "EL" = 0b00, "SP" = 0b0 }
 
 [[memory]]
 addr = 0x500
-step = "This should be a number"
 kind = "code"
+step = 4
 data = 0xca020020
 
 [thread.0]

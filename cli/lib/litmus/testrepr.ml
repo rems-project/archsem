@@ -44,6 +44,8 @@
     to remain architecture-neutral.  Conversion to arch-specific Coq types
     happens in ToArchState.Make(Arch). *)
 
+module RegValGen = Archsem.RegValGen
+
 (** {1 Memory Types} *)
 
 type memory_kind =
@@ -72,8 +74,8 @@ type memory_block =
 (** {1 Final condition types} *)
 
 type reg_requirement =
-  | ReqEq of Archsem.RegValGen.t
-  | ReqNe of Archsem.RegValGen.t
+  | ReqEq of RegValGen.t
+  | ReqNe of RegValGen.t
 
 type mem_requirement =
   | MemEq of Z.t
@@ -103,19 +105,30 @@ type kind =
 
 (** {1 Test} *)
 
+type thread =
+  { regs : (string * RegValGen.t) list;
+    breakpoints : Z.t list
+  }
+
 type t =
   { arch : string;
     name : string;
-    registers : (string * Archsem.RegValGen.t) list list;
+    threads : thread list;
     memory : memory_block list;
-    term_cond : (string * Archsem.RegValGen.t) list list;
     final : Z.t Assertion.expr;
     kind : kind
   }
 
 (** {1 Helper functions} *)
 
+(** List all known memory symbols *)
+let mem_syms = List.filter_map (fun (mb : memory_block) -> mb.sym)
+
 let block_size (mb : memory_block) : int = Bytes.length mb.data
 
 let mem_by_sym (sym : string) =
   List.find (fun (mb : memory_block) -> mb.sym = Some sym)
+
+let resolve_sym test sym =
+  let block = mem_by_sym sym test.memory in
+  (block.addr, block_size block)

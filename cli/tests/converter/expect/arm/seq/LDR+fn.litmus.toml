@@ -1,7 +1,24 @@
 arch = "Arm"
 name = "LDR+fn"
 
-[[registers]]
+[[memory]]
+  kind = "code"
+  addr = 0x2000
+  step = 4
+  data = 0xf9400020
+
+[[memory]]
+  sym = "y"
+  addr = 0x1000
+  step = 8
+  data = 0x2a
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x2004]
+
+[thread."0".regs]
   _PC = 0x2000
   "R1" = 0x1000
   "R0" = 0
@@ -36,21 +53,6 @@ name = "LDR+fn"
   "R30" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
-
-[[memory]]
-  kind = "code"
-  addr = 0x2000
-  step = 4
-  data = 0xf9400020
-
-[[memory]]
-  sym = "y"
-  addr = 0x1000
-  step = 8
-  data = 0x2a
-
-[[termCond]]
-  _PC = 0x2004
 
 [final]
   assertion = {and = [{"0:R0" = 0x2a}, {"0:R1" = 0x1000}]}

@@ -8,23 +8,13 @@ name="CoWWR+mixed"
 # without yet seeing X for bytes [4..7].
 
 # Thread 0
-[[registers]]
+[thread.0.regs]
 _PC = 0x500
 R1 = 0x1100
 R2 = 0x1111111111111111
 SCTLR_EL1 = 0x0
 PSTATE = { "EL" = 0b00 }
 
-# Thread 1
-[[registers]]
-_PC = 0x600
-R0 = 0x0
-R1 = 0x1100
-R3 = 0x22222222
-SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
-
-# Thread 0 instructions
 [[memory]]
 addr = 0x500
 kind = "code"
@@ -32,7 +22,18 @@ step = 4
 data = [
   0xf9000022] # STR X2, [X1]
 
-# Thread 1 instructions
+[thread.0]
+breakpoints = [0x504]
+
+# Thread 1
+[thread.1.regs]
+_PC = 0x600
+R0 = 0x0
+R1 = 0x1100
+R3 = 0x22222222
+SCTLR_EL1 = 0x0
+PSTATE = { "EL" = 0b00 }
+
 [[memory]]
 addr = 0x600
 kind = "code"
@@ -41,17 +42,14 @@ data = [
   0xb9000023, # STR W3, [X1]
   0xf9400020] # LDR X0, [X1]
 
+[thread.1]
+breakpoints = [0x608]
+
 # Shared backing memory (8 bytes)
 [[memory]]
 addr = 0x1100
 step = 8
 data = 0
-
-[[termCond]]
-_PC = 0x504
-
-[[termCond]]
-_PC = 0x608
 
 # This test is also used to test or conditions
 [final]

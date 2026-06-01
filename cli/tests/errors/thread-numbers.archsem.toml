@@ -1,7 +1,7 @@
 arch="Arm"
 name="EOR"
 
-[thread.0.regs]
+[thread.1.regs]
 _PC = 0x500
 R0 = 0x0
 R1 = 0x11
@@ -11,11 +11,11 @@ PSTATE = { "EL" = 0b00, "SP" = 0b0 }
 
 [[memory]]
 addr = 0x500
-step = "This should be a number"
 kind = "code"
+step = 4
 data = 0xca020020
 
-[thread.0]
+[thread.1]
 breakpoints = [0x504]
 
 [final]

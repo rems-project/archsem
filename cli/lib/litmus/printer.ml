@@ -57,10 +57,28 @@ let req_to_toml (req : Testrepr.reg_requirement) : Toml.t =
   | ReqEq v -> gen_to_toml v
   | ReqNe v -> TomlInlineTable [("op", TomlString "ne"); ("val", gen_to_toml v)]
 
-(** {1 Section Builders} *)
+(** {1 Threads} *)
 
 let registers_to_toml regs : Toml.t =
   TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
+
+let breakpoints_to_toml breakpoints : Toml.t =
+  TomlArray (List.map Toml.integer breakpoints)
+
+let thread_to_toml (thread : Testrepr.thread) : Toml.t =
+  TomlTable
+    [ ("regs", registers_to_toml thread.regs);
+      ("breakpoints", breakpoints_to_toml thread.breakpoints)
+    ]
+
+let threads_to_toml (threads : Testrepr.thread list) : Toml.t =
+  TomlTable
+    (List.mapi
+       (fun tid thread -> (string_of_int tid, thread_to_toml thread))
+       threads
+    )
+
+(** {1 Memory} *)
 
 let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
   let step = block.step in
@@ -91,8 +109,7 @@ let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
       ]
     )
 
-let termcond_to_toml regs : Toml.t =
-  TomlTable (List.map (fun (reg, rv) -> (reg, gen_to_toml rv)) regs)
+(** {1 Final condition} *)
 
 let location_to_string : Assertion.loc -> string = function
   | Reg (thread, reg) -> Printf.sprintf "%d:%s" thread reg
@@ -131,9 +148,8 @@ let to_toml (test : Testrepr.t) : Toml.t =
   TomlTable
     [ ("arch", TomlString test.arch);
       ("name", TomlString test.name);
-      ("registers", TomlTableArray (List.map registers_to_toml test.registers));
+      ("thread", threads_to_toml test.threads);
       ("memory", TomlTableArray (List.map memory_block_to_toml test.memory));
-      ("termCond", TomlTableArray (List.map termcond_to_toml test.term_cond));
       ("final", final_to_toml test)
     ]
 

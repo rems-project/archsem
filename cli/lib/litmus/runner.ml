@@ -84,10 +84,7 @@ module Make (Arch : Archsem.Arch) = struct
       raise Exit
     );
 
-    let resolve_sym sym =
-      let block = Testrepr.mem_by_sym sym test.memory in
-      (block.addr, Testrepr.block_size block)
-    in
+    let resolve_sym = Testrepr.resolve_sym test in
 
     let (observed, not_observed) =
       List.partition

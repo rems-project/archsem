@@ -175,7 +175,9 @@ module Build (ArchReq : ArchRequired) = struct
 
     let regs (st : t) = st.regs
 
-    let reg i (st : t) = List.nth st.regs i
+    let reg i (st : t) =
+      try List.nth st.regs i
+      with _ -> failwith (Printf.sprintf "Thread %d is invalid" i)
 
     let num_thread st = List.length (regs st)
 

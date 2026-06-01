@@ -6,7 +6,7 @@
 arch="Arm"
 name="STRWPT+VM"
 
-[[registers]]
+[thread.0.regs]
 _PC = 0x8000000500
 R0 = 0x8000001000      # VA to load from
 R1 = 0x0               # Base offset
@@ -27,6 +27,9 @@ data = [
   0xf8606820, # LDR X0, [X1, X0] - first load through old PTE
   0xb8226823, # STR W3, [X1, X2] - update low half of PTE
   0xf8646824] # LDR X4, [X1, X4]
+
+[thread.0]
+breakpoints = [0x800000050c]
 
 # Data at PA 0x1000 (old mapping)
 [[memory]]
@@ -83,8 +86,6 @@ addr = 0x83080
 step = 8
 data = 0x60000000083303
 
-[[termCond]]
-_PC = 0x800000050c
 
 
 [final]

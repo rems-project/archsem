@@ -1,7 +1,24 @@
 arch = "Arm"
 name = "STRW_LDRX"
 
-[[registers]]
+[[memory]]
+  kind = "code"
+  addr = 0x2000
+  step = 4
+  data = [0x52800542, 0xb9000022, 0xf9400020]
+
+[[memory]]
+  sym = "x"
+  addr = 0x1000
+  step = 8
+  data = 0
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x200c]
+
+[thread."0".regs]
   _PC = 0x2000
   "R1" = 0x1000
   "R0" = 0
@@ -36,21 +53,6 @@ name = "STRW_LDRX"
   "R30" = 0
   "SCTLR_EL1" = 0
   PSTATE = {EL = 0, SP = 0}
-
-[[memory]]
-  kind = "code"
-  addr = 0x2000
-  step = 4
-  data = [0x52800542, 0xb9000022, 0xf9400020]
-
-[[memory]]
-  sym = "x"
-  addr = 0x1000
-  step = 8
-  data = 0
-
-[[termCond]]
-  _PC = 0x200c
 
 [final]
   assertion = {"0:R0" = 0x2a}

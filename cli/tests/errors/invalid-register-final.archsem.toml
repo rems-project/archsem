@@ -1,5 +1,5 @@
 arch="Arm"
-name="EOR"
+name="invalid-register-final"
 
 [thread.0.regs]
 _PC = 0x500
@@ -11,8 +11,8 @@ PSTATE = { "EL" = 0b00, "SP" = 0b0 }
 
 [[memory]]
 addr = 0x500
-step = "This should be a number"
 kind = "code"
+step = 4
 data = 0xca020020
 
 [thread.0]
@@ -20,4 +20,4 @@ breakpoints = [0x504]
 
 [final]
 kind = "forall"
-assertion.and = [{"0:_PC" = 0x504}, {"0:R0" = 0x110}]
+assertion.and = [{"0:_PC" = 0x504}, {"0:RRRRRRRRR0" = 0x110}]

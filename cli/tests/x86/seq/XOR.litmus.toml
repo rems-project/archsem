@@ -1,5 +1,5 @@
 arch = "x86"
-name = "x86-XOR"
+name = "XOR"
 
 # Single-threaded XOR: rax = 0x11 XOR 0x101 = 0x110
 

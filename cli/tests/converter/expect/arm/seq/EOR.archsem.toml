@@ -1,22 +1,24 @@
 arch = "Arm"
 name = "EOR"
 
-[[registers]]
-  _PC = 0x500
-  "R0" = 0
-  "R1" = 0x11
-  "R2" = 0x101
-  "SCTLR_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
-
 [[memory]]
   kind = "code"
   addr = 0x500
   step = 4
   data = 0xca020020
 
-[[termCond]]
-  _PC = 0x504
+[thread]
+
+[thread."0"]
+  breakpoints = [0x504]
+
+[thread."0".regs]
+  _PC = 0x500
+  "R0" = 0
+  "R1" = 0x11
+  "R2" = 0x101
+  "SCTLR_EL1" = 0
+  PSTATE = {EL = 0, SP = 0}
 
 [final]
   assertion = {and = [{"0:_PC" = 0x504}, {"0:R0" = 0x110}]}

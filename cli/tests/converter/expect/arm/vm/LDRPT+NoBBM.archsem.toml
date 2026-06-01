@@ -1,19 +1,6 @@
 arch = "Arm"
 name = "LDRPT+NoBBM"
 
-[[registers]]
-  _PC = 0x8000000500
-  "R0" = 0x8000001000
-  "R1" = 0
-  "R2" = 0x8000010008
-  "R3" = 0x2003
-  "R4" = 0x8000001000
-  "TTBR0_EL1" = 0x80000
-  "TCR_EL1" = 0
-  "SCTLR_EL1" = 1
-  "ID_AA64MMFR1_EL1" = 0
-  PSTATE = {EL = 1, SP = 1}
-
 [[memory]]
   kind = "code"
   addr = 0x500
@@ -65,8 +52,23 @@ name = "LDRPT+NoBBM"
   step = 8
   data = 0x60000000083303
 
-[[termCond]]
-  _PC = 0x800000050c
+[thread]
+
+[thread."0"]
+  breakpoints = [0x800000050c]
+
+[thread."0".regs]
+  _PC = 0x8000000500
+  "R0" = 0x8000001000
+  "R1" = 0
+  "R2" = 0x8000010008
+  "R3" = 0x2003
+  "R4" = 0x8000001000
+  "TTBR0_EL1" = 0x80000
+  "TCR_EL1" = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0
+  PSTATE = {EL = 1, SP = 1}
 
 [final]
   assertion = {and = [{"0:R0" = 0x2a}, {or = [{"0:R4" = 0x2a}, {"0:R4" = 0x42}]}]}

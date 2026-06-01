@@ -35,7 +35,7 @@ Just architecture and nothing else
   $ archsem seq justarch.archsem.toml
   archsem: TOML error:
   File "justarch.archsem.toml":
-  Missing field: termCond
+  Missing field: memory
   [1]
 
 Missing "step" in memory field
@@ -57,6 +57,41 @@ Too much data for step
   archsem: TOML error:
   File "too-much-data.archsem.toml", path "memory.[0].data":
   Memory data number (0xca020020) contains 4 bytes but the step is 2
+  [1]
+
+Invalid register
+  $ archsem seq invalid-register.archsem.toml
+  archsem: arch error:
+  Test "invalid-register":
+  Unknown register: RRRRRRR0
+  [1]
+
+Invalid thread number
+  $ archsem seq thread-numbers.archsem.toml
+  archsem: TOML error:
+  File "thread-numbers.archsem.toml", path "thread":
+  Thread 0 is missing
+  [1]
+
+Invalid memory symbol in final condition
+  $ archsem seq invalid-symbol.archsem.toml
+  archsem: TOML error:
+  File "invalid-symbol.archsem.toml", path "final.assertion":
+  Symbol xyz not found
+  [1]
+
+Invalid register in final condition
+  $ archsem seq invalid-register-final.archsem.toml
+  archsem: arch error:
+  Test "invalid-register-final":
+  Unknown register: RRRRRRRRR0
+  [1]
+
+Invalid thread in final condition
+  $ archsem seq invalid-thread-final.archsem.toml
+  archsem: arch error:
+  Test "invalid-thread-final":
+  Thread 1 is invalid
   [1]
 
 Invalid reset value in Isla file
