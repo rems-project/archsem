@@ -23,7 +23,7 @@ name = "STRW_LDRX"
   "R1" = 0x100
   "R2" = 0x2a
   "SCTLR_EL1" = 0
-  PSTATE = {EL = 0}
+  CurrentEL = 0
 
 [final]
   assertion = {"0:R0" = 0x2a}

@@ -16,7 +16,7 @@ TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
 SCTLR_EL1 = 0x1
 ID_AA64MMFR1_EL1 = 0x0
-PSTATE = { "EL" = 0b01, "SP" = 0b1 }
+CurrentEL = 0b01
 
 # Instructions:
 [[memory]]

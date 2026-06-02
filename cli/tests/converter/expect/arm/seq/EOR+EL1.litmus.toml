@@ -1,28 +1,23 @@
 arch = "Arm"
-name = "LDR+fn"
+name = "EOR+EL1"
 
 [[memory]]
   kind = "code"
-  addr = 0x2000
-  step = 4
-  data = 0xf9400020
-
-[[memory]]
-  sym = "y"
   addr = 0x1000
-  step = 8
-  data = 0x2a
+  step = 4
+  data = 0xca020020
 
 [thread]
 
 [thread."0"]
-  breakpoints = [0x2004]
+  breakpoints = [0x1004]
 
 [thread."0".regs]
-  _PC = 0x2000
-  "R1" = 0x1000
+  _PC = 0x1000
+  "R1" = 0x11
+  "R2" = 0x101
+  CurrentEL = 1
   "R0" = 0
-  "R2" = 0
   "R3" = 0
   "R4" = 0
   "R5" = 0
@@ -52,10 +47,10 @@ name = "LDR+fn"
   "R29" = 0
   "R30" = 0
   "SCTLR_EL1" = 0
-  CurrentEL = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:R0" = 0x2a}, {"0:R1" = 0x1000}]}
+  assertion = {"0:R0" = 0x110}
+  kind = "forall"

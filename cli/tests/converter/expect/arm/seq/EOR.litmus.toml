@@ -46,7 +46,10 @@ name = "EOR"
   "R29" = 0
   "R30" = 0
   "SCTLR_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
+  CurrentEL = 0
+  SPSel = 0
+  NZCV = 0
+  DAIF = 0
 
 [final]
   assertion = {"0:R0" = 0x110}

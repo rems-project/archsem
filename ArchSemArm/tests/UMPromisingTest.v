@@ -75,12 +75,6 @@ Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
   | archModel.Res.Flagged e => match e with end
   end.
 
-(** * Helper functions for PSTATE setup *)
-Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
-  inhabitant
-  |> set ProcState_EL (λ _, el)
-  |> set ProcState_SP (λ _, sp).
-
 (** We test against the sail-tiny-arm semantic, with non-determinism enabled *)
 Definition arm_sem := sail_tiny_arm_sem true.
 
@@ -94,7 +88,7 @@ Module EOR.
     |> reg_insert R1 0x11
     |> reg_insert R2 0x101
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -136,7 +130,7 @@ Module LDR. (* LDR X0, [X1, X0] at 0x500, loading from 0x1000 *)
     |> reg_insert R0 0x1000
     |> reg_insert R1 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -180,7 +174,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     |> reg_insert R1 0x100
     |> reg_insert R2 0x2a
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -236,7 +230,7 @@ Module MP.
     |> reg_insert R2 0x2a
     |> reg_insert R5 0x1
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -248,7 +242,7 @@ Module MP.
     |> reg_insert R2 0x0
     |> reg_insert R5 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -317,7 +311,7 @@ Module MPDMBS.
     |> reg_insert R2 0x2a
     |> reg_insert R5 0x1
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -329,7 +323,7 @@ Module MPDMBS.
     |> reg_insert R2 0x0
     |> reg_insert R5 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -399,7 +393,7 @@ Module LB.
     |> reg_insert R3 0x2000
     |> reg_insert R4 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -410,7 +404,7 @@ Module LB.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -475,7 +469,7 @@ Module LBDMBS.
     |> reg_insert R3 0x2000
     |> reg_insert R4 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -486,7 +480,7 @@ Module LBDMBS.
     |> reg_insert R3 0x1000
     |> reg_insert R4 0x0
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -550,7 +544,7 @@ Module STRW_LDRX. (* STR W2, [X1, X0]; LDR X0, [X1, X0] — 4-byte write, 8-byte
     |> reg_insert R1 0x100
     |> reg_insert R2 0x2a
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -597,7 +591,7 @@ Module CoWWRmixed.
     |> reg_insert R1 0x1100
     |> reg_insert R2 0x1111111111111111
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_reg_t1 : registerMap :=
     ∅
@@ -606,7 +600,7 @@ Module CoWWRmixed.
     |> reg_insert R1 0x1100
     |> reg_insert R3 0x22222222
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x0.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -641,4 +635,3 @@ Module CoWWRmixed.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End CoWWRmixed.
-

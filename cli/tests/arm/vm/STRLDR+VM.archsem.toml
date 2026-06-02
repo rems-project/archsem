@@ -14,7 +14,7 @@ TTBR0_EL1 = 0x80000    # Page table base (physical address)
 TCR_EL1 = 0x0          # Translation control register
 SCTLR_EL1 = 0x1        # MMU enabled
 ID_AA64MMFR1_EL1 = 0x0
-PSTATE = { "EL" = 0b00, "SP" = 0b0 }
+CurrentEL = 0b01
 
 # Instructions at PA 0x500 (VA 0x8000000500)
 [[memory]]

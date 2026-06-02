@@ -1,0 +1,10 @@
+arch="Arm"
+name="EOR+EL1"
+
+[thread.0]
+init = {X1 = 0x11, X2 = 0x101, "PSTATE.EL" = 1}
+code = "EOR X0, X1, X2"
+
+[final]
+kind = "forall"
+assertion = "0:X0 = 0x110"

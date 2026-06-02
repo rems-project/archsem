@@ -13,7 +13,7 @@ _PC = 0x500
 R1 = 0x1100
 R2 = 0x1111111111111111
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+CurrentEL = 0b00
 
 [[memory]]
 addr = 0x500
@@ -32,7 +32,7 @@ R0 = 0x0
 R1 = 0x1100
 R3 = 0x22222222
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+CurrentEL = 0b00
 
 [[memory]]
 addr = 0x600

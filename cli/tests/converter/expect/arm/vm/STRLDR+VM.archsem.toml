@@ -56,7 +56,7 @@ name = "STRLDR+VM"
   "TCR_EL1" = 0
   "SCTLR_EL1" = 1
   "ID_AA64MMFR1_EL1" = 0
-  PSTATE = {EL = 0, SP = 0}
+  CurrentEL = 1
 
 [final]
   assertion = {"0:R0" = 0x2a}

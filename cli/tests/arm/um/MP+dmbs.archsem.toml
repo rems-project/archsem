@@ -11,7 +11,7 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x1
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+CurrentEL = 0b00
 
 [[memory]]
 addr = 0x500
@@ -35,7 +35,7 @@ R3 = 0x1000
 R4 = 0x200
 R5 = 0x0
 SCTLR_EL1 = 0x0
-PSTATE = { "EL" = 0b00 }
+CurrentEL = 0b00
 
 # Thread 1 Instructions
 [[memory]]

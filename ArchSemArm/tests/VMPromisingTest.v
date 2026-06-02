@@ -77,12 +77,6 @@ Definition regs_extract {n} (regs : list (fin n * register_bitvector_64))
   | archModel.Res.Flagged f => match f with end
   end.
 
-(** * Helper functions for PSTATE setup *)
-Definition init_pstate (el : bv 2) (sp : bv 1) : ProcState :=
-  inhabitant
-  |> set ProcState_EL (λ _, el)
-  |> set ProcState_SP (λ _, sp).
-
 (** * Helper functions for page table setup *)
 
 Definition table_desc (next_pa : Z) : Z :=
@@ -104,7 +98,7 @@ Module EORMMUOFF.
     |> reg_insert R1 0x11
     |> reg_insert R2 0x101
     |> reg_insert SCTLR_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -170,7 +164,7 @@ Module EOR.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -228,7 +222,7 @@ Module LDR.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -287,7 +281,7 @@ Module STRLDR.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap:=
     ∅
@@ -354,7 +348,7 @@ Module LDRPT.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -442,7 +436,7 @@ Module MP.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -457,7 +451,7 @@ Module MP.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -533,7 +527,7 @@ Module MPDMBS.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -548,7 +542,7 @@ Module MPDMBS.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 0%bv 0%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
@@ -621,7 +615,7 @@ Module BBMSuccess.
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_reg_t2 : registerMap :=
     ∅
@@ -634,7 +628,7 @@ Module BBMSuccess.
     |> reg_insert ESR_EL1 0x0
     |> reg_insert VBAR_EL1 0x0       (* Exception vector base - needed for fault handling *)
     |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert PSTATE (init_pstate 1%bv 1%bv).
+    |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
