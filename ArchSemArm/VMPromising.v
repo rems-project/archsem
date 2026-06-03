@@ -420,7 +420,8 @@ Module TState.
     make {
         (* The promises that this thread must fullfil
            Is must be ordered with oldest promises at the bottom of the list *)
-        prom : list view;
+        prom_wr : list view;
+        prom_tlbi : list view;
 
         (* registers values and views. System(relaxed) registers are not
            modified in the [regs] field directly, but instead accumulate changes *)
@@ -450,13 +451,14 @@ Module TState.
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
+    settable! make <prom_wr; prom_tlbi;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb>.
 
   (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
-      prom := [];
+      prom_wr := [];
+      prom_tlbi := [];
       regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
       levs := []; (* latest event at the top of the list *)
       coh := ∅;
@@ -604,8 +606,34 @@ Module TState.
              (v : view) : t → t :=
     (update acc1 v) ∘ (update acc2 v).
 
-  (** Add a promise to the promise set *)
-  Definition promise (v : view) : t → t := set prom (v ::.).
+  (** Add a promise to the write promise set *)
+  Definition promise_write (v : view) : t → t := set prom_wr (v ::.).
+
+  (** Add a promise to the TLBI promise set *)
+  Definition promise_tlbi (v : view) : t → t := set prom_tlbi (v ::.).
+
+  (** Check that all pending promises are after the given view *)
+  Definition no_promises_until (v : view) (ts : t) : Prop :=
+    ∀ p ∈ ts.(prom_wr) ++ ts.(prom_tlbi), (v < p)%nat.
+  #[global] Instance Decision_no_promises_until (v : view) (ts : t) :
+    Decision (no_promises_until v ts).
+  Proof. unfold_decide. Defined.
+
+  (** Check that all pending write promises are after the given view *)
+  Definition no_write_promises_until (v : view) (ts : t) : Prop :=
+    ∀ p ∈ ts.(prom_wr),(v < p)%nat.
+  #[global] Instance Decision_no_write_promises_until (v : view) (ts : t) :
+    Decision (no_write_promises_until v ts).
+  Proof. unfold_decide. Defined.
+
+  (** Compute the minimum of all pending promises *)
+  Definition min_promise (vmax_t : view) (ts : t) : view :=
+    foldr (λ p v, min v p) (vmax_t + 1) (ts.(prom_wr) ++ ts.(prom_tlbi)).
+
+  (** Compute all the timestamps a CSE could happen at, this is inefficient but
+      hard to optimize *)
+  Definition cse_candidates (vpre vmax_t : view) (ts : t) : list view :=
+    seq vpre (min_promise vmax_t ts - vpre).
 
   (** Perform a context synchronization event *)
   Definition cse (v : view) : t → t :=
@@ -1737,9 +1765,10 @@ Definition read_mem_explicit (addr : address) (size : N)
     (invalidation_time : option nat) (macc : mem_acc)
     (init : memoryMap) :
   Exec.t (TState.t * Memory.t) string (view * bv (8 * size)) :=
+  ts ← mget fst;
+  guard_discard (TState.no_promises_until vaddr ts);;
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let addrs := addr_range addr size in
-  ts ← mget fst;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
@@ -1778,8 +1807,10 @@ Definition read_mem_explicit (addr : address) (size : N)
 
 Definition read_pte (vaddr : view) :
     Exec.t (TState.t * IIS.TransRes.t) string (view * bv 64) :=
+  ts ← mget fst;
   tres ← mget snd;
   let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
+  guard_discard (TState.no_promises_until vpost ts);;
   val ← Exec.liftSt snd IIS.TransRes.pop;
   mset fst $ TState.update TState.vspec vpost;;
   mret (vpost, val).
@@ -1851,6 +1882,7 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
   vreg' ←
     (if reg =? pc_reg
       then
+        guard_discard (TState.no_promises_until vreg ts);;
         mset PPState.state $ TState.update TState.vspec vreg;;
         mret 0%nat
       else mret vreg);
@@ -1910,7 +1942,7 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (viio : view)
   let is_release := is_rel_acq macc in
   '(ts, mem) ← mGet;
   '(time, new_promise) ←
-    match Memory.fulfill ev (TState.prom ts) mem with
+    match Memory.fulfill ev (TState.prom_wr ts) mem with
     | Some t => mret (t, false)
     | None =>
       t ← Exec.liftSt snd $ Memory.promise ev;
@@ -1928,7 +1960,7 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (viio : view)
   guard_discard check_vpost;;
   guard_discard
     (vpre < time ∧ ∀ a ∈ addrs, ts.(TState.coh) !!! a < time)%nat;;
-  mset (TState.prom ∘ fst) (filter (λ t, t ≠ time));;
+  mset (TState.prom_wr ∘ fst) (filter (λ t, t ≠ time));;
   mset fst $ TState.update_cohs (map (., time) addrs);;
   mset fst $ TState.update TState.vwr time;;
   mset fst $ TState.update TState.vrel (view_if is_release time);;
@@ -1989,7 +2021,9 @@ Definition run_cse (vmax_t : view) : Exec.t (TState.t * IIS.t) string () :=
   iis ← mget snd;
   let v := ts.(TState.vspec) ⊔ ts.(TState.vcse)
             ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vmsr) in
-  vpost ← mchoosel $ seq_bounds (IIS.strict iis ⊔ v) vmax_t;
+  let vpre := IIS.strict iis ⊔ v in
+  guard_discard (TState.no_promises_until vpre ts);;
+  vpost ← mchoosel $ TState.cse_candidates vpre vmax_t ts;
   mset fst $ TState.cse vpost;;
   mset snd $ IIS.add vpost.
 
@@ -2011,14 +2045,17 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
             ts.(TState.vrd) ⊔ ts.(TState.vwr)
             ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb)
           in
+          guard_discard (TState.no_write_promises_until vpost ts);;
           mset fst $ TState.update TState.vdmb vpost;;
           mset snd $ IIS.add vpost
       | MBReqTypes_Reads (* dmb ld *) =>
           let vpost := ts.(TState.vrd) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
+          guard_discard (TState.no_write_promises_until vpost ts);;
           mset fst $ TState.update TState.vdmb vpost;;
           mset snd $ IIS.add vpost
       | MBReqTypes_Writes (* dmb st *) =>
           let vpost := ts.(TState.vwr) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
+          guard_discard (TState.no_write_promises_until vpost ts);;
           mset fst $ TState.update TState.vdmbst vpost;;
           mset snd $ IIS.add vpost
       end
@@ -2032,14 +2069,17 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
             ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdmbst)
             ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vtlbi)
           in
+          guard_discard (TState.no_promises_until vpost ts);;
           mset fst $ TState.update TState.vdsb vpost;;
           mset snd $ IIS.add vpost
       | MBReqTypes_Reads (* dsb ld *) =>
           let vpost := ts.(TState.vrd) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
+          guard_discard (TState.no_write_promises_until vpost ts);;
           mset fst $ TState.update TState.vdsb vpost;;
           mset snd $ IIS.add vpost
       | MBReqTypes_Writes (* dsb st *) =>
           let vpost := ts.(TState.vwr) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
+          guard_discard (TState.no_write_promises_until vpost ts);;
           mset fst $ TState.update TState.vdsb vpost;;
           mset snd $ IIS.add vpost
       end
@@ -2073,11 +2113,11 @@ Definition run_tlbi (tid : nat) (view : nat) (tlbi : TLBIInfo) :
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   mem ← mget PPState.mem;
-  time ← (if Memory.fulfill tlbiev (TState.prom ts) mem is Some t
+  time ← (if Memory.fulfill tlbiev (TState.prom_tlbi ts) mem is Some t
           then mret t
           else Exec.liftSt PPState.mem $ Memory.promise tlbiev);
   guard_discard (vpre < time)%nat;;
-  mset (TState.prom ∘ PPState.state) (filter (λ t, t ≠ time));;
+  mset (TState.prom_tlbi ∘ PPState.state) (filter (λ t, t ≠ time));;
   mset PPState.state $ TState.update TState.vtlbi time;;
   mset PPState.iis $ IIS.add time.
 
@@ -2284,6 +2324,8 @@ Section RunOutcome.
   | MemRead _ => mthrow "Memory read with tags unsupported"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
+      ts ← mget PPState.state;
+      guard_discard (TState.no_write_promises_until vaddr ts);;
       mset PPState.state $ TState.update TState.vspec vaddr;;
       mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space size 0) val _ =>
@@ -2512,18 +2554,22 @@ End BBM.
 
 Import Promising.
 
+Definition emit_promise' (tid : nat) (initmem : memoryMap) (mem : Memory.t) ev :=
+  if ev is Ev.Msg _ then TState.promise_write (length mem)
+  else TState.promise_tlbi (length mem).
+
 Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
-    tState_nopromises := is_emptyb ∘ TState.prom;
+    tState_nopromises := (λ ts, is_emptyb (TState.prom_wr ts ++ TState.prom_tlbi ts));
     iis := IIS.t;
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
     mEvent_tid := Ev.tid;
     handle_outcome := run_outcome;
-    emit_promise := λ tid initmem mem msg, TState.promise (length mem);
+    emit_promise := emit_promise';
     check_valid_end := λ tid initmem ts mem, BBM.check bbm_param tid initmem ts mem;
     memory_snapshot := Memory.to_memMap;
   |}.
