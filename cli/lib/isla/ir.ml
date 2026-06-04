@@ -142,7 +142,7 @@ let parse_assertion_expr s =
 let parse_assertion toml =
   let assertion_str = Toml.get_string toml |> String.trim in
   if assertion_str = "" then Assertion.True
-  else parse_assertion_expr assertion_str
+  else parse_assertion_expr assertion_str |> Assertion.flatten
 
 let parse_arch toml =
   let arch_string = Toml.get_string toml in

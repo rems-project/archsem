@@ -59,26 +59,16 @@ let pc_reg arch =
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
   | Litmus.Arch_id.X86 -> Archsem.X86.Reg.to_string Archsem.X86.Reg.pc
 
-let register_defaults () =
-  let config = Config.get () in
-  Toml.find_or ~default:[] config
+let register_defaults =
+  Config.make_getter ~default:[]
     (Toml.get_table_values Litmus.Parser.toml_to_gen)
     ["registers"; "defaults"]
 
-let instruction_step () =
-  let width =
-    Toml.find (Config.get ()) Toml.get_integer ["assembler"; "instruction_step"]
-  in
-  if width <= 0 then
-    failwith "config: [assembler] instruction_step must be positive";
-  width
+let instruction_step =
+  Config.make_getter Toml.get_positive ["assembler"; "instruction_step"]
 
-let default_memory_size () =
-  let size =
-    Toml.find (Config.get ()) Toml.get_integer ["isla"; "default_memory_size"]
-  in
-  if size <= 0 then failwith "config: [isla] default_memory_size must be positive";
-  size
+let default_memory_size =
+  Config.make_getter Toml.get_positive ["isla"; "default_memory_size"]
 
 (** {1 IR to assembly_input} *)
 

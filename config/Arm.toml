@@ -8,13 +8,14 @@ bbm = "off"
 
 [assembler]
 command = "clang --target=aarch64-unknown-linux-elf -march=armv8-a+lse+rcpc -fuse-ld=lld"
+# The bytes grouping when printing .archsem.toml files
 instruction_step = 4
 
 [isla]
 default_memory_size = 8
 page_bits = 12
 
-[isla.register_renames]
+[registers.renames]
 X0 = "R0"
 X1 = "R1"
 X2 = "R2"

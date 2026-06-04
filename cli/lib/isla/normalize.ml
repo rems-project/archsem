@@ -41,31 +41,15 @@
 (** Normalize architecture-specific register aliases in the IR. *)
 
 module Toml = Litmus.Toml
-open Litmus.Assertion
-
-let register_renames () =
-  Toml.find_or ~default:[] (Litmus.Config.get ())
-    (Toml.get_table_values Toml.get_string)
-    ["isla"; "register_renames"]
-
-let normalize_reg reg =
-  match List.assoc_opt reg (register_renames ()) with
-  | Some renamed -> renamed
-  | None -> reg
-
-let normalize_loc = function
-  | Reg (tid, reg) -> Reg (tid, normalize_reg reg)
-  | loc -> loc
-
-let normalize_expr expr = expr |> map_loc normalize_loc |> flatten
+module Config = Litmus.Config
 
 let normalize_thread (thread : Ir.thread) =
   { thread with
-    init = List.map (fun (reg, value) -> (normalize_reg reg, value)) thread.init
+    init =
+      List.map
+        (fun (reg, value) -> (Config.get_reg_rename_or reg, value))
+        thread.init
   }
 
 let apply (ir : Ir.t) : Ir.t =
-  { ir with
-    threads = List.map normalize_thread ir.threads;
-    assertion = normalize_expr ir.assertion
-  }
+  {ir with threads = List.map normalize_thread ir.threads}

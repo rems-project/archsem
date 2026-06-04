@@ -58,5 +58,5 @@ name = "STRW_LDRX"
   DAIF = 0
 
 [final]
-  assertion = {"0:R0" = 0x2a}
+  assertion = {"0:X0" = 0x2a}
   kind = "forall"
