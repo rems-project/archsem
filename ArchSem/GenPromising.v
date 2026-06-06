@@ -190,7 +190,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           outcome to the thread state. If the outcome need one or more event to
           be added to memory,it adds them and return the view of those events in
           the option, otherwise it returns [None] *)
-      handle_outcome : (* tid *) nat → (* initial memory *) memoryMap →
+      handle_outcome : (* thread count *) nat → (* tid *) nat →
+                  (* initial memory *) memoryMap →
                   ∀ out : outcome,
                   Exec.t (PPState.t tState mEvent iis) string
                          (eff_ret out * option nat);
@@ -276,7 +277,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       (** Run on instruction in specific thread by tid, allowing new promises *)
       Definition run_tid (tid : fin n) : Exec.t t string () :=
         st ← mGet;
-        let handler out := prom.(handle_outcome) tid (st.(initmem)) out |$> fst in
+        let handler out :=
+          prom.(handle_outcome) n tid (st.(initmem)) out |$> fst in
         Exec.liftSt (PState_PPState tid) (cinterp handler isem).
 
       Definition seq_step (tid : fin n) : relation t :=
@@ -400,8 +402,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Context (tid : fin n) (initmem : memoryMap).
 
       Definition run_outcome_with_promise (base : nat) (out : outcome) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string (eff_ret out) :=
-        '(res, vpre_opt) ← Exec.liftSt snd $ prom.(handle_outcome) tid initmem out;
+          Exec.t (list mEvent * PPState.t tState mEvent iis) string
+                 (eff_ret out) :=
+        '(res, vpre_opt) ←
+          Exec.liftSt snd $ prom.(handle_outcome) n tid initmem out;
         if vpre_opt is Some vpre then
           if decide (vpre ≤ base)%nat then
             mem ← mget (PPState.mem ∘ snd);

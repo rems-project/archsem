@@ -126,7 +126,7 @@ End TLBI.
 Module Ev.
   Inductive t :=
   | Msg (msg : Msg.t)
-  | Tlbi (tlbi : TLBI.t).
+  | Tlbi (tlbi : TLBI.t) (recipient : nat).
 
   #[global] Instance dec : EqDecision t.
   solve_decision.
@@ -135,7 +135,7 @@ Module Ev.
   Definition tid (ev : t) :=
     match ev with
     | Msg msg => Msg.tid msg
-    | Tlbi tlbi => TLBI.tid tlbi
+    | Tlbi tlbi _ => TLBI.tid tlbi
     end.
 
   Definition get_msg (ev : t) : option Msg.t :=
@@ -146,7 +146,7 @@ Module Ev.
 
   Definition get_tlbi (ev : t) : option TLBI.t :=
     match ev with
-    | Tlbi tlbi => Some tlbi
+    | Tlbi tlbi _ => Some tlbi
     | _ => None
     end.
 
@@ -162,7 +162,6 @@ Module Ev.
 End Ev.
 
 Coercion Ev.Msg : Msg.t >-> Ev.t.
-Coercion Ev.Tlbi : TLBI.t >-> Ev.t.
 
 (** A view is just a natural, reused from UM *)
 Definition view := UMPromising.view.
@@ -193,7 +192,7 @@ Module Memory.
         if Msg.read_byte addr msg is Some byte then
           Some (byte, List.length mem)
         else read_last addr init mem'
-    | Ev.Tlbi _ :: mem' => read_last addr init mem'
+    | Ev.Tlbi _ _ :: mem' => read_last addr init mem'
     end.
 
   (** Reads from initial memory and fails if the memory has been overwritten.
@@ -356,6 +355,18 @@ Definition relaxed_regs : gset reg :=
        VBAR_EL3;
        VTTBR_EL2]@{reg}.
 
+(** Registers that are not treated as strict dependencies or relaxed system
+    registers, but whose architectural writes are supported. *)
+Definition writable_regs : gset reg :=
+  list_to_set [
+       CurrentEL;
+       SPSel;
+       NZCV;
+       DAIF;
+       SPSR_EL1;
+       SPSR_EL2;
+       SPSR_EL3]@{reg}.
+
 (** TTBR registers used for BBM violation checking.
     When checking BBM, we iterate over all TTBRs to find matching page tables. *)
 Definition ttbrs : gset reg :=
@@ -369,7 +380,8 @@ Definition ttbrs : gset reg :=
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
-  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
+  ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨
+    r ∈ writable_regs ∨ r = pc_reg).
 Instance Decision_is_reg_unknown (r : reg) : Decision (is_reg_unknown r).
 Proof. unfold_decide. Defined.
 
@@ -1290,6 +1302,15 @@ Module TLB.
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
+  Definition apply_event_for_tid (tid : nat) (ev : Ev.t) (tlb : t) :
+      t * bool :=
+    match ev with
+    | Ev.Tlbi tlbi recipient =>
+      if decide (recipient = tid) then (tlbi_apply tlbi tlb, true)
+      else (tlb, false)
+    | _ => (tlb, false)
+    end.
+
   (** ** TLB Snapshot Functions for Specific VA (Translation) *)
 
   (** Compute unique TLB snapshots for a specific VA over a time range.
@@ -1305,6 +1326,7 @@ Module TLB.
                        (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
+                       (tid : nat)
                        (va : bv 64)
                        (ttbr : reg)
                        (acc : list (t * nat)) :
@@ -1316,10 +1338,10 @@ Module TLB.
       '(tlb, is_changed) ←
         match mem !! time_cur with
         | Some ev =>
-            let (tlb_inv, is_changed_by_tlbi) :=
-              if ev is Ev.Tlbi tlbi then (tlbi_apply tlbi tlb_prev, true) else (tlb_prev, false)
-            in
-            '(tlb, is_changed) ← update tlb_inv ts mem_init mem time_cur va ttbr;
+            let '(tlb_inv, is_changed_by_tlbi) :=
+              apply_event_for_tid tid ev tlb_prev in
+            '(tlb, is_changed) ←
+              update tlb_inv ts mem_init mem time_cur va ttbr;
             mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
@@ -1329,7 +1351,7 @@ Module TLB.
         | false => acc
         end in
       unique_snapshots_va_between
-        ts mem_init mem tlb time_cur ccnt va ttbr acc
+        ts mem_init mem tlb time_cur ccnt tid va ttbr acc
     end.
 
   (** Compute all unique TLB snapshots for a specific VA from time 0 to [time].
@@ -1341,10 +1363,12 @@ Module TLB.
                        (mem_init : memoryMap)
                        (mem : Memory.t)
                        (time : nat)
+                       (tid : nat)
                        (va : bv 64)
                        (ttbr : reg) : result string (list (t * nat)) :=
     '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
-    unique_snapshots_va_between ts mem_init mem tlb 0 time va ttbr [(tlb, 0)].
+    unique_snapshots_va_between
+      ts mem_init mem tlb 0 time tid va ttbr [(tlb, 0)].
 
   (** Find snapshots at or after [time].
 
@@ -1374,6 +1398,7 @@ Module TLB.
                        (mem : Memory.t)
                        (tlb_prev : t)
                        (time_prev cnt : nat)
+                       (tid : nat)
                        (ttbr : reg)
                        (acc : list (t * nat))
                        (mem_strict : bool) :
@@ -1385,11 +1410,8 @@ Module TLB.
       '(tlb, is_changed) ←
         match mem !! time_cur with
         | Some ev =>
-            let (tlb_inv, is_changed_by_tlbi) :=
-              if ev is Ev.Tlbi tlbi
-              then (tlbi_apply tlbi tlb_prev, true)
-              else (tlb_prev, false)
-            in
+            let '(tlb_inv, is_changed_by_tlbi) :=
+              apply_event_for_tid tid ev tlb_prev in
             '(tlb, is_changed) ←
               update_all tlb_inv ts mem_init mem time_cur ttbr mem_strict;
             mret (tlb, is_changed || is_changed_by_tlbi)
@@ -1400,7 +1422,8 @@ Module TLB.
         | true => (tlb, time_cur) :: acc
         | false => acc
         end in
-      unique_snapshots_between ts mem_init mem tlb time_cur ccnt ttbr acc mem_strict
+      unique_snapshots_between
+        ts mem_init mem tlb time_cur ccnt tid ttbr acc mem_strict
     end.
 
   (** Compute all unique TLB snapshots from time 0 to [time] for BBM checking.
@@ -1412,10 +1435,12 @@ Module TLB.
                        (mem_init : memoryMap)
                        (mem : Memory.t)
                        (time : nat)
+                       (tid : nat)
                        (ttbr : reg)
                        (mem_strict : bool) : result string (list (t * nat)) :=
     '(tlb, _) ← update_all init ts mem_init mem 0 ttbr mem_strict;
-    unique_snapshots_between ts mem_init mem tlb 0 time ttbr [(tlb, 0)] mem_strict.
+    unique_snapshots_between
+      ts mem_init mem tlb 0 time tid ttbr [(tlb, 0)] mem_strict.
 
   (** Check if a TLB entry is invalidated by a TLBI from a different thread.
 
@@ -1423,13 +1448,15 @@ Module TLB.
       the entry is affected by the invalidation. *)
   Definition is_te_invalidated_by_tlbi
                 (tlbi : TLBI.t)
+                (recipient : nat)
                 (tid : nat)
                 (ctxt : Ctxt.t)
                 (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-      TLBI.tid tlbi <> tid ∧ (affects tlbi ctxt te).
-  Instance Decision_is_te_invalidated_by_tlbi (tlbi : TLBI.t) (tid : nat)
-                (ctxt : Ctxt.t) (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (is_te_invalidated_by_tlbi tlbi tid ctxt te).
+    recipient = tid ∧ TLBI.tid tlbi <> tid ∧ affects tlbi ctxt te.
+  Instance Decision_is_te_invalidated_by_tlbi (tlbi : TLBI.t)
+                (recipient tid : nat) (ctxt : Ctxt.t)
+                (te : Entry.t (Ctxt.lvl ctxt)) :
+    Decision (is_te_invalidated_by_tlbi tlbi recipient tid ctxt te).
   Proof. unfold_decide. Defined.
 
   (** Find the first TLBI event in [evs] that invalidates the given entry.
@@ -1445,8 +1472,8 @@ Module TLB.
     | [] => mret None
     | (ev, t) :: tl =>
       match ev with
-      | Ev.Tlbi tlbi =>
-        if decide (is_te_invalidated_by_tlbi tlbi tid ctxt te) then
+      | Ev.Tlbi tlbi recipient =>
+        if decide (is_te_invalidated_by_tlbi tlbi recipient tid ctxt te) then
           mret (Some t)
         else
           invalidation_time_from_evs tid ctxt te tl
@@ -2081,7 +2108,7 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
 
 (** ** Translation semantics *)
 
-Definition run_tlbi (tid : nat) (viio : view) (tlbi : TLBIInfo) :
+Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
   guard_or
     "Non-shareable TLBIs are not supported"
@@ -2101,24 +2128,32 @@ Definition run_tlbi (tid : nat) (viio : view) (tlbi : TLBIInfo) :
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
+    | TLBIOp_VMALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
     | TLBIOp_VAA => mret $ TLBI.Vaa tid va_extracted last upper
     | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
     | _ => mthrow "Unsupported kind of TLBI"
     end;
-  mem ← mget PPState.mem;
-  '(time, new_promise) ←
-    match Memory.fulfill tlbiev (TState.prom_tlbi ts) mem with
-    | Some t => mret (t, false)
-    | None =>
-      t ← Exec.liftSt PPState.mem $ Memory.promise tlbiev;
-      mret (t, true)
-    end;
-  guard_discard (vpre < time)%nat;;
-  mset (TState.prom_tlbi ∘ PPState.state) (filter (λ t, t ≠ time));;
-  mset PPState.state $ TState.update TState.vtlbi time;;
-  mset PPState.iis $ IIS.add time;;
-  mret (if (new_promise : bool) then Some vpre else None).
+  '(times, created_new_event) ←
+    foldlM (λ '(times, created_new_event) recipient,
+      let ev := Ev.Tlbi tlbiev recipient in
+      ts_cur ← mget PPState.state;
+      mem ← mget PPState.mem;
+      '(time, is_new_promise) ←
+        match Memory.fulfill ev (TState.prom_tlbi ts_cur) mem with
+        | Some t => mret (t, false)
+        | None =>
+          t ← Exec.liftSt PPState.mem $ Memory.promise ev;
+          mret (t, true)
+        end;
+      guard_discard (vpre < time)%nat;;
+      mset (TState.prom_tlbi ∘ PPState.state) (filter (λ t, t ≠ time));;
+      mret (time :: times, created_new_event || is_new_promise)
+    ) ([], false) (seq 0 n_threads);
+  let vpost := foldr max 0%nat times in
+  mset PPState.state $ TState.update TState.vtlbi vpost;;
+  mset PPState.iis $ IIS.add vpost;;
+  mret (if (created_new_event : bool) then Some vpre else None).
 
 Definition va_in_range (va : bv 64) : Prop :=
   let top_bits := bv_extract 48 16 va in
@@ -2187,8 +2222,10 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
 
   trans_res ←
     if decide (va_in_range va) then
-      ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      snapshots ← mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t va ttbr;
+      ttbr ← mlift $
+        ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
+      snapshots ← mlift $
+        TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
       let snapshots := TLB.snapshots_from vpre_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
@@ -2290,7 +2327,7 @@ Definition run_take_exception (fault : exn) (vmax_t : view) :
 
 (** Runs an outcome. *)
 Section RunOutcome.
-  Context (tid : nat) (initmem : memoryMap).
+  Context (n_threads tid : nat) (initmem : memoryMap).
 
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out * option view) :=
@@ -2334,7 +2371,7 @@ Section RunOutcome.
       mret ((), None)
   | TlbOp tlbi =>
       viio ← mget (IIS.strict ∘ PPState.iis);
-      vpre_opt ← run_tlbi tid viio tlbi;
+      vpre_opt ← run_tlbi n_threads tid viio tlbi;
       mret ((), vpre_opt)
   | ReturnException =>
       mem ← mget PPState.mem;
@@ -2487,7 +2524,7 @@ Section BBM.
     List.find (λ '(_, t), (t <=? target)%nat) snapshots.
 
   (** Main BBM violation check. Returns [Ok true] if violation detected. *)
-  Definition check_bbm_violation (ts : TState.t)
+  Definition check_bbm_violation (tid : nat) (ts : TState.t)
         (mem : Memory.t) (mem_strict : bool) : result string bool :=
     mmu_enabled ← is_mmu_enabled ts;
     if (mmu_enabled : bool) then
@@ -2495,13 +2532,16 @@ Section BBM.
       let ttbrs_to_check :=
         filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
       let tlbi_times := filter (λ i,
-        if mem !! i is Some (Ev.Tlbi _) then true else false
+        if mem !! i is Some (Ev.Tlbi _ recipient) then
+          bool_decide (recipient = tid)
+        else false
       ) (seq 1 max_t) in
       let times_to_check := max_t :: (map (λ t, t - 1) tlbi_times) in
       foldlM (λ violated ttbr,
         if (violated : bool) then mret true
         else
-          snapshots ← TLB.unique_snapshots_until ts initmem mem max_t ttbr mem_strict;
+          snapshots ←
+            TLB.unique_snapshots_until ts initmem mem max_t tid ttbr mem_strict;
           mret $
             bool_decide
               (∃ target_time ∈ times_to_check,
@@ -2525,7 +2565,7 @@ Module BBM.
   Definition check (p : param) (tid : nat) (initmem : memoryMap) (ts : TState.t)
       (mem : Memory.t) : list string :=
     let aux_check strict :=
-      match check_bbm_violation initmem ts mem strict with
+      match check_bbm_violation initmem tid ts mem strict with
       | Ok true => ["BBM violation detected"]
       | Ok false => []
       | Error s => [("BBM checker: " ++ s)%string]
