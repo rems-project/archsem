@@ -1749,6 +1749,7 @@ Definition read_mem_explicit (addr : address) (size : N)
   tread ← mchoosel (read_candidates addr size vpre mem);
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
+  (* per-byte (value, view, write-timestamp) after forwarding *)
   fwd_bytes ← mlift $
     for (a, raw) in zip addrs raw_bytes do
       apply_fwd ts.(TState.fwdb) macc mem tread a raw
@@ -1759,8 +1760,8 @@ Definition read_mem_explicit (addr : address) (size : N)
   (* Per-byte coherence: each byte's twrite ≥ that byte's coh view. *)
   guard_discard (∀ '(a,t) ∈ zip addrs twrites, (ts.(TState.coh) !!! a ≤ t)%nat);;
   let res := bv_of_bytes (8 * size) bytes in
-  let read_view := foldr max 0%nat read_views in
-  let vpost := vpre ⊔ read_view in
+  let vreads := foldr max 0%nat read_views in
+  let vpost := vpre ⊔ vreads in
   let check_vpost :=
     if invalidation_time is Some invalidation_time then
       (vpost <? invalidation_time)%nat
@@ -1770,9 +1771,9 @@ Definition read_mem_explicit (addr : address) (size : N)
   mset fst $ TState.update TState.vrd vpost;;
   mset fst $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset fst $ TState.update TState.vspec vaddr;;
-  (if is_exclusive macc then
-    mset fst $ TState.set_xclb tread va addr size
-  else mret ());;
+  ( if is_exclusive macc then
+      mset fst $ TState.set_xclb tread va addr size
+    else mret ());;
   mret (vpost, res).
 
 Definition read_pte (vaddr : view) :

@@ -352,19 +352,19 @@ Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
   tread ← mchoosel (read_candidates addr size vpre mem);
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
-  (* per-byte coherence: each byte's twrite ≥ that byte's coh view *)
-  guard_discard
-    (∀ e ∈ zip addrs raw_bytes,
-      let '(a, (_, t)) := e in (ts.(TState.coh) !!! a ≤ t)%nat);;
   (* per-byte (value, view, write-timestamp) after forwarding *)
-  byte_results ← mlift $
+  fwd_bytes ← mlift $
     for (a, raw) in zip addrs raw_bytes do
       apply_fwd ts.(TState.fwdb) macc mem tread a raw
     end;
-  let '(bytes_views, twrites) := List.split byte_results in
-  let '(bytes, vreads) := List.split bytes_views in
+
+  let bytes := fwd_bytes.*1.*1 in
+  let read_views := fwd_bytes.*1.*2 in
+  let twrites := fwd_bytes.*2 in
+  (* Per-byte coherence: each byte's twrite ≥ that byte's coh view *)
+  guard_discard (∀ '(a,t) ∈ zip addrs twrites, (ts.(TState.coh) !!! a ≤ t)%nat);;
   let res := bv_of_bytes (8 * size) bytes in
-  let vreads := foldr max 0%nat vreads in
+  let vreads := foldr max 0%nat read_views in
   let vpost := vpre ⊔ vreads in
   mSet $ TState.update_cohs (zip addrs twrites);;
   mSet $ TState.update TState.vrd vpost;;
