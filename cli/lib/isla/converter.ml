@@ -92,16 +92,38 @@ let term_eval_context_path = function
   | Register_init (tid, reg) -> ["thread"; string_of_int tid; "init"; reg]
   | Final_assertion -> ["final"; "assertion"]
 
+let eval_error context fmt =
+  Printf.ksprintf
+    (fun msg -> raise (Term_eval_error (term_eval_context_path context, msg)))
+    fmt
+
 let eval_term ~context ~resolve_sym term =
-  try Term.eval ~resolve_sym term
-  with Failure msg ->
-    raise (Term_eval_error (term_eval_context_path context, msg))
+  try
+    let value = Term.eval ~resolve_sym term in
+    match context with
+    (* Final constants stay raw Z.t; registers read via bv_unsigned. *)
+    | Final_assertion when Z.sign value < 0 ->
+        eval_error context "final assertion values must be non-negative: %s"
+          (Z.format "%#x" value)
+    (* Memory values are converted with Z.to_bits. *)
+    | Location_init _ when Z.sign value < 0 ->
+        eval_error context "negative memory data is not allowed: %s"
+          (Z.format "%#x" value)
+    | _ -> value
+  with Failure msg -> eval_error context "%s" msg
+
+let normalize_register_gen ~arch ~context reg_name gen =
+  try
+    match arch with
+    | Litmus.Arch_id.Arm ->
+        Archsem.Arm.RegVal.(to_gen (of_string_gen reg_name gen))
+    | Litmus.Arch_id.X86 ->
+        Archsem.X86.RegVal.(to_gen (of_string_gen reg_name gen))
+  with Failure msg -> eval_error context "%s" msg
 
 let data_symbol_of_value ~context ~resolve_sym mem_size sym value =
-  { Assembler.name = sym;
-    init_bytes =
-      init_bytes_of_value mem_size sym (eval_term ~context ~resolve_sym value)
-  }
+  let value = eval_term ~context ~resolve_sym value in
+  {Assembler.name = sym; init_bytes = init_bytes_of_value mem_size sym value}
 
 let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
   let mem_size = default_memory_size () in
@@ -204,13 +226,14 @@ let find_section name (asm_result : Assembler.assembly_result) =
     asm_result.sections
 
 (** Build per-thread initial register maps: PC + user init + config defaults. *)
-let build_registers ~resolve_sym ~pc (start_pc : int) (thread : Ir.thread) =
+let build_registers ~arch ~resolve_sym ~pc (start_pc : int) (thread : Ir.thread) =
   let pc_entry = (pc, RegValGen.Number (Z.of_int start_pc)) in
   let used_regs =
     List.map
       (fun (reg, value) ->
          let context = Register_init (thread.tid, reg) in
-         (reg, RegValGen.Number (eval_term ~context ~resolve_sym value))
+         let gen = RegValGen.Number (eval_term ~context ~resolve_sym value) in
+         (reg, normalize_register_gen ~arch ~context reg gen)
        )
       thread.init
   in
@@ -232,7 +255,7 @@ let build_threads ~arch ~resolve_sym asm_result (threads : Ir.thread list) :
        assert (tid == thread.tid);
        (* Should have been checked before *)
        let sec = find_section (Printf.sprintf "thread%d" tid) asm_result in
-       let regs = build_registers ~resolve_sym ~pc sec.addr thread in
+       let regs = build_registers ~arch ~resolve_sym ~pc sec.addr thread in
        let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
        {Testrepr.regs; breakpoints}
      )

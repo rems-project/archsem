@@ -40,12 +40,14 @@
 
 {
   open Parser
+
+  exception Error of string
 }
 
 let digit = ['0'-'9']
 let hex = ['0'-'9' 'a'-'f' 'A'-'F']
-let alpha = ['a'-'z' 'A'-'Z' '_']
-let alnum = alpha | digit
+let ident_start = ['a'-'z' 'A'-'Z' '_']
+let ident_char = ident_start | digit
 
 rule token = parse
   | [' ' '\t' '\n']+ { token lexbuf }
@@ -58,15 +60,16 @@ rule token = parse
   | '*' { STAR }
   | ':' { COLON }
   | ',' { COMMA }
+  | '-' { MINUS }
   | "true" { TRUE }
   | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
   | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
   | digit+ as s { NUM (Z.of_string s) }
-  | alpha alnum* as s { IDENT s }
+  | ident_start ident_char* as s { IDENT s }
   | eof { EOF }
   | _ as c {
-      failwith (Printf.sprintf
+      raise (Error (Printf.sprintf
         "assertion lexer: unexpected character '%c' at position %d"
-        c (Lexing.lexeme_start lexbuf))
+        c (Lexing.lexeme_start lexbuf)))
     }
