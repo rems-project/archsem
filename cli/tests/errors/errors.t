@@ -139,7 +139,7 @@ Duplicate Isla function argument
 No matching Isla function overload
   $ archsem seq no-matching-isla-fn-overload.litmus.toml
   archsem: eval error:
-  File "no-matching-isla-fn-overload.litmus.toml", path "locations.x":
+  File "no-matching-isla-fn-overload.litmus.toml", path "thread.0.init.R0":
   function: no matching overload for mkdesc2
   [1]
 
@@ -196,7 +196,7 @@ Page table DSL rejects duplicate VA mappings
   $ archsem seq conflicting-page-table-mapping.litmus.toml
   archsem: eval error:
   File "conflicting-page-table-mapping.litmus.toml", path "page_table_setup":
-  page_table: conflicting mapping for VA 0x2000: existing descriptor 0x4443, new descriptor 0x5443
+  page_table: conflicting mapping for VA 0x2000: existing descriptor 0x600443, new descriptor 0x601443
   [1]
 
 Page table DSL rejects locations with page tables

@@ -9,7 +9,7 @@ x ?-> pa_y;
 """
 
 [thread.0]
-init = { X0 = 1, X1 = "x", X2 = 1, X3 = "y", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X0 = 1, X1 = "x", X2 = 1, X3 = "y", X4 = "pte3(x, page_table_base)", X5 = "desc3(x, page_table_base)", X6 = "mkdesc3(oa=pa_y, Valid=0b0, AF=0b0, AP=0b11, DBM=0b1)", SCTLR_EL1 = 1, CurrentEL = 1 }
 code = """
 	STR X0,[X1]
 	STR X2,[X3]
@@ -24,4 +24,4 @@ code = """
 
 [final]
 expect = "sat"
-assertion = "1:X0 = 1 & 1:X2 = 0"
+assertion = "1:X0 = 1 & 1:X2 = 0 & 0:X4 = 0x403018 & 0:X5 = 0x600443 & 0:X6 = 0x80000006010c2"
