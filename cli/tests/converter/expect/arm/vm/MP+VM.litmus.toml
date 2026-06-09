@@ -76,14 +76,14 @@ name = "MP+VM"
 
 [thread."0".regs]
   _PC = 0x1000
-  "R0" = 1
+  "R0" = 0x9018
   "R1" = 0x3000
-  "R2" = 1
+  "R2" = 0x6443
   "R3" = 0x4000
+  "R4" = 0x800000000a0c2
   "TTBR0_EL1" = 0x5000
   "SCTLR_EL1" = 1
   CurrentEL = 1
-  "R4" = 0
   "R5" = 0
   "R6" = 0
   "R7" = 0
@@ -162,4 +162,4 @@ name = "MP+VM"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"1:X0" = 1}, {"1:X2" = 0}]}
+  assertion = {and = [{"1:X0" = 0x6443}, {"1:X2" = 0}, {pa_x = 0x9018}, {"0:X4" = 0x800000000a0c2}]}

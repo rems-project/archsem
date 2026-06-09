@@ -59,6 +59,7 @@ let int_of_bit_arg name arg value =
 let functions : (string * Fn_registry.fn_spec) list =
   [ ( "bvand",
       { params = ["a"; "b"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -69,6 +70,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "bvor",
       { params = ["a"; "b"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -79,6 +81,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "bvxor",
       { params = ["a"; "b"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -89,6 +92,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "bvshl",
       { params = ["a"; "b"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -99,6 +103,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "bvlshr",
       { params = ["a"; "b"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -111,6 +116,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "extz",
       { params = ["bits"; "len"];
+        defaults = [];
         eval =
           (fun args ->
             match args with
@@ -124,6 +130,7 @@ let functions : (string * Fn_registry.fn_spec) list =
     );
     ( "exts",
       { params = ["bits"; "len"];
+        defaults = [];
         eval =
           (fun _ ->
             Litmus.Error.failwith

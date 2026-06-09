@@ -48,15 +48,16 @@ type t =
 
 let zero = Const Z.zero
 
-(* More functions can be appended. *)
-let builtins = Bv_fns.functions
-
-let rec eval ~lookup_addr = function
-  | Const z -> z
-  | Sym sym -> Z.of_int (lookup_addr sym)
-  | Fn (name, args) ->
-      let evaluated = List.map (eval ~lookup_addr) args in
-      Fn_registry.eval_fn ~fns:builtins name evaluated
-  | KwFn (name, kwargs) ->
-      let evaluated = List.map (fun (k, v) -> (k, eval ~lookup_addr v)) kwargs in
-      Fn_registry.eval_kwfn ~fns:builtins name evaluated
+let eval ?page_table_entries ~lookup_addr term =
+  let fns = Bv_fns.functions @ Page_table_fns.functions ?page_table_entries () in
+  let rec eval_term = function
+    | Const z -> z
+    | Sym sym -> Z.of_int (lookup_addr sym)
+    | Fn (name, args) ->
+        let evaluated = List.map eval_term args in
+        Fn_registry.eval_fn ~fns name evaluated
+    | KwFn (name, kwargs) ->
+        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
+        Fn_registry.eval_kwfn ~fns name evaluated
+  in
+  eval_term term

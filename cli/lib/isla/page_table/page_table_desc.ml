@@ -166,8 +166,21 @@ let page_descriptor_with_fields pa attrs fields =
        match desc with
        | Error _ as err -> err
        | Ok desc -> apply_descriptor_field desc field
-     )
+    )
     (Ok desc) fields
+
+(** Encode a block descriptor for a non-leaf page-table level. *)
+let block_descriptor pa level attrs =
+  let shift = level_shift level in
+  let mask = Int64.logand addr_mask (Int64.shift_left (-1L) shift) in
+  let pa = Int64.of_int pa in
+  require_in_mask "pa" mask pa;
+  require_in_mask "attrs" attr_mask attrs;
+  Int64.logor (Int64.logor pa attrs) 0x1L
+
+let make_desc ~level ~oa ~attrs () =
+  if level = last_level then page_descriptor oa attrs
+  else block_descriptor oa level attrs
 
 (** {1 Entry encoding}
 

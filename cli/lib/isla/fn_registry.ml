@@ -46,6 +46,7 @@
 
 type fn_spec =
   { params : string list;
+    defaults : (string * Z.t) list;
     eval : Z.t list -> Z.t
   }
 
@@ -74,8 +75,12 @@ let align_kwargs name spec kwargs =
     (fun param ->
        match List.assoc_opt param bindings with
        | Some value -> value
-       | None ->
-           Litmus.Error.failwith "function: %s: missing argument %s" name param
+       | None -> (
+         match List.assoc_opt param spec.defaults with
+         | Some default -> default
+         | None ->
+             Litmus.Error.failwith "function: %s: missing argument %s" name param
+       )
      )
     spec.params
 
