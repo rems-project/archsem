@@ -53,6 +53,8 @@ type data_value = Z.t
 
 type layout =
   { root : pa;
+    (* Base VA of the 2MB window that maps the page-table pool. *)
+    va_base : va;
     table_entries : (pa * descriptor) list;
     (* Mapping from PA-side symbols to concrete PAs: pa_x -> PA. *)
     symbols_pa : (string * pa) list;

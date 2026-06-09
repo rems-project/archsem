@@ -46,6 +46,8 @@ let default_base = 0x1000
 
 let page_size = 0x1000
 
+let big_size = 1 lsl 21
+
 let align_up addr alignment =
   if alignment <= 0 then
     Litmus.Error.fatal "allocator: alignment must be positive";
@@ -71,6 +73,4 @@ let alloc_page allocator =
   alloc_aligned allocator ~size:page_size ~alignment:page_size
 
 let alloc_big allocator =
-  (* 2MB block. *)
-  let big_size = 1 lsl 21 in
   alloc_aligned allocator ~size:big_size ~alignment:big_size
