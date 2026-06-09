@@ -529,6 +529,17 @@ Section RunOutcome.
           mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
       end;;
       mret ((), None)
+  | Barrier (Barrier_DSB dsb) => (* dsb: in UM, same as dmb *)
+      ts ← mget PPState.state;
+      match dsb.(DxB_types) with
+      | MBReqTypes_All (* dsb sy *) =>
+          mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
+      | MBReqTypes_Reads (* dsb ld *) =>
+          mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
+      | MBReqTypes_Writes (* dsb st *) =>
+          mset PPState.state $ TState.update TState.vdmb ts.(TState.vwr)
+      end;;
+      mret ((), None)
   | Barrier (Barrier_ISB ()) => (* isb *)
       ts ← mget PPState.state;
     mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
