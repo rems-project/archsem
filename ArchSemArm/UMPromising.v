@@ -130,8 +130,10 @@ Module Memory.
     foldr (λ msg mm, mem_insert_bv (Msg.addr msg) (Msg.val msg) mm) init mem.
 
   (** Promises a write and adds it at the end of memory *)
-  Definition promise (msg : Msg.t) (mem : t) : view * t :=
-    let nmem := msg :: mem in (List.length nmem, nmem).
+  Definition promise (msg : Msg.t) : Exec.t t string view :=
+    mSet (cons msg);;
+    mem ← mGet;
+    mret (List.length mem).
 
   (** Returns a view among a promise set that correspond to a message. The
       oldest matching view is taken. This is because it can be proven that
@@ -296,156 +298,6 @@ Module TState.
   Proof. unfold_decide. Defined.
 End TState.
 
-
-(*** Instruction semantics ***)
-
-Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
-
-(** Interesting timestamps are [vpre] itself and any later timestamp whose
-    write overlaps [addr, addr+size). *)
-Definition read_candidates (addr : address) (size : N) (vpre : view)
-    (mem : Memory.t) : list nat :=
-  PromMemory.cut_after_with_timestamps vpre mem
-    |> omap (λ '(msg, t),
-              if decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg))
-              then Some t else None)
-    |> cons vpre.
-
-(** Reads an instruction from initial memory.  Returns the [size]-byte
-    instruction word as a [bv (8 * size)] formed by concatenating the
-    bytes in [addr_range addr size]. Fails if [size] is not 4, or
-    if any byte in the range has been overwritten by a later write. *)
-Definition read_imem (addr : address) (size : N)
-           (init : memoryMap) (mem : Memory.t) :
-    Exec.t TState.t string (bv (8 * size)) :=
-  guard_or "Ifetch of size other than 4" (size =? 4)%N;;
-  bytes ← othrow "Modified instruction memory" $
-    for a in addr_range addr size do
-      Memory.read_initial a init mem
-    end;
-  mret (bv_of_bytes _ bytes).
-
-(** Per-byte forwarding (paper math [read-fwd]).  Forwarding fires when
-    [fwdb !! a] has an entry [fwd] with [fwd.time > tread], replacing
-    the byte/view/timestamp. Otherwise, the byte takes view [tread]. *)
-Definition apply_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
-    (mem : Memory.t) (tread : nat)
-    (a : address) (entry : bv 8 * nat) : Exec.res string (bv 8 * view * nat) :=
-  let '(byte, twrite) := entry in
-  let default := (byte, tread, twrite) in
-  match fwdb !! a with
-  | Some fwd =>
-    if (tread <? fwd.(FwdItem.time))%nat then
-      msg ← othrow "Failed to retrieve forwarded message" (mem !! fwd.(FwdItem.time));
-      byte' ← othrow "Failed to read a byte from the message" (Msg.read_byte a msg);
-      mret (byte', FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time))
-    else mret default
-  | None => mret default
-  end.
-
-(** Performs a multi-byte memory read. Picks an interesting timestamp
-    [tread] from [read_candidates], then applies per-byte forwarding. *)
-Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
-           (init : memoryMap) (mem : Memory.t) :
-    Exec.t TState.t string (view * bv (8 * size)) :=
-  ts ← mGet;
-  guard_discard (TState.no_promises_until vaddr ts);;
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
-  let addrs := addr_range addr size in
-  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
-                (* SC Acquire loads are ordered after Release stores *)
-              ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
-  let vpre := vaddr ⊔ vbob in
-  tread ← mchoosel (read_candidates addr size vpre mem);
-  raw_bytes ← othrow "Memory read of unmapped bytes" $
-    Memory.read_from addr size tread init mem;
-  (* per-byte (value, view, write-timestamp) after forwarding *)
-  fwd_bytes ← mlift $
-    for (a, raw) in zip addrs raw_bytes do
-      apply_fwd ts.(TState.fwdb) macc mem tread a raw
-    end;
-
-  let bytes := fwd_bytes.*1.*1 in
-  let read_views := fwd_bytes.*1.*2 in
-  let twrites := fwd_bytes.*2 in
-  (* Per-byte coherence: each byte's twrite ≥ that byte's coh view *)
-  guard_discard (∀ '(a,t) ∈ zip addrs twrites, (ts.(TState.coh) !!! a ≤ t)%nat);;
-  let res := bv_of_bytes (8 * size) bytes in
-  let vreads := foldr max 0%nat read_views in
-  let vpost := vpre ⊔ vreads in
-  mSet $ TState.update_cohs (zip addrs twrites);;
-  mSet $ TState.update TState.vrd vpost;;
-  mSet $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
-  mSet $ TState.update TState.vcap vaddr;;
-  ( if is_exclusive macc
-    then mSet $ TState.set_xclb tread addr size
-    else mret ());;
-  mret (vpost, res).
-
-(** Performs a memory write for a thread [tid] at [addr] with view
-    [vdata].  May mutate memory if no existing promise can be fulfilled. *)
-Definition write_mem (tid : nat) (addr : address) (size : N) (vdata : view)
-           (macc : mem_acc) (mem : Memory.t)
-           (data : bv (8 * size)) :
-          Exec.t TState.t string (Memory.t * view * option view):=
-  let msg : Msg.t := Msg.make size tid addr data in
-  let is_release := is_rel_acq macc in
-  let addrs := addr_range addr size in
-  ts ← mGet;
-  let '(time, mem, new_promise) :=
-    match Memory.fulfill msg (TState.prom ts) mem with
-    | Some t => (t, mem, false)
-    | None => (Memory.promise msg mem, true)
-    end in
-  let vbob :=
-    ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
-    ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
-  let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
-  guard_discard
-    (vpre < time ∧ ∀ a ∈ addrs, ts.(TState.coh) !!! a < time)%nat;;
-  mset TState.prom (filter (λ t, t ≠ time));;
-  mSet $ TState.update_cohs (map (., time) addrs);;
-  mSet $ TState.update TState.vwr time;;
-  mSet $ TState.update TState.vrel (view_if is_release time);;
-  mret (mem, time, (if new_promise then Some vpre else None)).
-
-
-(** Tries to perform a memory write.
-
-    If the store is not exclusive, the write is always performed and the third
-    return value is true.
-
-    If the store is exclusive the write may succeed or fail and the third
-    return value indicate the success (true for success, false for error) *)
-Definition write_mem_xcl (tid : nat) (addr : address) (size : N)
-           (vdata : view) (macc : mem_acc)
-           (mem : Memory.t) (data : bv (8 * size))
-  : Exec.t TState.t string (Memory.t * option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
-  let addrs := addr_range addr size in
-  if is_exclusive macc then
-    '(mem, time, vpre_opt) ← write_mem tid addr size vdata macc mem data;
-    ts ← mGet;
-    match TState.xclb ts with
-    | None => mdiscard
-    | Some (xtime, xaddr, xsize) =>
-      if decide (addr = xaddr ∧ size = xsize) then
-        guard_discard' (Memory.exclusive tid addr xsize xtime
-                         (Memory.cut_after time mem));;
-        mSet $ TState.set_fwdbs addrs time vdata true
-      else
-        (* If the store-exclusive footprint does not exactly match the previous
-           load-exclusive footprint, it may still succeed as an ordinary store,
-           but without exclusive atomicity guarantees. *)
-        mSet $ TState.set_fwdbs addrs time vdata false
-    end;;
-    mSet TState.clear_xclb;;
-    mret (mem, vpre_opt)
-  else
-    '(mem, time, vpre_opt) ← write_mem tid addr size vdata macc mem data;
-    mSet $ TState.set_fwdbs addrs time vdata false;;
-    mret (mem, vpre_opt).
-
 (** Intra instruction state for propagating views inside an instruction *)
 Module IIS.
 
@@ -464,6 +316,157 @@ Module IIS.
     iis |> set strict (max v).
 
 End IIS.
+
+
+(** * Instruction semantics *)
+
+Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
+
+(** Reads an instruction from initial memory.  Returns the [size]-byte
+    instruction word as a [bv (8 * size)] formed by concatenating the
+    bytes in [addr_range addr size]. Fails if [size] is not 4, or
+    if any byte in the range has been overwritten by a later write. *)
+Definition read_imem (addr : address) (size : N) (init : memoryMap)
+    (mem : Memory.t) : Exec.res string (bv (8 * size)) :=
+  guard_or "Ifetch of size other than 4" (size = 4)%N;;
+  bytes ← othrow "Modified instruction memory" $
+    for a in addr_range addr size do
+      Memory.read_initial a init mem
+    end;
+  mret (bv_of_bytes _ bytes).
+
+(** Returns all interesting timestamp when reading range [addr, addr+size) with
+    minimum view [vpre]. Those are [vpre] itself and any later timestamp that
+    contain an overlapping write event *)
+Definition read_candidates (addr : address) (size : N) (vpre : view)
+    (mem : Memory.t) : list nat :=
+  PromMemory.cut_after_with_timestamps vpre mem
+    |> omap (λ '(msg, t),
+              if decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg))
+              then Some t else None)
+    |> cons vpre.
+
+(** Per-byte forwarding. Forwarding fires when [fwdb !! addr] has an entry [fwd]
+    with [fwd.time > tread], which means there is a more recent po-previous
+    write that hasn't been propagated yet. In that case we replace the
+    byte/view/timestamp with the ones of the forwarded write. The timestamp
+    returned (last value) is for coherence checking purposes). Returns [None] if
+    no forwarding occurs *)
+Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
+    (mem : Memory.t) (tread : nat) (addr : address) :
+    Exec.res string (option (bv 8 * view * nat)) :=
+  match fwdb !! addr with
+  | Some fwd =>
+    if (tread <? fwd.(FwdItem.time))%nat then
+      msg ← othrow "Failed to retrieve forwarded message" (mem !! fwd.(FwdItem.time));
+      byte' ← othrow "Failed to read a byte from the message" (Msg.read_byte addr msg);
+      mret (Some (byte', FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time)))
+    else mret None
+  | None => mret None
+  end.
+
+(** Performs a multi-byte memory read. This involves multiple steps:
+    - Computing the minimum view
+    - Picking an interesting timestamp [tread] with [read_candidates]
+    - Reading main memory at [tread] with [Memory.read_from]
+    - Applying forwarding ([read_fwd])
+    - Do a coherence check
+    - Update all the views that should be updated
+    - If exclusive, set the exclusive database *)
+Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryMap) :
+    Exec.t (PPState.t TState.t Msg.t IIS.t) string (bv (8 * size)) :=
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  ts ← mget PPState.state;
+  vaddr ← mget (IIS.strict ∘ PPState.iis);
+  guard_discard (TState.no_promises_until vaddr ts);;
+  let addrs := addr_range addr size in
+  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
+                (* SC Acquire loads are ordered after Release stores *)
+              ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
+  let vpre := vaddr ⊔ vbob in
+  mem ← mget PPState.mem;
+  tread ← mchoosel (read_candidates addr size vpre mem);
+  raw_bytes ← othrow "Memory read of unmapped bytes" $
+    Memory.read_from addr size tread init mem;
+  (* per-byte (value, view, write-timestamp) after forwarding *)
+  fwd_bytes ← mlift $
+    for (addr, (byte, twrite)) in zip addrs raw_bytes do
+      read_fwd ts.(TState.fwdb) macc mem tread addr
+        |$> default (byte, tread, twrite)
+    end;
+
+  let bytes := fwd_bytes.*1.*1 in
+  let read_views := fwd_bytes.*1.*2 in
+  let twrites := fwd_bytes.*2 in
+  (* Per-byte coherence: each byte's twrite ≥ that byte's coh view *)
+  guard_discard (∀ '(a,t) ∈ zip addrs twrites, (ts.(TState.coh) !!! a ≤ t)%nat);;
+  let res := bv_of_bytes (8 * size) bytes in
+  let vreads := foldr max 0%nat read_views in
+  let vpost := vpre ⊔ vreads in
+  mset PPState.state $ TState.update_cohs (zip addrs twrites);;
+  mset PPState.state $ TState.update TState.vrd vpost;;
+  mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
+  mset PPState.state $ TState.update TState.vcap vaddr;;
+  ( if is_exclusive macc
+    then mset PPState.state $ TState.set_xclb tread addr size
+    else mret ());;
+  mset PPState.iis $ IIS.add vpost;;
+  mret res.
+
+(** Performs a memory write for a thread [tid] at [addr]:
+
+    - First attempt to fulfill an existing promises, or add a new one otherwise
+    - Compute the minimum view of the write
+    - Discard if the write is not compatible with that view or coherence checks
+    - Discard if the write is supposed to be atomic, but other writes intervened
+    - Update all the views that should be updated
+    - Set the forwarding database
+    - If a new promise was added, return its minimum view, otherwise [None] *)
+Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
+    (data : bv (8 * size)) :
+    Exec.t (PPState.t TState.t Msg.t IIS.t) string (option view) :=
+  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
+  let msg := Msg.make size tid addr data in
+  let is_release := is_rel_acq macc in
+  let addrs := addr_range addr size in
+  ts ← mget PPState.state;
+  mem ← mget PPState.mem;
+  '((time, new_promise) : nat * bool) ←
+    match Memory.fulfill msg (TState.prom ts) mem with
+    | Some time => mret (time, false)
+    | None =>
+      time ← Exec.liftSt PPState.mem $ Memory.promise msg;
+      mret (time, true)
+    end;
+  let vbob :=
+    ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
+    ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  vdata ← mget (IIS.strict ∘ PPState.iis);
+  let vpre := vdata ⊔ ts.(TState.vcap) ⊔ vbob in
+  guard_discard (vpre < time ∧ ∀ a ∈ addrs, ts.(TState.coh) !!! a < time)%nat;;
+  mset (TState.prom ∘ PPState.state) $ filter (λ t, t ≠ time);;
+  mset PPState.state $ TState.update_cohs (map (., time) addrs);;
+  mset PPState.state $ TState.update TState.vwr time;;
+  mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
+  xcl ← if is_exclusive macc then
+      match TState.xclb ts with
+      | None => mdiscard
+      | Some (tread, raddr, rsize) =>
+        mset PPState.state $ TState.clear_xclb;;
+        if decide (addr = raddr ∧ size = rsize) then
+          nmem ← mget PPState.mem;
+          guard_discard' (Memory.exclusive tid addr size tread (Memory.cut_after time nmem));;
+          mret true
+        else
+          (* If the store-exclusive footprint does not exactly match the previous
+            load-exclusive footprint, it may still succeed as an ordinary store,
+            but without exclusive atomicity guarantees. *)
+          mret false
+      end
+    else mret false;
+  mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
+  mret (if (new_promise : bool) then Some vpre else None).
+
 
 
 (** Runs an outcome in the promising model while doing the correct view tracking
@@ -501,14 +504,10 @@ Section RunOutcome.
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       if is_ifetch macc then
         mem ← mget PPState.mem;
-        opcode ← Exec.liftSt PPState.state (read_imem addr size initmem mem);
+        opcode ← mlift $ read_imem addr size initmem mem;
         mret (Ok (opcode, 0%bv), None)
       else if is_explicit macc then
-        vaddr ← mget (IIS.strict ∘ PPState.iis);
-        mem ← mget PPState.mem;
-        '(view, val) ← Exec.liftSt
-          PPState.state (read_mem addr size vaddr macc initmem mem);
-        mset PPState.iis $ IIS.add view;;
+        val ← read_mem addr size macc initmem;
         mret (Ok (val, 0%bv), None)
       else mthrow "Read is not explicit nor ifetch"
   | MemRead _ => mthrow "Memory read with tags unsupported"
@@ -520,14 +519,9 @@ Section RunOutcome.
       mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space size 0) val tags =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
-      if is_explicit macc then
-        mem ← mget PPState.mem;
-        vdata ← mget (IIS.strict ∘ PPState.iis);
-        '(mem, vpre_opt) ← Exec.liftSt PPState.state
-                $ write_mem_xcl tid addr size vdata macc mem val;
-        msetv PPState.mem mem;;
-        mret (Ok (), vpre_opt)
-      else mthrow "Unsupported non-explicit write"
+      guard_or "Only explicit writes are supported" (is_explicit macc);;
+      vpre_opt ← write_mem tid addr size macc val;
+      mret (Ok (), vpre_opt)
   | MemWrite _ _ _ => mthrow "Memory write with tags unsupported"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
