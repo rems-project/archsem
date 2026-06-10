@@ -244,6 +244,12 @@ Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
 Definition mchoosef `{MChoose M, FMap M} `{Finite A} : M A :=
   mchoosel (enum A).
 
+(** Same as [mchoosel] but for an option *)
+Definition odiscard `{MChoose M, FMap M, MRet M} {A} (v : option A) : M A :=
+  match v with
+  | None => mdiscard
+  | Some x => mret x
+  end.
 
 (** Same as [guard] but discard the execution if the proposition is false  *)
 Definition guard_discard `{MChoose M, FMap M, MRet M} P `{Decision P} : M P :=

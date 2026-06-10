@@ -197,6 +197,7 @@ Module TState.
         visb : view; (* The maximum output view of an isb *)
         vacq : view; (* The maximum output view of an acquire access *)
         vrel : view; (* The maximum output view of an release access *)
+        vrmw : view; (* The maximum output view of a RMW atomic *)
 
         (* Forwarding database. The first view is the timestamp of the
            write while the second view is the max view of the dependencies
@@ -210,7 +211,7 @@ Module TState.
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom;regs;coh;vrd;vwr;vdmbst;vdmb;vcap;visb;vacq;vrel;fwdb;xclb>.
+    settable! make <prom;regs;coh;vrd;vwr;vdmbst;vdmb;vcap;visb;vacq;vrel;vrmw;fwdb;xclb>.
 
   Definition init (mem : memoryMap) (iregs : registerMap) :=
     ({|
@@ -225,6 +226,7 @@ Module TState.
       visb := 0;
       vacq := 0;
       vrel := 0;
+      vrmw := 0;
       fwdb := ∅;
       xclb := None
     |})%nat.
@@ -301,12 +303,13 @@ Module IIS.
   Record t :=
     make {
       strict : view;
+      rmw_read : option view; (* The view of the previous RMW read, in a RMW instruction *)
     }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <strict>.
+    settable! make <strict; rmw_read>.
 
-  Definition init : t := make 0.
+  Definition init : t := make 0 None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
@@ -343,6 +346,28 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
               then Some t else None)
     |> cons vpre.
 
+(** When doing a RMW read, the only valid read position is just before the next
+    write to be done at that location, or the end of memory if there is not one
+    yet.
+
+    If vpre is after this write, the execution is impossible.
+
+    Calling this function instead for [read_candidates] for RMW reads is an
+    optimisation. The [write_mem] code performs the required checks anyway *)
+Definition read_candidate_rmw (addr : address) (vpre : view)
+    (mem : Memory.t) (proms : list nat) : option nat :=
+  let corres_write :=
+    proms
+      |> filter (λ t, if mem !! t is Some msg then msg.(Msg.addr) = addr else false)
+      |> reverse
+      |> head in
+  if corres_write is Some t
+  then if decide (vpre < t)%nat
+       then Some (t - 1)%nat
+       else None
+  else Some (length mem).
+
+
 (** Per-byte forwarding. Forwarding fires when [fwdb !! addr] has an entry [fwd]
     with [fwd.time > tread], which means there is a more recent po-previous
     write that hasn't been propagated yet. In that case we replace the
@@ -372,7 +397,6 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
     - If exclusive, set the exclusive database *)
 Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryMap) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (bv (8 * size)) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mget PPState.state;
   vaddr ← mget (IIS.strict ∘ PPState.iis);
   guard_discard (TState.no_promises_until vaddr ts);;
@@ -382,7 +406,12 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
-  tread ← mchoosel (read_candidates addr size vpre mem);
+  tread ← if is_atomic_rmw macc
+    then
+      tread ← odiscard (read_candidate_rmw addr vpre mem ts.(TState.prom));
+      msetv (IIS.rmw_read ∘ PPState.iis) $ Some tread;;
+      mret tread
+    else mchoosel (read_candidates addr size vpre mem);
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
   (* per-byte (value, view, write-timestamp) after forwarding *)
@@ -422,7 +451,6 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
 Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
     (data : bv (8 * size)) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let msg := Msg.make size tid addr data in
   let is_release := is_rel_acq macc in
   let addrs := addr_range addr size in
@@ -435,6 +463,12 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
       time ← Exec.liftSt PPState.mem $ Memory.promise msg;
       mret (time, true)
     end;
+  ( if is_atomic_rmw macc then
+      rmw_read_opt ← mget (IIS.rmw_read ∘ PPState.iis);
+      tread ← othrow "RMW write without a read" rmw_read_opt;
+      guard_discard' (Memory.exclusive tid addr size tread time mem)
+    else mret ());;
+
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in

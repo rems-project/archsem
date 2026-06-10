@@ -55,6 +55,7 @@ Definition othrow `{MThrow E M} `{MRet M} {A} (err : E) (v : option A) : M A :=
 
 Notation ofail := (othrow ()).
 
+
 (** * EqSomeUnfold *)
 
 Class EqSomeUnfold {A} (oa : option A) (a : A) (P : Prop) :=
