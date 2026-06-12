@@ -288,6 +288,12 @@ Module TState.
 
   (** Adds a promise to the promise set *)
   Definition promise (v : view) : t → t := set prom (v ::.).
+
+  Definition no_promises_until (v : view) (ts : t) : Prop :=
+    ∀ p ∈ ts.(prom), (v < p)%nat.
+  #[global] Instance Decision_no_promises_until (v : view) (ts : t) :
+      Decision (no_promises_until v ts).
+  Proof. unfold_decide. Defined.
 End TState.
 
 
@@ -342,9 +348,10 @@ Definition apply_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
 Definition read_mem (addr : address) (size : N) (vaddr : view) (macc : mem_acc)
            (init : memoryMap) (mem : Memory.t) :
     Exec.t TState.t string (view * bv (8 * size)) :=
+  ts ← mGet;
+  guard_discard (TState.no_promises_until vaddr ts);;
   guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let addrs := addr_range addr size in
-  ts ← mGet;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
@@ -473,6 +480,8 @@ Section RunOutcome.
       vreg' ←
         (if reg =? pc_reg
          then
+           ts ← mget PPState.state;
+           guard_discard (TState.no_promises_until vreg ts);;
            mset PPState.state $ TState.update TState.vcap vreg;;
            mret 0%nat
          else mret vreg);
@@ -505,6 +514,8 @@ Section RunOutcome.
   | MemRead _ => mthrow "Memory read with tags unsupported"
   | MemWriteAddrAnnounce _ =>
       vaddr ← mget (IIS.strict ∘ PPState.iis);
+      ts ← mget PPState.state;
+      guard_discard (TState.no_promises_until vaddr ts);;
       mset PPState.state $ TState.update TState.vcap vaddr;;
       mret ((), None)
   | MemWrite (MemReq.make macc addr addr_space size 0) val tags =>
@@ -522,28 +533,36 @@ Section RunOutcome.
       ts ← mget PPState.state;
       match dmb.(DxB_types) with
       | MBReqTypes_All (* dmb sy *) =>
-          mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
+          let vpost := ts.(TState.vrd) ⊔ ts.(TState.vwr) in
+          guard_discard (TState.no_promises_until vpost ts);;
+          mset PPState.state $ TState.update TState.vdmb vpost
       | MBReqTypes_Reads (* dmb ld *) =>
-          mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
+          let vpost := ts.(TState.vrd) in
+          guard_discard (TState.no_promises_until vpost ts);;
+          mset PPState.state $ TState.update TState.vdmb vpost
       | MBReqTypes_Writes (* dmb st *) =>
-          mset PPState.state $ TState.update TState.vdmbst ts.(TState.vwr)
+          let vpost := ts.(TState.vwr) in
+          guard_discard (TState.no_promises_until vpost ts);;
+          mset PPState.state $ TState.update TState.vdmbst vpost
       end;;
       mret ((), None)
-  | Barrier (Barrier_DSB dsb) => (* dsb: in UM, same as dmb *)
+  | Barrier (Barrier_DSB dsb) => (* dsb: in UM, same as dmb (except dsb st order loads) *)
       ts ← mget PPState.state;
-      match dsb.(DxB_types) with
-      | MBReqTypes_All (* dsb sy *) =>
-          mset PPState.state $ TState.update TState.vdmb (ts.(TState.vrd) ⊔ ts.(TState.vwr))
-      | MBReqTypes_Reads (* dsb ld *) =>
-          mset PPState.state $ TState.update TState.vdmb ts.(TState.vrd)
-      | MBReqTypes_Writes (* dsb st *) =>
-          mset PPState.state $ TState.update TState.vdmb ts.(TState.vwr)
-      end;;
+      let vpost :=
+        match dsb.(DxB_types) with
+        | MBReqTypes_All (* dsb sy *) => ts.(TState.vrd) ⊔ ts.(TState.vwr)
+        | MBReqTypes_Reads (* dsb ld *) => ts.(TState.vrd)
+        | MBReqTypes_Writes (* dsb st *) => ts.(TState.vwr)
+        end in
+      guard_discard (TState.no_promises_until vpost ts);;
+      mset PPState.state $ TState.update TState.vdmb vpost;;
       mret ((), None)
   | Barrier (Barrier_ISB ()) => (* isb *)
       ts ← mget PPState.state;
-    mset PPState.state $ TState.update TState.visb (TState.vcap ts);;
-    mret ((), None)
+      let vpost := TState.vcap ts in
+      guard_discard (TState.no_promises_until vpost ts);;
+      mset PPState.state $ TState.update TState.visb vpost;;
+      mret ((), None)
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
 
