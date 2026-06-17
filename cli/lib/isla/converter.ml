@@ -38,12 +38,13 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Convert isla IR to Testrepr.t.
+(** Convert Isla IR to Testrepr.t.
 
     Pipeline: IR -> assembly_input -> Assembler.assemble -> Testrepr.t.
-    Config supplies architecture defaults, the assembler returns linked code/data
-    addresses, and the final conversion builds memory, registers, termination,
-    and outcomes. *)
+    The converter fixes the VA layout for code/data symbols before calling the
+    assembler. The assembler only emits code bytes and applies relocations for
+    those preassigned addresses. The converter then evaluates terms and builds
+    registers, memory, termination, and outcomes. *)
 
 open Litmus
 module RegValGen = Archsem.RegValGen
@@ -70,7 +71,7 @@ let instruction_step =
 let default_memory_size =
   Config.make_getter Toml.get_positive ["isla"; "default_memory_size"]
 
-(** {1 IR to assembly_input} *)
+(** {1 Value encoding and term evaluation} *)
 
 let init_bytes_of_value mem_size sym value =
   if Z.numbits value > mem_size * 8 then
@@ -121,104 +122,88 @@ let normalize_register_gen ~arch ~context reg_name gen =
         Archsem.X86.RegVal.(to_gen (of_string_gen reg_name gen))
   with Failure msg -> eval_error context "%s" msg
 
-let data_symbol_of_value ~context ~resolve_sym mem_size sym value =
-  let value = eval_term ~context ~resolve_sym value in
-  {Assembler.name = sym; init_bytes = init_bytes_of_value mem_size sym value}
+(** {1 Assembly input} *)
+
+(* Explicit section addresses are already consumed before allocation starts.
+   This assumes each assembled named section fits in one allocator page. *)
+let reserved_section_addrs sections =
+  List.filter_map (fun (sec : Ir.section) -> sec.address) sections
+
+let thread_section_name tid = Printf.sprintf "__thread%d" tid
 
 let to_assembly_input (ir : Ir.t) : Assembler.assembly_input =
-  let mem_size = default_memory_size () in
+  let allocator =
+    Allocator.make ~reserved:(reserved_section_addrs ir.sections) ()
+  in
   let code_sections =
     List.mapi
       (fun i (thread : Ir.thread) ->
-         { Assembler.name = Printf.sprintf "thread%d" i;
+         { Assembler.name = thread_section_name i;
            code = thread.code;
-           fixed_addr = None
+           addr = Allocator.alloc_page allocator
          }
        )
       ir.threads
   in
-  let data_symbols =
-    List.map
-      (fun sym ->
-         let init_value =
-           List.assoc_opt sym ir.locations |> Option.value ~default:Term.zero
-         in
-         (* A symbol-valued initializer needs the post-link symbol address, but
-            the assembler only needs the block size to compute layout here. *)
-         data_symbol_of_value ~context:(Location_init sym)
-           ~resolve_sym:(fun _ -> 0)
-           mem_size sym init_value
-       )
-      ir.symbolic
-  in
-  let fixed_sections =
+  let named_sections =
     List.map
       (fun (sec : Ir.section) ->
-         { Assembler.name = sec.sec_name;
-           code = sec.code;
-           fixed_addr = Some sec.address
-         }
+         let addr =
+           match sec.address with
+           | Some addr -> addr
+           | None -> Allocator.alloc_page allocator
+         in
+         {Assembler.name = sec.sec_name; code = sec.code; addr}
        )
       ir.sections
   in
-  {sections = code_sections @ fixed_sections; symbols = data_symbols}
+  let symbols =
+    List.map
+      (fun sym ->
+         let addr = Allocator.alloc_page allocator in
+         {Assembler.name = sym; addr}
+       )
+      ir.symbolic
+  in
+  {Assembler.sections = code_sections @ named_sections; symbols}
 
-let resolve_data_symbols
-      (asm_result : Assembler.assembly_result)
-      (ir : Ir.t)
-      mem_size
+(** {1 Memory, registers, and termination} *)
+
+(** Convert linked sections into named Testrepr code memory blocks. *)
+let build_code_memory (asm_result : Assembler.assembly_result) :
+  Testrepr.memory_block list
+  =
+  let code_step = instruction_step () in
+  List.map
+    (fun (sec : Assembler.linked_section) ->
+       { Testrepr.addr = sec.addr;
+         step = code_step;
+         data = sec.data;
+         sym = Some sec.name;
+         kind = Testrepr.Code
+       }
+     )
+    asm_result.sections
+
+let build_data_memory ~mem_size ~resolve_sym ~locations symbolic :
+  Testrepr.memory_block list
   =
   List.map
     (fun sym ->
        let init_value =
-         List.assoc_opt sym ir.locations |> Option.value ~default:Term.zero
+         List.assoc_opt sym locations |> Option.value ~default:Term.zero
        in
-       data_symbol_of_value ~context:(Location_init sym)
-         ~resolve_sym:(Assembler.resolve_symbol asm_result)
-         mem_size sym init_value
+       let value =
+         eval_term ~context:(Location_init sym) ~resolve_sym init_value
+       in
+       { Testrepr.addr = resolve_sym sym;
+         step = mem_size;
+         data = init_bytes_of_value mem_size sym value;
+         sym = Some sym;
+         kind = Testrepr.Data
+       }
      )
-    ir.symbolic
-
-(** {1 Memory, registers, and termination} *)
-
-(** Convert linked sections and data symbols into Testrepr memory blocks.
-    User-named sections (those listed in [user_section_names]) carry
-    [sym = Some name]; auto-generated thread sections do not. *)
-let build_memory
-      ~data_symbols
-      ~user_section_names
-      (asm_result : Assembler.assembly_result)
-  =
-  let code_step = instruction_step () in
-  let mem_size = default_memory_size () in
-  let code_memory =
-    List.map
-      (fun (sec : Assembler.linked_section) ->
-         let sym =
-           if List.mem sec.name user_section_names then Some sec.name else None
-         in
-         { Testrepr.addr = sec.addr;
-           step = code_step;
-           data = sec.data;
-           sym;
-           kind = Testrepr.Code
-         }
-       )
-      asm_result.sections
-  in
-  let data_memory =
-    List.map
-      (fun (ds : Assembler.data_symbol) ->
-         { Testrepr.addr = Assembler.resolve_symbol asm_result ds.name;
-           step = mem_size;
-           data = ds.init_bytes;
-           sym = Some ds.name;
-           kind = Testrepr.Data
-         }
-       )
-      data_symbols
-  in
-  code_memory @ data_memory
+    symbolic
 
 let find_section name (asm_result : Assembler.assembly_result) =
   List.find
@@ -254,7 +239,7 @@ let build_threads ~arch ~resolve_sym asm_result (threads : Ir.thread list) :
     (fun tid (thread : Ir.thread) ->
        assert (tid == thread.tid);
        (* Should have been checked before *)
-       let sec = find_section (Printf.sprintf "thread%d" tid) asm_result in
+       let sec = find_section (thread_section_name tid) asm_result in
        let regs = build_registers ~arch ~resolve_sym ~pc sec.addr thread in
        let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
        {Testrepr.regs; breakpoints}
@@ -263,21 +248,20 @@ let build_threads ~arch ~resolve_sym asm_result (threads : Ir.thread list) :
 
 (** {1 Orchestration} *)
 
-let to_testrepr (ir : Ir.t) : Testrepr.t =
+let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   let mem_size = default_memory_size () in
   let asm_input = to_assembly_input ir in
-  let asm_result = Assembler.assemble asm_input in
-  let data_symbols = resolve_data_symbols asm_result ir mem_size in
+  let asm_result = Assembler.assemble ~filename asm_input in
   let resolve_sym sym = Assembler.resolve_symbol asm_result sym in
   let threads = build_threads ~arch:ir.arch ~resolve_sym asm_result ir.threads in
-  let user_section_names =
-    List.map (fun (s : Ir.section) -> s.sec_name) ir.sections
+  let code_memory = build_code_memory asm_result in
+  let data_memory =
+    build_data_memory ~mem_size ~resolve_sym ~locations:ir.locations ir.symbolic
   in
-  let memory = build_memory ~data_symbols ~user_section_names asm_result in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
     threads;
-    memory;
+    memory = code_memory @ data_memory;
     kind = ir.kind;
     final =
       Assertion.map_cst

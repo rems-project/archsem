@@ -92,7 +92,7 @@ let parse_testfile (fmt : format option) (filename : string) : Testrepr.t =
       | Archsem -> Parser.parse_to_testrepr toml
       | Isla ->
           toml |> Isla.Ir.of_toml |> Isla.Normalize.apply
-          |> Isla.Converter.to_testrepr
+          |> Isla.Converter.to_testrepr ~filename
     in
     let basename =
       filename |> Filename.basename |> Filename.remove_extension

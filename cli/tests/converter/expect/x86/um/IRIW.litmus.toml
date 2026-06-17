@@ -2,49 +2,53 @@ arch = "X86"
 name = "IRIW"
 
 [[memory]]
+  sym = "__thread0"
   kind = "code"
-  addr = 0x3000
+  addr = 0x1000
   step = 1
   data = [0xc7, 1, 1, 0, 0, 0]
 
 [[memory]]
+  sym = "__thread1"
   kind = "code"
-  addr = 0x3006
+  addr = 0x2000
   step = 1
   data = [0x8b, 1, 0x8b, 0x1a]
 
 [[memory]]
+  sym = "__thread2"
   kind = "code"
-  addr = 0x300a
+  addr = 0x3000
   step = 1
   data = [0xc7, 2, 1, 0, 0, 0]
 
 [[memory]]
+  sym = "__thread3"
   kind = "code"
-  addr = 0x3010
+  addr = 0x4000
   step = 1
   data = [0x8b, 2, 0x8b, 0x19]
 
 [[memory]]
   sym = "x"
-  addr = 0x1000
+  addr = 0x5000
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 0x2000
+  addr = 0x6000
   step = 8
   data = 0
 
 [thread]
 
 [thread."0"]
-  breakpoints = [0x3006]
+  breakpoints = [0x1006]
 
 [thread."0".regs]
-  rip = 0x3000
-  rcx = 0x1000
+  rip = 0x1000
+  rcx = 0x5000
   rax = 0
   rdx = 0
   rbx = 0
@@ -63,12 +67,12 @@ name = "IRIW"
   rflags = 0
 
 [thread."1"]
-  breakpoints = [0x300a]
+  breakpoints = [0x2004]
 
 [thread."1".regs]
-  rip = 0x3006
-  rcx = 0x1000
-  rdx = 0x2000
+  rip = 0x2000
+  rcx = 0x5000
+  rdx = 0x6000
   rax = 0
   rbx = 0
   rsp = 0
@@ -86,11 +90,11 @@ name = "IRIW"
   rflags = 0
 
 [thread."2"]
-  breakpoints = [0x3010]
+  breakpoints = [0x3006]
 
 [thread."2".regs]
-  rip = 0x300a
-  rdx = 0x2000
+  rip = 0x3000
+  rdx = 0x6000
   rax = 0
   rcx = 0
   rbx = 0
@@ -109,12 +113,12 @@ name = "IRIW"
   rflags = 0
 
 [thread."3"]
-  breakpoints = [0x3014]
+  breakpoints = [0x4004]
 
 [thread."3".regs]
-  rip = 0x3010
-  rcx = 0x1000
-  rdx = 0x2000
+  rip = 0x4000
+  rcx = 0x5000
+  rdx = 0x6000
   rax = 0
   rbx = 0
   rsp = 0

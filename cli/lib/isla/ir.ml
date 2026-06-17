@@ -55,7 +55,7 @@ type thread =
 
 type section =
   { sec_name : string;
-    address : int;
+    address : int option;
     code : string
   }
 
@@ -127,7 +127,9 @@ let parse_threads toml =
   l
 
 let parse_section name table =
-  let address = Toml.find table (Toml.get_integer ~strict:false) ["address"] in
+  let address =
+    Toml.find_opt table (Toml.get_integer ~strict:false) ["address"]
+  in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   {sec_name = name; address; code}
 

@@ -2,25 +2,26 @@ arch = "Arm"
 name = "STRW_LDRX"
 
 [[memory]]
+  sym = "__thread0"
   kind = "code"
-  addr = 0x2000
+  addr = 0x1000
   step = 4
   data = [0x52800542, 0xb9000022, 0xf9400020]
 
 [[memory]]
   sym = "x"
-  addr = 0x1000
+  addr = 0x2000
   step = 8
   data = 0
 
 [thread]
 
 [thread."0"]
-  breakpoints = [0x200c]
+  breakpoints = [0x100c]
 
 [thread."0".regs]
-  _PC = 0x2000
-  "R1" = 0x1000
+  _PC = 0x1000
+  "R1" = 0x2000
   "R0" = 0
   "R2" = 0
   "R3" = 0

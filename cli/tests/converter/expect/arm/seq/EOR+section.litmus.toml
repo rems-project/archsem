@@ -2,17 +2,18 @@ arch = "Arm"
 name = "EOR+section"
 
 [[memory]]
+  sym = "__thread0"
+  kind = "code"
+  addr = 0x2000
+  step = 4
+  data = 0x17fffc00
+
+[[memory]]
   sym = "helper"
   kind = "code"
   addr = 0x1000
   step = 4
   data = [0xca020020, 0x14000400]
-
-[[memory]]
-  kind = "code"
-  addr = 0x2000
-  step = 4
-  data = 0x17fffc00
 
 [thread]
 
