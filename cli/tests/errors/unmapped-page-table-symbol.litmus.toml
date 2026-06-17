@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "unmapped-page-table-symbol"
+symbolic = ["x"]
+
+page_table_setup = """
+identity 0x1000 with code;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

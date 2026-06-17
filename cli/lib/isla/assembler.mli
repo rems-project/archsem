@@ -82,9 +82,6 @@ type assembly_result =
     [filename] names copied artifacts when [--asm-dump] is enabled. *)
 val assemble : filename:string -> assembly_input -> assembly_result
 
-(** Look up a symbol address by name. Raises [Failure] if not found. *)
-val resolve_symbol : assembly_result -> string -> int
-
 (** {1 Dump configuration}
 
     When set to [Some dir], the assembler copies its [.s], [.ld] and

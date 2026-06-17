@@ -38,96 +38,34 @@
 (*                                                                            *)
 (******************************************************************************)
 
-%{
-  open Litmus.Assertion
-%}
+(** Page-table setup AST.
 
-%token <Z.t> NUM
-%token <string> IDENT
-%token LPAREN "("
-%token RPAREN ")"
-%token COMMA ","
-%token AND "&"
-%token OR "|"
-%token NOT "~"
-%token EQ "="
-%token STAR "*"
-%token COLON ":"
-%token MINUS "-"
-%token SEMICOLON ";"
-%token MAPS_TO "|->"
-%token MAYBE_MAPS_TO "?->"
-%token PHYSICAL
-%token IDENTITY
-%token WITH
-%token CODE
-%token DATA
-%token TRUE
-%token FALSE EOF
+    PA-side names may be declared with [physical], or allocated on first use by
+    mapping/data-init statements. *)
+type attr =
+  | Code
+  | Data
 
-%left OR
-%left AND
-%nonassoc NOT
-
-%start <Term.t Litmus.Assertion.expr> assertion
-%start <Term.t> binding
-%start <Page_table_ast.stmt list> page_table_setup
-%type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
-%type <Page_table_ast.attr> page_table_attr
-
-%%
-
-assertion:
-  | e = prop; EOF { e }
-
-binding:
-  | v = term; EOF { v }
-
-page_table_setup:
-  | ss = nonempty_list(page_table_stmt); EOF { ss }
-
-page_table_stmt:
-  | s = page_table_stmt_inner; ";" { s }
-
-page_table_stmt_inner:
-  | PHYSICAL; names = nonempty_list(IDENT)
-    { Page_table_ast.Physical names }
-  | va_name = IDENT; "|->"; pa_name = IDENT
-    { Page_table_ast.Mapping {va_name; pa_name} }
-  | va_name = IDENT; "?->"; pa_name = IDENT
-    { Page_table_ast.MaybeMapping {va_name; pa_name} }
-  | "*"; pa_name = IDENT; "="; value = NUM
-    { Page_table_ast.DataInit {pa_name; value} }
-  | IDENTITY; addr = NUM; WITH; attr = page_table_attr
-    { Page_table_ast.IdentityMapping {addr; attr} }
-
-page_table_attr:
-  | CODE { Page_table_ast.Code }
-  | DATA { Page_table_ast.Data }
-
-prop:
-  | e1 = prop; "|"; e2 = prop { Or [e1; e2] }
-  | e1 = prop; "&"; e2 = prop { And [e1; e2] }
-  | "~"; e = prop { Not e }
-  | "("; e = prop; ")" { e }
-  | a = atom { Atom a }
-  | TRUE { True }
-  | FALSE { False }
-
-atom:
-  | lhs = loc; "="; rhs = term { CmpCst (lhs, rhs) }
-  | lhs = loc; "="; rhs = loc { CmpLoc (lhs, rhs) }
-
-loc:
-  | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | "*"; s = IDENT { Mem s }
-
-term:
-  | v = NUM { Term.Const v }
-  | "-"; v = NUM { Term.Const (Z.neg v) }
-  | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
-  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
-  | s = IDENT { Term.Sym s }
-
-kw_arg:
-  | k = IDENT; "="; v = term { (k, v) }
+type stmt =
+  (* [physical pa_x pa_y;] predeclares PA-side names. *)
+  | Physical of string list
+  (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side name. *)
+  | Mapping of
+      { va_name : string;
+        pa_name : string
+      }
+  (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
+  | MaybeMapping of
+      { va_name : string;
+        pa_name : string
+      }
+  (* [*pa_x = value;] initialises data at a PA-side name. *)
+  | DataInit of
+      { pa_name : string;
+        value : Z.t
+      }
+  (* [identity addr with attr;] maps one page to itself. *)
+  | IdentityMapping of
+      { addr : Z.t;
+        attr : attr
+      }

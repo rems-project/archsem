@@ -1,0 +1,17 @@
+arch = "AArch64"
+name = "duplicate-page-table-pa"
+symbolic = ["x", "y"]
+
+page_table_setup = """
+x |-> pa_x;
+y |-> pa_x;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

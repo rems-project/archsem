@@ -142,28 +142,28 @@ module Checker (Arch : Archsem.Arch) = struct
 
   (** Lookup a location, expect that it will workout, error must be handled up
       the call stack *)
-  let lookup_loc ~resolve_sym (fs : ArchState.t) : loc -> Z.t = function
+  let lookup_loc ~lookup_addr (fs : ArchState.t) : loc -> Z.t = function
     | Reg (tid, name) ->
         let regs = ArchState.reg tid fs in
         let arch_name = Config.get_reg_rename_or name in
         let reg = Reg.of_string arch_name in
         RegMap.getZ reg regs
     | Mem sym ->
-        let (addr, size) = resolve_sym sym in
+        let (addr, size) = lookup_addr sym in
         MemMap.lookup addr size (ArchState.mem fs)
 
-  let check_atom ~resolve_sym (fs : ArchState.t) : Z.t atom -> bool = function
-    | CmpCst (loc, v) -> lookup_loc ~resolve_sym fs loc = v
+  let check_atom ~lookup_addr (fs : ArchState.t) : Z.t atom -> bool = function
+    | CmpCst (loc, v) -> lookup_loc ~lookup_addr fs loc = v
     | CmpLoc (loc, loc') ->
-        lookup_loc ~resolve_sym fs loc = lookup_loc ~resolve_sym fs loc'
+        lookup_loc ~lookup_addr fs loc = lookup_loc ~lookup_addr fs loc'
 
   (* Check if a final state satisfies mem_conds *)
-  let rec check_assertion ~resolve_sym (fs : ArchState.t) : Z.t expr -> bool
+  let rec check_assertion ~lookup_addr (fs : ArchState.t) : Z.t expr -> bool
     = function
     | True -> true
     | False -> false
-    | And exprs -> List.for_all (check_assertion ~resolve_sym fs) exprs
-    | Or exprs -> List.exists (check_assertion ~resolve_sym fs) exprs
-    | Not expr -> not (check_assertion ~resolve_sym fs expr)
-    | Atom atom -> check_atom ~resolve_sym fs atom
+    | And exprs -> List.for_all (check_assertion ~lookup_addr fs) exprs
+    | Or exprs -> List.exists (check_assertion ~lookup_addr fs) exprs
+    | Not expr -> not (check_assertion ~lookup_addr fs expr)
+    | Atom atom -> check_atom ~lookup_addr fs atom
 end

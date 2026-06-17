@@ -75,7 +75,7 @@ module Make (Arch : Archsem.Arch) = struct
 
   (** Convert Testrepr.t into ArchState.t and termination conditions. *)
   let testrepr_to_archstate (test : Testrepr.t) =
-    let resolve_sym = Testrepr.resolve_sym test in
+    let lookup_addr = Testrepr.lookup_addr test in
     try
       let regs = regmaps_of_threads test.threads in
       let mem = memory_of_testrepr test.memory in
@@ -84,7 +84,7 @@ module Make (Arch : Archsem.Arch) = struct
 
       (* Check final cond can be evaluated on initial state *)
       let locs = Assertion.get_unique_locs test.final in
-      let _ = List.map (AssertionChecker.lookup_loc ~resolve_sym init) locs in
+      let _ = List.map (AssertionChecker.lookup_loc ~lookup_addr init) locs in
 
       (init, term)
     with Failure msg ->

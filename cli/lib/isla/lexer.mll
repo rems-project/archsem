@@ -50,17 +50,27 @@ let ident_start = ['a'-'z' 'A'-'Z' '_']
 let ident_char = ident_start | digit
 
 rule token = parse
-  | [' ' '\t' '\n']+ { token lexbuf }
+  | [' ' '\t']+ { token lexbuf }
+  | "\r\n" { Lexing.new_line lexbuf; token lexbuf }
+  | ['\n' '\r'] { Lexing.new_line lexbuf; token lexbuf }
   | '(' { LPAREN }
   | ')' { RPAREN }
   | '&' { AND }
+  | "|->" { MAPS_TO }
+  | "?->" { MAYBE_MAPS_TO }
   | '|' { OR }
   | '~' { NOT }
   | '=' { EQ }
   | '*' { STAR }
   | ':' { COLON }
+  | ';' { SEMICOLON }
   | ',' { COMMA }
   | '-' { MINUS }
+  | "physical" { PHYSICAL }
+  | "identity" { IDENTITY }
+  | "with" { WITH }
+  | "code" { CODE }
+  | "data" { DATA }
   | "true" { TRUE }
   | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }

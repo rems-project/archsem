@@ -1,5 +1,5 @@
 arch = "Arm"
-name = "MP"
+name = "MP+VM"
 
 [[memory]]
   sym = "__thread0"
@@ -16,14 +16,56 @@ name = "MP"
   data = [0xf9400020, 0xf9400062]
 
 [[memory]]
-  sym = "x"
-  addr = 0x3000
+  kind = "pagetable"
+  addr = 0x9008
+  step = 8
+  data = 0x14c3
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x9010
+  step = 8
+  data = 0x24c3
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x9018
+  step = 8
+  data = 0x6443
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x9020
+  step = 8
+  data = 0xa443
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x8000
+  step = 8
+  data = 0x9003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x7000
+  step = 8
+  data = 0x8003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x5000
+  step = 8
+  data = 0x7003
+
+[[memory]]
+  sym = "pa_x"
+  addr = 0x6000
   step = 8
   data = 0
 
 [[memory]]
-  sym = "y"
-  addr = 0x4000
+  sym = "pa_y"
+  addr = 0xa000
   step = 8
   data = 0
 
@@ -38,6 +80,9 @@ name = "MP"
   "R1" = 0x3000
   "R2" = 1
   "R3" = 0x4000
+  "TTBR0_EL1" = 0x5000
+  "SCTLR_EL1" = 1
+  CurrentEL = 1
   "R4" = 0
   "R5" = 0
   "R6" = 0
@@ -65,10 +110,8 @@ name = "MP"
   "R28" = 0
   "R29" = 0
   "R30" = 0
-  "SCTLR_EL1" = 0
   "TCR_EL1" = 0
   "ID_AA64MMFR1_EL1" = 0
-  CurrentEL = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
@@ -80,6 +123,9 @@ name = "MP"
   _PC = 0x2000
   "R1" = 0x4000
   "R3" = 0x3000
+  "TTBR0_EL1" = 0x5000
+  "SCTLR_EL1" = 1
+  CurrentEL = 1
   "R0" = 0
   "R2" = 0
   "R4" = 0
@@ -109,10 +155,8 @@ name = "MP"
   "R28" = 0
   "R29" = 0
   "R30" = 0
-  "SCTLR_EL1" = 0
   "TCR_EL1" = 0
   "ID_AA64MMFR1_EL1" = 0
-  CurrentEL = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0

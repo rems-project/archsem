@@ -170,3 +170,61 @@ Negative zero extension in Isla function
   File "negative-extz.litmus.toml", path "thread.0.init.R0":
   function: extz: argument bits must be non-negative
   [1]
+
+Page table DSL on unsupported architecture
+  $ archsem seq x86-page-table.litmus.toml
+  archsem: eval error:
+  File "x86-page-table.litmus.toml", path "page_table_setup":
+  page_table: only AArch64 is supported, got X86
+  [1]
+
+Page table DSL mapping source must be a known VA
+  $ archsem seq page-table-pa-as-va.litmus.toml
+  archsem: eval error:
+  File "page-table-pa-as-va.litmus.toml", path "page_table_setup":
+  page_table: undeclared VA: pa_x
+  [1]
+
+Page table DSL rejects duplicate VA mappings
+  $ archsem seq conflicting-page-table-mapping.litmus.toml
+  archsem: eval error:
+  File "conflicting-page-table-mapping.litmus.toml", path "page_table_setup":
+  page_table: conflicting mapping for VA 0x2000: existing descriptor 0x4443, new descriptor 0x5443
+  [1]
+
+Page table DSL permits PA aliases
+  $ archsem seq duplicate-page-table-pa.litmus.toml | sed '/^$/d'
+  Test duplicate-page-table-pa Allowed
+  States 1
+  Ok
+  Witnesses
+  Positive: 1 Negative: 0
+  Condition duplicate-page-table-pa exists true
+  Observation duplicate-page-table-pa Always 1 0
+  Time duplicate-page-table-pa 0.000
+
+Page table DSL permits unmapped symbolic data
+  $ archsem seq unmapped-page-table-symbol.litmus.toml
+  Test unmapped-page-table-symbol Allowed
+  States 1
+  
+  Ok
+  Witnesses
+  Positive: 1 Negative: 0
+  Condition unmapped-page-table-symbol exists true
+  Observation unmapped-page-table-symbol Always 1 0
+  Time unmapped-page-table-symbol 0.000
+
+Page table DSL rejects locations with page tables
+  $ archsem seq conflicting-page-table-data-init.litmus.toml
+  archsem: eval error:
+  File "conflicting-page-table-data-init.litmus.toml", path "page_table_setup":
+  page_table: [locations] is not supported with page_table_setup
+  [1]
+
+Page table DSL parser errors report the DSL line and TOML path
+  $ archsem seq invalid-page-table-token.litmus.toml
+  archsem: TOML error:
+  File "invalid-page-table-token.litmus.toml", path "page_table_setup":
+  page-table setup parse error at line 2, character 3
+  [1]
