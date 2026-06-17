@@ -1,0 +1,19 @@
+arch = "AArch64"
+name = "Alias+VM"
+symbolic = ["x", "y", "z"]
+
+page_table_setup = """
+x |-> pa_x;
+y |-> pa_x;
+"""
+
+[thread.0]
+init = { X0 = 1, X1 = "x", X2 = "y", TTBR0_EL1 = "page_table_base", SCTLR_EL1 = 1, CurrentEL = 1 }
+code = """
+	STR X0,[X1]
+	LDR X3,[X2]
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X3 = 1"

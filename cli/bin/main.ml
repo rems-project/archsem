@@ -110,7 +110,7 @@ let parse_testfile (fmt : format option) (filename : string) : Testrepr.t =
   | Toml.Path_error (path, Toml.GenError msg) ->
       Error.toml_error filename path "%s" msg;
       raise Exit
-  | Isla.Converter.Term_eval_error (path, msg) ->
+  | Isla.Converter.Eval_error (path, msg) ->
       Error.eval_error filename path "%s" msg;
       raise Exit
 

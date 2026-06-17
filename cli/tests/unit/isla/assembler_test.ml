@@ -56,6 +56,11 @@ let find_section name (result : assembly_result) =
 
 let assemble_test input = assemble ~filename:"assembler-test" input
 
+let resolve_symbol (result : assembly_result) name =
+  match List.assoc_opt name result.symbols with
+  | Some addr -> addr
+  | None -> Printf.ksprintf failwith "assembler: symbol %S not found" name
+
 let test_assemble_single_thread _ =
   let input =
     make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\tMOV W1, #42\n"]

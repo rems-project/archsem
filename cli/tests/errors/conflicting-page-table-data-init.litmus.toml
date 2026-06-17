@@ -1,0 +1,20 @@
+arch = "AArch64"
+name = "conflicting-page-table-data-init"
+symbolic = ["x"]
+
+page_table_setup = """
+x |-> pa_x;
+*pa_x = 1;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[locations]
+x = 2
+
+[final]
+expect = "sat"
+assertion = "true"

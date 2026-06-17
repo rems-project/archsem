@@ -129,6 +129,6 @@ let block_size (mb : memory_block) : int = Bytes.length mb.data
 let mem_by_sym (sym : string) =
   List.find (fun (mb : memory_block) -> mb.sym = Some sym)
 
-let resolve_sym test sym =
+let lookup_addr test sym =
   let block = mem_by_sym sym test.memory in
   (block.addr, block_size block)

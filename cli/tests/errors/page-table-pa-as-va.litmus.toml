@@ -1,0 +1,17 @@
+arch = "AArch64"
+name = "page-table-pa-as-va"
+
+page_table_setup = """
+physical pa_x;
+physical pa_y;
+pa_x |-> pa_y;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"
