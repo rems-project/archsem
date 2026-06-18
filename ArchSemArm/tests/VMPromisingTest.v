@@ -597,51 +597,55 @@ End MPDMBS.
 
 (* Break-before-make success case *)
 Module BBMSuccess.
-  (* Thread 0 updates the last-level PTE for VA 0x8000001000 and then
-     executes a simplified break-before-make sequence that only
-     invalidates the last-level mapping for that VA:
-       DSB ishst; TLBI VALE1IS, X0; DSB ish.
-    Thread 1 performs a data access via VA 0x8000001000.
+  (* Single thread that updates the last-level PTE for VA 0x8000001000
+     using the full break-before-make sequence:
+       load old; DSB ish; break; DSB ishst; TLBI VAE1IS, X7; DSB ish;
+       ISB; make; DSB ishst; ISB; load new.
   *)
 
-  Definition init_reg_t1 : registerMap :=
+  Definition init_reg : registerMap :=
     ∅
     |> reg_insert _PC 0x8000000500
-    |> reg_insert R0 0x8000001000    (* VA to load from *)
+    |> reg_insert R0 0x8000001000     (* VA to load from *)
     |> reg_insert R1 0x0
-    |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
-    |> reg_insert R3 0x0
-    |> reg_insert SCTLR_EL1 0x1
-    |> reg_insert TCR_EL1 0x0
-    |> reg_insert TTBR0_EL1 0x80000
-    |> reg_insert ID_AA64MMFR1_EL1 0x0
-    |> reg_insert CurrentEL 0x1.
-
-  Definition init_reg_t2 : registerMap :=
-    ∅
-    |> reg_insert _PC 0x8000000600
-    |> reg_insert R0 0x8000001000    (* VA to load from *)
-    |> reg_insert R1 0x0
+    |> reg_insert R2 0x8000010008     (* VA of L3[1] descriptor *)
+    |> reg_insert R3 0x0              (* Invalid descriptor for the break *)
+    |> reg_insert R4 0x60000000002f83 (* New nG descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R5 0x0              (* Value read from the old mapping *)
+    |> reg_insert R6 0x0              (* Value read from the new mapping *)
+    |> reg_insert R7 0x8000001        (* TLBI VA operand: page 0x8000001000 *)
+    |> reg_insert R8 0x0              (* Base offset for page table writes *)
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
     |> reg_insert TTBR0_EL1 0x80000
     |> reg_insert ESR_EL1 0x0
-    |> reg_insert VBAR_EL1 0x0       (* Exception vector base - needed for fault handling *)
-    |> reg_insert ID_AA64MMFR1_EL1 0x0
+    |> reg_insert FAR_EL1 0x0
+    |> reg_insert ELR_EL1 0x0
+    |> reg_insert VBAR_EL1 0x0
+    |> reg_insert ID_AA64MMFR1_EL1 0x2000000000
     |> reg_insert CurrentEL 0x1.
 
   Definition init_mem : memoryMap :=
     ∅
-    (* Instructions of T1 *)
-    |> mem_insert 0x500 4 0xf8226823  (* STR X3, [X1, X2] - invalidate the PTE *)
-    |> mem_insert 0x504 4 0xd5033a9f  (* DSB ISHST *)
-    |> mem_insert 0x508 4 0xd5088320  (* TLBI VAE1IS - TLB invalidate by 0x8000001000 *)
-    |> mem_insert 0x50C 4 0xd5033b9f  (* DSB ISH *)
-    |> mem_insert 0x510 4 0xd5033fdf  (* ISB *)
-    (* Instructions of T2 *)
-    |> mem_insert 0x600 4 0xf8606820  (* LDR X0, [X1, X0] - read 0x8000001000 *)
+    (* LDR X5, [X1, X0] - read through the old mapping *)
+    |> mem_insert 0x500 4 0xf8606825
+    |> mem_insert 0x504 4 0xd5033b9f  (* DSB ISH *)
+    (* STR X3, [X8, X2] - invalidate the PTE *)
+    |> mem_insert 0x508 4 0xf8226903
+    |> mem_insert 0x50C 4 0xd5033a9f  (* DSB ISHST *)
+    (* TLBI VAE1IS, X7 - TLB invalidate by 0x8000001000 *)
+    |> mem_insert 0x510 4 0xd5088327
+    |> mem_insert 0x514 4 0xd5033b9f  (* DSB ISH *)
+    |> mem_insert 0x518 4 0xd5033fdf  (* ISB *)
+    (* STR X4, [X8, X2] - install the new PTE *)
+    |> mem_insert 0x51C 4 0xf8226904
+    |> mem_insert 0x520 4 0xd5033a9f  (* DSB ISHST *)
+    |> mem_insert 0x524 4 0xd5033fdf  (* ISB *)
+    (* LDR X6, [X1, X0] - read through the new mapping *)
+    |> mem_insert 0x528 4 0xf8606826
     (* Data at two different physical locations *)
     |> mem_insert 0x1000 8 0x2a       (* Original PA - value 0x2a *)
+    |> mem_insert 0x2000 8 0x42       (* New PA - value 0x42 *)
     (* Page tables *)
     (* L0[1] -> L1 *)
     |> mem_insert 0x80008 8 0x81003
@@ -655,40 +659,27 @@ Module BBMSuccess.
        - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
     *)
     |> mem_insert 0x83000 8 0x40000000000783
-    |> mem_insert 0x83008 8 0x60000000001783
+    |> mem_insert 0x83008 8 0x60000000001f83
     |> mem_insert 0x83080 8 0x60000000083703.
 
-  Definition n_threads := 2%nat.
-
-  Definition terminate_at_t1 rm : bool :=
-    reg_lookup _PC rm =? Some (0x8000000514 : bv 64).
-
-  Definition terminate_at_t2 rm : bool :=
-    (* a valid translation *)
-    (reg_lookup _PC rm =? Some (0x8000000604 : bv 64))
-    (* or a fault *)
-    || ((reg_lookup FAR_EL1 rm =? Some (0x8000001000 : bv 64))
-        && (reg_lookup ELR_EL1 rm =? Some (0x8000000600 : bv 64))
-        && (reg_lookup ESR_EL1 rm =? Some (0x96000007 : bv 64))).
-
-  Definition terminate_at := [# terminate_at_t1; terminate_at_t2].
+  Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, (terminate_at !!! tid) rm).
+    (λ tid rm, reg_lookup _PC rm =? Some (0x800000052C : bv 64)).
 
   Definition initState :=
     {|archState.memory := init_mem;
-      archState.regs := [# init_reg_t1; init_reg_t2];
+      archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 8%nat.
+  Definition fuel := 26%nat.
 
   Definition test_results_pf :=
-    VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
+    VMPromising_pf BBM.Lax arm_sem fuel n_threads termCond initState.
 
-  (* BBM check success *)
-  Goal elements (regs_extract [(1%fin, R0)] <$> test_results_pf) ≡ₚ
-      [Ok [0x2a%Z]].
+  (* The completed BBM sequence switches from the old to the new mapping. *)
+  Goal elements (regs_extract [(0%fin, R5); (0%fin, R6)] <$> test_results_pf) ≡ₚ
+      [Ok [0x2a%Z; 0x42%Z]].
   Proof.
     vm_compute (elements _).
     apply NoDup_Permutation; try solve_NoDup; set_solver.

@@ -1,21 +1,30 @@
-# TLBI test, just a plain BBM invalidation sequence
-# Tests TLB invalidation behavior with page table modification
+# TLBI test, full break-before-make sequence
+# Tests TLB invalidation behavior with page table break and make
 # Based on the BBMSuccess test from VMPromisingTest.v
 
 arch="Arm"
 name="BBMSuccess"
 
-# Thread 1: Invalidates PTE and performs TLBI
+# Thread 0: load old; DSB; break; DSB; TLBI; DSB; ISB; make; DSB; ISB; load new
 [thread.0.regs]
 _PC = 0x8000000500
-R0 = 0x8000001000      # VA for TLBI target
+R0 = 0x8000001000      # VA to load from
 R1 = 0x0               # Base offset
 R2 = 0x8000010008      # VA of L3[1] descriptor (page table VA alias)
 R3 = 0x0               # Invalid entry (break)
+R4 = 0x60000000002f83  # New nG descriptor: VA -> PA 0x2000
+R5 = 0x0               # Value read from the old mapping
+R6 = 0x0               # Value read from the new mapping
+R7 = 0x8000001         # TLBI VA operand: page 0x8000001000
+R8 = 0x0               # Base offset for page table writes
 TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
 SCTLR_EL1 = 0x1
-ID_AA64MMFR1_EL1 = 0x0
+ESR_EL1 = 0x0
+FAR_EL1 = 0x0
+ELR_EL1 = 0x0
+VBAR_EL1 = 0x0
+ID_AA64MMFR1_EL1 = 0x2000000000
 CurrentEL = 0b01
 
 # Instructions:
@@ -24,22 +33,32 @@ addr = 0x500
 kind = "code"
 step = 4
 data = [
-  0xf8226823, # STR X3, [X1, X2] - invalidate PTE
+  0xf8606825, # LDR X5, [X1, X0] - read old mapping
+  0xd5033b9f, # DSB ISH - order load before PTE update
+  0xf8226903, # STR X3, [X8, X2] - invalidate PTE
   0xd5033a9f, # DSB ISHST - store barrier
-  0xd5088320, # TLBI VAE1IS, X0 - TLB invalidate
+  0xd5088327, # TLBI VAE1IS, X7 - TLB invalidate
   0xd5033b9f, # DSB ISH - full barrier
-  0xd5033fdf] # ISB - instruction sync
+  0xd5033fdf, # ISB - instruction sync
+  0xf8226904, # STR X4, [X8, X2] - install new PTE
+  0xd5033a9f, # DSB ISHST - store barrier
+  0xd5033fdf, # ISB - instruction sync
+  0xf8606826] # LDR X6, [X1, X0] - read new mapping
 
 [thread.0]
-breakpoints = [0x8000000514]
-
-# TODO add a load in other thread and check it can only see old value or fault.
+breakpoints = [0x800000052C]
 
 # Data at PA 0x1000
 [[memory]]
 addr = 0x1000
 step = 8
 data = 0x2a
+
+# Data at PA 0x2000
+[[memory]]
+addr = 0x2000
+step = 8
+data = 0x42
 
 # L0 table base
 [[memory]]
@@ -52,7 +71,7 @@ data = 0
 [[memory]]
 addr = 0x80008
 step = 8
-data = 0x81803
+data = 0x81003
 
 # L1[0] -> L2
 [[memory]]
@@ -72,11 +91,11 @@ addr = 0x83000
 step = 8
 data = 0x40000000000783
 
-# L3[1]: data page (readable/writable)
+# L3[1]: nG data page (readable/writable)
 [[memory]]
 addr = 0x83008
 step = 8
-data = 0x60000000001783
+data = 0x60000000001f83
 
 # L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
 [[memory]]
@@ -84,7 +103,6 @@ addr = 0x83080
 step = 8
 data = 0x60000000083703
 
-
 [final]
 kind = "forall"
-assertion."0:R3" = 0
+assertion.and = [{"0:R5" = 0x2a}, {"0:R6" = 0x42}]
