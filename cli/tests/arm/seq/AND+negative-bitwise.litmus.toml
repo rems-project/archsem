@@ -1,0 +1,12 @@
+arch = "AArch64"
+name = "AND+negative-bitwise"
+
+[thread.0]
+init = { X1 = "bvand(-1, 0xff)", X2 = "bvxor(-1, 0xff)", X3 = "bvor(-2, 1)", X4 = "bvshl(-1, 1)" }
+code = """
+    AND X0, X1, X2
+    AND X5, X3, X4
+"""
+
+[final]
+assertion = "0:X0 = 0 & 0:X5 = 0xfffffffffffffffe"

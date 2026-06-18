@@ -1,0 +1,6 @@
+arch = "AArch64"
+name = "negative-extz"
+
+[thread.0]
+init = { X0 = "extz(-1, 64)" }
+code = "NOP"

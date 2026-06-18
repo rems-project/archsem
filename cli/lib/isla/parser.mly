@@ -53,6 +53,7 @@
 %token EQ "="
 %token STAR "*"
 %token COLON ":"
+%token MINUS "-"
 %token TRUE
 %token FALSE EOF
 
@@ -90,6 +91,7 @@ loc:
 
 term:
   | v = NUM { Term.Const v }
+  | "-"; v = NUM { Term.Const (Z.neg v) }
   | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
   | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
   | s = IDENT { Term.Sym s }

@@ -149,3 +149,24 @@ Isla function error in final assertion
   File "final-isla-fn-error.litmus.toml", path "final.assertion":
   function: unknown unknown_fn/1
   [1]
+
+Negative Isla final assertion
+  $ archsem seq negative-final.litmus.toml
+  archsem: eval error:
+  File "negative-final.litmus.toml", path "final.assertion":
+  final assertion values must be non-negative: -0x1
+  [1]
+
+Negative Isla string memory initialization
+  $ archsem seq negative-location.litmus.toml
+  archsem: eval error:
+  File "negative-location.litmus.toml", path "locations.x":
+  negative memory data is not allowed: -0x1
+  [1]
+
+Negative zero extension in Isla function
+  $ archsem seq negative-extz.litmus.toml
+  archsem: eval error:
+  File "negative-extz.litmus.toml", path "thread.0.init.R0":
+  function: extz: argument bits must be non-negative
+  [1]

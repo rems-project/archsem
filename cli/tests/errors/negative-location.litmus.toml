@@ -1,0 +1,9 @@
+arch = "AArch64"
+name = "negative-location"
+symbolic = ["x"]
+
+[thread.0]
+code = "NOP"
+
+[locations]
+x = "-1"

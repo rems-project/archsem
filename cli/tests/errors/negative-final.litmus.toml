@@ -1,0 +1,9 @@
+arch = "AArch64"
+name = "negative-final"
+
+[thread.0]
+init = { X0 = "-1" }
+code = "NOP"
+
+[final]
+assertion = "0:X0 = -1"

@@ -76,10 +76,11 @@ let parse_term : Toml.t -> Term.t = function
   | TomlInteger i -> Term.Const i
   | TomlString s -> (
       let lexbuf = Lexing.from_string s in
-      try Parser.binding Lexer.token lexbuf
-      with Parser.Error ->
-        Toml.error "term parse error at position %d in: %s"
-          lexbuf.lex_curr_p.pos_cnum s
+      try Parser.binding Lexer.token lexbuf with
+      | Parser.Error ->
+          Toml.error "term parse error at position %d in: %s"
+            lexbuf.lex_curr_p.pos_cnum s
+      | Lexer.Error msg -> Toml.error "%s" msg
     )
   | value ->
       Toml.error
@@ -134,10 +135,11 @@ let parse_sections toml = Toml.get_table_key_values parse_section toml
 
 let parse_assertion_expr s =
   let lexbuf = Lexing.from_string s in
-  try Parser.assertion Lexer.token lexbuf
-  with Parser.Error ->
-    Toml.error "assertion parse error at position %d in: %s"
-      lexbuf.lex_curr_p.pos_cnum s
+  try Parser.assertion Lexer.token lexbuf with
+  | Parser.Error ->
+      Toml.error "assertion parse error at position %d in: %s"
+        lexbuf.lex_curr_p.pos_cnum s
+  | Lexer.Error msg -> Toml.error "%s" msg
 
 let parse_assertion toml =
   let assertion_str = Toml.get_string toml |> String.trim in

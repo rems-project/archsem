@@ -40,10 +40,13 @@
 
 (** Bitvector functions: bvand, bvor, bvxor, bvshl, bvlshr, extz, exts. *)
 
-let int_of_bit_arg name arg value =
+let check_non_negative_arg name arg value =
   if Z.sign value < 0 then
     Litmus.Error.failwith "function: %s: argument %s must be non-negative" name
-      arg;
+      arg
+
+let int_of_bit_arg name arg value =
+  check_non_negative_arg name arg value;
   match Z.to_int value with
   | n -> n
   | exception Z.Overflow ->
@@ -99,7 +102,9 @@ let functions : (string * Fn_registry.fn_spec) list =
         eval =
           (fun args ->
             match args with
-            | [a; b] -> Z.shift_right a (int_of_bit_arg "bvlshr" "b" b)
+            | [a; b] ->
+                check_non_negative_arg "bvlshr" "a" a;
+                Z.shift_right a (int_of_bit_arg "bvlshr" "b" b)
             | _ -> Fn_registry.arity_error "bvlshr" 2 (List.length args)
           )
       }
@@ -110,6 +115,7 @@ let functions : (string * Fn_registry.fn_spec) list =
           (fun args ->
             match args with
             | [bits; len] ->
+                check_non_negative_arg "extz" "bits" bits;
                 ignore (int_of_bit_arg "extz" "len" len);
                 bits
             | _ -> Fn_registry.arity_error "extz" 2 (List.length args)
