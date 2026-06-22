@@ -254,15 +254,13 @@ Module Memory.
          |> head.
 
  (** Checks that no write overlapping [addr, addr+size) has been made by any
-      thread other than [tid] since view [v].  This is the exclusive-monitor
-      interference check: if another thread wrote to any byte in the monitored
-      range between the load-exclusive and store-exclusive, the store-exclusive
-      must fail. *)
+      thread other than [tid] in between [tread] and [twrite] *)
   Definition exclusive (tid : nat) (addr : address) (size : N)
-      (v : view) (mem : t) : Prop :=
-    ∀ ev ∈ (cut_after v mem), Ev.addr_overlap addr size ev → Ev.tid ev = tid.
-  #[global] Instance exclusive_dec tid addr size v mem :
-      Decision (exclusive tid addr size v mem).
+      (tread : nat) (twrite : nat) (mem : t) : Prop :=
+    ∀ ev ∈ (cut_after tread (cut_before (twrite - 1)%nat mem)),
+      Ev.addr_overlap addr size ev → Ev.tid ev = tid.
+  #[global] Instance exclusive_dec tid addr size tread twrite mem :
+      Decision (exclusive tid addr size tread twrite mem).
   Proof. unfold exclusive. apply _. Defined.
 
 End Memory.
@@ -1980,8 +1978,7 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
         mset PPState.state $ TState.clear_xclb;;
         va ← mget (IIS.access_va ∘ PPState.iis);
         if decide (rva = va ∧ addr = raddr ∧ size = rsize) then
-          nmem ← mget PPState.mem;
-          guard_discard' (Memory.exclusive tid addr size tread (Memory.cut_after time nmem));;
+          guard_discard' (Memory.exclusive tid addr size tread time mem);;
           mret true
         else
           (* If the store-exclusive footprint does not exactly match the previous
