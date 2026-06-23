@@ -71,6 +71,39 @@ let va_index va level = (va lsr level_shift level) land 0x1FF
 
     Attribute bits are stored without the type field (bits 1:0). *)
 
+type descriptor_field =
+  { name : string;
+    lsb : int;
+    width : int
+  }
+
+let descriptor_fields =
+  [ {name = "Valid"; lsb = 0; width = 1};
+    {name = "AF"; lsb = 10; width = 1};
+    {name = "AP"; lsb = 6; width = 2};
+    {name = "DBM"; lsb = 51; width = 1}
+  ]
+
+let update_bits desc mask bits =
+  Int64.logor (Int64.logand desc (Int64.lognot mask)) bits
+
+let descriptor_field_mask lsb width =
+  Int64.shift_left (Int64.pred (Int64.shift_left 1L width)) lsb
+
+let descriptor_field_bits name value lsb width =
+  let max_value = Z.shift_left Z.one width in
+  if Z.lt value Z.zero || Z.geq value max_value then
+    Litmus.Error.failwith "descriptor field %s value %s is out of range" name
+      (Z.to_string value)
+  else Int64.shift_left (Int64.of_int (Z.to_int value)) lsb
+
+let make_descriptor_field Page_table_ast.{name; value} =
+  match List.find_opt (fun field -> field.name = name) descriptor_fields with
+  | None -> Litmus.Error.failwith "unsupported descriptor field: %s" name
+  | Some field ->
+      let bits = descriptor_field_bits name value field.lsb field.width in
+      (descriptor_field_mask field.lsb field.width, bits)
+
 let addr_mask = 0x0000FFFFFFFFF000L
 
 let low_attr_mask = 0xFFFL
@@ -103,9 +136,22 @@ let table_descriptor next_table_pa =
   Int64.logor next_table_pa 0x3L
 
 (** Encode a level-3 page descriptor. *)
-let page_descriptor pa attrs =
+let page_descriptor pa kind fields =
   let pa = require_addr_in_mask "pa" pa in
-  require_in_mask "attrs" attr_mask attrs;
+  let base_attrs =
+    match kind with
+    | Page_table_ast.Code -> aarch64_code_attrs
+    | Page_table_ast.Data -> aarch64_data_attrs
+  in
+  require_in_mask "attrs" attr_mask base_attrs;
+  let attrs =
+    List.fold_left
+      (fun attrs field ->
+         let (mask, bits) = make_descriptor_field field in
+         update_bits attrs mask bits
+       )
+      base_attrs fields
+  in
   Int64.logor (Int64.logor pa attrs) 0x3L
 
 (** {1 Entry encoding}
