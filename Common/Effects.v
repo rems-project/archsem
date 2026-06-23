@@ -245,6 +245,9 @@ Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
 Definition mchoosef `{MChoose M, FMap M} A `{Finite A} : M A :=
   mchoosel (enum A).
 
+(** Helper to non-determinitically choose in a finite set *)
+Definition mchooses `{MChoose M, FMap M} `{Elements A C} (s : C) : M A :=
+  mchoosel (elements s).
 
 (** Same as [guard] but discard the execution if the proposition is false  *)
 Definition guard_discard `{MChoose M, FMap M, MRet M} P `{Decision P} : M P :=

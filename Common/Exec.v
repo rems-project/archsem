@@ -77,11 +77,6 @@ Definition merge {E A} (er1 er2 : res E A) :=
 #[export] Typeclasses Opaque merge.
 Arguments merge : simpl never.
 
-(** Create a res record from a set of results, e.g. to convert from pure
-    non-determinism to res *)
-Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
-  make (elements s) [].
-
 (** Monadic definitions for executions results *)
 
 #[export] Instance res_mret_inst {E} : MRet (res E) := λ _ v, make [v] [].
@@ -99,7 +94,7 @@ Definition res_Results {E A C} `{Elements A C} (s : C) : res E A :=
   λ _ e, make [] [e].
 
 #[export] Instance res_choose_inst {E} : MChoose (res E) :=
-  λ '(ChooseFin n), @res_Results  _ (Fin.t n) _ _ (enum (fin n)).
+  λ '(ChooseFin n), make (enum (fin n)) [].
 
 #[export] Instance result_lift_res {E} : MLift (result E) (res E) := λ A, unpack_result.
 
@@ -127,11 +122,6 @@ Definition success_state_list `(e : res (St * E) (St * A)) : list St :=
 Definition t {St E A} := St → res (St * E) (St * A).
 Arguments t : clear implicits.
 
-(** Create an execution from a set of results, e.g. to convert from pure
-    non-determinism to Exec *)
-Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
-  λ st, (st,.) <$> res_Results s.
-
 (** Monadic definition based on the respective instances for execution results *)
 
 #[export] Instance mret_inst {St E} : MRet (t St E) := λ _ v st, mret (st,v).
@@ -148,9 +138,7 @@ Definition Results {St E A C} `{Elements A C} (s : C) : t St E A :=
   λ _ e st, mthrow (st,e).
 
 #[export] Instance choose_inst {St E} : MChoose (t St E) :=
-  λ '(ChooseFin n), @Results _ _ (Fin.t n) _ _ (enum (fin n)).
-
-#[export] Typeclasses Opaque choose_inst.
+  λ '(ChooseFin n) st, make ((st,.) <$> enum (fin n)) [].
 
 #[export] Instance st_call_MState {St E} : MCall (MState St) (t St E) | 10 :=
   λ eff,
@@ -318,12 +306,6 @@ Qed.
   UnfoldElemOf x ((mdiscard : t St E A) st) False.
 Proof. tcclean. unfold mdiscard, fmap, fmap_inst; cbn. set_solver. Qed.
 
-#[export] Instance unfold_elem_of_Results {St E A C} `{Elements A C} (s : C)
-    (x : St * A) st P :
-  (∀ y : A, SetUnfoldElemOf y (elements s) (P y)) →
-  UnfoldElemOf x (Results (E := E) s st) (P x.2 ∧ x.1 = st).
-Proof. tcclean. unfold Results, res_Results. destruct x. cbn. set_solver. Qed.
-
 #[export] Instance unfold_elem_of_mcallM_MChoice {St E} st st' (m : MChoice)
     (v : eff_ret m) :
   UnfoldElemOf (st, v) (mcallM (Exec.t St E) m st') (st = st').
@@ -331,7 +313,6 @@ Proof.
   tcclean.
   destruct m.
   cbn -[enum] in *.
-  unfold mcallM, choose_inst, enum.
   destruct fin_finite.
   set_solver.
 Qed.
