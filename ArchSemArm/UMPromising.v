@@ -323,14 +323,13 @@ Definition view_if (b : bool) (v : view) := if b then v else 0%nat.
     instruction word as a [bv (8 * size)] formed by concatenating the
     bytes in [addr_range addr size]. Fails if [size] is not 4, or
     if any byte in the range has been overwritten by a later write. *)
-Definition read_imem (addr : address) (size : N) (init : memoryMap)
-    (mem : Memory.t) : Exec.res string (bv (8 * size)) :=
-  guard_or "Ifetch of size other than 4" (size = 4)%N;;
+Definition read_imem (addr : address) (init : memoryMap)
+    (mem : Memory.t) : Exec.res string (bv 32) :=
   bytes ← othrow "Modified instruction memory" $
-    for a in addr_range addr size do
+    for a in addr_range addr 4 do
       Memory.read_initial a init mem
     end;
-  mret (bv_of_bytes _ bytes).
+  mret (bv_of_bytes 32 bytes).
 
 (** Returns all interesting timestamp when reading range [addr, addr+size) with
     minimum view [vpre]. Those are [vpre] itself and any later timestamp that
@@ -499,9 +498,10 @@ Section RunOutcome.
   | MemRead (MemReq.make macc addr addr_space size 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       if is_ifetch macc then
+        size_4 ← guard_or "Ifetch read of size other than 4" (size = 4)%N;
         mem ← mget PPState.mem;
-        opcode ← mlift $ read_imem addr size initmem mem;
-        mret (Ok (opcode, 0%bv), None)
+        opcode ← mlift $ read_imem addr initmem mem;
+        mret (Ok (ctrans _ opcode, 0%bv), None)
       else if is_explicit macc then
         val ← read_mem addr size macc initmem;
         mret (Ok (val, 0%bv), None)
@@ -555,6 +555,7 @@ Section RunOutcome.
       mret ((), None)
   | GenericFail s => mthrow ("Instruction failure: " ++ s)%string
   | _ => mthrow "Unsupported outcome".
+  Solve Obligations with lia.
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out) :=
