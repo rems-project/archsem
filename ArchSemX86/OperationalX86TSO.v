@@ -353,8 +353,8 @@ Section Model.
   Definition step : Exec.t mstate string (option (fin threads)) :=
     (* The transition taken is either a flush to memory or a run_outcome call,
     for a specific tid *)
-    tid ← mchoosef;
-    flush_transition ← mchoosef;
+    tid ← mchoosef (fin threads);
+    flush_transition ← mchoosef bool;
     if (flush_transition : bool) then
       (* Discard if lock is not free *)
       lock_status ← mget lock;

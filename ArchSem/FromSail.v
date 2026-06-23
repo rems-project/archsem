@@ -224,14 +224,14 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
 
   Definition Sail_choose (ct : ChooseType) : I.iMon (choose_type ct) :=
     match ct with
-    | ChooseBool => mchoosef
-    | ChooseBit => mchoosef
+    | ChooseBool => mchoosef bool
+    | ChooseBit => mchoosef _
     | ChooseInt => mthrow "Can't choose infinite Int"
     | ChooseNat => mthrow "Can't choose infinite Nat"
     | ChooseReal => mthrow "Can't choose infinite Real"
     | ChooseString => mthrow "Can't choose infinite String"
     | ChooseBitvector n =>
-        if decide (n < 8)%Z then mchoosef else
+        if decide (n < 8)%Z then mchoosef _ else
           mthrow "Can't choose bitvector size over 8"
     | ChooseRange lo hi => mchoosel $ seqZ lo (hi - lo + 1)%Z
     end.

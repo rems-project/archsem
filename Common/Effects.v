@@ -241,7 +241,8 @@ Definition mdiscard `{MChoose M, FMap M} {A} : M A :=
 Definition mchoosel `{MChoose M, FMap M} {A} (l : list A) : M A :=
   mchoose (length l) |$> ((list_to_vec l) !!!.).
 
-Definition mchoosef `{MChoose M, FMap M} `{Finite A} : M A :=
+(** Helper to non-determinitically choose in a finite type *)
+Definition mchoosef `{MChoose M, FMap M} A `{Finite A} : M A :=
   mchoosel (enum A).
 
 
