@@ -38,56 +38,39 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Assembler pipeline: .s generation → clang (assemble+link) → linksem ELF parsing *)
+(** Page-oriented address allocator. *)
 
-(** {1 Input types} *)
+type t = {mutable current : int}
 
-(** A code section with a preassigned address. *)
-type section =
-  { name : string;
-    code : string;
-    addr : int
-  }
+let default_base = 0x1000
 
-(** A data symbol with a preassigned address. *)
-type data_symbol =
-  { name : string;
-    addr : int
-  }
+let page_size = 0x1000
 
-(** Input to the assembler pipeline *)
-type assembly_input =
-  { sections : section list;
-    symbols : data_symbol list
-  }
+let align_up addr alignment =
+  if alignment <= 0 then
+    Litmus.Error.fatal "allocator: alignment must be positive";
+  let rem = addr mod alignment in
+  if rem = 0 then addr else addr + alignment - rem
 
-(** {1 Output types} *)
+let page_after addr = align_up (addr + 1) page_size
 
-(** A resolved section with its address and machine code *)
-type linked_section =
-  { name : string;
-    addr : int;
-    data : Bytes.t
-  }
+let make ?(base = default_base) ?(reserved = []) () =
+  let current =
+    List.fold_left
+      (fun current addr -> max current (page_after addr))
+      base reserved
+  in
+  {current}
 
-(** Output of the assembler pipeline *)
-type assembly_result =
-  { sections : linked_section list;
-    symbols : (string * int) list
-  }
+let alloc_aligned allocator ~size ~alignment =
+  let addr = align_up allocator.current alignment in
+  allocator.current <- addr + size;
+  addr
 
-(** {1 Pipeline} *)
+let alloc_page allocator =
+  alloc_aligned allocator ~size:page_size ~alignment:page_size
 
-(** Assemble, link, and parse ELF. Uses config for toolchain commands.
-    [filename] names copied artifacts when [--asm-dump] is enabled. *)
-val assemble : filename:string -> assembly_input -> assembly_result
-
-(** Look up a symbol address by name. Raises [Failure] if not found. *)
-val resolve_symbol : assembly_result -> string -> int
-
-(** {1 Dump configuration}
-
-    When set to [Some dir], the assembler copies its [.s], [.ld] and
-    [.elf] artifacts into [dir] for debugging.  Set by the
-    [--asm-dump] CLI flag. *)
-val set_dump_dir : string option -> unit
+let alloc_big allocator =
+  (* 2MB block. *)
+  let big_size = 1 lsl 21 in
+  alloc_aligned allocator ~size:big_size ~alignment:big_size

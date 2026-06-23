@@ -47,20 +47,22 @@ let _ = Test_utils.setup_arm ()
 
 let make_input ?(symbols = []) sections : assembly_input = {sections; symbols}
 
-let section ?(fixed_addr = None) name code : section = {name; code; fixed_addr}
+let section ?(addr = 0x1000) name code : section = {name; code; addr}
 
-let sym name size : data_symbol = {name; init_bytes = Bytes.make size '\x00'}
+let sym name addr : data_symbol = {name; addr}
 
 let find_section name (result : assembly_result) =
   List.find (fun (s : linked_section) -> s.name = name) result.sections
 
+let assemble_test input = assemble ~filename:"assembler-test" input
+
 let test_assemble_single_thread _ =
   let input =
-    make_input ~symbols:[sym "x" 8] [section "thread0" "\tMOV W1, #42\n"]
+    make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\tMOV W1, #42\n"]
   in
-  let result = assemble input in
+  let result = assemble_test input in
   let x_addr = resolve_symbol result "x" in
-  assert_bool "x address > 0" (x_addr > 0);
+  assert_equal ~printer:string_of_int 0x2000 x_addr;
   let thread0 = find_section "thread0" result in
   assert_equal ~printer:string_of_int 4 (Bytes.length thread0.data)
 
@@ -68,10 +70,10 @@ let test_assemble_multiple_threads _ =
   let input =
     make_input
       [ section "thread0" "\tMOV W1, #1\n";
-        section "thread1" "\tMOV W2, #2\n\tMOV W3, #3\n"
+        section ~addr:0x2000 "thread1" "\tMOV W2, #2\n\tMOV W3, #3\n"
       ]
   in
-  let result = assemble input in
+  let result = assemble_test input in
   let t0 = find_section "thread0" result in
   let t1 = find_section "thread1" result in
   assert_equal ~printer:string_of_int ~msg:"thread0 size" 4 (Bytes.length t0.data);
@@ -80,27 +82,29 @@ let test_assemble_multiple_threads _ =
 
 let test_assemble_multiple_symbols _ =
   let input =
-    make_input ~symbols:[sym "x" 8; sym "y" 8] [section "thread0" "\tNOP\n"]
+    make_input
+      ~symbols:[sym "x" 0x2000; sym "y" 0x3000]
+      [section "thread0" "\tNOP\n"]
   in
-  let result = assemble input in
+  let result = assemble_test input in
   let x_addr = resolve_symbol result "x" in
   let y_addr = resolve_symbol result "y" in
   assert_bool "different addresses" (x_addr <> y_addr)
 
 let test_assemble_no_symbols _ =
   let input = make_input [section "thread0" "\tNOP\n"] in
-  let result = assemble input in
+  let result = assemble_test input in
   let t0 = find_section "thread0" result in
   assert_equal ~printer:string_of_int ~msg:"NOP = 4 bytes" 4 (Bytes.length t0.data)
 
-let test_assemble_fixed_addr _ =
+let test_assemble_assigned_addr _ =
   let input =
     make_input
-      [ section ~fixed_addr:(Some 0x10000) "handler0" "\tRET\n";
-        section "thread0" "\tMOV W1, #1\n"
+      [ section ~addr:0x10000 "handler0" "\tRET\n";
+        section ~addr:0x11000 "thread0" "\tMOV W1, #1\n"
       ]
   in
-  let result = assemble input in
+  let result = assemble_test input in
   let handler = find_section "handler0" result in
   assert_equal ~printer:string_of_int ~msg:"handler0 addr" 0x10000 handler.addr;
   assert_equal ~printer:string_of_int ~msg:"handler0 size" 4
@@ -108,7 +112,7 @@ let test_assemble_fixed_addr _ =
 
 let test_resolve_unknown_raises _ =
   let input = make_input [section "thread0" "\tNOP\n"] in
-  let result = assemble input in
+  let result = assemble_test input in
   assert_raises (Failure "assembler: symbol \"nonexistent\" not found") (fun () ->
     resolve_symbol result "nonexistent"
   )
@@ -119,7 +123,7 @@ let tests =
          "multiple threads" >:: test_assemble_multiple_threads;
          "multiple symbols" >:: test_assemble_multiple_symbols;
          "no symbols" >:: test_assemble_no_symbols;
-         "fixed-addr section" >:: test_assemble_fixed_addr;
+         "assigned section address" >:: test_assemble_assigned_addr;
          "resolve unknown raises" >:: test_resolve_unknown_raises
        ]
 

@@ -2,38 +2,40 @@ arch = "X86"
 name = "MP"
 
 [[memory]]
+  sym = "__thread0"
   kind = "code"
-  addr = 0x3000
+  addr = 0x1000
   step = 1
   data = [0xc7, 1, 1, 0, 0, 0, 0xc7, 2, 1, 0, 0, 0]
 
 [[memory]]
+  sym = "__thread1"
   kind = "code"
-  addr = 0x300c
+  addr = 0x2000
   step = 1
   data = [0x8b, 2, 0x8b, 0x19]
 
 [[memory]]
   sym = "x"
-  addr = 0x1000
+  addr = 0x3000
   step = 8
   data = 0
 
 [[memory]]
   sym = "y"
-  addr = 0x2000
+  addr = 0x4000
   step = 8
   data = 0
 
 [thread]
 
 [thread."0"]
-  breakpoints = [0x300c]
+  breakpoints = [0x100c]
 
 [thread."0".regs]
-  rip = 0x3000
-  rcx = 0x1000
-  rdx = 0x2000
+  rip = 0x1000
+  rcx = 0x3000
+  rdx = 0x4000
   rax = 0
   rbx = 0
   rsp = 0
@@ -51,12 +53,12 @@ name = "MP"
   rflags = 0
 
 [thread."1"]
-  breakpoints = [0x3010]
+  breakpoints = [0x2004]
 
 [thread."1".regs]
-  rip = 0x300c
-  rcx = 0x1000
-  rdx = 0x2000
+  rip = 0x2000
+  rcx = 0x3000
+  rdx = 0x4000
   rax = 0
   rbx = 0
   rsp = 0

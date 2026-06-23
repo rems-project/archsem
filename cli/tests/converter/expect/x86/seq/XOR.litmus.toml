@@ -2,6 +2,7 @@ arch = "X86"
 name = "XOR"
 
 [[memory]]
+  sym = "__thread0"
   kind = "code"
   addr = 0x1000
   step = 1
