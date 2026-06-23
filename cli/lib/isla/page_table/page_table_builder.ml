@@ -84,10 +84,6 @@ let check_arch = function
       error "page_table: only AArch64 is supported, got %s"
         (Litmus.Arch_id.to_string arch)
 
-let descriptor_attrs = function
-  | Page_table_ast.Code -> Desc.aarch64_code_attrs
-  | Page_table_ast.Data -> Desc.aarch64_data_attrs
-
 let alloc_pa builder name =
   match List.assoc_opt name builder.symbols_pa with
   | Some addr -> addr
@@ -129,8 +125,7 @@ let ensure_child_table builder parent_table idx =
 (** {1 Mapping insertion} *)
 
 (** Write a leaf mapping, allowing same writes but rejecting conflicts. *)
-let write_leaf table idx va pa attrs =
-  let desc = Desc.page_descriptor pa attrs in
+let write_leaf table idx va desc =
   let existing = Desc.read_entry table idx in
   if existing <> 0L && existing <> desc then
     error
@@ -140,13 +135,16 @@ let write_leaf table idx va pa attrs =
   Desc.write_entry table idx desc
 
 (** Add the requested mapping, allocating intermediate tables on demand. *)
-let add_mapping builder ~va ~pa attr =
+let add_mapping ?(fields = []) builder ~va ~pa kind =
   let va = Desc.align_page_addr va in
   let pa = Desc.align_page_addr pa in
-  let attrs = descriptor_attrs attr in
+  let desc =
+    try Desc.page_descriptor pa kind fields
+    with Failure msg -> error "page_table: %s" msg
+  in
   let rec walk table level =
     let idx = Desc.va_index va level in
-    if level = Desc.last_level then write_leaf table idx va pa attrs
+    if level = Desc.last_level then write_leaf table idx va desc
     else
       let child_table = ensure_child_table builder table idx in
       walk child_table (level + 1)
@@ -164,14 +162,14 @@ let add_code_mappings builder code_pages =
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Physical names ->
       List.iter (fun name -> ignore (alloc_pa builder name)) names
-  | Page_table_ast.Mapping {va_name; pa_name} ->
+  | Page_table_ast.Mapping {va_name; pa_name; attrs} ->
       let va =
         match List.assoc_opt va_name symbolic_vas with
         | Some addr -> addr
         | None -> error "page_table: undeclared VA: %s" va_name
       in
       let pa = alloc_pa builder pa_name in
-      add_mapping builder ~va ~pa Page_table_ast.Data
+      add_mapping ~fields:attrs builder ~va ~pa Page_table_ast.Data
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
@@ -235,7 +233,9 @@ let translate_va_to_pa layout va =
     match desc_at table level with
     | None -> None
     | Some desc when level = Desc.last_level ->
-        Some (Desc.addr_of_descriptor desc + page_offset)
+        if Int64.logand desc 0x1L <> 0L then
+          Some (Desc.addr_of_descriptor desc + page_offset)
+        else None
     | Some desc -> (
       match Desc.table_addr_of_descriptor desc with
       | Some table -> walk table (level + 1)
