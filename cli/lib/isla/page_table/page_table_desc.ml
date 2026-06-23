@@ -56,6 +56,22 @@ let aarch64_data_attrs = 0x440L
 
 let aarch64_code_attrs = 0x4C0L
 
+type descriptor_field =
+  { name : string;
+    lsb : int;
+    width : int
+  }
+
+let descriptor_fields =
+  [ {name = "Valid"; lsb = 0; width = 1};
+    {name = "AF"; lsb = 10; width = 1};
+    {name = "AP"; lsb = 6; width = 2};
+    {name = "DBM"; lsb = 51; width = 1}
+  ]
+
+let descriptor_field_by_name name =
+  List.find_opt (fun field -> field.name = name) descriptor_fields
+
 (** Bit shift of the VA index for a 4KB AArch64 translation-table level. *)
 let level_shift = function
   | 0 -> 39
@@ -92,6 +108,8 @@ let require_addr_in_mask name addr =
 (** Extract the output address from a table, block, or page descriptor. *)
 let addr_of_descriptor desc = Int64.to_int (Int64.logand desc addr_mask)
 
+let descriptor_valid desc = Int64.logand desc 0x1L <> 0L
+
 (** Return the next table address when [desc] is a table descriptor. *)
 let table_addr_of_descriptor desc =
   let attrs = Int64.logand desc low_attr_mask in
@@ -107,6 +125,49 @@ let page_descriptor pa attrs =
   let pa = require_addr_in_mask "pa" pa in
   require_in_mask "attrs" attr_mask attrs;
   Int64.logor (Int64.logor pa attrs) 0x3L
+
+let set_descriptor_field desc field value =
+  let mask =
+    Int64.shift_left (Int64.pred (Int64.shift_left 1L field.width)) field.lsb
+  in
+  let value = Int64.shift_left (Int64.of_int value) field.lsb in
+  Int64.logor (Int64.logand desc (Int64.lognot mask)) value
+
+let descriptor_field_value field (value : Z.t) =
+  let value =
+    try Ok (Z.to_int value)
+    with Z.Overflow ->
+      Error (Printf.sprintf "descriptor field %s is out of range" field.name)
+  in
+  match value with
+  | Error _ as err -> err
+  | Ok value ->
+      let max_value = 1 lsl field.width in
+      if value < 0 || value >= max_value then
+        Error
+          (Printf.sprintf "descriptor field %s value %d does not fit in %d bits"
+             field.name value field.width
+          )
+      else Ok value
+
+let apply_descriptor_field desc (name, value) =
+  match descriptor_field_by_name name with
+  | None -> Error (Printf.sprintf "unsupported descriptor field: %s" name)
+  | Some field -> (
+    match descriptor_field_value field value with
+    | Error _ as err -> err
+    | Ok value -> Ok (set_descriptor_field desc field value)
+  )
+
+let page_descriptor_with_fields pa attrs fields =
+  let desc = page_descriptor pa attrs in
+  List.fold_left
+    (fun desc field ->
+       match desc with
+       | Error _ as err -> err
+       | Ok desc -> apply_descriptor_field desc field
+     )
+    (Ok desc) fields
 
 (** {1 Entry encoding}
 

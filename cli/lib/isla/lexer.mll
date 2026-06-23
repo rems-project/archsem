@@ -64,11 +64,15 @@ rule token = parse
   | '*' { STAR }
   | ':' { COLON }
   | ';' { SEMICOLON }
+  | '[' { LBRACKET }
+  | ']' { RBRACKET }
   | ',' { COMMA }
   | '-' { MINUS }
   | "physical" { PHYSICAL }
   | "identity" { IDENTITY }
   | "with" { WITH }
+  | "and" { AND_KW }
+  | "default" { DEFAULT }
   | "code" { CODE }
   | "data" { DATA }
   | "true" { TRUE }

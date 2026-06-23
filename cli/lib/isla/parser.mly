@@ -55,11 +55,15 @@
 %token COLON ":"
 %token MINUS "-"
 %token SEMICOLON ";"
+%token LBRACKET "["
+%token RBRACKET "]"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
 %token PHYSICAL
 %token IDENTITY
 %token WITH
+%token DEFAULT
+%token AND_KW
 %token CODE
 %token DATA
 %token TRUE
@@ -74,6 +78,7 @@
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
 %type <Page_table_ast.attr> page_table_attr
+%type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
 
 %%
 
@@ -92,14 +97,30 @@ page_table_stmt:
 page_table_stmt_inner:
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
-  | va_name = IDENT; "|->"; pa_name = IDENT
-    { Page_table_ast.Mapping {va_name; pa_name} }
-  | va_name = IDENT; "?->"; pa_name = IDENT
-    { Page_table_ast.MaybeMapping {va_name; pa_name} }
+  | va_name = IDENT; "|->"; pa_name = IDENT;
+    attrs = option(page_table_descriptor_attrs)
+    { Page_table_ast.Mapping
+        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+    }
+  | va_name = IDENT; "?->"; pa_name = IDENT;
+    attrs = option(page_table_descriptor_attrs)
+    { Page_table_ast.MaybeMapping
+        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+    }
   | "*"; pa_name = IDENT; "="; value = NUM
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = NUM; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+
+page_table_descriptor_attrs:
+  | WITH; "[";
+    attrs = separated_nonempty_list(",", page_table_descriptor_attr);
+    "]"; AND_KW; DEFAULT
+    { attrs }
+
+%inline page_table_descriptor_attr:
+  | name = IDENT; "="; value = NUM
+    { Page_table_ast.{name; value} }
 
 page_table_attr:
   | CODE { Page_table_ast.Code }
