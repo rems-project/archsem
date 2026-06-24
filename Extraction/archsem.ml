@@ -93,7 +93,7 @@ module X86 = struct
     tc rm
 
   let op_model ?(allow_eager = true) isem fuel term initState =
-    OperationalX86TSO.x86_operational_modelc (Z.of_int fuel) isem allow_eager
+    OperationalX86TSO.x86_tso_modelc (Z.of_int fuel) isem allow_eager
       (ArchState.num_thread initState |> Z.of_int)
       (termCond_to_coq term) initState
     |> Obj.magic
