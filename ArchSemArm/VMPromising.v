@@ -1685,11 +1685,8 @@ Module IIS.
           remaining : list (bv 64)
         }.
 
-    Definition pop : Exec.t t string (bv 64) :=
-      remain ← mget remaining;
-      if remain is h :: tl then
-        msetv remaining tl;;
-        mret h
+    Definition pop (tres : t): result string (t * bv 64) :=
+      if tres.(remaining) is h :: tl then mret (setv remaining tl tres, h)
       else mthrow "Couldn't pop the next PTE: error in translation assumptions".
   End TransRes.
 
@@ -1820,14 +1817,13 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     instruction word as a [bv (8 * size)] formed by concatenating the
     bytes in [addr_range addr size]. Fails if [size] is not 4, or
     if any byte in the range has been overwritten by a later write. *)
-Definition read_imem (addr : address) (size : N) (init : memoryMap)
-    (mem : Memory.t) : Exec.res string (bv (8 * size)) :=
-  guard_or "Ifetch of size other than 4" (size = 4)%N;;
+Definition read_imem (addr : address) (init : memoryMap)
+    (mem : Memory.t) : Exec.res string (bv 32) :=
   bytes ← othrow "Modified instruction memory" $
-    for a in addr_range addr size do
+    for a in addr_range addr 4 do
       Memory.read_initial a init mem
     end;
-  mret (bv_of_bytes _ bytes).
+  mret (bv_of_bytes 32 bytes).
 
 (** Returns all interesting timestamp when reading range [addr, addr+size) with
     minimum view [vpre]. Those are [vpre] itself and any later timestamp that
@@ -1921,15 +1917,19 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   mret res.
 
 (** Read a PTE from the TLB entry selected at translation start *)
-Definition read_pte (vaddr : view) :
-    Exec.t (TState.t * IIS.TransRes.t) string (view * bv 64) :=
-  ts ← mget fst;
-  tres ← mget snd;
-  let vpost := vaddr ⊔ tres.(IIS.TransRes.time) in
+Definition read_pte :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string (bv 64) :=
+  tres_opt ← mget (IIS.trs ∘ PPState.iis);
+  tres ← othrow "TTW read before translation start" tres_opt;
+  viio ← mget (IIS.strict ∘ PPState.iis);
+  let vpost := viio ⊔ tres.(IIS.TransRes.time) in
+  ts ← mget PPState.state;
   guard_discard (TState.no_promises_until vpost ts);;
-  val ← Exec.liftSt snd IIS.TransRes.pop;
-  mset fst $ TState.update TState.vspec vpost;;
-  mret (vpost, val).
+  '(ntres, val) ← mlift (IIS.TransRes.pop tres);
+  msetv (IIS.trs ∘ PPState.iis) (Some ntres);;
+  mset PPState.iis $ IIS.add vpost;;
+  mset PPState.state $ TState.update TState.vspec vpost;;
+  mret val.
 
 (** Performs a memory write for a thread [tid] at [addr]:
 
@@ -2299,27 +2299,17 @@ Section RunOutcome.
   | MemRead (MemReq.make macc addr addr_space size 0) =>
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       if is_ifetch macc then
+        size_4 ← guard_or "Ifetch read of size other than 4" (size = 4)%N;
         mem ← mget PPState.mem;
-        opcode ← mlift $ read_imem addr size initmem mem;
-        mret (Ok (opcode, 0%bv), None)
+        opcode ← mlift $ read_imem addr initmem mem;
+        mret (Ok (ctrans _ opcode, 0%bv), None)
       else if is_explicit macc then
         val ← read_mem_explicit addr size macc initmem;
         mret (Ok (val, 0%bv), None)
       else if is_ttw macc then
-        guard_or "TTW of size other than 8" (size =? 8)%N;;
-        iis ← mget PPState.iis;
-        let vaddr := iis.(IIS.strict) in
-        ts ← mget PPState.state;
-        tres ← othrow "TTW read before translation start" iis.(IIS.trs);
-        '(view, val) ←
-          read_pte vaddr (ts, tres)
-          |> Exec.lift_res_set_full
-              (λ '(ts, tres) ppst,
-                ppst
-                |> setv PPState.state ts
-                |> set PPState.iis (IIS.set_trs tres));
-        mset PPState.iis $ IIS.add view;;
-        mret (Ok (bv_zero_extend (8 * size) val, 0%bv), None)
+        size_8 ← guard_or "TTW read of size other than 8" (size = 8)%N;
+        val ← read_pte;
+        mret (Ok (ctrans _ val, 0%bv), None)
       else mthrow "Read is not explicit, ifetch, nor translation"
   | MemRead _ => mthrow "Memory read with tags unsupported"
   | MemWriteAddrAnnounce _ =>
@@ -2359,6 +2349,7 @@ Section RunOutcome.
         $ run_take_exception fault (length mem);;
       mret ((), None)
   | _ => mthrow "Unsupported outcome".
+  Solve Obligations with lia.
 
   Definition run_outcome' (out : outcome) :
       Exec.t (PPState.t TState.t Ev.t IIS.t) string (eff_ret out) :=
