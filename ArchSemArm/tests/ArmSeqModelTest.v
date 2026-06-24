@@ -150,7 +150,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
       archState.regs := [# init_reg];
       archState.address_space := PAS_NonSecure |}.
   Definition test_results :=
-    sequential_modelc None 2 arm_sem 1%nat termCond initState.
+    sequential_modelc None 3 arm_sem 1%nat termCond initState.
 
   Goal r0_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).

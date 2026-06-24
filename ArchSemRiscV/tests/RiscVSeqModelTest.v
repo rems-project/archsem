@@ -212,7 +212,7 @@ Module STRLDR. (* sd x2, 0x100(x1); ld x1, 0x100(x1) at 0x500, using address 0x1
       archState.regs := [# init_reg];
       archState.address_space := () |}.
   Definition test_results :=
-    sequential_modelc None 2 riscv_sem 1%nat termCond initState.
+    sequential_modelc None 3 riscv_sem 1%nat termCond initState.
 
   Goal x1_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
