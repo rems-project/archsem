@@ -473,7 +473,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         enumerate_results tid (initmem st) fuel (tstate tid st) (events st)
       in
       if out_of_fuel then
-        b ← mchoosef;
+        b ← mchoosef bool;
         if (b : bool) then mthrow "out of fuel" else mchoosel promises
       else mchoosel promises.
 
@@ -522,7 +522,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         opt ← mchoosel (seq 0 4);
         match opt : nat with
         | 0 =>
-          '(tid : fin n) ← mchoosef;
+          tid ← mchoosef (fin n);
           next_ev ← mchoosel (execution_results !!! tid).(promises);
           mSet (promise_tid prom tid next_ev);;
           run_promise_first fuel
