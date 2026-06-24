@@ -174,7 +174,14 @@ let find_section name (asm_result : Assembler.assembly_result) =
     asm_result.sections
 
 (* Build per-thread initial register maps: PC + user init + config defaults. *)
-let build_registers ~arch ~lookup_addr ~pc (start_pc : int) (thread : Ir.thread) =
+let build_registers
+      ~arch
+      ~lookup_addr
+      ~pc
+      ?page_table_root
+      (start_pc : int)
+      (thread : Ir.thread)
+  =
   let pc_entry = (pc, RegValGen.Number (Z.of_int start_pc)) in
   let used_regs =
     List.map
@@ -187,6 +194,12 @@ let build_registers ~arch ~lookup_addr ~pc (start_pc : int) (thread : Ir.thread)
   in
   let base_regs = pc_entry :: used_regs in
   let has regs name = List.exists (fun (reg, _) -> reg = name) regs in
+  let base_regs =
+    match page_table_root with
+    | Some root when not (has base_regs "TTBR0_EL1") ->
+        base_regs @ [("TTBR0_EL1", RegValGen.Number (Z.of_int root))]
+    | _ -> base_regs
+  in
   let default_regs =
     List.filter_map
       (fun (reg, value) -> if has base_regs reg then None else Some (reg, value))
@@ -194,14 +207,20 @@ let build_registers ~arch ~lookup_addr ~pc (start_pc : int) (thread : Ir.thread)
   in
   base_regs @ default_regs
 
-let build_threads ~arch ~lookup_addr asm_result (threads : Ir.thread list) :
-  Testrepr.thread list
+let build_threads
+      ~arch
+      ~lookup_addr
+      ?page_table_root
+      asm_result
+      (threads : Ir.thread list) : Testrepr.thread list
   =
   let pc = pc_reg arch in
   List.mapi
     (fun tid (thread : Ir.thread) ->
        let sec = find_section (thread_section_name tid) asm_result in
-       let regs = build_registers ~arch ~lookup_addr ~pc sec.addr thread in
+       let regs =
+         build_registers ~arch ~lookup_addr ~pc ?page_table_root sec.addr thread
+       in
        let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
        {Testrepr.regs; breakpoints}
      )
@@ -350,7 +369,13 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   let asm_result = Assembler.assemble ~filename asm_input in
   let page_table = build_page_table_setup ir allocator asm_result in
   let lookup_addr = build_lookup_addr asm_result page_table in
-  let threads = build_threads ~arch:ir.arch ~lookup_addr asm_result ir.threads in
+  let page_table_root =
+    Option.map (fun layout -> layout.Page_table_builder.root) page_table
+  in
+  let threads =
+    build_threads ~arch:ir.arch ~lookup_addr ?page_table_root asm_result
+      ir.threads
+  in
   let memory =
     build_memory ~mem_size ~data_symbols:asm_input.symbols ~lookup_addr
       ~locations:ir.locations asm_result page_table
