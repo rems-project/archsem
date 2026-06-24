@@ -9,14 +9,14 @@ x ?-> pa_y;
 """
 
 [thread.0]
-init = { X0 = 1, X1 = "x", X2 = 1, X3 = "y", TTBR0_EL1 = "page_table_base", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X0 = 1, X1 = "x", X2 = 1, X3 = "y", SCTLR_EL1 = 1, CurrentEL = 1 }
 code = """
 	STR X0,[X1]
 	STR X2,[X3]
 """
 
 [thread.1]
-init = { X1 = "y", X3 = "x", TTBR0_EL1 = "page_table_base", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X1 = "y", X3 = "x", SCTLR_EL1 = 1, CurrentEL = 1 }
 code = """
 	LDR X0,[X1]
 	LDR X2,[X3]
