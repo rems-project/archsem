@@ -40,6 +40,10 @@
 
 %{
   open Litmus.Assertion
+
+  let require_page_table_keyword expected actual =
+    if actual <> expected then
+      failwith (Printf.sprintf "expected '%s', got '%s'" expected actual)
 %}
 
 %token <Z.t> NUM
@@ -77,8 +81,10 @@
 %start <Term.t> binding
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
+%type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
 %type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
+%type <int> page_table_mapping_level
 
 %%
 
@@ -97,20 +103,32 @@ page_table_stmt:
 page_table_stmt_inner:
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
-  | va_name = IDENT; "|->"; pa_name = IDENT;
-    attrs = option(page_table_descriptor_attrs)
+  | va_name = IDENT; "|->"; target = page_table_mapping_target;
+    attrs = option(page_table_descriptor_attrs);
+    level = option(page_table_mapping_level)
     { Page_table_ast.Mapping
-        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs; level}
     }
-  | va_name = IDENT; "?->"; pa_name = IDENT;
-    attrs = option(page_table_descriptor_attrs)
+  | va_name = IDENT; "?->"; target = page_table_mapping_target;
+    attrs = option(page_table_descriptor_attrs);
+    level = option(page_table_mapping_level)
     { Page_table_ast.MaybeMapping
-        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs; level}
     }
   | "*"; pa_name = IDENT; "="; value = NUM
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = NUM; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+
+page_table_mapping_target:
+  | name = IDENT
+    { if name = "invalid" then Page_table_ast.Invalid
+      else Page_table_ast.PaName name
+    }
+  | name = IDENT; "("; addr = NUM; ")"
+    { require_page_table_keyword "table" name;
+      Page_table_ast.Table addr
+    }
 
 page_table_descriptor_attrs:
   | WITH; "[";
@@ -125,6 +143,14 @@ page_table_descriptor_attrs:
 page_table_attr:
   | CODE { Page_table_ast.Code }
   | DATA { Page_table_ast.Data }
+
+page_table_mapping_level:
+  | at_kw = IDENT; level_kw = IDENT; level = NUM
+    { require_page_table_keyword "at" at_kw;
+      require_page_table_keyword "level" level_kw;
+      try Z.to_int level
+      with Z.Overflow -> failwith "page-table level is out of range"
+    }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or [e1; e2] }

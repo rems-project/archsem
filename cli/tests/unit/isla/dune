@@ -1,5 +1,5 @@
 (tests
- (names assembler_test assertion_test)
+ (names assembler_test assertion_test page_table_test)
  (libraries archsem isla test_utils ounit2)
  (deps
   (source_tree ../../../../config)))

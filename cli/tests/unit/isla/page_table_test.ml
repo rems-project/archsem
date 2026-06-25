@@ -38,49 +38,93 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Page-table setup AST.
+(** Unit tests for page-table setup parsing and evaluation. *)
 
-    PA-side names may be declared with [physical], or allocated on first use by
-    mapping/data-init statements. *)
-type attr =
-  | Code
-  | Data
+open OUnit2
+module Ast = Isla.Page_table_ast
+module Builder = Isla.Page_table_builder
+module Desc = Isla.Page_table_desc
+module Fns = Isla.Page_table_fns
 
-type descriptor_field =
-  { name : string;
-    value : Z.t
-  }
+let z = Z.of_int
 
-type mapping_target =
-  | PaName of string
-  | Invalid
-  | Table of Z.t
+let parse input =
+  let lexbuf = Lexing.from_string input in
+  Isla.Parser.page_table_setup Isla.Lexer.token lexbuf
 
-type stmt =
-  (* [physical pa_x pa_y;] predeclares PA-side names. *)
-  | Physical of string list
-  (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side target.
-     Optional [with ... and default] clauses override descriptor fields. *)
-  | Mapping of
-      { va_name : string;
-        target : mapping_target;
-        attrs : descriptor_field list;
-        level : int option
-      }
-  (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
-  | MaybeMapping of
-      { va_name : string;
-        target : mapping_target;
-        attrs : descriptor_field list;
-        level : int option
-      }
-  (* [*pa_x = value;] initialises data at a PA-side name. *)
-  | DataInit of
-      { pa_name : string;
-        value : Z.t
-      }
-  (* [identity addr with attr;] maps one page to itself. *)
-  | IdentityMapping of
-      { addr : Z.t;
-        attr : attr
-      }
+let parse_cases =
+  [ ( "invalid at level",
+      "x |-> invalid at level 2;",
+      [ Ast.Mapping
+          {va_name = "x"; target = Ast.Invalid; attrs = []; level = Some 2}
+      ]
+    );
+    ( "table at level",
+      "x |-> table(0x283000) at level 2;",
+      [ Ast.Mapping
+          { va_name = "x";
+            target = Ast.Table (z 0x283000);
+            attrs = [];
+            level = Some 2
+          }
+      ]
+    )
+  ]
+
+let build stmts =
+  Builder.build ~arch:Litmus.Arch_id.Arm ~allocator:(Isla.Allocator.make ())
+    ~symbolic_vas:[("x", 0x800000)]
+    ~code_pages:[] stmts
+
+let pte2_desc layout =
+  let pte =
+    Fns.pte_addr "test" layout.Builder.table_entries ~base:layout.Builder.root
+      ~va:0x800000 ~level:2
+  in
+  List.assoc_opt pte layout.Builder.table_entries
+
+let builder_cases =
+  [ ( "invalid at level",
+      fun _ ->
+        let layout =
+          build
+            [ Ast.Mapping
+                {va_name = "x"; target = Ast.Invalid; attrs = []; level = Some 2}
+            ]
+        in
+        assert_equal None (pte2_desc layout)
+    );
+    ( "table at level",
+      fun _ ->
+        let layout =
+          build
+            [ Ast.Mapping
+                { va_name = "x";
+                  target = Ast.Table (z 0x283000);
+                  attrs = [];
+                  level = Some 2
+                }
+            ]
+        in
+        assert_equal
+          ~printer:(function
+            | None -> "None" | Some desc -> Printf.sprintf "Some 0x%Lx" desc
+            )
+          (Some (Desc.table_descriptor 0x283000))
+          (pte2_desc layout)
+    )
+  ]
+
+let () =
+  run_test_tt_main
+    ("Isla.Page_table"
+    >::: [ "parse"
+           >::: List.map
+                  (fun (label, input, expected) ->
+                     label >:: fun _ -> assert_equal expected (parse input)
+                   )
+                  parse_cases;
+           "builder"
+           >::: List.map (fun (label, test) -> label >:: test) builder_cases
+         ]
+    )

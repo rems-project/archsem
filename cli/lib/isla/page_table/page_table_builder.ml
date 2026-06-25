@@ -100,6 +100,15 @@ let alloc_pa builder name =
       builder.symbols_pa <- (name, addr) :: builder.symbols_pa;
       addr
 
+let int_addr context addr =
+  try Z.to_int addr
+  with Z.Overflow ->
+    error "page_table: %s address out of range: %s" context (Z.format "%#x" addr)
+
+let check_level level =
+  if level < Desc.root_level || level > Desc.last_level then
+    error "page_table: invalid mapping level %d" level
+
 (** {1 Table page allocation} *)
 
 (** Allocate a fresh table page and remember its backing bytes. *)
@@ -147,6 +156,7 @@ let write_leaf table idx va desc =
 
 (** Add the requested mapping, allocating intermediate tables on demand. *)
 let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
+  check_level level;
   (* Check address alignment based on the mapping size. *)
   let mapping_size = 1 lsl Desc.level_shift level in
   let (va, pa) =
@@ -174,6 +184,18 @@ let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
   let root_table = find_table builder.tables builder.root in
   walk root_table Desc.root_level
 
+let write_descriptor ?(level = Desc.last_level) builder ~va desc =
+  check_level level;
+  let rec walk table current_level =
+    let idx = Desc.va_index va current_level in
+    if current_level = level then write_leaf table idx va desc
+    else
+      let child_table = ensure_child_table builder table idx in
+      walk child_table (current_level + 1)
+  in
+  let root_table = find_table builder.tables builder.root in
+  walk root_table Desc.root_level
+
 let add_code_mappings builder code_pages =
   List.iter
     (fun addr -> add_mapping builder ~va:addr ~pa:addr Page_table_ast.Code)
@@ -181,17 +203,37 @@ let add_code_mappings builder code_pages =
 
 (** {1 Statement evaluation} *)
 
+let eval_mapping_target ?level ?(attrs = []) builder ~va = function
+  | Page_table_ast.PaName pa_name ->
+      let pa = alloc_pa builder pa_name in
+      add_mapping ?level ~fields:attrs builder ~va ~pa Page_table_ast.Data
+  | Page_table_ast.Invalid ->
+      if attrs <> [] then
+        error "page_table: descriptor fields are only supported on PA mappings";
+      write_descriptor ?level builder ~va 0L
+  | Page_table_ast.Table addr ->
+      if attrs <> [] then
+        error "page_table: descriptor fields are only supported on PA mappings";
+      let level = Option.value ~default:Desc.last_level level in
+      if level >= Desc.last_level then
+        error "page_table: table mapping is not valid at level %d" level;
+      let table_pa = int_addr "table" addr in
+      let desc =
+        try Desc.table_descriptor table_pa
+        with Failure msg -> error "page_table: %s" msg
+      in
+      write_descriptor ~level builder ~va desc
+
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Physical names ->
       List.iter (fun name -> ignore (alloc_pa builder name)) names
-  | Page_table_ast.Mapping {va_name; pa_name; attrs} ->
+  | Page_table_ast.Mapping {va_name; target; attrs; level} ->
       let va =
         match List.assoc_opt va_name symbolic_vas with
         | Some addr -> addr
         | None -> error "page_table: undeclared VA: %s" va_name
       in
-      let pa = alloc_pa builder pa_name in
-      add_mapping ~fields:attrs builder ~va ~pa Page_table_ast.Data
+      eval_mapping_target ?level ~attrs builder ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
