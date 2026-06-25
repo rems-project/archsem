@@ -77,6 +77,7 @@
 %start <Term.t> binding
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
+%type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
 %type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
 
@@ -97,20 +98,26 @@ page_table_stmt:
 page_table_stmt_inner:
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
-  | va_name = IDENT; "|->"; pa_name = IDENT;
+  | va_name = IDENT; "|->"; target = page_table_mapping_target;
     attrs = option(page_table_descriptor_attrs)
     { Page_table_ast.Mapping
-        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs}
     }
-  | va_name = IDENT; "?->"; pa_name = IDENT;
+  | va_name = IDENT; "?->"; target = page_table_mapping_target;
     attrs = option(page_table_descriptor_attrs)
     { Page_table_ast.MaybeMapping
-        {va_name; pa_name; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs}
     }
   | "*"; pa_name = IDENT; "="; value = NUM
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = NUM; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+
+page_table_mapping_target:
+  | name = IDENT
+    { if name = "invalid" then Page_table_ast.Invalid
+      else Page_table_ast.PaName name
+    }
 
 page_table_descriptor_attrs:
   | WITH; "[";
