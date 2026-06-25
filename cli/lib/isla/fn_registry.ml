@@ -39,48 +39,28 @@
 (******************************************************************************)
 
 (** Registry for evaluating named functions in Isla terms.
-    Defines the [fn_spec] type and lookup/evaluation helpers.
+    Positional and keyword calls are kept as separate databases.
 
     Any error during evaluation should be reported with [Failure] which will be
     converted into a [eval_error] in [Term.eval] *)
 
-type fn_spec =
-  { params : string list;
-    eval : Z.t list -> Z.t
-  }
+type positional_fn = string * (Z.t list -> Z.t)
+
+type keyword_fn = string * ((string * Z.t) list -> Z.t)
+
+(** Raise a function-scoped evaluation error. *)
+let error fmt = Litmus.Error.failwith ("function: " ^^ fmt)
+
+(** Convert a Zarith argument to an OCaml [int], preserving function context. *)
+let int_arg name arg value =
+  match Z.to_int value with
+  | n -> n
+  | exception Z.Overflow -> error "%s: argument %s is too large" name arg
 
 let arity_error name expected actual =
-  Litmus.Error.failwith "function: %s: expected %d arguments, got %d" name
-    expected actual
+  error "%s: expected %d arguments, got %d" name expected actual
 
-let eval_fn ~fns name args =
+let eval ~fns name args =
   match List.assoc_opt name fns with
-  | Some spec -> spec.eval args
-  | None -> Litmus.Error.failwith "function: unknown %s/%d" name (List.length args)
-
-let align_kwargs name spec kwargs =
-  let bindings =
-    List.fold_left
-      (fun bindings (arg, value) ->
-         if not (List.mem arg spec.params) then
-           Litmus.Error.failwith "function: %s: unknown argument %s" name arg
-         else if List.mem_assoc arg bindings then
-           Litmus.Error.failwith "function: %s: duplicate argument %s" name arg
-         else (arg, value) :: bindings
-       )
-      [] kwargs
-  in
-  List.map
-    (fun param ->
-       match List.assoc_opt param bindings with
-       | Some value -> value
-       | None ->
-           Litmus.Error.failwith "function: %s: missing argument %s" name param
-     )
-    spec.params
-
-let eval_kwfn ~fns name kwargs =
-  match List.assoc_opt name fns with
-  | Some spec -> spec.eval (align_kwargs name spec kwargs)
-  | None ->
-      Litmus.Error.failwith "function: unknown %s/%d" name (List.length kwargs)
+  | Some eval -> eval args
+  | None -> error "unknown function %s" name

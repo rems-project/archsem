@@ -8,7 +8,7 @@ code = """
 """
 
 [locations]
-x = "bvor(a=0x1)"
+x = "bvor(0x1)"
 
 [final]
 expect = "sat"

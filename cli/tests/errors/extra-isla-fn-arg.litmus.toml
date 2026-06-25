@@ -1,5 +1,5 @@
 arch = "AArch64"
-name = "duplicate-isla-fn-arg"
+name = "extra-isla-fn-arg"
 symbolic = ["x"]
 
 [thread.0]
@@ -8,7 +8,7 @@ code = """
 """
 
 [locations]
-x = "bvor(a=0x1, a=0x2, b=0)"
+x = "bvor(0x1, 0x2, 0x3)"
 
 [final]
 expect = "sat"

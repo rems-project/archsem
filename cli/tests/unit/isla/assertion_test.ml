@@ -54,7 +54,7 @@ let sym s = Sym s
 
 let cst v = Const v
 
-let kwfn name args = KwFn (name, args)
+let fn name args = Fn (name, args)
 
 let parse = Isla.Ir.parse_assertion_expr
 
@@ -66,10 +66,8 @@ let parse_cases =
     ("register on rhs", "0:X0 = 2:X2", Atom (CmpLoc (reg 0 "X0", reg 2 "X2")));
     ("memory on rhs", "0:X0 = *x", Atom (CmpLoc (reg 0 "X0", mem "x")));
     ( "function on rhs",
-      "0:X0 = bvor(a=0x28, b=0x2)",
-      Atom
-        (CmpCst (reg 0 "X0", kwfn "bvor" [("a", cst (n 0x28)); ("b", cst (n 0x2))])
-        )
+      "0:X0 = bvor(0x28, 0x2)",
+      Atom (CmpCst (reg 0 "X0", fn "bvor" [cst (n 0x28); cst (n 0x2)]))
     );
     ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (reg 1 "X0", cst Z.one))));
     ( "conjunction",
