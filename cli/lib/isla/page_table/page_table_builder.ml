@@ -233,7 +233,7 @@ let translate_va_to_pa layout va =
     match desc_at table level with
     | None -> None
     | Some desc when level = Desc.last_level ->
-        if Int64.logand desc 0x1L <> 0L then
+        if Desc.is_valid desc then
           Some (Desc.addr_of_descriptor desc + page_offset)
         else None
     | Some desc -> (
