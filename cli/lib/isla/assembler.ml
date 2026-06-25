@@ -294,9 +294,3 @@ let assemble ~filename (input : assembly_input) : assembly_result =
        run_pipeline ~basename ~elf_path input.symbols input.sections;
        parse_elf elf_path input
      )
-
-(** Look up a symbol address by name. *)
-let resolve_symbol (result : assembly_result) (name : string) : int =
-  match List.assoc_opt name result.symbols with
-  | Some addr -> addr
-  | None -> Printf.ksprintf failwith "assembler: symbol %S not found" name

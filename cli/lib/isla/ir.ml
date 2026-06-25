@@ -64,6 +64,7 @@ type t =
     name : string;
     threads : thread list;
     sections : section list;
+    page_table_setup : Page_table_ast.stmt list;
     symbolic : string list;
     locations : (string * Term.t) list;
     kind : Litmus.Testrepr.kind;
@@ -154,11 +155,27 @@ let parse_arch toml =
   with Litmus.Arch_id.UnknownArch arch ->
     Toml.error "Unknown architecture \"%s\"" arch
 
+let lexbuf_line_char lexbuf =
+  let pos = Lexing.lexeme_start_p lexbuf in
+  (pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1)
+
+let parse_page_table_setup toml =
+  let s = Toml.get_string toml |> String.trim in
+  let lexbuf = Lexing.from_string s in
+  try Parser.page_table_setup Lexer.token lexbuf with
+  | Parser.Error ->
+      let (line, character) = lexbuf_line_char lexbuf in
+      Toml.error "page-table setup parse error at line %d, character %d" line
+        character
+  | Failure msg -> Toml.error "page-table setup parse error: %s" msg
+
 let of_toml toml =
   { arch = Toml.find toml parse_arch ["arch"];
     name = Toml.find_or ~default:"unknown" toml Toml.get_string ["name"];
     threads = Toml.find toml parse_threads ["thread"];
     sections = Toml.find_or ~default:[] toml parse_sections ["section"];
+    page_table_setup =
+      Toml.find_or ~default:[] toml parse_page_table_setup ["page_table_setup"];
     symbolic =
       Toml.find_or ~default:[] toml (Toml.get_array Toml.get_string) ["symbolic"];
     locations =

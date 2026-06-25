@@ -1,0 +1,18 @@
+arch = "AArch64"
+name = "conflicting-page-table-mapping"
+symbolic = ["x"]
+
+page_table_setup = """
+physical pa_x pa_y;
+x |-> pa_x;
+x |-> pa_y;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

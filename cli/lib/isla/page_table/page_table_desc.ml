@@ -38,96 +38,86 @@
 (*                                                                            *)
 (******************************************************************************)
 
-%{
-  open Litmus.Assertion
-%}
+(** AArch64 page table descriptor primitives.
 
-%token <Z.t> NUM
-%token <string> IDENT
-%token LPAREN "("
-%token RPAREN ")"
-%token COMMA ","
-%token AND "&"
-%token OR "|"
-%token NOT "~"
-%token EQ "="
-%token STAR "*"
-%token COLON ":"
-%token MINUS "-"
-%token SEMICOLON ";"
-%token MAPS_TO "|->"
-%token MAYBE_MAPS_TO "?->"
-%token PHYSICAL
-%token IDENTITY
-%token WITH
-%token CODE
-%token DATA
-%token TRUE
-%token FALSE EOF
+    Pure functions for descriptor encoding and table entry read/write. *)
 
-%left OR
-%left AND
-%nonassoc NOT
+let table_size = Allocator.page_size
 
-%start <Term.t Litmus.Assertion.expr> assertion
-%start <Term.t> binding
-%start <Page_table_ast.stmt list> page_table_setup
-%type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
-%type <Page_table_ast.attr> page_table_attr
+let align_page_addr addr = addr - (addr mod Allocator.page_size)
 
-%%
+let entry_size = 8
 
-assertion:
-  | e = prop; EOF { e }
+let root_level = 0
 
-binding:
-  | v = term; EOF { v }
+let last_level = 3
 
-page_table_setup:
-  | ss = nonempty_list(page_table_stmt); EOF { ss }
+let aarch64_data_attrs = 0x440L
 
-page_table_stmt:
-  | s = page_table_stmt_inner; ";" { s }
+let aarch64_code_attrs = 0x4C0L
 
-page_table_stmt_inner:
-  | PHYSICAL; names = nonempty_list(IDENT)
-    { Page_table_ast.Physical names }
-  | va_name = IDENT; "|->"; pa_name = IDENT
-    { Page_table_ast.Mapping {va_name; pa_name} }
-  | va_name = IDENT; "?->"; pa_name = IDENT
-    { Page_table_ast.MaybeMapping {va_name; pa_name} }
-  | "*"; pa_name = IDENT; "="; value = NUM
-    { Page_table_ast.DataInit {pa_name; value} }
-  | IDENTITY; addr = NUM; WITH; attr = page_table_attr
-    { Page_table_ast.IdentityMapping {addr; attr} }
+(** Bit shift of the VA index for a 4KB AArch64 translation-table level. *)
+let level_shift = function
+  | 0 -> 39
+  | 1 -> 30
+  | 2 -> 21
+  | 3 -> 12
+  | n -> Printf.ksprintf invalid_arg "page_table_desc: invalid level %d" n
 
-page_table_attr:
-  | CODE { Page_table_ast.Code }
-  | DATA { Page_table_ast.Data }
+(** Extract the 9-bit table index for [va] at [level]. *)
+let va_index va level = (va lsr level_shift level) land 0x1FF
 
-prop:
-  | e1 = prop; "|"; e2 = prop { Or [e1; e2] }
-  | e1 = prop; "&"; e2 = prop { And [e1; e2] }
-  | "~"; e = prop { Not e }
-  | "("; e = prop; ")" { e }
-  | a = atom { Atom a }
-  | TRUE { True }
-  | FALSE { False }
+(** {1 Descriptor values}
 
-atom:
-  | lhs = loc; "="; rhs = term { CmpCst (lhs, rhs) }
-  | lhs = loc; "="; rhs = loc { CmpLoc (lhs, rhs) }
+    Attribute bits are stored without the type field (bits 1:0). *)
 
-loc:
-  | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | "*"; s = IDENT { Mem s }
+let addr_mask = 0x0000FFFFFFFFF000L
 
-term:
-  | v = NUM { Term.Const v }
-  | "-"; v = NUM { Term.Const (Z.neg v) }
-  | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
-  | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
-  | s = IDENT { Term.Sym s }
+let low_attr_mask = 0xFFFL
 
-kw_arg:
-  | k = IDENT; "="; v = term { (k, v) }
+let desc_type_mask = 0x3L
+
+let attr_mask = Int64.logand low_attr_mask (Int64.lognot desc_type_mask)
+
+let require_in_mask name mask value =
+  if Int64.logand value (Int64.lognot mask) <> 0L then
+    Printf.ksprintf failwith
+      "page_table_desc: %s 0x%Lx is not contained in mask 0x%Lx" name value mask
+
+let require_addr_in_mask name addr =
+  let addr = Int64.of_int addr in
+  require_in_mask name addr_mask addr;
+  addr
+
+(** Extract the output address from a table, block, or page descriptor. *)
+let addr_of_descriptor desc = Int64.to_int (Int64.logand desc addr_mask)
+
+(** Return the next table address when [desc] is a table descriptor. *)
+let table_addr_of_descriptor desc =
+  let attrs = Int64.logand desc low_attr_mask in
+  if attrs = 0x3L then Some (addr_of_descriptor desc) else None
+
+(** Encode a descriptor that points to the next-level table page. *)
+let table_descriptor next_table_pa =
+  let next_table_pa = require_addr_in_mask "next_table_pa" next_table_pa in
+  Int64.logor next_table_pa 0x3L
+
+(** Encode a level-3 page descriptor. *)
+let page_descriptor pa attrs =
+  let pa = require_addr_in_mask "pa" pa in
+  require_in_mask "attrs" attr_mask attrs;
+  Int64.logor (Int64.logor pa attrs) 0x3L
+
+(** {1 Entry encoding}
+
+    Each table entry stores one descriptor value as a 64-bit little-endian word. *)
+
+(** Read one descriptor entry from a table page. *)
+let read_entry data idx =
+  let offset = idx * entry_size in
+  Bytes.get_int64_le data offset
+
+(** Write one descriptor entry into a table page. *)
+let write_entry data idx value =
+  let offset = idx * entry_size in
+  Bytes.set_int64_le data offset value

@@ -84,11 +84,11 @@ module Make (Arch : Archsem.Arch) = struct
       raise Exit
     );
 
-    let resolve_sym = Testrepr.resolve_sym test in
+    let lookup_addr = Testrepr.lookup_addr test in
 
     let (observed, not_observed) =
       List.partition
-        (fun fs -> AssertionChecker.check_assertion ~resolve_sym fs test.final)
+        (fun fs -> AssertionChecker.check_assertion ~lookup_addr fs test.final)
         final_states
     in
 
@@ -102,7 +102,7 @@ module Make (Arch : Archsem.Arch) = struct
         List.map
           (fun fs ->
              List.map
-               (fun loc -> (loc, AssertionChecker.lookup_loc ~resolve_sym fs loc))
+               (fun loc -> (loc, AssertionChecker.lookup_loc ~lookup_addr fs loc))
                locations
            )
           final_states
