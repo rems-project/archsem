@@ -58,4 +58,4 @@ data = 0
 # TSO allows: (0,0), (0,1), (1,1) but NOT (1,0)
 [final]
 kind = "notexists"
-assertion.and = [{"1:rax"=0},{"1:rbx"=1}]
+assertion.and = [{"1:rax"=1},{"1:rbx"=0}]
