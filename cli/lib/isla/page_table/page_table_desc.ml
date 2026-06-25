@@ -104,6 +104,14 @@ let make_descriptor_field Page_table_ast.{name; value} =
       let bits = descriptor_field_bits name value field.lsb field.width in
       (descriptor_field_mask field.lsb field.width, bits)
 
+let apply_descriptor_fields desc fields =
+  List.fold_left
+    (fun desc field ->
+       let (mask, bits) = make_descriptor_field field in
+       update_bits desc mask bits
+     )
+    desc fields
+
 let addr_mask = 0x0000FFFFFFFFF000L
 
 let low_attr_mask = 0xFFFL
@@ -135,24 +143,32 @@ let table_descriptor next_table_pa =
   let next_table_pa = require_addr_in_mask "next_table_pa" next_table_pa in
   Int64.logor next_table_pa 0x3L
 
+let attrs_of_kind = function
+  | Page_table_ast.Code -> aarch64_code_attrs
+  | Page_table_ast.Data -> aarch64_data_attrs
+
 (** Encode a level-3 page descriptor. *)
 let page_descriptor pa kind fields =
   let pa = require_addr_in_mask "pa" pa in
-  let base_attrs =
-    match kind with
-    | Page_table_ast.Code -> aarch64_code_attrs
-    | Page_table_ast.Data -> aarch64_data_attrs
-  in
+  let base_attrs = attrs_of_kind kind in
   require_in_mask "attrs" attr_mask base_attrs;
-  let attrs =
-    List.fold_left
-      (fun attrs field ->
-         let (mask, bits) = make_descriptor_field field in
-         update_bits attrs mask bits
-       )
-      base_attrs fields
-  in
-  Int64.logor (Int64.logor pa attrs) 0x3L
+  let desc = Int64.logor (Int64.logor pa base_attrs) 0x3L in
+  apply_descriptor_fields desc fields
+
+(** Encode a block descriptor for a non-leaf page-table level. *)
+let block_descriptor pa level kind fields =
+  let shift = level_shift level in
+  let mask = Int64.logand addr_mask (Int64.shift_left (-1L) shift) in
+  let pa = Int64.of_int pa in
+  require_in_mask "pa" mask pa;
+  let base_attrs = attrs_of_kind kind in
+  require_in_mask "attrs" attr_mask base_attrs;
+  let desc = Int64.logor (Int64.logor pa base_attrs) 0x1L in
+  apply_descriptor_fields desc fields
+
+let make_desc ?(fields = []) ~level ~oa ~kind () =
+  if level = last_level then page_descriptor oa kind fields
+  else block_descriptor oa level kind fields
 
 (** {1 Entry encoding}
 

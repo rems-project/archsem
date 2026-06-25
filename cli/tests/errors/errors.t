@@ -119,7 +119,7 @@ Unknown Isla function
   $ archsem seq unknown-isla-fn.litmus.toml
   archsem: eval error:
   File "unknown-isla-fn.litmus.toml", path "locations.x":
-  function: unknown unknown_fn/1
+  function: unknown unknown_fn
   [1]
 
 Missing Isla function argument
@@ -136,18 +136,25 @@ Duplicate Isla function argument
   function: bvor: duplicate argument a
   [1]
 
+No matching Isla function overload
+  $ archsem seq no-matching-isla-fn-overload.litmus.toml
+  archsem: eval error:
+  File "no-matching-isla-fn-overload.litmus.toml", path "locations.x":
+  function: no matching overload for mkdesc2
+  [1]
+
 Isla function error in register initialization
   $ archsem seq init-isla-fn-error.litmus.toml
   archsem: eval error:
   File "init-isla-fn-error.litmus.toml", path "thread.0.init.R0":
-  function: unknown unknown_fn/1
+  function: unknown unknown_fn
   [1]
 
 Isla function error in final assertion
   $ archsem seq final-isla-fn-error.litmus.toml
   archsem: eval error:
   File "final-isla-fn-error.litmus.toml", path "final.assertion":
-  function: unknown unknown_fn/1
+  function: unknown unknown_fn
   [1]
 
 Negative Isla final assertion

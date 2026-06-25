@@ -48,8 +48,7 @@ type t =
 
 let zero = Const Z.zero
 
-(* More functions can be appended. *)
-let builtins = Bv_fns.functions
+let builtins = Bv_fns.functions @ Page_table_fns.functions
 
 let rec eval ~lookup_addr = function
   | Const z -> z

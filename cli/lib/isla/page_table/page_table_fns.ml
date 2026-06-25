@@ -38,100 +38,81 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Bitvector functions: bvand, bvor, bvxor, bvshl, bvlshr, extz, exts. *)
+(** Page-table helper functions available in Isla expressions. *)
 
-let check_non_negative_arg name arg value =
-  if Z.sign value < 0 then
-    Fn_registry.error "%s: argument %s must be non-negative" name arg
+(** [page(a)] extracts a 4KB page number from an address. *)
+let page_function =
+  ( "page",
+    { Fn_registry.params = ["a"];
+      defaults = [];
+      eval =
+        (function
+          | [a] ->
+              Z.logand (Z.shift_right a 12) (Z.sub (Z.shift_left Z.one 36) Z.one)
+          | args -> Fn_registry.arity_error "page" 1 (List.length args)
+          )
+    }
+  )
 
-let int_of_bit_arg name arg value =
-  check_non_negative_arg name arg value;
-  Fn_registry.int_arg name arg value
+(** [asid(v)] shifts an ASID value into bits [63:48]. *)
+let asid_function =
+  ( "asid",
+    { Fn_registry.params = ["v"];
+      defaults = [];
+      eval =
+        (function
+          | [v] -> Z.shift_left v 48
+          | args -> Fn_registry.arity_error "asid" 1 (List.length args)
+          )
+    }
+  )
 
-(** List of bitvector primitive functions
+(** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
+let make_desc_function level =
+  let name = Printf.sprintf "mkdesc%d" level in
+  ( name,
+    { Fn_registry.params = ["oa"; "Valid"; "AF"; "AP"; "DBM"];
+      defaults = [("Valid", Z.one); ("AF", Z.one); ("AP", Z.one); ("DBM", Z.zero)];
+      eval =
+        (function
+          | [oa; valid; af; ap; dbm] ->
+              Z.of_int64
+                (Page_table_desc.make_desc ~level
+                   ~oa:(Fn_registry.int_arg name "oa" oa)
+                   ~kind:Page_table_ast.Data
+                   ~fields:
+                     [ {name = "Valid"; value = valid};
+                       {name = "AF"; value = af};
+                       {name = "AP"; value = ap};
+                       {name = "DBM"; value = dbm}
+                     ]
+                   ()
+                )
+          | args -> Fn_registry.arity_error name 5 (List.length args)
+          )
+    }
+  )
 
-    Any error during evaluation should be reported with [Failure] which will be
-    converted into a [eval_error] in [Term.eval] *)
-let functions : (string * Fn_registry.fn_spec) list =
-  [ ( "bvand",
-      { params = ["a"; "b"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logand a b
-            | _ -> Fn_registry.arity_error "bvand" 2 (List.length args)
+(** [mkdescN(table=...)] encodes a next-level table descriptor. *)
+let make_table_desc_function level =
+  let name = Printf.sprintf "mkdesc%d" level in
+  ( name,
+    { Fn_registry.params = ["table"];
+      defaults = [];
+      eval =
+        (function
+          | [table_addr] ->
+              Z.of_int64
+                (Page_table_desc.table_descriptor
+                   (Fn_registry.int_arg name "table" table_addr)
+                )
+          | args -> Fn_registry.arity_error name 1 (List.length args)
           )
-      }
-    );
-    ( "bvor",
-      { params = ["a"; "b"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logor a b
-            | _ -> Fn_registry.arity_error "bvor" 2 (List.length args)
-          )
-      }
-    );
-    ( "bvxor",
-      { params = ["a"; "b"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logxor a b
-            | _ -> Fn_registry.arity_error "bvxor" 2 (List.length args)
-          )
-      }
-    );
-    ( "bvshl",
-      { params = ["a"; "b"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.shift_left a (int_of_bit_arg "bvshl" "b" b)
-            | _ -> Fn_registry.arity_error "bvshl" 2 (List.length args)
-          )
-      }
-    );
-    ( "bvlshr",
-      { params = ["a"; "b"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] ->
-                check_non_negative_arg "bvlshr" "a" a;
-                Z.shift_right a (int_of_bit_arg "bvlshr" "b" b)
-            | _ -> Fn_registry.arity_error "bvlshr" 2 (List.length args)
-          )
-      }
-    );
-    ( "extz",
-      { params = ["bits"; "len"];
-        defaults = [];
-        eval =
-          (fun args ->
-            match args with
-            | [bits; len] ->
-                check_non_negative_arg "extz" "bits" bits;
-                ignore (int_of_bit_arg "extz" "len" len);
-                bits
-            | _ -> Fn_registry.arity_error "extz" 2 (List.length args)
-          )
-      }
-    );
-    ( "exts",
-      { params = ["bits"; "len"];
-        defaults = [];
-        eval =
-          (fun _ ->
-            Litmus.Error.failwith
-              "exts is not support because of integer semantics"
-          )
-      }
-    )
-  ]
+    }
+  )
+
+let functions =
+  let levels = [0; 1; 2; 3] in
+  [page_function; asid_function]
+  @ List.map make_desc_function levels
+  @ List.map make_table_desc_function levels

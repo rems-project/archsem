@@ -46,41 +46,89 @@
 
 type fn_spec =
   { params : string list;
+    defaults : (string * Z.t) list;
     eval : Z.t list -> Z.t
   }
 
-let arity_error name expected actual =
-  Litmus.Error.failwith "function: %s: expected %d arguments, got %d" name
-    expected actual
+(** Raise a function-scoped evaluation error. *)
+let error fmt = Litmus.Error.failwith ("function: " ^^ fmt)
 
+(** Report a positional arity mismatch for [name]. *)
+let arity_error name expected actual =
+  error "%s: expected %d arguments, got %d" name expected actual
+
+(** Convert a Zarith argument to an OCaml [int], preserving function context. *)
+let int_arg name arg value =
+  match Z.to_int value with
+  | n -> n
+  | exception Z.Overflow -> error "%s: argument %s is too large" name arg
+
+(** Return arguments in parameter order, filling missing values from defaults. *)
+let align name spec bindings =
+  List.map
+    (fun param ->
+       match List.assoc_opt param bindings with
+       | Some value -> value
+       | None -> (
+         match List.assoc_opt param spec.defaults with
+         | Some value -> value
+         | None -> error "%s: missing argument %s" name param
+       )
+     )
+    spec.params
+
+(** Pair positional arguments with their parameter names. *)
+let bind_args name spec args =
+  let rec bind params args =
+    match (params, args) with
+    | (_, []) -> []
+    | (param :: params, arg :: args) -> (param, arg) :: bind params args
+    | ([], _ :: _) ->
+        let expected = List.length spec.params in
+        let actual = List.length args in
+        arity_error name expected actual
+  in
+  bind spec.params args
+
+(** Evaluate a positional call, normalizing only functions with defaults. *)
 let eval_fn ~fns name args =
   match List.assoc_opt name fns with
-  | Some spec -> spec.eval args
-  | None -> Litmus.Error.failwith "function: unknown %s/%d" name (List.length args)
+  | Some spec ->
+      if spec.defaults = [] then spec.eval args
+      else spec.eval (align name spec (bind_args name spec args))
+  | None -> error "unknown %s" name
 
+(** Validate keyword arguments and bind them by name before default filling. *)
 let align_kwargs name spec kwargs =
   let bindings =
     List.fold_left
       (fun bindings (arg, value) ->
          if not (List.mem arg spec.params) then
-           Litmus.Error.failwith "function: %s: unknown argument %s" name arg
+           error "%s: unknown argument %s" name arg
          else if List.mem_assoc arg bindings then
-           Litmus.Error.failwith "function: %s: duplicate argument %s" name arg
+           error "%s: duplicate argument %s" name arg
          else (arg, value) :: bindings
        )
       [] kwargs
   in
-  List.map
-    (fun param ->
-       match List.assoc_opt param bindings with
-       | Some value -> value
-       | None ->
-           Litmus.Error.failwith "function: %s: missing argument %s" name param
-     )
-    spec.params
+  align name spec bindings
 
+(** Evaluate a keyword call after selecting a matching function spec. *)
 let eval_kwfn ~fns name kwargs =
-  match List.assoc_opt name fns with
-  | Some spec -> spec.eval (align_kwargs name spec kwargs)
-  | None ->
-      Litmus.Error.failwith "function: unknown %s/%d" name (List.length kwargs)
+  let specs =
+    List.filter_map
+      (fun (fn_name, spec) -> if fn_name = name then Some spec else None)
+      fns
+  in
+  match specs with
+  | [] -> error "unknown %s" name
+  | [spec] -> spec.eval (align_kwargs name spec kwargs)
+  | specs -> (
+      (* Filter among overloaded functions *)
+      let accepts_kwargs spec =
+        List.for_all (fun (arg, _) -> List.mem arg spec.params) kwargs
+      in
+      match List.find_opt accepts_kwargs specs with
+      | Some spec -> spec.eval (align_kwargs name spec kwargs)
+      | None -> error "no matching overload for %s" name
+    )
