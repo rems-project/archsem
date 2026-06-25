@@ -98,9 +98,11 @@ let eval_error context fmt =
     (fun msg -> raise (Eval_error (eval_context_path context, msg)))
     fmt
 
-let eval_term ~context ~lookup_addr term =
+let eval_term ?page_table_va_base ?page_table_entries ~context ~lookup_addr term =
   try
-    let value = Term.eval ~lookup_addr term in
+    let value =
+      Term.eval ?page_table_va_base ?page_table_entries ~lookup_addr term
+    in
     match context with
     (* Final constants stay raw Z.t; registers read via bv_unsigned. *)
     | Final_assertion when Z.sign value < 0 ->
@@ -176,6 +178,8 @@ let find_section name (asm_result : Assembler.assembly_result) =
 (* Build per-thread initial register maps: PC + user init + config defaults. *)
 let build_registers
       ~arch
+      ?page_table_va_base
+      ?page_table_entries
       ?page_table_root
       ~lookup_addr
       ~pc
@@ -187,7 +191,12 @@ let build_registers
     List.map
       (fun (reg, value) ->
          let context = Register_init (thread.tid, reg) in
-         let gen = RegValGen.Number (eval_term ~context ~lookup_addr value) in
+         let gen =
+           RegValGen.Number
+             (eval_term ?page_table_va_base ?page_table_entries ~context
+                ~lookup_addr value
+             )
+         in
          (reg, normalize_register_gen ~arch ~context reg gen)
        )
       thread.init
@@ -215,6 +224,8 @@ let build_registers
 
 let build_threads
       ~arch
+      ?page_table_va_base
+      ?page_table_entries
       ?page_table_root
       ~lookup_addr
       asm_result
@@ -225,7 +236,8 @@ let build_threads
     (fun tid (thread : Ir.thread) ->
        let sec = find_section (thread_section_name tid) asm_result in
        let regs =
-         build_registers ~arch ?page_table_root ~lookup_addr ~pc sec.addr thread
+         build_registers ~arch ?page_table_va_base ?page_table_entries
+           ?page_table_root ~lookup_addr ~pc sec.addr thread
        in
        let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
        {Testrepr.regs; breakpoints}
@@ -376,13 +388,19 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   let asm_input = to_assembly_input allocator ir in
   let asm_result = Assembler.assemble ~filename asm_input in
   let page_table = build_page_table_setup ir allocator asm_result in
+  let page_table_entries =
+    Option.map (fun layout -> layout.Page_table_builder.table_entries) page_table
+  in
+  let page_table_va_base =
+    Option.map (fun layout -> layout.Page_table_builder.va_base) page_table
+  in
   let lookup_addr = build_lookup_addr asm_result page_table in
   let page_table_root =
     Option.map (fun layout -> layout.Page_table_builder.root) page_table
   in
   let threads =
-    build_threads ~arch:ir.arch ?page_table_root ~lookup_addr asm_result
-      ir.threads
+    build_threads ~arch:ir.arch ?page_table_va_base ?page_table_entries
+      ?page_table_root ~lookup_addr asm_result ir.threads
   in
   let memory =
     build_memory ~mem_size ~data_symbols:asm_input.symbols ~lookup_addr
@@ -395,6 +413,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
     kind = ir.kind;
     final =
       Assertion.map_cst
-        (eval_term ~context:Final_assertion ~lookup_addr)
+        (eval_term ?page_table_va_base ?page_table_entries
+           ~context:Final_assertion ~lookup_addr
+        )
         ir.assertion
   }

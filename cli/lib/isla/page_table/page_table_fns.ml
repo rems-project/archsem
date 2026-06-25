@@ -40,6 +40,23 @@
 
 (** Page-table helper functions available in Isla expressions. *)
 
+(** Return the PA of the PTE selected by [va] at [level], walking table
+    entries from the root translation-table PA [base]. *)
+let pte_addr name entries ~base ~va ~level =
+  let rec walk table current_level =
+    let index = Page_table_desc.va_index va current_level in
+    let addr = table + (index * Page_table_desc.entry_size) in
+    if current_level = level then addr
+    else
+      let desc = List.assoc_opt addr entries |> Option.value ~default:0L in
+      match Page_table_desc.table_addr_of_descriptor desc with
+      | Some next_table -> walk next_table (current_level + 1)
+      | None ->
+          Fn_registry.error "%s: no table descriptor at level %d for VA 0x%x" name
+            current_level va
+  in
+  walk base Page_table_desc.root_level
+
 (** [page(a)] extracts a 4KB page number from an address. *)
 let page_function =
   ( "page",
@@ -67,8 +84,56 @@ let asid_function =
     }
   )
 
+(** [pteN(va, base)] treats [base] as the root translation-table PA, then
+    returns the VA of the matching PTE in the page-table VA window. *)
+let pte_function page_table_va_base entries level =
+  let name = Printf.sprintf "pte%d" level in
+  ( name,
+    { Fn_registry.params = ["va"; "base"];
+      defaults = [];
+      eval =
+        (function
+          | [va; base] ->
+              let va = Fn_registry.int_arg name "va" va in
+              let root = Fn_registry.int_arg name "base" base in
+              let pte_pa = pte_addr name entries ~base:root ~va ~level in
+              (* [pte_pa] is a PA; VM code needs the VA for the same entry in
+                 the page-table pool window. *)
+              let offset = pte_pa - root in
+              if offset < 0 || offset >= Allocator.big_size then
+                Fn_registry.error
+                  "%s: PTE PA 0x%x is outside page-table pool rooted at 0x%x" name
+                  pte_pa root;
+              Z.of_int (page_table_va_base + offset)
+          | args -> Fn_registry.arity_error name 2 (List.length args)
+          )
+    }
+  )
+
+(** [descN(va, base)] treats [base] as the root translation-table PA and
+    returns the descriptor stored in the matching level-[N] PTE. *)
+let desc_function entries level =
+  let name = Printf.sprintf "desc%d" level in
+  ( name,
+    { Fn_registry.params = ["va"; "base"];
+      defaults = [];
+      eval =
+        (function
+          | [va; base] ->
+              let addr =
+                pte_addr name entries
+                  ~base:(Fn_registry.int_arg name "base" base)
+                  ~va:(Fn_registry.int_arg name "va" va)
+                  ~level
+              in
+              Z.of_int64 (List.assoc_opt addr entries |> Option.value ~default:0L)
+          | args -> Fn_registry.arity_error name 2 (List.length args)
+          )
+    }
+  )
+
 (** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
-let make_desc_function level =
+let mkdesc_function level =
   let name = Printf.sprintf "mkdesc%d" level in
   ( name,
     { Fn_registry.params = ["oa"; "Valid"; "AF"; "AP"; "DBM"];
@@ -94,7 +159,7 @@ let make_desc_function level =
   )
 
 (** [mkdescN(table=...)] encodes a next-level table descriptor. *)
-let make_table_desc_function level =
+let mkdesc_table_function level =
   let name = Printf.sprintf "mkdesc%d" level in
   ( name,
     { Fn_registry.params = ["table"];
@@ -111,8 +176,10 @@ let make_table_desc_function level =
     }
   )
 
-let functions =
+let functions ~page_table_va_base ~page_table_entries () =
   let levels = [0; 1; 2; 3] in
   [page_function; asid_function]
-  @ List.map make_desc_function levels
-  @ List.map make_table_desc_function levels
+  @ List.map (pte_function page_table_va_base page_table_entries) levels
+  @ List.map (desc_function page_table_entries) levels
+  @ List.map mkdesc_function levels
+  @ List.map mkdesc_table_function levels

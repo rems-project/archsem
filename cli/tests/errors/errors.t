@@ -139,7 +139,7 @@ Duplicate Isla function argument
 No matching Isla function overload
   $ archsem seq no-matching-isla-fn-overload.litmus.toml
   archsem: eval error:
-  File "no-matching-isla-fn-overload.litmus.toml", path "locations.x":
+  File "no-matching-isla-fn-overload.litmus.toml", path "thread.0.init.R0":
   function: no matching overload for mkdesc2
   [1]
 

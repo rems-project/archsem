@@ -1,14 +1,15 @@
 arch = "AArch64"
 name = "no-matching-isla-fn-overload"
-symbolic = ["x"]
+
+page_table_setup = """
+physical pa_x;
+"""
 
 [thread.0]
+init = { R0 = "mkdesc2(oa=0x1000, table=extz(0x283000, 64))" }
 code = """
     NOP
 """
-
-[locations]
-x = "mkdesc2(oa=0x1000, table=extz(0x283000, 64))"
 
 [final]
 expect = "sat"
