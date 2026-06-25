@@ -176,9 +176,9 @@ let find_section name (asm_result : Assembler.assembly_result) =
 (* Build per-thread initial register maps: PC + user init + config defaults. *)
 let build_registers
       ~arch
+      ?page_table_root
       ~lookup_addr
       ~pc
-      ?page_table_root
       (start_pc : int)
       (thread : Ir.thread)
   =
@@ -200,6 +200,12 @@ let build_registers
         base_regs @ [("TTBR0_EL1", RegValGen.Number (Z.of_int root))]
     | _ -> base_regs
   in
+  let base_regs =
+    match page_table_root with
+    | Some _ when not (has base_regs "SCTLR_EL1") ->
+        base_regs @ [("SCTLR_EL1", RegValGen.Number Z.one)]
+    | _ -> base_regs
+  in
   let default_regs =
     List.filter_map
       (fun (reg, value) -> if has base_regs reg then None else Some (reg, value))
@@ -209,8 +215,8 @@ let build_registers
 
 let build_threads
       ~arch
-      ~lookup_addr
       ?page_table_root
+      ~lookup_addr
       asm_result
       (threads : Ir.thread list) : Testrepr.thread list
   =
@@ -219,7 +225,7 @@ let build_threads
     (fun tid (thread : Ir.thread) ->
        let sec = find_section (thread_section_name tid) asm_result in
        let regs =
-         build_registers ~arch ~lookup_addr ~pc ?page_table_root sec.addr thread
+         build_registers ~arch ?page_table_root ~lookup_addr ~pc sec.addr thread
        in
        let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
        {Testrepr.regs; breakpoints}
@@ -229,7 +235,7 @@ let build_threads
 (** {2 Page table setup construction} *)
 
 (* Build the page-table layout from concrete section/symbol VAs.
-  Thread code pages are included so the DSL can request code mappings. *)
+   Thread code pages are included so the DSL can request code mappings. *)
 let build_page_table_setup ir allocator asm_result =
   match ir.Ir.page_table_setup with
   | [] -> None
@@ -254,15 +260,17 @@ let build_page_table_setup ir allocator asm_result =
       with Page_table_builder.Error msg -> eval_error Page_table_setup "%s" msg
     )
 
-(* Terms may refer to VA-side symbols from assembly and PA-side aliases created
-   by page_table_setup. *)
+(* Terms may refer to VA-side assembly symbols, the page-table VA window, and
+   PA-side symbols created by page_table_setup. *)
 let build_lookup_addr asm_result page_table =
-  let symbols_pa =
+  let page_table_symbols =
     match page_table with
     | None -> []
-    | Some layout -> layout.Page_table_builder.symbols_pa
+    | Some layout ->
+        ("page_table_va_base", layout.Page_table_builder.va_base)
+        :: layout.Page_table_builder.symbols_pa
   in
-  let symbols_addr = asm_result.Assembler.symbols @ symbols_pa in
+  let symbols_addr = asm_result.Assembler.symbols @ page_table_symbols in
   fun name ->
     match List.assoc_opt name symbols_addr with
     | Some addr -> addr
@@ -373,7 +381,7 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
     Option.map (fun layout -> layout.Page_table_builder.root) page_table
   in
   let threads =
-    build_threads ~arch:ir.arch ~lookup_addr ?page_table_root asm_result
+    build_threads ~arch:ir.arch ?page_table_root ~lookup_addr asm_result
       ir.threads
   in
   let memory =
