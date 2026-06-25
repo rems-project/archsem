@@ -42,6 +42,8 @@
 
     Pure functions for descriptor encoding and table entry read/write. *)
 
+module Ast = Page_table_ast
+
 let table_size = Allocator.page_size
 
 let align_page_addr addr = addr - (addr mod Allocator.page_size)
@@ -84,25 +86,38 @@ let descriptor_fields =
     {name = "DBM"; lsb = 51; width = 1}
   ]
 
+(** Replace the bits selected by [mask] with [bits], preserving all other bits. *)
 let update_bits desc mask bits =
   Int64.logor (Int64.logand desc (Int64.lognot mask)) bits
 
+(** Build a mask for a descriptor field of [width] bits starting at [lsb]. *)
 let descriptor_field_mask lsb width =
   Int64.shift_left (Int64.pred (Int64.shift_left 1L width)) lsb
 
+(** Check a field value and shift it into its descriptor bit position. *)
 let descriptor_field_bits name value lsb width =
-  let max_value = Z.shift_left Z.one width in
+  let max_value = Z.(~$1 lsl width) in
   if Z.lt value Z.zero || Z.geq value max_value then
     Litmus.Error.failwith "descriptor field %s value %s is out of range" name
       (Z.to_string value)
   else Int64.shift_left (Int64.of_int (Z.to_int value)) lsb
 
-let make_descriptor_field Page_table_ast.{name; value} =
+(** Convert a descriptor field to the mask and bits used to update a descriptor. *)
+let make_descriptor_field Ast.{name; value} =
   match List.find_opt (fun field -> field.name = name) descriptor_fields with
   | None -> Litmus.Error.failwith "unsupported descriptor field: %s" name
   | Some field ->
       let bits = descriptor_field_bits name value field.lsb field.width in
       (descriptor_field_mask field.lsb field.width, bits)
+
+(** Apply fields after descriptor construction so they may clear bits. *)
+let apply_descriptor_fields desc fields =
+  List.fold_left
+    (fun desc field ->
+       let (mask, bits) = make_descriptor_field field in
+       update_bits desc mask bits
+     )
+    desc fields
 
 let addr_mask = 0x0000FFFFFFFFF000L
 
@@ -112,6 +127,7 @@ let desc_type_mask = 0x3L
 
 let attr_mask = Int64.logand low_attr_mask (Int64.lognot desc_type_mask)
 
+(** Reject values that would set bits outside [mask]. *)
 let require_in_mask name mask value =
   if Int64.logand value (Int64.lognot mask) <> 0L then
     Printf.ksprintf failwith
@@ -135,24 +151,21 @@ let table_descriptor next_table_pa =
   let next_table_pa = require_addr_in_mask "next_table_pa" next_table_pa in
   Int64.logor next_table_pa 0x3L
 
+(** The AArch64 descriptor Valid bit is bit 0. *)
+let is_valid desc = Int64.logand desc 0x1L <> 0L
+
+let attrs_of_kind = function
+  | Ast.Code -> aarch64_code_attrs
+  | Ast.Data -> aarch64_data_attrs
+
 (** Encode a level-3 page descriptor. *)
 let page_descriptor pa kind fields =
   let pa = require_addr_in_mask "pa" pa in
-  let base_attrs =
-    match kind with
-    | Page_table_ast.Code -> aarch64_code_attrs
-    | Page_table_ast.Data -> aarch64_data_attrs
-  in
+  let base_attrs = attrs_of_kind kind in
   require_in_mask "attrs" attr_mask base_attrs;
-  let attrs =
-    List.fold_left
-      (fun attrs field ->
-         let (mask, bits) = make_descriptor_field field in
-         update_bits attrs mask bits
-       )
-      base_attrs fields
-  in
-  Int64.logor (Int64.logor pa attrs) 0x3L
+  (* Build the full descriptor first; overrides may intentionally clear Valid. *)
+  let desc = Int64.logor (Int64.logor pa base_attrs) 0x3L in
+  apply_descriptor_fields desc fields
 
 (** {1 Entry encoding}
 
