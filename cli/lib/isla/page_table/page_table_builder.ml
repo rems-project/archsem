@@ -67,6 +67,7 @@ let error fmt = Printf.ksprintf (fun msg -> raise (Error msg)) fmt
 type t =
   { allocator : Allocator.t;
     root : pa;
+    mutable next_table_pa : pa;
     mutable tables : (pa * table) list;
     mutable symbols_pa : (string * pa) list;
     mutable data_inits : (pa * data_value) list
@@ -76,7 +77,13 @@ let empty_table () = Bytes.make Desc.table_size '\x00'
 
 let make allocator ~root =
   let tables = [(root, empty_table ())] in
-  {allocator; tables; root; symbols_pa = []; data_inits = []}
+  { allocator;
+    tables;
+    root;
+    next_table_pa = root + Allocator.page_size;
+    symbols_pa = [];
+    data_inits = []
+  }
 
 let check_arch = function
   | Litmus.Arch_id.Arm -> ()
@@ -96,7 +103,10 @@ let alloc_pa builder name =
 
 (** Allocate a fresh table page and remember its backing bytes. *)
 let create_table_page builder =
-  let addr = Allocator.alloc_page builder.allocator in
+  if builder.next_table_pa >= builder.root + Allocator.big_size then
+    error "page_table: 2MB page-table pool exhausted";
+  let addr = builder.next_table_pa in
+  builder.next_table_pa <- addr + Allocator.page_size;
   let table = empty_table () in
   builder.tables <- (addr, table) :: builder.tables;
   (addr, table)
@@ -134,20 +144,28 @@ let write_leaf table idx va desc =
        va existing desc;
   Desc.write_entry table idx desc
 
+(** Align a VA or PA for the descriptor level being inserted. *)
+let check_aligned_at_level name level addr =
+  let mapping_size = Desc.level_size level in
+  if addr mod mapping_size = 0 then addr
+  else
+    error "page_table: %s 0x%x is not aligned for a level %d mapping" name addr
+      level
+
 (** Add the requested mapping, allocating intermediate tables on demand. *)
-let add_mapping ?(fields = []) builder ~va ~pa kind =
-  let va = Desc.align_page_addr va in
-  let pa = Desc.align_page_addr pa in
+let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
+  let va = check_aligned_at_level "VA" level va in
+  let pa = check_aligned_at_level "PA" level pa in
   let desc =
-    try Desc.page_descriptor pa kind fields
+    try Desc.make_descriptor ~fields ~level ~oa:pa ~kind ()
     with Failure msg -> error "page_table: %s" msg
   in
-  let rec walk table level =
-    let idx = Desc.va_index va level in
-    if level = Desc.last_level then write_leaf table idx va desc
+  let rec walk table current_level =
+    let idx = Desc.va_index va current_level in
+    if current_level = level then write_leaf table idx va desc
     else
       let child_table = ensure_child_table builder table idx in
-      walk child_table (level + 1)
+      walk child_table (current_level + 1)
   in
   let root_table = find_table builder.tables builder.root in
   walk root_table Desc.root_level
@@ -202,6 +220,7 @@ let to_entries builder =
 let to_layout builder =
   let root = builder.root in
   let table_entries = to_entries builder in
+  (* Generated PA alias for the root translation-table page. *)
   let symbols_pa = ("page_table_base", root) :: builder.symbols_pa in
   let phys_symbols_pa = List.rev builder.symbols_pa in
   let data_inits = builder.data_inits in
@@ -210,9 +229,11 @@ let to_layout builder =
 let build ~arch ~allocator ~symbolic_vas ~code_pages stmts =
   check_arch arch;
   if stmts = [] then error "page_table: empty page_table_setup";
-  (* Allocate the root before evaluating statements *)
-  let root = Allocator.alloc_page allocator in
+  (* [root] is the TTBR0 value and the base of the 2MB page-table pool. *)
+  let root = Allocator.alloc_big allocator in
   let builder = make allocator ~root in
+  (* Page tables are identity-mapped so generated PTE VAs can access them. *)
+  add_mapping ~level:2 builder ~va:root ~pa:root Page_table_ast.Data;
   (* Evaluate each statement, using symbolic VAs to resolve virtual names. *)
   List.iter (eval_stmt builder ~symbolic_vas) stmts;
   (* Add code identity mappings after explicit page-table statements. *)
@@ -228,20 +249,14 @@ let translate_va_to_pa layout va =
     let idx = Desc.va_index va level in
     List.assoc_opt (table + (idx * Desc.entry_size)) layout.table_entries
   in
-  let page_offset = va - Desc.align_page_addr va in
   let rec walk table level =
     match desc_at table level with
     | None -> None
-    | Some desc when level = Desc.last_level ->
-        if Desc.is_valid desc then
-          Some (Desc.addr_of_descriptor desc + page_offset)
-        else None
-    | Some desc -> (
-      match Desc.table_addr_of_descriptor desc with
-      | Some table -> walk table (level + 1)
-      | None ->
-          error "page_table: expected table descriptor for VA 0x%x at level %d" va
-            level
-    )
+    | Some desc when not (Desc.is_valid desc) -> None
+    | Some desc when Desc.is_table level desc ->
+        walk (Desc.addr_of_descriptor desc) (level + 1)
+    | Some desc ->
+        Some
+          (Desc.addr_of_descriptor desc + (va land Desc.level_offset_mask level))
   in
   walk layout.root Desc.root_level

@@ -66,12 +66,20 @@ let level_shift = function
   | 3 -> 12
   | n -> Printf.ksprintf invalid_arg "page_table_desc: invalid level %d" n
 
+(** The size of a block at a given level for 4KB AArch64 tables *)
+let level_size level = 1 lsl level_shift level
+
+(** The offset mask for a specific level *)
+let level_offset_mask level = level_size level - 1
+
 (** Extract the 9-bit table index for [va] at [level]. *)
 let va_index va level = (va lsr level_shift level) land 0x1FF
 
 (** {1 Descriptor values}
 
     Attribute bits are stored without the type field (bits 1:0). *)
+
+(** {2 Descriptor fields} *)
 
 type descriptor_field =
   { name : string;
@@ -119,6 +127,8 @@ let apply_descriptor_fields desc fields =
      )
     desc fields
 
+(** {2 Descriptor masks} *)
+
 let addr_mask = 0x0000FFFFFFFFF000L
 
 let low_attr_mask = 0xFFFL
@@ -126,6 +136,31 @@ let low_attr_mask = 0xFFFL
 let desc_type_mask = 0x3L
 
 let attr_mask = Int64.logand low_attr_mask (Int64.lognot desc_type_mask)
+
+(** {2 Descriptor lookup}
+
+    Functions to lookup information from descriptors *)
+
+(** Extract the output address from a table, block, or page descriptor. *)
+let addr_of_descriptor desc = Int64.to_int (Int64.logand desc addr_mask)
+
+(** Return the next table address when [desc] is a table descriptor. *)
+let table_addr_of_descriptor desc =
+  let attrs = Int64.logand desc low_attr_mask in
+  if attrs = 0x3L then Some (addr_of_descriptor desc) else None
+
+(** The AArch64 descriptor Valid bit is bit 0. *)
+let is_valid desc = Int64.logand desc 0x1L <> 0L
+
+(** For a non-level 3 block entry, bit 1 is 0 *)
+let is_block desc = Int64.logand desc 0b10L == 0L
+
+(** Decide if an entry is a table entry*)
+let is_table level desc = level != last_level && not (is_block desc)
+
+(** {2 Descriptor builder}
+
+    Functions to make new descriptors *)
 
 (** Reject values that would set bits outside [mask]. *)
 let require_in_mask name mask value =
@@ -138,21 +173,10 @@ let require_addr_in_mask name addr =
   require_in_mask name addr_mask addr;
   addr
 
-(** Extract the output address from a table, block, or page descriptor. *)
-let addr_of_descriptor desc = Int64.to_int (Int64.logand desc addr_mask)
-
-(** Return the next table address when [desc] is a table descriptor. *)
-let table_addr_of_descriptor desc =
-  let attrs = Int64.logand desc low_attr_mask in
-  if attrs = 0x3L then Some (addr_of_descriptor desc) else None
-
 (** Encode a descriptor that points to the next-level table page. *)
 let table_descriptor next_table_pa =
   let next_table_pa = require_addr_in_mask "next_table_pa" next_table_pa in
   Int64.logor next_table_pa 0x3L
-
-(** The AArch64 descriptor Valid bit is bit 0. *)
-let is_valid desc = Int64.logand desc 0x1L <> 0L
 
 let attrs_of_kind = function
   | Ast.Code -> aarch64_code_attrs

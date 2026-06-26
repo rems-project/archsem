@@ -17,55 +17,61 @@ name = "MP+VM"
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x9008
+  addr = 0x203008
   step = 8
   data = 0x14c3
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x9010
+  addr = 0x203010
   step = 8
   data = 0x24c3
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x9018
+  addr = 0x203018
   step = 8
-  data = 0x6443
+  data = 0x400443
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x9020
+  addr = 0x203020
   step = 8
-  data = 0xa443
+  data = 0x401443
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x8000
+  addr = 0x202000
   step = 8
-  data = 0x9003
+  data = 0x203003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x7000
+  addr = 0x202008
   step = 8
-  data = 0x8003
+  data = 0x200441
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x5000
+  addr = 0x201000
   step = 8
-  data = 0x7003
+  data = 0x202003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x200000
+  step = 8
+  data = 0x201003
 
 [[memory]]
   sym = "pa_x"
-  addr = 0x6000
+  addr = 0x400000
   step = 8
   data = 0
 
 [[memory]]
   sym = "pa_y"
-  addr = 0xa000
+  addr = 0x401000
   step = 8
   data = 0
 
@@ -82,7 +88,7 @@ name = "MP+VM"
   "R3" = 0x4000
   "SCTLR_EL1" = 1
   CurrentEL = 1
-  "TTBR0_EL1" = 0x5000
+  "TTBR0_EL1" = 0x200000
   "R4" = 0
   "R5" = 0
   "R6" = 0
@@ -125,7 +131,7 @@ name = "MP+VM"
   "R3" = 0x3000
   "SCTLR_EL1" = 1
   CurrentEL = 1
-  "TTBR0_EL1" = 0x5000
+  "TTBR0_EL1" = 0x200000
   "R0" = 0
   "R2" = 0
   "R4" = 0
