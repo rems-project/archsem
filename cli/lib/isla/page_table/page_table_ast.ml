@@ -54,6 +54,7 @@ type descriptor_field =
 type mapping_target =
   | PaName of string
   | Invalid
+  | Table of Z.t
 
 type stmt =
   (* [physical pa_x pa_y;] predeclares PA-side names. *)
@@ -63,13 +64,15 @@ type stmt =
   | Mapping of
       { va_name : string;
         target : mapping_target;
-        attrs : descriptor_field list
+        attrs : descriptor_field list;
+        level : int option
       }
   (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
   | MaybeMapping of
       { va_name : string;
         target : mapping_target;
-        attrs : descriptor_field list
+        attrs : descriptor_field list;
+        level : int option
       }
   (* [*pa_x = value;] initialises data at a PA-side name. *)
   | DataInit of

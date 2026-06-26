@@ -66,6 +66,9 @@
 %token AND_KW
 %token CODE
 %token DATA
+%token TABLE
+%token AT
+%token LEVEL
 %token TRUE
 %token FALSE EOF
 
@@ -80,6 +83,8 @@
 %type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
 %type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
+%type <int> page_table_mapping_level
+%type <string> kw_name
 
 %%
 
@@ -99,14 +104,16 @@ page_table_stmt_inner:
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
   | va_name = IDENT; "|->"; target = page_table_mapping_target;
-    attrs = option(page_table_descriptor_attrs)
+    attrs = option(page_table_descriptor_attrs);
+    level = option(page_table_mapping_level)
     { Page_table_ast.Mapping
-        {va_name; target; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs; level}
     }
   | va_name = IDENT; "?->"; target = page_table_mapping_target;
-    attrs = option(page_table_descriptor_attrs)
+    attrs = option(page_table_descriptor_attrs);
+    level = option(page_table_mapping_level)
     { Page_table_ast.MaybeMapping
-        {va_name; target; attrs = Option.value ~default:[] attrs}
+        {va_name; target; attrs = Option.value ~default:[] attrs; level}
     }
   | "*"; pa_name = IDENT; "="; value = NUM
     { Page_table_ast.DataInit {pa_name; value} }
@@ -118,6 +125,8 @@ page_table_mapping_target:
     { if name = "invalid" then Page_table_ast.Invalid
       else Page_table_ast.PaName name
     }
+  | TABLE; "("; addr = NUM; ")"
+    { Page_table_ast.Table addr }
 
 page_table_descriptor_attrs:
   | WITH; "[";
@@ -132,6 +141,12 @@ page_table_descriptor_attrs:
 page_table_attr:
   | CODE { Page_table_ast.Code }
   | DATA { Page_table_ast.Data }
+
+page_table_mapping_level:
+  | AT; LEVEL; level = NUM
+    { try Z.to_int level
+      with Z.Overflow -> failwith "page-table level is out of range"
+    }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or [e1; e2] }
@@ -158,4 +173,8 @@ term:
   | s = IDENT { Term.Sym s }
 
 kw_arg:
-  | k = IDENT; "="; v = term { (k, v) }
+  | k = kw_name; "="; v = term { (k, v) }
+
+kw_name:
+  | k = IDENT { k }
+  | TABLE { "table" }

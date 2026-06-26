@@ -75,6 +75,9 @@ rule token = parse
   | "default" { DEFAULT }
   | "code" { CODE }
   | "data" { DATA }
+  | "table" { TABLE }
+  | "at" { AT }
+  | "level" { LEVEL }
   | "true" { TRUE }
   | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
