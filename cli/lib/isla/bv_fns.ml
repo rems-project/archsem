@@ -42,93 +42,54 @@
 
 let check_non_negative_arg name arg value =
   if Z.sign value < 0 then
-    Litmus.Error.failwith "function: %s: argument %s must be non-negative" name
-      arg
+    Fn_registry.error "%s: argument %s must be non-negative" name arg
 
 let int_of_bit_arg name arg value =
   check_non_negative_arg name arg value;
-  match Z.to_int value with
-  | n -> n
-  | exception Z.Overflow ->
-      Litmus.Error.failwith "function: %s: argument %s is too large" name arg
+  Fn_registry.int_arg name arg value
 
 (** List of bitvector primitive functions
 
     Any error during evaluation should be reported with [Failure] which will be
     converted into a [eval_error] in [Term.eval] *)
-let functions : (string * Fn_registry.fn_spec) list =
+let functions : Fn_registry.positional_fn list =
   [ ( "bvand",
-      { params = ["a"; "b"];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logand a b
-            | _ -> Fn_registry.arity_error "bvand" 2 (List.length args)
-          )
-      }
+      function
+      | [a; b] -> Z.logand a b
+      | args -> Fn_registry.arity_error "bvand" 2 (List.length args)
     );
     ( "bvor",
-      { params = ["a"; "b"];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logor a b
-            | _ -> Fn_registry.arity_error "bvor" 2 (List.length args)
-          )
-      }
+      function
+      | [a; b] -> Z.logor a b
+      | args -> Fn_registry.arity_error "bvor" 2 (List.length args)
     );
     ( "bvxor",
-      { params = ["a"; "b"];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.logxor a b
-            | _ -> Fn_registry.arity_error "bvxor" 2 (List.length args)
-          )
-      }
+      function
+      | [a; b] -> Z.logxor a b
+      | args -> Fn_registry.arity_error "bvxor" 2 (List.length args)
     );
     ( "bvshl",
-      { params = ["a"; "b"];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] -> Z.shift_left a (int_of_bit_arg "bvshl" "b" b)
-            | _ -> Fn_registry.arity_error "bvshl" 2 (List.length args)
-          )
-      }
+      function
+      | [a; b] -> Z.shift_left a (int_of_bit_arg "bvshl" "shift amount" b)
+      | args -> Fn_registry.arity_error "bvshl" 2 (List.length args)
     );
     ( "bvlshr",
-      { params = ["a"; "b"];
-        eval =
-          (fun args ->
-            match args with
-            | [a; b] ->
-                check_non_negative_arg "bvlshr" "a" a;
-                Z.shift_right a (int_of_bit_arg "bvlshr" "b" b)
-            | _ -> Fn_registry.arity_error "bvlshr" 2 (List.length args)
-          )
-      }
+      function
+      | [a; b] ->
+          check_non_negative_arg "bvlshr" "value" a;
+          Z.shift_right a (int_of_bit_arg "bvlshr" "shift amount" b)
+      | args -> Fn_registry.arity_error "bvlshr" 2 (List.length args)
     );
     ( "extz",
-      { params = ["bits"; "len"];
-        eval =
-          (fun args ->
-            match args with
-            | [bits; len] ->
-                check_non_negative_arg "extz" "bits" bits;
-                ignore (int_of_bit_arg "extz" "len" len);
-                bits
-            | _ -> Fn_registry.arity_error "extz" 2 (List.length args)
-          )
-      }
+      function
+      | [bits; len] ->
+          check_non_negative_arg "extz" "bits" bits;
+          ignore (int_of_bit_arg "extz" "length" len);
+          bits
+      | args -> Fn_registry.arity_error "extz" 2 (List.length args)
     );
     ( "exts",
-      { params = ["bits"; "len"];
-        eval =
-          (fun _ ->
-            Litmus.Error.failwith
-              "exts is not support because of integer semantics"
-          )
-      }
+      fun _ ->
+        Litmus.Error.failwith "exts is not support because of integer semantics"
     )
   ]

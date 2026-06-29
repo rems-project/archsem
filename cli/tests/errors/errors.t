@@ -39,7 +39,7 @@ Just architecture and nothing else
   [1]
 
 Different name
-  $ archsem seq name-mismatch.archsem.toml
+  $ archsem seq name-mismatch.archsem.toml 2>&1 | sed 's/^Time EOR .*/Time EOR <time>/'
   Test EOR Forall
   States 1
   0:R0=0x110; 0:_PC=0x504; 
@@ -48,7 +48,7 @@ Different name
   Positive: 1 Negative: 0
   Condition EOR forall (0:_PC=0x504 /\ 0:R0=0x110)
   Observation EOR Always 1 0
-  Time EOR 0.000
+  Time EOR <time>
   archsem: name warning:
   File "name-mismatch.archsem.toml" has a different name that the internal name "EOR"
 
@@ -119,35 +119,35 @@ Unknown Isla function
   $ archsem seq unknown-isla-fn.litmus.toml
   archsem: eval error:
   File "unknown-isla-fn.litmus.toml", path "locations.x":
-  function: unknown unknown_fn/1
+  function: unknown function unknown_fn
   [1]
 
 Missing Isla function argument
   $ archsem seq missing-isla-fn-arg.litmus.toml
   archsem: eval error:
   File "missing-isla-fn-arg.litmus.toml", path "locations.x":
-  function: bvor: missing argument b
+  function: bvor: expected 2 arguments, got 1
   [1]
 
-Duplicate Isla function argument
-  $ archsem seq duplicate-isla-fn-arg.litmus.toml
+Extra Isla function argument
+  $ archsem seq extra-isla-fn-arg.litmus.toml
   archsem: eval error:
-  File "duplicate-isla-fn-arg.litmus.toml", path "locations.x":
-  function: bvor: duplicate argument a
+  File "extra-isla-fn-arg.litmus.toml", path "locations.x":
+  function: bvor: expected 2 arguments, got 3
   [1]
 
 Isla function error in register initialization
   $ archsem seq init-isla-fn-error.litmus.toml
   archsem: eval error:
   File "init-isla-fn-error.litmus.toml", path "thread.0.init.R0":
-  function: unknown unknown_fn/1
+  function: unknown function unknown_fn
   [1]
 
 Isla function error in final assertion
   $ archsem seq final-isla-fn-error.litmus.toml
   archsem: eval error:
   File "final-isla-fn-error.litmus.toml", path "final.assertion":
-  function: unknown unknown_fn/1
+  function: unknown function unknown_fn
   [1]
 
 Negative Isla final assertion
