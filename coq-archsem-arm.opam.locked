@@ -138,7 +138,7 @@ pin-depends: [
   ]
   [
     "coq-sail-tiny-arm.dev"
-    "git+https://github.com/rems-project/sail-tiny-arm.git#7f532d48"
+    "git+https://github.com/rems-project/sail-tiny-arm.git#750a10a5"
   ]
   [
     "coq-stdpp.1.12.0"
