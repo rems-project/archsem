@@ -319,6 +319,10 @@ Definition strict_regs : gset reg :=
        R28;
        R29;
        R30;
+       NZCV;
+       CurrentEL;
+       SPSel;
+       DAIF;
        SP_EL0;
        SP_EL1;
        SP_EL2;
@@ -334,7 +338,10 @@ Definition strict_regs : gset reg :=
        FAR_EL1;
        FAR_EL2;
        FAR_EL3;
-       PAR_EL1]@{reg}.
+       PAR_EL1;
+       SPSR_EL1;
+       SPSR_EL2;
+       SPSR_EL3]@{reg}.
 
 (** Relaxed registers are not guaranteed to read the latest value. *)
 Definition relaxed_regs : gset reg :=
@@ -1753,10 +1760,7 @@ Definition run_reg_trans_read (reg : reg) (racc : reg_acc)
     mret (ctrans eq root.T2, 0%nat)
   else
     ts ← mGet;
-    (* We are only allowed to read registers that are never written during the translation *)
-    guard_or
-      ("The register should niether be relaxed nor strict: " ++ pretty reg)%string
-      $ (reg ∉ strict_regs ∧ reg ∉ relaxed_regs);;
+    guard_or ("The register should be strict: " ++ pretty reg)%string (reg ∈ strict_regs);;
     othrow
       ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
       $ TState.read_reg ts reg.
