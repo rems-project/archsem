@@ -142,13 +142,17 @@ atom:
 loc:
   | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
   | "*"; s = IDENT { Mem s }
+  | "*"; addr = fn_term { MemAddr addr }
 
 term:
   | v = NUM { Term.Const v }
   | "-"; v = NUM { Term.Const (Z.neg v) }
+  | fn = fn_term { fn }
+  | s = IDENT { Term.Sym s }
+
+fn_term:
   | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
   | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
-  | s = IDENT { Term.Sym s }
 
 kw_arg:
   | k = IDENT; "="; v = term { (k, v) }

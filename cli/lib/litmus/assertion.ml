@@ -42,18 +42,22 @@
 
 (** {1 The expression language} *)
 
-(** An architectural state location, the memory symbol has a size defined by the
-    test setup *)
-type loc =
+(** An architectural state location.
+
+    Symbolic memory locations have their size defined by the test setup.
+    Addressed memory locations carry an address term, whose concrete type
+    depends on whether the assertion has been evaluated yet. *)
+type 'a loc =
   | Reg of int * string
   | Mem of string
+  | MemAddr of 'a
 
 (** A comparison atom: Comparing a location to a value or another location. The
     value can either be a number [Z.t] or an unevaluated expression
     [Isla.Term.t], depending on whether the test has been concretized yet *)
 type 'a atom =
-  | CmpCst of loc * 'a
-  | CmpLoc of loc * loc
+  | CmpCst of 'a loc * 'a
+  | CmpLoc of 'a loc * 'a loc
 
 (** A test final assertion expression *)
 type 'a expr =
@@ -85,12 +89,20 @@ let rec flatten : 'a expr -> 'a expr = function
 
 (** {2 Constant map} *)
 
-(** Map a constant to constant function through an [atom] *)
-let map_cst_atom (f : 'a -> 'b) : 'a atom -> 'b atom = function
-  | CmpCst (loc, cst) -> CmpCst (loc, f cst)
-  | CmpLoc (loc, loc') -> CmpLoc (loc, loc')
+(** Map an address term through a [loc] *)
+let map_cst_loc (f : 'a -> 'b) : 'a loc -> 'b loc = function
+  | Reg (thread, reg) -> Reg (thread, reg)
+  | Mem sym -> Mem sym
+  | MemAddr addr -> MemAddr (f addr)
 
-(** Map a constant to constant function through an [expr] *)
+(** Map term-valued assertion payloads through an [atom].
+
+    This maps both right-hand-side constants and [MemAddr] address terms. *)
+let map_cst_atom (f : 'a -> 'b) : 'a atom -> 'b atom = function
+  | CmpCst (loc, cst) -> CmpCst (map_cst_loc f loc, f cst)
+  | CmpLoc (loc, loc') -> CmpLoc (map_cst_loc f loc, map_cst_loc f loc')
+
+(** Map term-valued assertion payloads through an [expr] *)
 let rec map_cst (f : 'a -> 'b) : 'a expr -> 'b expr = function
   | Atom atom -> Atom (map_cst_atom f atom)
   | And exprs -> And (List.map (map_cst f) exprs)
@@ -102,12 +114,12 @@ let rec map_cst (f : 'a -> 'b) : 'a expr -> 'b expr = function
 (** {2 Location map} *)
 
 (** Map a location to location function through an [atom] *)
-let map_loc_atom (f : loc -> loc) : 'a atom -> 'a atom = function
+let map_loc_atom (f : 'a loc -> 'a loc) : 'a atom -> 'a atom = function
   | CmpCst (loc, cst) -> CmpCst (f loc, cst)
   | CmpLoc (loc, loc') -> CmpLoc (f loc, f loc')
 
 (** Map a location to location function through an [expr] *)
-let rec map_loc (f : loc -> loc) : 'a expr -> 'a expr = function
+let rec map_loc (f : 'a loc -> 'a loc) : 'a expr -> 'a expr = function
   | Atom atom -> Atom (map_loc_atom f atom)
   | And exprs -> And (List.map (map_loc f) exprs)
   | Or exprs -> Or (List.map (map_loc f) exprs)
@@ -118,19 +130,19 @@ let rec map_loc (f : loc -> loc) : 'a expr -> 'a expr = function
 (** {2 Location enumeration} *)
 
 (** Extracts all locations used in an [atom] *)
-let get_locs_atoms : 'a atom -> loc list = function
+let get_locs_atoms : 'a atom -> 'a loc list = function
   | CmpCst (loc, _) -> [loc]
   | CmpLoc (loc, loc') -> [loc; loc']
 
 (** Extracts all locations used in an [expr] *)
-let rec get_locs : 'a expr -> loc list = function
+let rec get_locs : 'a expr -> 'a loc list = function
   | Atom atom -> get_locs_atoms atom
   | And exprs | Or exprs -> List.concat (List.map get_locs exprs)
   | Not expr -> get_locs expr
   | True | False -> []
 
 (** Extracts all locations used in an [expr] and de-duplicates *)
-let get_unique_locs (expr : 'a expr) : loc list =
+let get_unique_locs (expr : 'a expr) : 'a loc list =
   List.sort_uniq compare (get_locs expr)
 
 (** {1 Concrete semantic of assertions} *)
@@ -140,9 +152,17 @@ let get_unique_locs (expr : 'a expr) : loc list =
 module Checker (Arch : Archsem.Arch) = struct
   open Arch
 
+  let pte_address_size = 8
+
   (** Lookup a location, expect that it will workout, error must be handled up
       the call stack *)
-  let lookup_loc ~lookup_addr (fs : ArchState.t) : loc -> Z.t = function
+  let int_of_addr addr =
+    if Z.sign addr < 0 then failwith "Memory address is negative";
+    match Z.to_int addr with
+    | addr -> addr
+    | exception Z.Overflow -> failwith "Memory address is too large"
+
+  let lookup_loc ~lookup_addr (fs : ArchState.t) : Z.t loc -> Z.t = function
     | Reg (tid, name) ->
         let regs = ArchState.reg tid fs in
         let arch_name = Config.get_reg_rename_or name in
@@ -151,6 +171,8 @@ module Checker (Arch : Archsem.Arch) = struct
     | Mem sym ->
         let (addr, size) = lookup_addr sym in
         MemMap.lookup addr size (ArchState.mem fs)
+    | MemAddr addr ->
+        MemMap.lookup (int_of_addr addr) pte_address_size (ArchState.mem fs)
 
   let check_atom ~lookup_addr (fs : ArchState.t) : Z.t atom -> bool = function
     | CmpCst (loc, v) -> lookup_loc ~lookup_addr fs loc = v

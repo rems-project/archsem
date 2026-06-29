@@ -142,8 +142,8 @@ let parse_test_memory toml : Testrepr.memory_block list =
 
 (** {1 Final condition} *)
 
-(** Parse a location string, either ["0:R0"] or ["x"] *)
-let parse_location_string str : Assertion.loc =
+(** Parse a location string, either ["0:R0"], ["x"], or a concrete address. *)
+let parse_location_string str : Z.t Assertion.loc =
   match String.split_on_char ':' str with
   | [thread; reg] ->
       let thread =
@@ -156,11 +156,13 @@ let parse_location_string str : Assertion.loc =
   | [mem] ->
       if String.length mem == 0 then
         Toml.error "Assertion location can't be empty";
-      (* This case catches the "0.R0" instead of "0:R0" mistake *)
+      (* This case catches the "0.R0" instead of "0:R0" mistake. *)
       let is_digit chr = chr >= '0' && chr <= '9' in
       if is_digit mem.[0] then
-        Toml.error "Assertion location \"%s\" starts with a digit" mem;
-      Assertion.Mem mem
+        try Assertion.MemAddr (Z.of_string mem)
+        with Invalid_argument _ | Failure _ ->
+          Toml.error "Assertion location \"%s\" starts with a digit" mem
+      else Assertion.Mem mem
   | _ -> Toml.error "Assertion location has more than one ':'"
 
 let parse_atom key toml : Z.t Assertion.atom =

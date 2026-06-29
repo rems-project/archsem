@@ -58,4 +58,13 @@ let round_trip_tests =
          (fun (name, path) -> name >:: fun _ -> assert_bool "" (round_trip path))
          tests
 
-let () = run_test_tt_main ("litmus_printer" >::: [round_trip_tests])
+let parse_address_location_test =
+  "parse-address-location"
+  >:: fun _ ->
+  assert_equal
+    (Assertion.MemAddr (Z.of_int 0x83000))
+    (Parser.parse_location_string "0x83000")
+
+let () =
+  run_test_tt_main
+    ("litmus_printer" >::: [round_trip_tests; parse_address_location_test])
