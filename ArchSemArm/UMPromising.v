@@ -169,10 +169,6 @@ Module FwdItem.
       }.
 
   Definition init := make 0 0 false.
-
-  (** The view of a read from a forwarded write *)
-  Definition read_fwd_view (macc : mem_acc) (f : t) :=
-    if f.(xcl) && is_rel_acq macc then f.(time) else f.(view).
 End FwdItem.
 
 (** The thread state *)
@@ -205,8 +201,8 @@ Module TState.
 
         (* Exclusive database. If there was a recent load exclusive but the
            corresponding store exclusive has not yet run, this will contain
-           the timestamp, address, and size of the load exclusive *)
-        xclb : option (nat * address * N);
+           the timestamp, address, size, and post-view of the load exclusive *)
+        xclb : option (nat * address * N * view);
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -266,8 +262,8 @@ Module TState.
 
   (** Sets the exclusive database to the footprint of the latest load
       exclusive. *)
-  Definition set_xclb (time : nat) (addr : address) (size : N) : t → t :=
-    setv xclb (Some (time, addr, size)).
+  Definition set_xclb (time : nat) (addr : address) (size : N) (vpost : view) : t → t :=
+    setv xclb (Some (time, addr, size, vpost)).
 
   (** Clears the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
@@ -348,15 +344,15 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
     byte/view/timestamp with the ones of the forwarded write. The timestamp
     returned (last value) is for coherence checking purposes). Returns [None] if
     no forwarding occurs *)
-Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
-    (mem : Memory.t) (tread : nat) (addr : address) :
+Definition read_fwd (fwdb : gmap address FwdItem.t) (mem : Memory.t)
+    (tread : nat) (addr : address) :
     Exec.res string (option (bv 8 * view * nat)) :=
   match fwdb !! addr with
   | Some fwd =>
     if (tread <? fwd.(FwdItem.time))%nat then
       msg ← othrow "Failed to retrieve forwarded message" (mem !! fwd.(FwdItem.time));
       byte' ← othrow "Failed to read a byte from the message" (Msg.read_byte addr msg);
-      mret (Some (byte', FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time)))
+      mret (Some (byte', fwd.(FwdItem.view), fwd.(FwdItem.time)))
     else mret None
   | None => mret None
   end.
@@ -387,7 +383,7 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
   (* per-byte (value, view, write-timestamp) after forwarding *)
   fwd_bytes ← mlift $
     for (addr, (byte, twrite)) in zip addrs raw_bytes do
-      read_fwd ts.(TState.fwdb) macc mem tread addr
+      read_fwd ts.(TState.fwdb) mem tread addr
         |$> default (byte, tread, twrite)
     end;
 
@@ -404,7 +400,7 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
   mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset PPState.state $ TState.update TState.vcap vaddr;;
   ( if is_exclusive macc
-    then mset PPState.state $ TState.set_xclb tread addr size
+    then mset PPState.state $ TState.set_xclb tread addr size vpost
     else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
@@ -444,22 +440,22 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update_cohs (map (., time) addrs);;
   mset PPState.state $ TState.update TState.vwr time;;
   mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
-  xcl ← if is_exclusive macc then
+  '(xcl, fwd_view) ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
-      | Some (tread, raddr, rsize) =>
+      | Some (tread, raddr, rsize, xview) =>
         mset PPState.state $ TState.clear_xclb;;
         if decide (addr = raddr ∧ size = rsize) then
           guard_discard' (Memory.exclusive tid addr size tread time mem);;
-          mret true
+          mret (true, xview ⊔ vdata)
         else
           (* If the store-exclusive footprint does not exactly match the previous
             load-exclusive footprint, it may still succeed as an ordinary store,
             but without exclusive atomicity guarantees. *)
-          mret false
+          mret (false, vdata)
       end
-    else mret false;
-  mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
+    else mret (false, vdata);
+  mset PPState.state $ TState.set_fwdbs addrs time fwd_view xcl;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
