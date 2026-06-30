@@ -2149,9 +2149,6 @@ Definition materialize_tlbi_for_recipient
 Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
   guard_or
-    "Non-shareable TLBIs are not supported"
-    (tlbi.(TLBIInfo_shareability) ≠ Shareability_NSH);;
-  guard_or
     "TLBIs in other regimes than EL10 are unsupported"
     (tlbi.(TLBIInfo_rec).(TLBIRecord_regime) = Regime_EL10);;
   let asid := tlbi.(TLBIInfo_rec).(TLBIRecord_asid) in
@@ -2172,12 +2169,17 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
     | _ => mthrow "Unsupported kind of TLBI"
     end;
+  let recipients :=
+    if decide (tlbi.(TLBIInfo_shareability) = Shareability_NSH)
+    then [tid]
+    else seq 0 n_threads
+  in
   '(times, created_new_tlbi_events) ←
     foldlM (λ '(times, created_new_tlbi_events) recipient,
       '(time, is_new_tlbi_event) ←
         materialize_tlbi_for_recipient vpre tlbiev recipient;
       mret (time :: times, created_new_tlbi_events || is_new_tlbi_event)
-    ) ([], false) (seq 0 n_threads);
+    ) ([], false) recipients;
   let vpost := foldr max 0%nat times in
   mset PPState.state $ TState.update TState.vtlbi vpost;;
   mset PPState.iis $ IIS.add vpost;;
