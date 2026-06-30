@@ -2101,6 +2101,7 @@ Definition run_tlbi (tid : nat) (viio : view) (tlbi : TLBIInfo) :
   '(tlbiev : TLBI.t) ←
     match tlbi.(TLBIInfo_rec).(TLBIRecord_op) with
     | TLBIOp_ALL => mret $ TLBI.All tid
+    | TLBIOp_VMALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
     | TLBIOp_VAA => mret $ TLBI.Vaa tid va_extracted last upper
     | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
