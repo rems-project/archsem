@@ -40,17 +40,18 @@
 
 (** Functions for displaying mcompare-compatible output *)
 
-let loc_to_string (loc : Assertion.loc) =
+let loc_to_string (loc : Z.t Assertion.loc) =
   match loc with
   | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
   | Mem sym -> Printf.sprintf "[%s]" sym
+  | MemAddr addr -> Printf.sprintf "[%s]" (Z.format "%#x" addr)
 
 (** Print a state element in herd style e.g. [0:R0=4] *)
-let print_state_atom ((loc : Assertion.loc), value) =
+let print_state_atom ((loc : Z.t Assertion.loc), value) =
   Printf.printf "%s=%s; " (loc_to_string loc) (Toml.Numbers.int_to_string value)
 
 (** Print a partial state in herd style e.g. [0:R0=4; [x]=5] *)
-let print_state (state : (Assertion.loc * Z.t) list) =
+let print_state (state : (Z.t Assertion.loc * Z.t) list) =
   List.iter print_state_atom state;
   Printf.printf "\n"
 

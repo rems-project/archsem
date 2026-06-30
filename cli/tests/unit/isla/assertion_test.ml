@@ -50,11 +50,15 @@ let reg tid r = Reg (tid, r)
 
 let mem s = Mem s
 
+let mem_addr addr = MemAddr addr
+
 let sym s = Sym s
 
 let cst v = Const v
 
 let fn name args = Fn (name, args)
+
+let kwfn name args = KwFn (name, args)
 
 let parse = Isla.Ir.parse_assertion_expr
 
@@ -68,6 +72,15 @@ let parse_cases =
     ( "function on rhs",
       "0:X0 = bvor(0x28, 0x2)",
       Atom (CmpCst (reg 0 "X0", fn "bvor" [cst (n 0x28); cst (n 0x2)]))
+    );
+    ( "PTE address location",
+      "*pte3(x, page_table_base) = mkdesc3(oa=y)",
+      Atom
+        (CmpCst
+           ( mem_addr (fn "pte3" [sym "x"; sym "page_table_base"]),
+             kwfn "mkdesc3" [("oa", sym "y")]
+           )
+        )
     );
     ("negation", "~(1:X0 = 1)", Not (Atom (CmpCst (reg 1 "X0", cst Z.one))));
     ( "conjunction",
