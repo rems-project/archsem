@@ -1,0 +1,15 @@
+arch = "AArch64"
+name = "no-matching-isla-fn-overload"
+symbolic = ["x"]
+
+[thread.0]
+code = """
+    NOP
+"""
+
+[locations]
+x = "mkdesc2(oa=0x1000, table=extz(0x283000, 64))"
+
+[final]
+expect = "sat"
+assertion = "true"

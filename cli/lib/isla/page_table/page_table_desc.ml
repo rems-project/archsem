@@ -167,6 +167,21 @@ let page_descriptor pa kind fields =
   let desc = Int64.logor (Int64.logor pa base_attrs) 0x3L in
   apply_descriptor_fields desc fields
 
+(** Encode a block descriptor for a non-leaf page-table level. *)
+let block_descriptor pa level kind fields =
+  let shift = level_shift level in
+  let mask = Int64.logand addr_mask (Int64.shift_left (-1L) shift) in
+  let pa = Int64.of_int pa in
+  require_in_mask "pa" mask pa;
+  let base_attrs = attrs_of_kind kind in
+  require_in_mask "attrs" attr_mask base_attrs;
+  let desc = Int64.logor (Int64.logor pa base_attrs) 0x1L in
+  apply_descriptor_fields desc fields
+
+let make_descriptor ?(fields = []) ~level ~oa ~kind () =
+  if level = last_level then page_descriptor oa kind fields
+  else block_descriptor oa level kind fields
+
 (** {1 Entry encoding}
 
     Each table entry stores one descriptor value as a 64-bit little-endian word. *)

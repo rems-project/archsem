@@ -57,9 +57,34 @@ let int_arg name arg value =
   | n -> n
   | exception Z.Overflow -> error "%s: argument %s is too large" name arg
 
+(** Report a positional arity mismatch for [name]. *)
 let arity_error name expected actual =
   error "%s: expected %d arguments, got %d" name expected actual
 
+(** Check that only allowed kwarg are present, and not duplicated. *)
+let check_kwargs name allowed_args kwargs =
+  List.fold_left
+    (fun seen (arg, _) ->
+       if not (List.mem arg allowed_args) then
+         error "%s: unknown argument %s" name arg
+       else if List.mem arg seen then error "%s: duplicate argument %s" name arg
+       else arg :: seen
+     )
+    [] kwargs
+  |> ignore
+
+(** Extract a required argument from an argument list *)
+let required_kwarg name arg kwargs =
+  match List.assoc_opt arg kwargs with
+  | Some value -> value
+  | None -> error "%s: missing argument %s" name arg
+
+(** Extract an optional named argumen from a list, otherwise gives a default
+    value *)
+let optional_kwarg arg default kwargs =
+  match List.assoc_opt arg kwargs with Some value -> value | None -> default
+
+(** Evaluates a named isla function given a registry and arguments *)
 let eval ~fns name args =
   match List.assoc_opt name fns with
   | Some eval -> eval args

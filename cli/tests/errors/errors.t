@@ -136,6 +136,13 @@ Extra Isla function argument
   function: bvor: expected 2 arguments, got 3
   [1]
 
+No matching Isla function overload
+  $ archsem seq no-matching-isla-fn-overload.litmus.toml
+  archsem: eval error:
+  File "no-matching-isla-fn-overload.litmus.toml", path "locations.x":
+  function: mkdesc2: Having both oa and table arguments is not allowed
+  [1]
+
 Isla function error in register initialization
   $ archsem seq init-isla-fn-error.litmus.toml
   archsem: eval error:

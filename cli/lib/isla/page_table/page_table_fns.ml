@@ -38,28 +38,70 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Isla value terms: AST for constant expressions. *)
+(** Page-table helper functions available in Isla expressions. *)
 
-type t =
-  | Const of Z.t
-  | Sym of string
-  | Fn of string * t list
-  | KwFn of string * (string * t) list
+(** [page(a)] extracts a 4KB page number from an address. *)
+let page_function =
+  ( "page",
+    function
+    | [a] -> Z.extract a 12 36
+    | args -> Fn_registry.arity_error "page" 1 (List.length args)
+  )
 
-let zero = Const Z.zero
+(** [asid(v)] shifts an ASID value into bits [63:48]. *)
+let asid_function =
+  ( "asid",
+    function
+    | [v] -> Z.shift_left v 48
+    | args -> Fn_registry.arity_error "asid" 1 (List.length args)
+  )
+
+let descriptor_field_arg kwargs field_name default =
+  { Page_table_ast.name = field_name;
+    value = Fn_registry.optional_kwarg field_name default kwargs
+  }
+
+(** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
+let eval_desc name level kwargs =
+  Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"] kwargs;
+  let oa = Fn_registry.required_kwarg name "oa" kwargs in
+  let fields =
+    [ descriptor_field_arg kwargs "Valid" Z.one;
+      descriptor_field_arg kwargs "AF" Z.one;
+      descriptor_field_arg kwargs "AP" Z.one;
+      descriptor_field_arg kwargs "DBM" Z.zero
+    ]
+  in
+  Z.of_int64
+    (Page_table_desc.make_descriptor ~level
+       ~oa:(Fn_registry.int_arg name "oa" oa)
+       ~kind:Page_table_ast.Data ~fields ()
+    )
+
+(** [mkdescN(table=...)] encodes a next-level table descriptor. *)
+let eval_table_desc name kwargs =
+  Fn_registry.check_kwargs name ["table"] kwargs;
+  let table_addr = Fn_registry.required_kwarg name "table" kwargs in
+  Z.of_int64
+    (Page_table_desc.table_descriptor
+       (Fn_registry.int_arg name "table" table_addr)
+    )
+
+let mkdesc_function level =
+  let name = Printf.sprintf "mkdesc%d" level in
+  let eval kwargs =
+    match (List.mem_assoc "oa" kwargs, List.mem_assoc "table" kwargs) with
+    | (true, false) -> eval_desc name level kwargs
+    | (false, true) -> eval_table_desc name kwargs
+    | _ ->
+        Fn_registry.error "%s: Having both oa and table arguments is not allowed"
+          name
+  in
+  (name, eval)
 
 let positional_functions : Fn_registry.positional_fn list =
-  Bv_fns.functions @ Page_table_fns.positional_functions
+  [page_function; asid_function]
 
 let keyword_functions : Fn_registry.keyword_fn list =
-  Page_table_fns.keyword_functions
-
-let rec eval ~lookup_addr = function
-  | Const z -> z
-  | Sym sym -> Z.of_int (lookup_addr sym)
-  | Fn (name, args) ->
-      let evaluated = List.map (eval ~lookup_addr) args in
-      Fn_registry.eval ~fns:positional_functions name evaluated
-  | KwFn (name, kwargs) ->
-      let evaluated = List.map (fun (k, v) -> (k, eval ~lookup_addr v)) kwargs in
-      Fn_registry.eval ~fns:keyword_functions name evaluated
+  let levels = [0; 1; 2; 3] in
+  List.map mkdesc_function levels
