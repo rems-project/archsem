@@ -152,14 +152,8 @@ let check_aligned_at_level name level addr =
     error "page_table: %s 0x%x is not aligned for a level %d mapping" name addr
       level
 
-(** Add the requested mapping, allocating intermediate tables on demand. *)
-let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
-  let va = check_aligned_at_level "VA" level va in
-  let pa = check_aligned_at_level "PA" level pa in
-  let desc =
-    try Desc.make_descriptor ~fields ~level ~oa:pa ~kind ()
-    with Failure msg -> error "page_table: %s" msg
-  in
+(** Write an encoded descriptor at [va], allocating intermediate tables. *)
+let write_descriptor ?(level = Desc.last_level) builder ~va desc =
   let rec walk table current_level =
     let idx = Desc.va_index va current_level in
     if current_level = level then write_leaf table idx va desc
@@ -170,6 +164,16 @@ let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
   let root_table = find_table builder.tables builder.root in
   walk root_table Desc.root_level
 
+(** Add the requested mapping, allocating intermediate tables on demand. *)
+let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
+  let va = check_aligned_at_level "VA" level va in
+  let pa = check_aligned_at_level "PA" level pa in
+  let desc =
+    try Desc.make_descriptor ~fields ~level ~oa:pa ~kind ()
+    with Failure msg -> error "page_table: %s" msg
+  in
+  write_descriptor ~level builder ~va desc
+
 let add_code_mappings builder code_pages =
   List.iter
     (fun addr -> add_mapping builder ~va:addr ~pa:addr Page_table_ast.Code)
@@ -177,17 +181,25 @@ let add_code_mappings builder code_pages =
 
 (** {1 Statement evaluation} *)
 
+let eval_mapping_target ?(attrs = []) builder ~va = function
+  | Page_table_ast.PaName pa_name ->
+      let pa = alloc_pa builder pa_name in
+      add_mapping ~fields:attrs builder ~va ~pa Page_table_ast.Data
+  | Page_table_ast.Invalid ->
+      if attrs <> [] then
+        error "page_table: descriptor fields are only supported on PA mappings";
+      write_descriptor builder ~va 0L
+
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Physical names ->
       List.iter (fun name -> ignore (alloc_pa builder name)) names
-  | Page_table_ast.Mapping {va_name; pa_name; attrs} ->
+  | Page_table_ast.Mapping {va_name; target; attrs} ->
       let va =
         match List.assoc_opt va_name symbolic_vas with
         | Some addr -> addr
         | None -> error "page_table: undeclared VA: %s" va_name
       in
-      let pa = alloc_pa builder pa_name in
-      add_mapping ~fields:attrs builder ~va ~pa Page_table_ast.Data
+      eval_mapping_target ~attrs builder ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
