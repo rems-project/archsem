@@ -66,6 +66,7 @@ type t =
     sections : section list;
     page_table_setup : Page_table_ast.stmt list;
     symbolic : string list;
+    sizes : (string * int) list;
     locations : (string * Term.t) list;
     kind : Litmus.Testrepr.kind;
     assertion : Term.t Assertion.expr
@@ -155,6 +156,8 @@ let parse_arch toml =
   with Litmus.Arch_id.UnknownArch arch ->
     Toml.error "Unknown architecture \"%s\"" arch
 
+let parse_sizes toml = Toml.get_table_values Toml.get_positive toml
+
 let lexbuf_line_char lexbuf =
   let pos = Lexing.lexeme_start_p lexbuf in
   (pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1)
@@ -178,6 +181,7 @@ let of_toml toml =
       Toml.find_or ~default:[] toml parse_page_table_setup ["page_table_setup"];
     symbolic =
       Toml.find_or ~default:[] toml (Toml.get_array Toml.get_string) ["symbolic"];
+    sizes = Toml.find_or ~default:[] toml parse_sizes ["sizes"];
     locations =
       Toml.find_or ~default:[] toml
         (Toml.get_table_values parse_term)

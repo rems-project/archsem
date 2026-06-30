@@ -276,6 +276,9 @@ let build_lookup_addr asm_result page_table =
 
 (** {2 Memory construction} *)
 
+let symbol_size ~default symbol_sizes sym =
+  List.assoc_opt sym symbol_sizes |> Option.value ~default
+
 (* Encode integer initialisers as fixed-size little-endian byte strings. *)
 let init_bytes_of_value mem_size label value =
   if Z.numbits value > mem_size * 8 then
@@ -309,9 +312,18 @@ let data_memory_block ~step ?(kind = Testrepr.Data) ?symbol addr value :
   }
 
 (* Build backing data blocks for declared symbolic locations. *)
-let build_locations_memory ~mem_size ~symbols ~lookup_addr ~locations =
+let build_locations_memory
+      ~default_mem_size
+      ~symbol_sizes
+      ~symbols
+      ~lookup_addr
+      ~locations
+  =
   List.map
     (fun (sym : Assembler.data_symbol) ->
+       let mem_size =
+         symbol_size ~default:default_mem_size symbol_sizes sym.name
+       in
        let value =
          List.assoc_opt sym.name locations
          |> Option.map (eval_term ~context:(Location_init sym.name) ~lookup_addr)
@@ -321,7 +333,7 @@ let build_locations_memory ~mem_size ~symbols ~lookup_addr ~locations =
      )
     symbols
 
-let build_page_table_memory ~mem_size page_table =
+let build_page_table_memory ~default_mem_size ~symbol_sizes page_table =
   let table_memory =
     List.map
       (fun (addr, value) ->
@@ -333,6 +345,7 @@ let build_page_table_memory ~mem_size page_table =
   let phys_memory =
     List.map
       (fun (sym, pa) ->
+         let mem_size = symbol_size ~default:default_mem_size symbol_sizes sym in
          let value =
            List.assoc_opt pa page_table.Page_table_builder.data_inits
            |> Option.value ~default:Z.zero
@@ -346,7 +359,8 @@ let build_page_table_memory ~mem_size page_table =
 (* Build the final Testrepr memory from assembled code plus whichever data
    representation the test uses. *)
 let build_memory
-      ~mem_size
+      ~default_mem_size
+      ~symbol_sizes
       ~data_symbols
       ~lookup_addr
       ~locations
@@ -359,16 +373,17 @@ let build_memory
   let data_memory =
     match page_table with
     | None ->
-        build_locations_memory ~mem_size ~symbols:data_symbols ~lookup_addr
-          ~locations
-    | Some page_table -> build_page_table_memory ~mem_size page_table
+        build_locations_memory ~default_mem_size ~symbol_sizes
+          ~symbols:data_symbols ~lookup_addr ~locations
+    | Some page_table ->
+        build_page_table_memory ~default_mem_size ~symbol_sizes page_table
   in
   code_memory @ data_memory
 
 (** {1 Public API} *)
 
 let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
-  let mem_size = default_memory_size () in
+  let default_mem_size = default_memory_size () in
   let reserved_addrs = reserved_section_addrs ir.sections in
   let allocator = Allocator.make ~reserved:reserved_addrs () in
   let asm_input = to_assembly_input allocator ir in
@@ -386,8 +401,9 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
       asm_result ir.threads
   in
   let memory =
-    build_memory ~mem_size ~data_symbols:asm_input.symbols ~lookup_addr
-      ~locations:ir.locations asm_result page_table
+    build_memory ~default_mem_size ~symbol_sizes:ir.sizes
+      ~data_symbols:asm_input.symbols ~lookup_addr ~locations:ir.locations
+      asm_result page_table
   in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
