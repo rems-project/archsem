@@ -181,25 +181,46 @@ let add_code_mappings builder code_pages =
 
 (** {1 Statement evaluation} *)
 
-let eval_mapping_target ?(attrs = []) builder ~va = function
+let check_table_level = function
+  | None -> error "page_table: table descriptors require an explicit level"
+  | Some level when level < Desc.root_level || level >= Desc.last_level ->
+      error "page_table: table descriptors are only valid at levels %d..%d"
+        Desc.root_level (Desc.last_level - 1)
+  | Some level -> level
+
+let eval_mapping_target ?level ?(attrs = []) builder ~va = function
   | Page_table_ast.PaName pa_name ->
       let pa = alloc_pa builder pa_name in
-      add_mapping ~fields:attrs builder ~va ~pa Page_table_ast.Data
+      add_mapping ?level ~fields:attrs builder ~va ~pa Page_table_ast.Data
   | Page_table_ast.Invalid ->
       if attrs <> [] then
         error "page_table: descriptor fields are only supported on PA mappings";
-      write_descriptor builder ~va 0L
+      write_descriptor ?level builder ~va 0L
+  | Page_table_ast.Table addr ->
+      if attrs <> [] then
+        error "page_table: descriptor fields are only supported on PA mappings";
+      let level = check_table_level level in
+      let table_pa =
+        try Z.to_int addr
+        with Z.Overflow ->
+          error "page_table: table address out of range: %s" (Z.format "%#x" addr)
+      in
+      let desc =
+        try Desc.table_descriptor table_pa
+        with Failure msg -> error "page_table: %s" msg
+      in
+      write_descriptor ~level builder ~va desc
 
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Physical names ->
       List.iter (fun name -> ignore (alloc_pa builder name)) names
-  | Page_table_ast.Mapping {va_name; target; attrs} ->
+  | Page_table_ast.Mapping {va_name; target; attrs; level} ->
       let va =
         match List.assoc_opt va_name symbolic_vas with
         | Some addr -> addr
         | None -> error "page_table: undeclared VA: %s" va_name
       in
-      eval_mapping_target ~attrs builder ~va target
+      eval_mapping_target ?level ~attrs builder ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
