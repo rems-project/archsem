@@ -1786,33 +1786,51 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
   guard_or
     ("Cannot write to unknown register " ++ pretty reg)%string
     (¬(is_reg_unknown reg));;
-  guard_or
-    "Non trivial write reg access types unsupported"
-    (racc = None);;
   iis ← mget PPState.iis;
   ts ← mget PPState.state;
   let vreg := IIS.strict iis in
-  vreg' ←
-    (if reg =? pc_reg
-      then
+  match racc with
+  | Some _ =>
+      (* Direct system-register writes are MSRs. *)
+      let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) in
+      vpost ←
+        if decide (reg ∈ relaxed_regs) then
+          '(_, view) ← othrow
+                        ("Register " ++ pretty reg ++ " unmapped on direct read")%string
+                        $ TState.read_sreg_direct ts reg;
+          let vpost := vreg ⊔ vpre ⊔ view in
+          mset PPState.state $ TState.add_wsreg reg val vpost;;
+          mret vpost
+        else if decide (reg ∈ strict_regs) then
+          let vpost := vreg ⊔ vpre in
+          nts ← othrow
+                  ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+                  $ TState.set_reg reg (val, vpost) ts;
+          msetv PPState.state nts;;
+          mret vpost
+        else
+          mthrow ("Cannot write register " ++ pretty reg ++
+                  " with direct system-register access")%string;
+      mset PPState.state $ TState.update TState.vmsr vpost;;
+      mset PPState.iis $ IIS.add vpost
+  | None =>
+      if reg =? pc_reg then
         guard_discard (TState.no_promises_until vreg ts);;
         mset PPState.state $ TState.update TState.vspec vreg;;
-        mret 0%nat
-      else mret vreg);
-  if decide (reg ∈ relaxed_regs) then
-    '(val, view) ← othrow
-                  ("Register " ++ pretty reg ++ " unmapped on direct read")%string
-                  $ TState.read_sreg_direct ts reg;
-    let vpre := ts.(TState.vcse) ⊔ ts.(TState.vspec) ⊔ ts.(TState.vdsb) ⊔ view in
-    let vpost := vreg' ⊔ vpre in
-    mset PPState.state $ TState.add_wsreg reg val vpost;;
-    mset PPState.state $ TState.update TState.vmsr vpost;;
-    mset PPState.iis $ IIS.add vpost
-  else
-    nts ← othrow
-            ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
-            $ TState.set_reg reg (val, vreg') ts;
-    msetv PPState.state nts.
+        ts ← mget PPState.state;
+        nts ← othrow
+                ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+                $ TState.set_reg reg (val, 0%nat) ts;
+        msetv PPState.state nts
+      else if decide (reg ∈ strict_regs) then
+        nts ← othrow
+                ("Register " ++ pretty reg ++ " unmapped; cannot write")%string
+                $ TState.set_reg reg (val, vreg) ts;
+        msetv PPState.state nts
+      else
+        mthrow ("Cannot write relaxed register " ++ pretty reg ++
+                " without direct system-register access")%string
+  end.
 
 
 (** ** Memory semantics *)
