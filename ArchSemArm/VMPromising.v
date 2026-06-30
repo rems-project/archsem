@@ -332,6 +332,9 @@ Definition strict_regs : gset reg :=
        ELR_EL3;
       (* These registers are system registers, but they are considered
          strict in the model. *)
+       SPSR_EL1;
+       SPSR_EL2;
+       SPSR_EL3;
        ESR_EL1;
        ESR_EL2;
        ESR_EL3;
