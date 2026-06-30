@@ -1,0 +1,22 @@
+arch = "AArch64"
+name = "STR+32"
+symbolic = ["x"]
+
+page_table_setup = """
+physical pa_x;
+x |-> pa_x;
+*pa_x = 0x000000010000000100000001;
+"""
+
+[sizes]
+pa_x = 12
+
+[thread.0]
+init = { X1 = "x", SCTLR_EL1 = 1, CurrentEL = 1 }
+code = """
+LDR W0,[X1,#8]
+"""
+
+[final]
+kind = "exists"
+assertion = "0:X0 = 1 & *pa_x = 0x000000010000000100000001"

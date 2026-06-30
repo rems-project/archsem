@@ -1,0 +1,19 @@
+arch = "AArch64"
+name = "LDR+size"
+symbolic = ["x"]
+
+[sizes]
+x = 12
+
+[locations]
+x = 0x000000010000000100000001
+
+[thread.0]
+init = { X1 = "x" }
+code = """
+LDR W0,[X1,#8]
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 1"

@@ -1,0 +1,101 @@
+arch = "Arm"
+name = "STR+32"
+
+[[memory]]
+  sym = "__thread0"
+  kind = "code"
+  addr = 0x1000
+  step = 4
+  data = 0xb9400820
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x203008
+  step = 8
+  data = 0x14c3
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x203010
+  step = 8
+  data = 0x400443
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x202000
+  step = 8
+  data = 0x203003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x202008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x201000
+  step = 8
+  data = 0x202003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x200000
+  step = 8
+  data = 0x201003
+
+[[memory]]
+  sym = "pa_x"
+  addr = 0x400000
+  step = 12
+  data = 0x10000000100000001
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x1004]
+
+[thread."0".regs]
+  _PC = 0x1000
+  "R1" = 0x2000
+  "SCTLR_EL1" = 1
+  CurrentEL = 1
+  "TTBR0_EL1" = 0x200000
+  "R0" = 0
+  "R2" = 0
+  "R3" = 0
+  "R4" = 0
+  "R5" = 0
+  "R6" = 0
+  "R7" = 0
+  "R8" = 0
+  "R9" = 0
+  "R10" = 0
+  "R11" = 0
+  "R12" = 0
+  "R13" = 0
+  "R14" = 0
+  "R15" = 0
+  "R16" = 0
+  "R17" = 0
+  "R18" = 0
+  "R19" = 0
+  "R20" = 0
+  "R21" = 0
+  "R22" = 0
+  "R23" = 0
+  "R24" = 0
+  "R25" = 0
+  "R26" = 0
+  "R27" = 0
+  "R28" = 0
+  "R29" = 0
+  "R30" = 0
+  "TCR_EL1" = 0
+  "ID_AA64MMFR1_EL1" = 0
+  SPSel = 0
+  NZCV = 0
+  DAIF = 0
+
+[final]
+  assertion = {and = [{"0:X0" = 1}, {pa_x = 0x10000000100000001}]}
