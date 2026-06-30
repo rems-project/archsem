@@ -61,6 +61,65 @@ let descriptor_field_arg kwargs field_name default =
     value = Fn_registry.optional_kwarg field_name default kwargs
   }
 
+(** Find the page-table entry address for [va] at [level]. *)
+let pte_addr name entries ~base ~va ~level =
+  let rec walk table current_level =
+    let index = Page_table_desc.va_index va current_level in
+    let addr = table + (index * Page_table_desc.entry_size) in
+    if current_level = level then addr
+    else
+      let desc = List.assoc_opt addr entries |> Option.value ~default:0L in
+      match Page_table_desc.table_addr_of_descriptor desc with
+      | Some next_table -> walk next_table (current_level + 1)
+      | None ->
+          Fn_registry.error
+            "%s: No table descriptor at level %d for VA 0x%x, resolved to be at \
+             PA 0x%x in page-table rooted at 0x%x"
+             name current_level va addr base
+  in
+  walk base Page_table_desc.root_level
+
+(** [pteN(va, base)] treats [base] as the root translation-table PA, then
+    returns the identity-mapped VA of the matching PTE. *)
+let pte_function entries level =
+  let name = Printf.sprintf "pte%d" level in
+  ( name,
+    function
+    | [va; base] ->
+        let va = Fn_registry.int_arg name "va" va in
+        let base = Fn_registry.int_arg name "base" base in
+        let pte_pa = pte_addr name entries ~base ~va ~level in
+        let offset = pte_pa - base in
+        if offset < 0 || offset >= Allocator.big_size then
+          Fn_registry.error
+            "%s: PTE level %d for VA 0x%x was resolved at PA 0x%x which is \
+             outside page-table pool rooted at 0x%x"
+             name level va pte_pa base;
+        Z.of_int pte_pa
+    | args -> Fn_registry.arity_error name 2 (List.length args)
+  )
+
+(** [descN(va, base)] treats [base] as the root translation-table PA and
+    returns the descriptor stored in the matching level-[N] PTE. *)
+let desc_function entries level =
+  let name = Printf.sprintf "desc%d" level in
+  ( name,
+    function
+    | [va; base] -> (
+        let va = Fn_registry.int_arg name "va" va in
+        let base = Fn_registry.int_arg name "base" base in
+        let pte_pa = pte_addr name entries ~base ~va ~level in
+        match List.assoc_opt pte_pa entries with
+        | Some desc -> Z.of_int64 desc
+        | None ->
+            Fn_registry.error
+              "%s: Descriptor level %d for address 0x%x in page-table rooted at \
+               0x%x not found at resolved PA 0x%x"
+               name level va base pte_pa
+      )
+    | args -> Fn_registry.arity_error name 2 (List.length args)
+  )
+
 (** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
 let eval_desc name level kwargs =
   Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"] kwargs;
@@ -99,8 +158,15 @@ let mkdesc_function level =
   in
   (name, eval)
 
-let positional_functions : Fn_registry.positional_fn list =
-  [page_function; asid_function]
+let positional_functions ?page_table_entries () =
+  let functions = [page_function; asid_function] in
+  match page_table_entries with
+  | None -> functions
+  | Some page_table_entries ->
+      let levels = [0; 1; 2; 3] in
+      functions
+      @ List.map (pte_function page_table_entries) levels
+      @ List.map (desc_function page_table_entries) levels
 
 let keyword_functions : Fn_registry.keyword_fn list =
   let levels = [0; 1; 2; 3] in

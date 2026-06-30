@@ -48,18 +48,19 @@ type t =
 
 let zero = Const Z.zero
 
-let positional_functions : Fn_registry.positional_fn list =
-  Bv_fns.functions @ Page_table_fns.positional_functions
-
-let keyword_functions : Fn_registry.keyword_fn list =
-  Page_table_fns.keyword_functions
-
-let rec eval ~lookup_addr = function
-  | Const z -> z
-  | Sym sym -> Z.of_int (lookup_addr sym)
-  | Fn (name, args) ->
-      let evaluated = List.map (eval ~lookup_addr) args in
-      Fn_registry.eval ~fns:positional_functions name evaluated
-  | KwFn (name, kwargs) ->
-      let evaluated = List.map (fun (k, v) -> (k, eval ~lookup_addr v)) kwargs in
-      Fn_registry.eval ~fns:keyword_functions name evaluated
+let eval ?page_table_entries ~lookup_addr term =
+  let positional_functions =
+    Bv_fns.functions @ Page_table_fns.positional_functions ?page_table_entries ()
+  in
+  let keyword_functions = Page_table_fns.keyword_functions in
+  let rec eval_term = function
+    | Const z -> z
+    | Sym sym -> Z.of_int (lookup_addr sym)
+    | Fn (name, args) ->
+        let evaluated = List.map eval_term args in
+        Fn_registry.eval ~fns:positional_functions name evaluated
+    | KwFn (name, kwargs) ->
+        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
+        Fn_registry.eval ~fns:keyword_functions name evaluated
+  in
+  eval_term term
