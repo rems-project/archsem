@@ -2276,22 +2276,23 @@ Definition run_trans_end (trans_end : trans_end) :
       mset snd $ IIS.add trans_time;;
       msetv (IIS.trs ∘ snd) None
     else
+      (* if the fault is from read, add the read view *)
+      let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
+      let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+      read_view ← read_fault_vpre is_acq trans_time;
+      (* if the fault is from write, add the write view *)
+      let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
+      let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+      write_view ← write_fault_vpre is_rel trans_time;
+      let fault_view := view_if is_read read_view ⊔ view_if is_write write_view in
+      let is_trans_fault :=
+        bool_decide (fault.(FaultRecord_statuscode) = Fault_Translation) in
       is_ets3 ← mlift (ets3 ts);
-      if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
+      if is_ets3 && is_trans_fault && (trans_time <? fault_view)
       then mdiscard
       else
         mset snd $ IIS.add trans_time;;
-        (* if the fault is from read, add the read view *)
-        let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
-        let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
-        read_view ← read_fault_vpre is_acq trans_time;
-
-        mset snd $ IIS.add (view_if is_read read_view);;
-        (* if the fault is from write, add the write view *)
-        let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-        let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-        write_view ← write_fault_vpre is_rel trans_time;
-        mset snd $ IIS.add (view_if is_write write_view);;
+        mset snd $ IIS.add fault_view;;
         msetv (IIS.trs ∘ snd) None
   else
     mthrow "Translation ends with an empty translation".
