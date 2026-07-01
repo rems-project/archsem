@@ -183,6 +183,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       mEvent_eq_dec : EqDecision mEvent;
       (** Give the tid that initiated that event *)
       mEvent_tid : mEvent → nat;
+      (** Filter executable promise candidates from a single enumeration run.
+          The memory does not yet contain the candidates being selected. *)
+      filter_promises : (* num of threads *) nat → (* tid *) nat →
+                        PromMemory.t mEvent → list mEvent → list mEvent;
       (** The address space this model is built against, we expect non-secure
           for Arm here *)
       address_space : addr_space;
@@ -454,6 +458,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         let promises :=
           List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
             |> remove_dups in
+        let promises := prom.(filter_promises) n tid mem promises in
         let tstates :=
           success_states
           |> omap (λ '(new_proms, st),
