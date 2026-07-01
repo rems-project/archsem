@@ -711,6 +711,10 @@ Definition is_upper_va (va : bv 64) : option bool :=
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
+(** Extract a level prefix from a VPN, i.e. VA[47:12]. *)
+Definition vpn_level_prefix {n : N} (vpn : bv n) (lvl : Level) : prefix lvl :=
+  bv_extract (9 * (3 - lvl)) (9 * (lvl + 1)) vpn.
+
 Definition match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : Prop :=
   level_prefix va lvl = level_prefix va' lvl.
 Instance Decision_match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') :
@@ -728,6 +732,29 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 
 Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
   bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
+
+Definition pte_read_byte_cohs_at (addr : address) (init : memoryMap)
+    (mem : Memory.t) (time : nat) : option (list (address * view)) :=
+  raw_bytes ← Memory.read_from addr 8 time init mem;
+  Some (zip (addr_range addr 8) raw_bytes.*2).
+
+(** PTE addresses read by a walk; [val_ttbr :: ptes] gives the table base at
+    each level. *)
+Definition pte_walk_addrs (va val_ttbr : bv 64) (ptes : list (bv 64))
+    : list address :=
+  let bases := val_ttbr :: ptes in
+  let lvls := take (length ptes) (enum Level) in
+  map (λ '(lvl, base), next_entry_addr base (level_index va lvl))
+      (zip lvls bases).
+
+(** Recover per-byte write timestamps for the PTEs read by a selected walk. *)
+Definition pte_walk_cohs_at (va val_ttbr : bv 64)
+    (ptes : list (bv 64)) (init : memoryMap)
+    (mem : Memory.t) (time : nat) : option (list (address * view)) :=
+  cohs ← mapM (M:=option)
+    (λ addr, pte_read_byte_cohs_at addr init mem time)
+    (pte_walk_addrs va val_ttbr ptes);
+  Some (List.concat cohs).
 
 Definition is_valid (e : bv 64) : Prop :=
   (bv_extract 0 1 e) = 1%bv.
@@ -1260,10 +1287,8 @@ Module TLB.
   Definition affects_va (va : bv 36) (last : bool) (upper : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    let '(te_lvl, te_va, te_val) :=
-          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
-    (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else True)
+    Ctxt.va ctxt = vpn_level_prefix va (Ctxt.lvl ctxt)
+    ∧ (if last then is_final (Ctxt.lvl ctxt) (Entry.pte te) else True)
     ∧ (upper = Ctxt.upper ctxt).
   Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
                                 (ctxt : Ctxt.t)
@@ -1689,7 +1714,9 @@ Module IIS.
           va : bv 36;
           time : nat;
           root : option {ttbr : reg & reg_type ttbr};
-          remaining : list (bv 64)
+          remaining : list (bv 64);
+          (* Per-byte PTE read timestamps, checked after candidate selection. *)
+          pte_cohs : option (list (address * view))
         }.
 
     Definition pop (tres : t): result string (t * bv 64) :=
@@ -2214,29 +2241,44 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
           snapshots ts init mem tid is_ets2 va asid ttbr;
+      let make_trans_res raw_val_ttbr path t ti :=
+        (* Do not fail here: all candidates are built before [mchoosel]. *)
+        let pte_cohs := pte_walk_cohs_at va raw_val_ttbr path init mem t in
+        val_ttbr ← othrow
+          "TTBR value type does not match with the value from the translation"
+          (val_to_regval ttbr raw_val_ttbr);
+        let root := Some (existT ttbr val_ttbr) in
+        mret $ (IIS.TransRes.make (va_to_vpn va) t root path pte_cohs, ti)
+      in
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for (val_ttbr, path, t, ti) in valid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
           let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          make_trans_res val_ttbr path t ti
         end;
       invalid_res ←
         for (val_ttbr, path, t, ti) in invalid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          make_trans_res val_ttbr path t ti
         end;
       mchoosel (valid_res ++ invalid_res)
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
-  mset PPState.iis $ IIS.set_trs trans_res.1;;
-  mset PPState.iis $ IIS.set_inv_time trans_res.2;;
+      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [] (Some []), None);
+  let '(tres, inv_time) := trans_res in
+  pte_cohs ← othrow "Failed to recover PTE source timestamps"
+    tres.(IIS.TransRes.pte_cohs);
+  (* TTW reads are PTE memory reads.  Faulting or invalidatable walks must not
+     read PTE writes older than this thread has already observed. *)
+  let needs_coh_guard :=
+    bool_decide (is_Some inv_time) ||
+    existsb (λ pte, bool_decide (¬ is_valid pte))
+      tres.(IIS.TransRes.remaining) in
+  guard_discard'
+    (if needs_coh_guard
+     then ∀ '(a,t) ∈ pte_cohs, (ts.(TState.coh) !!! a ≤ t)%nat
+     else True);;
+  mset PPState.state $ TState.update_cohs pte_cohs;;
+  mset PPState.iis $ IIS.set_trs tres;;
+  mset PPState.iis $ IIS.set_inv_time inv_time;;
   mset PPState.iis $ IIS.set_access_va (Some va).
 
 (** Compute the pre-view for a translation fault on a read access. *)
