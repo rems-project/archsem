@@ -49,7 +49,7 @@ name = "MP+VM"
   kind = "pagetable"
   addr = 0x202008
   step = 8
-  data = 0x200441
+  data = 0x200401
 
 [[memory]]
   kind = "pagetable"

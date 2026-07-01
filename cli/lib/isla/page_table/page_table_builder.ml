@@ -265,8 +265,9 @@ let build ~arch ~allocator ~symbolic_vas ~code_pages stmts =
   (* [root] is the TTBR0 value and the base of the 2MB page-table pool. *)
   let root = Allocator.alloc_big allocator in
   let builder = make allocator ~root in
-  (* Page tables are identity-mapped so generated PTE VAs can access them. *)
-  add_mapping ~level:2 builder ~va:root ~pa:root Page_table_ast.Data;
+  let privileged_only = [{Page_table_ast.name = "AP"; value = Z.zero}] in
+  add_mapping ~level:2 ~fields:privileged_only builder ~va:root ~pa:root
+    Page_table_ast.Data;
   (* Evaluate each statement, using symbolic VAs to resolve virtual names. *)
   List.iter (eval_stmt builder ~symbolic_vas) stmts;
   (* Add code identity mappings after explicit page-table statements. *)
