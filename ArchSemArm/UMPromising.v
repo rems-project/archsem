@@ -145,17 +145,30 @@ Module Memory.
          |> reverse
          |> head.
 
-  (** Checks that no write overlapping [addr, addr+size) has been made by any
-      thread other than [tid] in between [tread] and [twrite] *)
-  Definition exclusive (tid : nat) (addr : address) (size : N)
+  (** Checks that no overlapping write from another thread occurred between
+      [tread] and [twrite]. *)
+  Definition no_interfering_write
+      (tid : nat) (addr : address) (size : N)
       (tread : nat) (twrite : nat) (mem : t) : Prop :=
     ∀ msg ∈ (cut_after tread (cut_before (twrite - 1)%nat mem)),
       addr_overlap addr size (Msg.addr msg) (Msg.size msg) →
       Msg.tid msg = tid.
 
+  #[global] Instance no_interfering_write_dec tid addr size tread twrite mem :
+      Decision (no_interfering_write tid addr size tread twrite mem).
+  Proof. unfold no_interfering_write. apply _. Defined.
+
+  Definition exclusive := no_interfering_write.
+
   #[global] Instance exclusive_dec tid addr size tread twrite mem :
       Decision (exclusive tid addr size tread twrite mem).
   Proof. unfold exclusive. apply _. Defined.
+
+  Definition atomic_rmw := no_interfering_write.
+
+  #[global] Instance atomic_rmw_dec tid addr size tread twrite mem :
+      Decision (atomic_rmw tid addr size tread twrite mem).
+  Proof. unfold atomic_rmw. apply _. Defined.
 
 End Memory.
 Import (hints) Memory.
@@ -301,16 +314,38 @@ Module IIS.
   Record t :=
     make {
       strict : view;
+      atomic_rmws : list (nat * address * N);
     }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <strict>.
+    settable! make <strict;atomic_rmws>.
 
-  Definition init : t := make 0.
+  Definition init : t := make 0 [].
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
     iis |> set strict (max v).
+
+  Definition add_atomic_rmw (time : nat) (addr : address) (size : N) : t → t :=
+    set atomic_rmws ((time, addr, size) ::.).
+
+  Fixpoint take_atomic_rmw_from (addr : address) (size : N)
+      (rmws : list (nat * address * N)) :
+      option ((nat * address * N) * list (nat * address * N)) :=
+    match rmws with
+    | [] => None
+    | ((time, raddr, rsize) as rmw) :: rmws' =>
+      if decide (addr = raddr ∧ size = rsize) then
+        Some (rmw, rmws')
+      else
+        '(rmw', rmws'') ← take_atomic_rmw_from addr size rmws';
+        Some (rmw', rmw :: rmws'')
+    end.
+
+  Definition take_atomic_rmw (addr : address) (size : N) (iis : t) :
+      option ((nat * address * N) * t) :=
+    '(rmw, rmws') ← take_atomic_rmw_from addr size iis.(atomic_rmws);
+    Some (rmw, setv atomic_rmws rmws' iis).
 
 End IIS.
 
@@ -368,10 +403,10 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
     - Applying forwarding ([read_fwd])
     - Do a coherence check
     - Update all the views that should be updated
-    - If exclusive, set the exclusive database *)
+    - If exclusive, set the exclusive database
+    - If atomic RMW, remember this read for the matching write *)
 Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryMap) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (bv (8 * size)) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mget PPState.state;
   vaddr ← mget (IIS.strict ∘ PPState.iis);
   guard_discard (TState.no_promises_until vaddr ts);;
@@ -406,6 +441,9 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
   ( if is_exclusive macc
     then mset PPState.state $ TState.set_xclb tread addr size
     else mret ());;
+  ( if is_atomic_rmw macc
+    then mset PPState.iis $ IIS.add_atomic_rmw tread addr size
+    else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
 
@@ -421,7 +459,6 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
 Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
     (data : bv (8 * size)) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let msg := Msg.make size tid addr data in
   let is_release := is_rel_acq macc in
   let addrs := addr_range addr size in
@@ -459,6 +496,15 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
           mret false
       end
     else mret false;
+  ( if is_atomic_rmw macc then
+      iis ← mget PPState.iis;
+      match IIS.take_atomic_rmw addr size iis with
+      | Some ((tread, _, _), iis') =>
+        msetv PPState.iis iis';;
+        guard_discard' (Memory.atomic_rmw tid addr size tread time mem)
+      | None => mthrow "Atomic RMW write without matching read"
+      end
+    else mret ());;
   mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
   mret (if (new_promise : bool) then Some vpre else None).
 
