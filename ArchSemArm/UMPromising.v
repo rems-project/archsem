@@ -453,10 +453,8 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
           guard_discard' (Memory.exclusive tid addr size tread time mem);;
           mret true
         else
-          (* If the store-exclusive footprint does not exactly match the previous
-            load-exclusive footprint, it may still succeed as an ordinary store,
-            but without exclusive atomicity guarantees. *)
-          mret false
+          (* This successful-STXR write branch is invalid; failure is no-write. *)
+          mdiscard
       end
     else mret false;
   mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
