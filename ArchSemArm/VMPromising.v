@@ -2329,24 +2329,34 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   mset PPState.iis $ IIS.set_inv_time trans_res.2;;
   mset PPState.iis $ IIS.set_access_va (Some va).
 
-(** Compute the pre-view for a translation fault on a read access. *)
-Definition read_fault_vpre (is_acq : bool)
+(** Compute the pre-view for a fault on a read access. *)
+Definition read_fault_vpre (fault : FaultRecord)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
   iis ← mget snd;
-  let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_acq ts.(TState.vrel) in
+  let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
+  let is_translation_fault :=
+    bool_decide (fault.(FaultRecord_statuscode) = Fault_Translation) in
+  let vbob :=
+    view_if is_translation_fault
+      (ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+       ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
+       ⊔ view_if is_acq ts.(TState.vrel)) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Compute the pre-view for a fault on a write access. *)
-Definition write_fault_vpre (is_rel : bool)
+Definition write_fault_vpre (fault : FaultRecord)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
   iis ← mget snd;
-  let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+  let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
+  let is_translation_fault :=
+    bool_decide (fault.(FaultRecord_statuscode) = Fault_Translation) in
+  let vbob :=
+    view_if is_translation_fault
+      (ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
+       ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
+       ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr))) in
   mret $ iis.(IIS.strict) ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Handle the end of an address translation.
@@ -2373,14 +2383,12 @@ Definition run_trans_end (trans_end : trans_end) :
         mset snd $ IIS.add trans_time;;
         (* if the fault is from read, add the read view *)
         let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
-        let is_acq := fault.(FaultRecord_access).(AccessDescriptor_acqsc) in
-        read_view ← read_fault_vpre is_acq trans_time;
+        read_view ← read_fault_vpre fault trans_time;
 
         mset snd $ IIS.add (view_if is_read read_view);;
         (* if the fault is from write, add the write view *)
         let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-        let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
-        write_view ← write_fault_vpre is_rel trans_time;
+        write_view ← write_fault_vpre fault trans_time;
         mset snd $ IIS.add (view_if is_write write_view);;
         msetv (IIS.trs ∘ snd) None
   else
