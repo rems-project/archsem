@@ -2310,8 +2310,7 @@ Definition read_fault_vpre (is_acq : bool)
   ts ← mget fst;
   iis ← mget snd;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_acq ts.(TState.vrel) in
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Compute the pre-view for a translation fault on a write access. *)
@@ -2320,8 +2319,7 @@ Definition write_fault_vpre (is_rel : bool)
   ts ← mget fst;
   iis ← mget snd;
   let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
   mret $ iis.(IIS.strict) ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Handle the end of an address translation.
