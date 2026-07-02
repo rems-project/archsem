@@ -199,6 +199,27 @@ Page table DSL reports a stricter mapping alignment after PA assignment
   page_table: PA symbol pa_x at 0x601000 is not aligned for a level 2 mapping (requires 2097152 bytes)
   [1]
 
+Page table DSL rejects duplicate root names across translation stages
+  $ archsem seq duplicate-page-table-root-name.litmus.toml
+  archsem: eval error:
+  File "duplicate-page-table-root-name.litmus.toml", path "page_table_setup":
+  page_table: duplicate table root: root
+  [1]
+
+Page table DSL rejects root names that collide with address symbols
+  $ archsem seq conflicting-page-table-root-symbol.litmus.toml
+  archsem: eval error:
+  File "conflicting-page-table-root-symbol.litmus.toml", path "page_table_setup":
+  page_table: table root name conflicts with existing symbol: x
+  [1]
+
+Page table DSL rejects table roots that overlap code pages
+  $ archsem seq conflicting-page-table-root-code.litmus.toml
+  archsem: eval error:
+  File "conflicting-page-table-root-code.litmus.toml", path "page_table_setup":
+  page_table: table base 0x1000 overlaps existing memory page at 0x1000
+  [1]
+
 Page table DSL rejects locations with page tables
   $ archsem seq conflicting-page-table-data-init.litmus.toml
   archsem: eval error:
