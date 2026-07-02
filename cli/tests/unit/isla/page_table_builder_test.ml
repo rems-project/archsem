@@ -38,58 +38,23 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Page-table setup AST.
+(** Unit tests for Isla.Page_table_builder. *)
 
-    VA-side names may be declared with [virtual] or the TOML [symbolic] list.
-    [aligned ... virtual ...] statements constrain those VA-side names. PA-side
-    names may be declared with [physical], or allocated on first use by
-    mapping/data-init statements. *)
-type attr =
-  | Code
-  | Data
+open OUnit2
 
-type descriptor_field =
-  { name : string;
-    value : Z.t
-  }
+let test_materialize_physical_declaration _ =
+  let layout =
+    Isla.Page_table_builder.build ~arch:Litmus.Arch_id.Arm
+      ~allocator:(Isla.Allocator.make ()) ~symbolic_vas:[] ~code_pages:[]
+      [Isla.Page_table_ast.Physical ["pa_unused"]]
+  in
+  assert_bool "physical-only symbol is allocated"
+    (List.mem_assoc "pa_unused" layout.phys_symbols_pa)
 
-type mapping_target =
-  | PaName of string
-  | Invalid
-  | Table of Z.t
+let tests =
+  "Isla.Page_table_builder"
+  >::: [ "materialize physical declaration"
+         >:: test_materialize_physical_declaration
+       ]
 
-type stmt =
-  (* [virtual x y;] predeclares VA-side names. *)
-  | Virtual of string list
-  (* [physical pa_x pa_y;] predeclares PA-side names. *)
-  | Physical of string list
-  (* [aligned 2097152 virtual x y;] constrains VA-side names. *)
-  | AlignedVirtual of
-      { alignment : Z.t;
-        names : string list
-      }
-  (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side target.
-     Optional [with ... and default] clauses override descriptor fields. *)
-  | Mapping of
-      { va_name : string;
-        target : mapping_target;
-        attrs : descriptor_field list;
-        level : int option
-      }
-  (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
-  | MaybeMapping of
-      { va_name : string;
-        target : mapping_target;
-        attrs : descriptor_field list;
-        level : int option
-      }
-  (* [*pa_x = value;] initialises data at a PA-side name. *)
-  | DataInit of
-      { pa_name : string;
-        value : Z.t
-      }
-  (* [identity addr with attr;] maps one page to itself. *)
-  | IdentityMapping of
-      { addr : Z.t;
-        attr : attr
-      }
+let () = run_test_tt_main tests

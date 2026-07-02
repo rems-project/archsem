@@ -1,0 +1,24 @@
+arch = "AArch64"
+name = "LDR+size+VM"
+
+page_table_setup = """
+virtual x y;
+aligned 65536 virtual y;
+*pa_pad = 0;
+physical pa_x;
+x |-> pa_x at level 2;
+*pa_x = 0x000000010000000100000001;
+"""
+
+[sizes]
+pa_x = 12
+
+[thread.0]
+init = { X1 = "x", X2 = "y", SCTLR_EL1 = 1, CurrentEL = 1 }
+code = """
+LDR W0,[X1,#8]
+"""
+
+[final]
+kind = "exists"
+assertion = "0:X0 = 1 & 0:X2 = y & *pa_x = 0x000000010000000100000001"

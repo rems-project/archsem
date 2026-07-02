@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "page-table-pa-alignment"
+
+page_table_setup = """
+virtual x;
+*pa_pad = 0;
+*pa_x = 1;
+x |-> pa_x at level 2;
+"""
+
+[thread.0]
+code = """
+nop
+"""
