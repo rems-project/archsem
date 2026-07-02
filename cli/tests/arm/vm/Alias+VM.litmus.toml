@@ -3,6 +3,7 @@ name = "Alias+VM"
 symbolic = ["x", "y", "z"]
 
 page_table_setup = """
+physical pa_x;
 x |-> pa_x;
 y |-> pa_x;
 """
