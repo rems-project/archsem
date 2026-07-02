@@ -301,12 +301,13 @@ Module IIS.
   Record t :=
     make {
       strict : view;
+      rmw_read : option (nat * bool);
     }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <strict>.
+    settable! make <strict;rmw_read>.
 
-  Definition init : t := make 0.
+  Definition init : t := make 0 None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
@@ -368,10 +369,10 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
     - Applying forwarding ([read_fwd])
     - Do a coherence check
     - Update all the views that should be updated
-    - If exclusive, set the exclusive database *)
+    - If exclusive, set the exclusive database
+    - If atomic RMW, remember this read for the matching write *)
 Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryMap) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (bv (8 * size)) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mget PPState.state;
   vaddr ← mget (IIS.strict ∘ PPState.iis);
   guard_discard (TState.no_promises_until vaddr ts);;
@@ -382,6 +383,11 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
   tread ← mchoosel (read_candidates addr size vpre mem);
+  (* Record every atomic RMW read so the later write can check atomicity and
+     apply acquire ordering. *)
+  ( if is_atomic_rmw macc
+    then msetv (IIS.rmw_read ∘ PPState.iis) (Some (tread, is_rel_acq macc))
+    else mret ());;
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
   (* per-byte (value, view, write-timestamp) after forwarding *)
@@ -421,7 +427,6 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (init : memoryM
 Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
     (data : bv (8 * size)) :
     Exec.t (PPState.t TState.t Msg.t IIS.t) string (option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let msg := Msg.make size tid addr data in
   let is_release := is_rel_acq macc in
   let addrs := addr_range addr size in
@@ -434,6 +439,14 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
       time ← Exec.liftSt PPState.mem $ Memory.promise msg;
       mret (time, true)
     end;
+  '(read_acquire : bool) ←
+    (if is_atomic_rmw macc then
+      rmw_read_opt ← mget (IIS.rmw_read ∘ PPState.iis);
+      '(tread, read_acquire) ← othrow "RMW write without a read" rmw_read_opt;
+      guard_discard' (Memory.exclusive tid addr size tread time mem);;
+      msetv (IIS.rmw_read ∘ PPState.iis) None;;
+      mret read_acquire
+    else mret false);
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
     ⊔ view_if is_release (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
@@ -444,6 +457,10 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update_cohs (map (., time) addrs);;
   mset PPState.state $ TState.update TState.vwr time;;
   mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
+  (* Advance the acquire view to the write timestamp so later operations are ordered after the full RMW. *)
+  ( if (is_atomic_rmw macc && is_rel_acq macc && read_acquire)
+    then mset PPState.state $ TState.update TState.vacq time
+    else mret ());;
   xcl ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
