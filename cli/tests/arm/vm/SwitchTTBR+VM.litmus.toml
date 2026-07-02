@@ -1,0 +1,30 @@
+arch = "AArch64"
+name = "SwitchTTBR+VM"
+symbolic = ["x"]
+
+page_table_setup = """
+physical pa0 pa1;
+*pa0 = 0;
+*pa1 = 1;
+
+s1table table0 0x2C0000 {
+  identity 0x1000 with code;
+  x |-> pa0;
+}
+
+s1table table1 0x300000 {
+  identity 0x1000 with code;
+  x |-> pa1;
+}
+"""
+
+[thread.0]
+init = { X0 = "table1", X2 = "x", TTBR0_EL1 = "table0", SCTLR_EL1 = 1, CurrentEL = 1 }
+code = """
+MSR TTBR0_EL1, X0
+MRS X3, TTBR0_EL1
+LDR X1, [X2]
+"""
+
+[final]
+assertion = "0:X1 = 1 & 0:X3 = table1"

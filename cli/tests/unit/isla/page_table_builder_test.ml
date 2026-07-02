@@ -49,7 +49,7 @@ let test_materialize_physical_declaration _ =
       [Isla.Page_table_ast.Physical ["pa_unused"]]
   in
   assert_bool "physical-only symbol is allocated"
-    (List.mem_assoc "pa_unused" layout.phys_symbols_pa)
+    (List.mem_assoc "pa_unused" layout.data_symbols_pa)
 
 let tests =
   "Isla.Page_table_builder"

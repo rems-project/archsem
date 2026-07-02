@@ -48,6 +48,10 @@ type attr =
   | Code
   | Data
 
+type table_stage =
+  | S1
+  | S2
+
 type descriptor_field =
   { name : string;
     value : Z.t
@@ -92,4 +96,10 @@ type stmt =
   | IdentityMapping of
       { addr : Z.t;
         attr : attr
+      }
+  | TableBlock of
+      { stage : table_stage;
+        name : string;
+        base : Z.t;
+        body : stmt list
       }

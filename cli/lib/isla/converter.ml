@@ -331,7 +331,11 @@ let build_lookup_addr asm_result page_table =
   let page_table_symbols =
     match page_table with
     | None -> []
-    | Some layout -> layout.Page_table_builder.symbols_pa
+    | Some layout ->
+        ("page_table_base", layout.Page_table_builder.root)
+        :: (layout.Page_table_builder.table_symbols_pa
+          @ layout.Page_table_builder.data_symbols_pa
+           )
   in
   let symbols_addr = asm_result.Assembler.symbols @ page_table_symbols in
   fun name ->
@@ -419,7 +423,7 @@ let build_page_table_memory ~default_mem_size ~symbol_sizes page_table =
          in
          data_memory_block ~step:mem_size ~symbol:sym pa value
        )
-      page_table.Page_table_builder.phys_symbols_pa
+      page_table.Page_table_builder.data_symbols_pa
   in
   table_memory @ phys_memory
 

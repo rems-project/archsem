@@ -54,10 +54,10 @@ type data_value = Z.t
 type layout =
   { root : pa;
     table_entries : (pa * descriptor) list;
-    (* Mapping from PA-side symbols to concrete PAs: pa_x -> PA. *)
-    symbols_pa : (string * pa) list;
-    (* PA-side data symbols, excluding generated root aliases. *)
-    phys_symbols_pa : (string * pa) list;
+    (* PA-side table root symbols. *)
+    table_symbols_pa : (string * pa) list;
+    (* PA-side data symbols. *)
+    data_symbols_pa : (string * pa) list;
     (* [*pa = value] initialisers resolved to concrete PAs. *)
     data_inits : (pa * data_value) list
   }
