@@ -487,6 +487,17 @@ Module TState.
 
   Definition filter_cse : list LEv.t → list view := omap LEv.get_cse.
 
+  (** Convert a CSE timestamp to the suffix position expected by
+      read_sreg_last. Events are stored newest-first in levs, so an event at
+      index i corresponds to the suffix of length lev_cur ts - i. *)
+  Definition cse_position (ts : t) (cse : view) : nat :=
+    match List.find
+      (λ '(_, lev), if lev is LEv.Cse t then t =? cse else false)
+      (enumerate ts.(levs)) with
+    | Some (i, _) => (lev_cur ts - i)%nat
+    | None => 0%nat
+    end.
+
   (** Read the last system register write at system register position s *)
   Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
     let newval :=
@@ -497,11 +508,12 @@ Module TState.
       |> hd_error in
     newval ∪ dmap_lookup sreg ts.(regs).
 
-  (** Read all possible system register values for sreg assuming the last
-      synchronization at position sync *)
-  Definition read_sreg_by_cse (ts : t) (sreg : reg) (s : nat)
+  (** Read all possible system register values for sreg assuming the optional
+      last synchronization timestamp tcse *)
+  Definition read_sreg_by_cse (ts : t) (sreg : reg) (tcse : option nat)
     : option (list (reg_type sreg * view))
     :=
+    let s := if tcse is Some tcse then cse_position ts tcse else 0%nat in
     sync_val ← read_sreg_last ts sreg s;
     let rest :=
       ts.(levs)
@@ -514,12 +526,12 @@ Module TState.
   Definition read_sreg_direct (ts : t) (sreg : reg) :=
     read_sreg_last ts sreg (lev_cur ts).
 
-  (** Read possible system register values from the position of the most recent CSE *)
+  (** Read possible system register values from the timestamp of the most recent CSE *)
   Definition read_sreg_indirect (ts : t) (sreg : reg) :=
     let max_cse :=
       ts.(levs)
            |> filter_cse
-           |> hd 0%nat
+           |> hd_error
     in
     read_sreg_by_cse ts sreg max_cse.
 
@@ -530,7 +542,7 @@ Module TState.
       ts.(levs)
            |> filter_cse
            |> filter (λ tcse, tcse < t)
-           |> hd 0%nat
+           |> hd_error
     in
     read_sreg_by_cse ts sreg last_cse
       |$> omap (M:=list) (
@@ -542,7 +554,7 @@ Module TState.
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
     if bool_decide (r ∈ relaxed_regs) then
-      read_sreg_last ts r (lev_cur ts)
+      read_sreg_direct ts r
     else dmap_lookup r ts.(regs).
 
   (** Extract a plain register map from the thread state without views.
