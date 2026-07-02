@@ -52,6 +52,9 @@ val big_size : int
     address blocks the page containing it. *)
 val make : ?base:int -> ?reserved:int list -> unit -> t
 
+(** Allocate [size] bytes at an address aligned to [alignment]. *)
+val alloc_aligned : t -> size:int -> alignment:int -> int
+
 (** Allocate one 4KB page. *)
 val alloc_page : t -> int
 

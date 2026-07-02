@@ -68,6 +68,7 @@ rule token = parse
   | ']' { RBRACKET }
   | ',' { COMMA }
   | '-' { MINUS }
+  | "aligned" { ALIGNED }
   | "virtual" { VIRTUAL }
   | "physical" { PHYSICAL }
   | "identity" { IDENTITY }

@@ -64,10 +64,17 @@ let error fmt = Printf.ksprintf (fun msg -> raise (Error msg)) fmt
 
 type t =
   { allocator : Allocator.t;
+    (* Root translation-table address. *)
     root : pa;
+    (* Next free page in the translation-table pool. *)
     mutable next_table_pa : pa;
+    (* Page-table descriptors, keyed by their physical addresses. *)
     entries : (pa, descriptor) Hashtbl.t;
+    (* PA names declared by [physical]. *)
+    mutable declared_pas : string list;
+    (* PA names and their allocated physical addresses. *)
     mutable symbols_pa : (string * pa) list;
+    (* Initial data values, keyed by their allocated PAs. *)
     mutable data_inits : (pa * data_value) list
   }
 
@@ -77,6 +84,7 @@ let make allocator ~root =
     entries;
     root;
     next_table_pa = root + Allocator.page_size;
+    declared_pas = [];
     symbols_pa = [];
     data_inits = []
   }
@@ -87,11 +95,28 @@ let check_arch = function
       error "page_table: only AArch64 is supported, got %s"
         (Litmus.Arch_id.to_string arch)
 
-let alloc_pa builder name =
+let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
+  if not (List.mem name builder.declared_pas) then
+    error "page_table: undeclared PA: %s" name;
   match List.assoc_opt name builder.symbols_pa with
-  | Some addr -> addr
+  | Some addr -> (
+      if addr mod alignment = 0 then addr
+      else
+        match mapping_level with
+        | Some level ->
+            error
+              "page_table: PA symbol %s at 0x%x is not aligned for a level %d \
+               mapping (requires %d bytes)"
+               name addr level alignment
+        | None ->
+            error "page_table: PA symbol %s at 0x%x is not aligned to %d bytes"
+              name addr alignment
+    )
   | None ->
-      let addr = Allocator.alloc_page builder.allocator in
+      let addr =
+        Allocator.alloc_aligned builder.allocator ~size:Allocator.page_size
+          ~alignment
+      in
       builder.symbols_pa <- (name, addr) :: builder.symbols_pa;
       addr
 
@@ -197,9 +222,14 @@ let addr_of_z name addr =
   with Z.Overflow ->
     error "page_table: %s out of range: %s" name (Z.format "%#x" addr)
 
+let mapping_alignment level =
+  try Desc.level_size level
+  with Invalid_argument _ -> error "page_table: invalid mapping level: %d" level
+
 let eval_mapping_target ?level ?(attrs = []) builder ~va = function
   | Page_table_ast.PaName pa_name ->
-      let pa = alloc_pa builder pa_name in
+      let alignment = Option.map mapping_alignment level in
+      let pa = alloc_pa ?alignment ?mapping_level:level builder pa_name in
       add_mapping ?level ~fields:attrs builder ~va ~pa Page_table_ast.Data
   | Page_table_ast.Invalid ->
       if attrs <> [] then
@@ -219,7 +249,8 @@ let eval_mapping_target ?level ?(attrs = []) builder ~va = function
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Virtual _ -> ()
   | Page_table_ast.Physical names ->
-      List.iter (fun name -> ignore (alloc_pa builder name)) names
+      builder.declared_pas <- builder.declared_pas @ names
+  | Page_table_ast.AlignedVirtual _ -> ()
   | Page_table_ast.Mapping {va_name; target; attrs; level} ->
       let va =
         match List.assoc_opt va_name symbolic_vas with

@@ -3,6 +3,7 @@ name = "Inval+LDR"
 symbolic = ["x", "y"]
 
 page_table_setup = """
+physical pa_x;
 x |-> pa_x;
 
 *pa_x = 3;
