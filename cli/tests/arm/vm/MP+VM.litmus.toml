@@ -3,6 +3,7 @@ name = "MP+VM"
 symbolic = ["x", "y"]
 
 page_table_setup = """
+physical pa_x pa_y;
 x |-> pa_x;
 y |-> pa_y;
 x ?-> pa_y;
