@@ -442,7 +442,8 @@ Module TState.
         vdsb : view; (* The maximum output view of a dsb  *)
         vspec : view; (* The maximum output view of speculative operation. *)
         vcse : view; (* The maximum output view of an Context Synchronization Event *)
-        vtlbi : view; (* The maximum output view of a TLBI *)
+        vtlbi_self : view; (* The maximum output view of a TLBI for this thread *)
+        vtlbi_other : view; (* The maximum output view of a TLBI broadcasted to other threads *)
         vmsr : view; (* The maximum output view of an MSR *)
         vacq : view; (* The maximum output view of an acquire access *)
         vrel : view; (* The maximum output view of an release access *)
@@ -456,7 +457,7 @@ Module TState.
 
   #[global] Instance eta : Settable _ :=
     settable! make <prom_wr; prom_tlbi;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
-                    vspec;vcse;vtlbi;vmsr;vacq;vrel;fwdb;xclb>.
+                    vspec;vcse;vtlbi_self;vtlbi_other;vmsr;vacq;vrel;fwdb;xclb>.
 
   (* TODO Check and remove mem as an argument here *)
   Definition init (mem : memoryMap) (iregs : registerMap) :=
@@ -473,7 +474,8 @@ Module TState.
       vdsb := 0;
       vspec := 0;
       vcse := 0;
-      vtlbi := 0;
+      vtlbi_self := 0;
+      vtlbi_other := 0;
       vmsr := 0;
       vacq := 0;
       vrel := 0;
@@ -2094,14 +2096,17 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) :
           mset snd $ IIS.add vpost
       end
   | Barrier_DSB dsb => (* dsb *)
-      guard_or "Non-shareable barrier are not supported"
-       (dsb.(DxB_domain) ≠ MBReqDomain_Nonshareable);;
-       match dsb.(DxB_types) with
+      match dsb.(DxB_types) with
       | MBReqTypes_All (* dsb sy *) =>
+          let vtlbi :=
+            if decide (dsb.(DxB_domain) = MBReqDomain_Nonshareable)
+            then ts.(TState.vtlbi_self)
+            else ts.(TState.vtlbi_self) ⊔ ts.(TState.vtlbi_other)
+          in
           let vpost :=
             ts.(TState.vrd) ⊔ ts.(TState.vwr)
             ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdmbst)
-            ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vtlbi)
+            ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ vtlbi
           in
           guard_discard (TState.no_promises_until vpost ts);;
           mset fst $ TState.update TState.vdsb vpost;;
@@ -2174,14 +2179,18 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     then [tid]
     else seq 0 n_threads
   in
-  '(times, created_new_tlbi_events) ←
-    foldlM (λ '(times, created_new_tlbi_events) recipient,
+  '((vself, vother), created_new_tlbi_events) ←
+    foldlM (λ '((vself, vother), created_new_tlbi_events) recipient,
       '(time, is_new_tlbi_event) ←
         materialize_tlbi_for_recipient vpre tlbiev recipient;
-      mret (time :: times, created_new_tlbi_events || is_new_tlbi_event)
-    ) ([], false) recipients;
-  let vpost := foldr max 0%nat times in
-  mset PPState.state $ TState.update TState.vtlbi vpost;;
+      let vself := if decide (recipient = tid) then max vself time else vself in
+      let vother := if decide (recipient = tid) then vother else max vother time in
+      mret ((vself, vother), created_new_tlbi_events || is_new_tlbi_event)
+    ) ((0%nat, 0%nat), false) recipients;
+  let vpost := vself ⊔ vother in
+  mset PPState.state $
+    TState.update TState.vtlbi_other vother ∘
+    TState.update TState.vtlbi_self vself;;
   mset PPState.iis $ IIS.add vpost;;
   (* [Some vpre] is an aggregate signal to the generic promise runner; the
      recipient-specific events themselves are collected from the memory delta. *)
