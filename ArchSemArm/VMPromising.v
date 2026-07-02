@@ -2245,9 +2245,12 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       let snapshots := TLB.snapshots_from vpre_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+      let invalid_vpre_t :=
+        vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      let invalid_snapshots := TLB.snapshots_from invalid_vpre_t snapshots in
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          snapshots ts init mem tid is_ets2 va asid ttbr;
+          invalid_snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for (val_ttbr, path, t, ti) in valid_entries do
@@ -2283,7 +2286,7 @@ Definition read_fault_vpre (is_acq : bool)
               ⊔ view_if is_acq ts.(TState.vrel) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-(** Compute the pre-view for a translation fault on a write access. *)
+(** Compute the pre-view for a fault on a write access. *)
 Definition write_fault_vpre (is_rel : bool)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
