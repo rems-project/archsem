@@ -578,6 +578,7 @@ Definition UMPromising : Promising.Model :=
     address_space := PAS_NonSecure;
     mEvent := Msg.t;
     mEvent_tid := Msg.tid;
+    filter_promises := λ _ _ _ promises, promises;
     handle_outcome := λ _ tid initmem, run_outcome tid initmem;
     emit_promise := λ tid initmem mem msg, TState.promise (length mem);
     check_valid_end := λ _ _ _ _, [];

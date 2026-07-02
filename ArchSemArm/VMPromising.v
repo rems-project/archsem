@@ -150,6 +150,12 @@ Module Ev.
     | _ => None
     end.
 
+  Definition get_tlbi_recipient (ev : t) : option nat :=
+    match ev with
+    | Tlbi _ recipient => Some recipient
+    | _ => None
+    end.
+
   (** Checks whether an write event overlaps an address range *)
   Definition addr_overlap (a : address) (sz : N) (ev : t) : Prop :=
     match ev with
@@ -2614,6 +2620,24 @@ Definition emit_promise' (tid : nat) (initmem : memoryMap) (mem : Memory.t) ev :
   if ev is Ev.Msg _ then TState.promise_write (length mem)
   else TState.promise_tlbi (length mem).
 
+(** Avoid exploring duplicate TLBI promise orders.  During one enumeration run,
+    we keep TLBI recipients in nondecreasing order, comparing each candidate
+    with the last TLBI promise already selected in memory. *)
+Definition filter_tlbi_promises
+    (n_threads tid : nat) (mem : Memory.t) (candidates : list Ev.t) :
+    list Ev.t :=
+  let run_recipient :=
+    if mem is ev :: _ then Ev.get_tlbi_recipient ev else None in
+  filter (λ ev,
+    match Ev.get_tlbi_recipient ev with
+    | Some recipient =>
+      match run_recipient with
+      | Some prev_recipient => prev_recipient <=? recipient
+      | None => true
+      end
+    | None => true
+    end) candidates.
+
 Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
@@ -2624,6 +2648,7 @@ Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
     mEvent_tid := Ev.tid;
+    filter_promises := filter_tlbi_promises;
     handle_outcome := run_outcome;
     emit_promise := emit_promise';
     check_valid_end := λ tid initmem ts mem, BBM.check bbm_param tid initmem ts mem;
