@@ -342,7 +342,7 @@ Module LDRPT.
     |> reg_insert R0 0x8000001000    (* VA to load from *)
     |> reg_insert R1 0x0
     |> reg_insert R2 0x8000010008    (* VA of L3[1] descriptor *)
-    |> reg_insert R3 0x2003          (* New descriptor: VA -> PA 0x2000 *)
+    |> reg_insert R3 0x2403          (* New descriptor: VA -> PA 0x2000 *)
     |> reg_insert R4 0x8000001000    (* VA to load from (second load) *)
     |> reg_insert SCTLR_EL1 0x1
     |> reg_insert TCR_EL1 0x0
@@ -367,7 +367,7 @@ Module LDRPT.
     |> mem_insert 0x82000 8 0x83003
     (* L3 entries:
        - L3[0]  -> PA 0x0000 (code page for PC)
-       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2003 by the STR
+       - L3[1]  -> PA 0x1000 (first data page), later updated to 0x2403 by the STR
        - L3[16] -> PA 0x83000 (VA alias to edit L3 via VA 0x8000010000)
     *)
     |> mem_insert 0x83000 8 0x40000000000783

@@ -35,12 +35,12 @@ name = "STRLDR+VM"
 [[memory]]
   addr = 0x83000
   step = 8
-  data = 3
+  data = 0x403
 
 [[memory]]
   addr = 0x83008
   step = 8
-  data = 0x1043
+  data = 0x1443
 
 [thread]
 
