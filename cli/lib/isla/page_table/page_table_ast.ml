@@ -105,3 +105,8 @@ type stmt =
         base : Z.t;
         body : stmt list
       }
+  (* [s1table name;] references a previously declared named table. *)
+  | TableRef of
+      { stage : table_stage;
+        name : string
+      }

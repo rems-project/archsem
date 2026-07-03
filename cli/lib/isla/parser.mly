@@ -140,6 +140,8 @@ page_table_stmt_inner:
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = NUM; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+  | stage = page_table_stage; name = IDENT
+    { Page_table_ast.TableRef {stage; name} }
 
 page_table_block:
   | stage = page_table_stage; name = IDENT; base = NUM; "{";

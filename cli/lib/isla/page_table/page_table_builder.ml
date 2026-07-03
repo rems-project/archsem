@@ -268,6 +268,32 @@ let add_code_mappings builder ~root code_pages =
     (fun addr -> add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Code)
     code_pages
 
+let table_pages_reachable_from builder root =
+  let entries_per_table = Desc.table_size / Desc.entry_size in
+  let rec visit seen table_addr =
+    if List.mem table_addr seen then seen
+    else
+      let rec visit_entries seen idx =
+        if idx = entries_per_table then seen
+        else
+          let seen =
+            match child_table_addr builder table_addr idx with
+            | Some child_addr when List.mem child_addr builder.table_pages ->
+                visit seen child_addr
+            | Some _ | None -> seen
+          in
+          visit_entries seen (idx + 1)
+      in
+      visit_entries (table_addr :: seen) 0
+  in
+  List.rev (visit [] root.base)
+
+let map_table_pages builder ~root ~source =
+  table_pages_reachable_from builder source
+  |> List.iter (fun page ->
+    add_mapping builder ~root ~va:page ~pa:page Page_table_ast.Data
+  )
+
 (** {1 Statement evaluation} *)
 
 let check_table_level = function
@@ -322,6 +348,9 @@ let rec eval_stmt builder ~symbolic_vas ~root = function
   | Page_table_ast.TableBlock {stage; name; base = _; body} ->
       let root = find_root builder ~stage ~name in
       List.iter (eval_stmt builder ~symbolic_vas ~root) body
+  | Page_table_ast.TableRef {stage; name} ->
+      let source = find_root builder ~stage ~name in
+      map_table_pages builder ~root ~source
 
 (** {1 Layout construction} *)
 
