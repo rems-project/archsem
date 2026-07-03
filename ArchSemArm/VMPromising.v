@@ -753,6 +753,12 @@ Definition is_valid (e : bv 64) : Prop :=
 Instance Decision_is_valid (e : bv 64) : Decision (is_valid e).
 Proof. unfold_decide. Defined.
 
+(** Check the Access Flag (AF, bit 10) on a block/page descriptor. *)
+Definition has_access_flag (e : bv 64) : Prop :=
+  (bv_extract 10 1 e) = 1%bv.
+Instance Decision_has_access_flag (e : bv 64) : Decision (has_access_flag e).
+Proof. unfold_decide. Defined.
+
 (** A PTE is a table descriptor if:
     - It is not at the leaf level (level 3), AND
     - Its bits [0:2] = 11 (table descriptor encoding)
@@ -770,6 +776,24 @@ Proof. unfold_decide. Defined.
 Definition is_final (lvl : Level) (e : bv 64) : Prop :=
   if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv else is_block e.
 Instance Decision_is_final (lvl : Level) (e : bv 64) : Decision (is_final lvl e).
+Proof. unfold_decide. Defined.
+
+(** PTEs that may extend the model's non-faulting TLB reconstruction. Table
+    descriptors can be remembered as walk prefixes; final descriptors need AF=1
+    before they can become usable translations. *)
+Definition is_tlb_fillable (lvl : Level) (e : bv 64) : Prop :=
+  is_table lvl e ∨ (is_final lvl e ∧ has_access_flag e).
+Instance Decision_is_tlb_fillable (lvl : Level) (e : bv 64) :
+    Decision (is_tlb_fillable lvl e).
+Proof. unfold_decide. Defined.
+
+(** PTEs that stop a walk before a usable translation is produced. AF=0 final
+    descriptors are valid descriptors, but they must fault rather than become
+    non-faulting translation results. *)
+Definition is_faulting_pte (lvl : Level) (e : bv 64) : Prop :=
+  ¬ is_valid e ∨ (is_final lvl e ∧ ¬ has_access_flag e).
+Instance Decision_is_faulting_pte (lvl : Level) (e : bv 64) :
+    Decision (is_faulting_pte lvl e).
 Proof. unfold_decide. Defined.
 
 Definition is_global (lvl : Level) (e : bv 64) : Prop :=
@@ -1087,9 +1111,9 @@ Module TLB.
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       if Memory.read_word entry_addr init mem time is Some next_pte then
-        if decide (is_valid next_pte) then
-          match inspect $ child_lvl (Ctxt.lvl ctxt) with
-          | Some clvl eq:e =>
+        match inspect $ child_lvl (Ctxt.lvl ctxt) with
+        | Some clvl eq:e =>
+          if decide (is_valid next_pte ∧ is_tlb_fillable clvl next_pte) then
             let va := next_va ctxt index (child_lvl_add_one _ _ e) in
             let asid := if bool_decide (is_global clvl next_pte) then None
                         else Ctxt.asid ctxt in
@@ -1100,9 +1124,9 @@ Module TLB.
             if decide (entry ∉ (VATLB.get ctxt vatlb)) then
               Ok (VATLB.insert ctxt entry vatlb, true)
             else Ok (vatlb, false)
-          | None eq:_ => mthrow "An intermediate level should have a child level"
-          end
-        else Ok (vatlb, false)
+          else Ok (vatlb, false)
+        | None eq:_ => mthrow "An intermediate level should have a child level"
+        end
       else
         guard_or ("TLB Fill: Failed to read next level PTE at " ++ (pretty entry_addr))%string
                  (negb mem_strict);;
@@ -1576,11 +1600,11 @@ Module TLB.
           let entry_addr :=
             next_entry_addr (Entry.pte te) (level_index va lvl) in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
-            if decide (is_valid memval) then mret None
-            else
+            if decide (is_faulting_pte lvl memval) then
               ti ← invalidation_time mem tid trans_time ctxt te;
               let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
               mret $ Some (Entry.val_ttbr te, vals, ti)
+            else mret None
           else
             mthrow "The PTE is missing"
         end;
@@ -1595,9 +1619,9 @@ Module TLB.
           let entry_addr :=
               next_entry_addr (val_to_addr (size:= 8) val_ttbr) (level_index va lvl) in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
-            if decide (is_valid memval) then mret None
-            else
+            if decide (is_faulting_pte lvl memval) then
               mret $ Some ((val_ttbr : bv 64), [memval], None)
+            else mret None
           else mthrow "The root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
@@ -2274,9 +2298,12 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       let snapshots := TLB.snapshots_from vpre_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+      let invalid_vpre_t :=
+        vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      let invalid_snapshots := TLB.snapshots_from invalid_vpre_t snapshots in
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          snapshots ts init mem tid is_ets2 va asid ttbr;
+          invalid_snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for (val_ttbr, path, t, ti) in valid_entries do
@@ -2312,7 +2339,7 @@ Definition read_fault_vpre (is_acq : bool)
               ⊔ view_if is_acq ts.(TState.vrel) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
-(** Compute the pre-view for a translation fault on a write access. *)
+(** Compute the pre-view for a fault on a write access. *)
 Definition write_fault_vpre (is_rel : bool)
   (trans_time : nat) : Exec.t (TState.t * IIS.t) string view :=
   ts ← mget fst;
