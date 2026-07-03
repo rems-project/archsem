@@ -173,6 +173,7 @@ term:
   | v = NUM { Term.Const v }
   | "-"; v = NUM { Term.Const (Z.neg v) }
   | fn = fn_term { fn }
+  | s = IDENT; ":" { Term.Sym s }
   | s = IDENT { Term.Sym s }
 
 fn_term:
