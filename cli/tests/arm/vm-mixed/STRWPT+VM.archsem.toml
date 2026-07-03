@@ -11,7 +11,7 @@ _PC = 0x8000000500
 R0 = 0x8000001000      # VA to load from
 R1 = 0x0               # Base offset
 R2 = 0x8000010008      # VA of L3[1] descriptor (page table VA alias)
-R3 = 0x2383            # Low 32 bits of new descriptor: VA -> PA 0x2000
+R3 = 0x2783            # Low 32 bits of new descriptor: VA -> PA 0x2000
 R4 = 0x8000001000      # VA to load from after the PTE update
 TTBR0_EL1 = 0x80000
 TCR_EL1 = 0x0
@@ -72,19 +72,19 @@ data = 0x83003
 [[memory]]
 addr = 0x83000
 step = 8
-data = 0x40000000000383
+data = 0x40000000000783
 
 # L3[1]: initially maps VA 0x8000001000 -> PA 0x1000
 [[memory]]
 addr = 0x83008
 step = 8
-data = 0x60000000001383
+data = 0x60000000001783
 
 # L3[16]: VA alias for page table at VA 0x8000010000 -> PA 0x83000
 [[memory]]
 addr = 0x83080
 step = 8
-data = 0x60000000083303
+data = 0x60000000083703
 
 
 

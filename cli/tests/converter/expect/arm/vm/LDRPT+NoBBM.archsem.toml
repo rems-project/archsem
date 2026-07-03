@@ -40,17 +40,17 @@ name = "LDRPT+NoBBM"
 [[memory]]
   addr = 0x83000
   step = 8
-  data = 0x40000000000383
+  data = 0x40000000000783
 
 [[memory]]
   addr = 0x83008
   step = 8
-  data = 0x60000000001383
+  data = 0x60000000001783
 
 [[memory]]
   addr = 0x83080
   step = 8
-  data = 0x60000000083303
+  data = 0x60000000083703
 
 [thread]
 
@@ -62,7 +62,7 @@ name = "LDRPT+NoBBM"
   "R0" = 0x8000001000
   "R1" = 0
   "R2" = 0x8000010008
-  "R3" = 0x2003
+  "R3" = 0x2403
   "R4" = 0x8000001000
   "TTBR0_EL1" = 0x80000
   "TCR_EL1" = 0
