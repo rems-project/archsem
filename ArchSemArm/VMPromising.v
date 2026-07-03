@@ -747,6 +747,26 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
   bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
 
+(** PTE addresses read by a walk. [val_ttbr] is the root table base; each
+    earlier PTE in [ptes] supplies the next level's table base. *)
+Definition pte_walk_addrs (va val_ttbr : bv 64) (ptes : list (bv 64))
+    : list address :=
+  let bases := val_ttbr :: ptes in
+  let lvls := take (length ptes) (enum Level) in
+  map (λ '(lvl, base), next_entry_addr base (level_index va lvl))
+      (zip lvls bases).
+
+(** Recover source timestamps for the PTE bytes consumed by a selected walk. *)
+Definition pte_walk_sources_at (va val_ttbr : bv 64)
+    (ptes : list (bv 64)) (init : memoryMap)
+    (mem : Memory.t) (time : nat) : option (list (address * view)) :=
+  sources ← mapM (M:=option)
+    (λ addr,
+      raw_bytes ← Memory.read_from addr 8 time init mem;
+      Some (zip (addr_range addr 8) raw_bytes.*2))
+    (pte_walk_addrs va val_ttbr ptes);
+  Some (List.concat sources).
+
 Definition is_valid (e : bv 64) : Prop :=
   (bv_extract 0 1 e) = 1%bv.
 Instance Decision_is_valid (e : bv 64) : Decision (is_valid e).
@@ -1739,7 +1759,10 @@ Module IIS.
           va : bv 36;
           time : nat;
           root : option {ttbr : reg & reg_type ttbr};
-          remaining : list (bv 64)
+          remaining : list (bv 64);
+          (* Per-byte PTE source timestamps. Kept optional so candidate
+             enumeration does not fail before [mchoosel]. *)
+          pte_sources : option (list (address * view))
         }.
 
     Definition pop (tres : t): result string (t * bv 64) :=
@@ -2282,29 +2305,42 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
           snapshots ts init mem tid is_ets2 va asid ttbr;
-      (* update IIS with either a valid translation result or an invalid result *)
-      valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+      let make_trans_res ttbr_val path t ti :=
+        let pte_sources := pte_walk_sources_at va ttbr_val path init mem t in
+        ttbr_rv ← othrow
+          "TTBR value type does not match with the value from the translation"
+          (val_to_regval ttbr ttbr_val);
+        let root := (Some (existT ttbr ttbr_rv)) in
+        mret $
+          (IIS.TransRes.make (va_to_vpn va) t root path pte_sources, ti)
+      in
+      let valid_entries :=
+        map (λ '(ttbr_val, path, t, ti),
+          (ttbr_val, path, t, if is_ifetch then None else ti)) valid_entries in
+      walk_candidates ←
+        for (ttbr_val, path, t, ti) in (valid_entries ++ invalid_entries) do
+          make_trans_res ttbr_val path t ti
         end;
-      invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
-          val_ttbr ← othrow
-            "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
-          let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
-        end;
-      mchoosel (valid_res ++ invalid_res)
+      mchoosel walk_candidates
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
-  mset PPState.iis $ IIS.set_trs trans_res.1;;
-  mset PPState.iis $ IIS.set_inv_time trans_res.2.
+      mret $
+        (IIS.TransRes.make (va_to_vpn va) vpre_t None [] (Some []),
+         None);
+  let '(tres, inv_time) := trans_res in
+  pte_sources ← othrow "Failed to recover selected PTE source timestamps"
+    tres.(IIS.TransRes.pte_sources);
+  let selected_walk_has_invalid_pte :=
+    existsb (λ pte, bool_decide (¬ is_valid pte))
+      tres.(IIS.TransRes.remaining) in
+  (* Invalid PTE observations must not be stale for this thread. Valid walks
+     still advance local byte coherence with the PTE bytes they observed. *)
+  guard_discard'
+    (if selected_walk_has_invalid_pte
+     then ∀ '(a,t) ∈ pte_sources, (ts.(TState.coh) !!! a ≤ t)%nat
+     else True);;
+  mset PPState.state $ TState.update_cohs pte_sources;;
+  mset PPState.iis $ IIS.set_trs tres;;
+  mset PPState.iis $ IIS.set_inv_time inv_time.
 
 (** Compute the pre-view for a translation fault on a read access. *)
 Definition read_fault_vpre (is_acq : bool)
