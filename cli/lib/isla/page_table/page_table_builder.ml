@@ -212,6 +212,7 @@ let eval_mapping_target ?level ?(attrs = []) builder ~va = function
       write_descriptor ~level builder ~va desc
 
 let eval_stmt builder ~symbolic_vas = function
+  | Page_table_ast.Virtual _ -> ()
   | Page_table_ast.Physical names ->
       List.iter (fun name -> ignore (alloc_pa builder name)) names
   | Page_table_ast.Mapping {va_name; target; attrs; level} ->
