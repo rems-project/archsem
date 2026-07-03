@@ -10,21 +10,15 @@ name = "Alias+VM"
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x203008
+  addr = 0x200000
   step = 8
-  data = 0x14c3
+  data = 0x201003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x203010
+  addr = 0x201000
   step = 8
-  data = 0x400443
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x203018
-  step = 8
-  data = 0x400443
+  data = 0x202003
 
 [[memory]]
   kind = "pagetable"
@@ -40,15 +34,21 @@ name = "Alias+VM"
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x201000
+  addr = 0x203008
   step = 8
-  data = 0x202003
+  data = 0x14c3
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x200000
+  addr = 0x203010
   step = 8
-  data = 0x201003
+  data = 0x400443
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x203018
+  step = 8
+  data = 0x400443
 
 [[memory]]
   sym = "pa_x"
