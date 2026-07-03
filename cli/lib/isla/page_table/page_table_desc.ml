@@ -91,8 +91,12 @@ let descriptor_fields =
   [ {name = "Valid"; lsb = 0; width = 1};
     {name = "AF"; lsb = 10; width = 1};
     {name = "AP"; lsb = 6; width = 2};
-    {name = "DBM"; lsb = 51; width = 1}
+    {name = "DBM"; lsb = 51; width = 1};
+    {name = "nG"; lsb = 11; width = 1};
+    {name = "APTable"; lsb = 61; width = 2}
   ]
+
+let descriptor_field_names = List.map (fun field -> field.name) descriptor_fields
 
 (** Replace the bits selected by [mask] with [bits], preserving all other bits. *)
 let update_bits desc mask bits =
