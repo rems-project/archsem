@@ -1678,11 +1678,11 @@ Module TLB.
                 (ts : TState.t)
                 (init : memoryMap)
                 (mem : Memory.t)
-                (tid : nat) (is_ets2 : bool)
+                (tid : nat) (is_ets2_or_later : bool)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
               result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
-      if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
+      if decide (is_ets2_or_later ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
         mret entries
       else
         candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
@@ -2219,7 +2219,7 @@ Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
   | _ => Error "This model does not support multiple regimes"
   end.
 
-Definition ets2 (ts : TState.t) : result string bool :=
+Definition ets2_or_later (ts : TState.t) : result string bool :=
   '(mmfr1, _) ← othrow
     "ETS is indicated in the ID_AA64MMFR1_EL1 register value"
     (TState.read_reg ts ID_AA64MMFR1_EL1);
@@ -2259,9 +2259,9 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   let is_ifetch :=
     trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
     AccessType_IFETCH in
-  is_ets2 ← mlift (ets2 ts);
+  is_ets2_or_later ← mlift (ets2_or_later ts);
   let vpre_t := ts.(TState.vcse) ⊔
-                 (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
+                 (view_if (is_ets2_or_later && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
@@ -2274,9 +2274,12 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       let snapshots := TLB.snapshots_from vpre_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
+      let invalid_vpre_t :=
+        vpre_t ⊔ view_if is_ets2_or_later (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      let invalid_snapshots := TLB.snapshots_from invalid_vpre_t snapshots in
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          snapshots ts init mem tid is_ets2 va asid ttbr;
+          invalid_snapshots ts init mem tid is_ets2_or_later va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for (val_ttbr, path, t, ti) in valid_entries do
