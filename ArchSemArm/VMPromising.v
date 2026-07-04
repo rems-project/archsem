@@ -457,8 +457,8 @@ Module TState.
         (* Per-byte forwarding database *)
         fwdb : gmap address FwdItem.t;
 
-        (* Exclusive database: (load-time, optional VA, physical address, size) *)
-        xclb : option (nat * option (bv 64) * address * N);
+        (* Exclusive database: (load-time, physical address, size) *)
+        xclb : option (nat * address * N);
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -610,9 +610,8 @@ Module TState.
 
   (** Set the exclusive database to the footprint of the latest load
       exclusive. *)
-  Definition set_xclb (time : nat) (va : option (bv 64))
-      (addr : address) (size : N) : t → t :=
-    setv xclb (Some (time, va, addr, size)).
+  Definition set_xclb (time : nat) (addr : address) (size : N) : t → t :=
+    setv xclb (Some (time, addr, size)).
 
   (** Clears the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
@@ -1732,14 +1731,12 @@ Module IIS.
   Record t :=
     make {
         strict : view;
-        (* Virtual address of the current translated memory access, if any. *)
-        access_va : option (bv 64);
         (* The translations results of the latest translation *)
         trs : option TransRes.t;
         inv_time : option nat
       }.
 
-  Definition init : t := make 0 None None None.
+  Definition init : t := make 0 None None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
@@ -1747,11 +1744,6 @@ Module IIS.
 
   Definition set_trs (tres : TransRes.t) :=
     setv trs (Some tres).
-
-  Definition set_access_va (va_opt : option (bv 64)) :=
-    setv access_va va_opt.
-
-  Definition clear_access_va : t → t := setv access_va None.
 
   Definition set_inv_time (ti_opt : option nat) :=
     setv inv_time ti_opt.
@@ -1963,9 +1955,7 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset PPState.state $ TState.update TState.vspec vaddr;;
   ( if is_exclusive macc
-    then
-      va ← mget (IIS.access_va ∘ PPState.iis);
-      mset PPState.state $ TState.set_xclb tread va addr size
+    then mset PPState.state $ TState.set_xclb tread addr size
     else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
@@ -2028,22 +2018,18 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   xcl ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
-      | Some (tread, rva, raddr, rsize) =>
+      | Some (tread, raddr, rsize) =>
         mset PPState.state $ TState.clear_xclb;;
-        va ← mget (IIS.access_va ∘ PPState.iis);
-        if decide (rva = va ∧ addr = raddr ∧ size = rsize) then
+        if decide (addr = raddr ∧ size = rsize) then
           guard_discard' (Memory.exclusive tid addr size tread time mem);;
           mret true
         else
-          (* If the store-exclusive footprint does not exactly match the previous
-             load-exclusive footprint (including va), it may still succeed as an
-             ordinary store, but without exclusive atomicity guarantees. *)
-          mret false
+          (* PA/size mismatch fails the exclusive-monitor check; STXR failure is no-write. *)
+          mdiscard
       end
     else mret false;
 
   mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
-  mset PPState.iis IIS.clear_access_va;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
@@ -2299,8 +2285,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     else
       mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
   mset PPState.iis $ IIS.set_trs trans_res.1;;
-  mset PPState.iis $ IIS.set_inv_time trans_res.2;;
-  mset PPState.iis $ IIS.set_access_va (Some va).
+  mset PPState.iis $ IIS.set_inv_time trans_res.2.
 
 (** Compute the pre-view for a translation fault on a read access. *)
 Definition read_fault_vpre (is_acq : bool)
