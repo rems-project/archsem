@@ -19,7 +19,7 @@ s1table table1 0x300000 {
 """
 
 [thread.0]
-init = { X0 = "table1", X2 = "x", TTBR0_EL1 = "table0", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X0 = "ttbr(asid=0x2, base=table1)", X2 = "x", TTBR0_EL1 = "ttbr(asid=0x1, base=table0)", SCTLR_EL1 = 1, CurrentEL = 1 }
 code = """
 MSR TTBR0_EL1, X0
 MRS X3, TTBR0_EL1
@@ -27,4 +27,4 @@ LDR X1, [X2]
 """
 
 [final]
-assertion = "0:X1 = 1 & 0:X3 = table1"
+assertion = "0:X1 = 1 & 0:X3 = ttbr(asid=0x2, base=table1)"
