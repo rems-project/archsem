@@ -771,6 +771,25 @@ Definition is_final (lvl : Level) (e : bv 64) : Prop :=
 Instance Decision_is_final (lvl : Level) (e : bv 64) : Decision (is_final lvl e).
 Proof. unfold_decide. Defined.
 
+Definition has_access_flag (e : bv 64) : Prop :=
+  (bv_extract 10 1 e) = 1%bv.
+Instance Decision_has_access_flag (e : bv 64) : Decision (has_access_flag e).
+Proof. unfold_decide. Defined.
+
+(** Final descriptors require the access flag to produce translations. *)
+Definition is_accessible_final (lvl : Level) (e : bv 64) : Prop :=
+  is_final lvl e ∧ has_access_flag e.
+Instance Decision_is_accessible_final (lvl : Level) (e : bv 64) :
+    Decision (is_accessible_final lvl e).
+Proof. unfold_decide. Defined.
+
+(** TLB-fillable descriptors are tables or accessible final descriptors. *)
+Definition is_tlb_fillable (lvl : Level) (e : bv 64) : Prop :=
+  is_table lvl e ∨ is_accessible_final lvl e.
+Instance Decision_is_tlb_fillable (lvl : Level) (e : bv 64) :
+    Decision (is_tlb_fillable lvl e).
+Proof. unfold_decide. Defined.
+
 Definition is_global (lvl : Level) (e : bv 64) : Prop :=
   is_final lvl e ∧ (bv_extract 11 1 e) = 0%bv.
 Instance Decision_is_global (lvl : Level) (e : bv 64) : Decision (is_global lvl e).
@@ -1086,9 +1105,9 @@ Module TLB.
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
       if Memory.read_word entry_addr init mem time is Some next_pte then
-        if decide (is_valid next_pte) then
-          match inspect $ child_lvl (Ctxt.lvl ctxt) with
-          | Some clvl eq:e =>
+        match inspect $ child_lvl (Ctxt.lvl ctxt) with
+        | Some clvl eq:e =>
+          if decide (is_tlb_fillable clvl next_pte) then
             let va := next_va ctxt index (child_lvl_add_one _ _ e) in
             let asid := if bool_decide (is_global clvl next_pte) then None
                         else Ctxt.asid ctxt in
@@ -1099,9 +1118,9 @@ Module TLB.
             if decide (entry ∉ (VATLB.get ctxt vatlb)) then
               Ok (VATLB.insert ctxt entry vatlb, true)
             else Ok (vatlb, false)
-          | None eq:_ => mthrow "An intermediate level should have a child level"
-          end
-        else Ok (vatlb, false)
+          else Ok (vatlb, false)
+        | None eq:_ => mthrow "An intermediate level should have a child level"
+        end
       else
         guard_or ("TLB Fill: Failed to read next level PTE at " ++ (pretty entry_addr))%string
                  (negb mem_strict);;
@@ -1575,11 +1594,11 @@ Module TLB.
           let entry_addr :=
             next_entry_addr (Entry.pte te) (level_index va lvl) in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
-            if decide (is_valid memval) then mret None
-            else
+            if decide (¬ is_tlb_fillable lvl memval) then
               ti ← invalidation_time mem tid trans_time ctxt te;
               let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
               mret $ Some (Entry.val_ttbr te, vals, ti)
+            else mret None
           else
             mthrow "The PTE is missing"
         end;
@@ -1594,9 +1613,9 @@ Module TLB.
           let entry_addr :=
               next_entry_addr (val_to_addr (size:= 8) val_ttbr) (level_index va lvl) in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
-            if decide (is_valid memval) then mret None
-            else
+            if decide (¬ is_tlb_fillable lvl memval) then
               mret $ Some ((val_ttbr : bv 64), [memval], None)
+            else mret None
           else mthrow "The root PTE is missing"
         end;
       mret $ omap id invalid_ptes.
