@@ -308,10 +308,10 @@ Section VMSAArm.
 
   Definition get_vmid (eid : EID.t) (event : iEvent) :=
     if event is TlbOp tlbop &→ _
-    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_asid)
+    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_vmid)
     else
       ts ← get_translation_start eid;
-      Some ts.(TranslationStartInfo_asid).
+      Some ts.(TranslationStartInfo_vmid).
 
   (* symmetry relation for [T] and [TLBI] with same vmid *)
   Definition same_vmid := same_key get_vmid cd.
@@ -455,20 +455,19 @@ Section VMSAArm.
       (λ _ event,
           is_faultP (λ fault, fault.(FaultRecord_write) = true) event) cd.
   (* armv9-interface/exceptions.cat#L103 *)
-  Definition FaultFromAquireR :=
+  Definition FaultFromAcquireR :=
     collect_all
       (λ _ event,
           is_faultP
             (λ fault, fault.(FaultRecord_write) = false
-                                                    (* TODO fix acqpc *)
-                      ∧ fault.(FaultRecord_access).(AccessDescriptor_acqsc)) event) cd.
+                      ∧ fault.(FaultRecord_access).(AccessDescriptor_atomicop)) event) cd.
   (* armv9-interface/exceptions.cat#L106 *)
   Definition FaultFromReleaseW :=
     collect_all
       (λ _ event,
           is_faultP
             (λ fault, fault.(FaultRecord_write) = true
-                      ∧ fault.(FaultRecord_access).(AccessDescriptor_relsc)) event) cd.
+                      ∧ fault.(FaultRecord_access).(AccessDescriptor_atomicop)) event) cd.
 
   (*** translation-common *)
 
@@ -485,7 +484,7 @@ Section VMSAArm.
   Definition Stage2 : gset EID.t:= ∅. (* Temporary HACK: Stage 2 disabled *)
 
   (* translation-common.cat#L31 *)
-  Definition speculative := ctrl ∪ (addr⨾po).
+  Definition speculative := ctrl ∪ (addr⨾po) ∪ (⦗T⦘⨾instruction_order).
   (* translation-common.cat#L42 *)
   Definition ContextChange := MSR ∪ TE ∪ ERET.
   (* translation-common.cat#L46 *)
@@ -602,7 +601,7 @@ Section VMSAArm.
     *)
   Definition obETS :=
     ((obfault⨾⦗Fault_T⦘)⨾iio⁻¹⨾⦗T_f⦘)
-      ∪ ((⦗TLBI⦘⨾po⨾⦗dsbsy cd⦘⨾instruction_order⨾⦗T⦘) ∩ tlb_affects).
+      ∪ ((⦗TLBI⦘⨾po⨾⦗dsb cd⦘⨾instruction_order⨾⦗T⦘) ∩ tlb_affects).
 
   (* WIP new FEAT_ETS2 definition, very tentative *)
   Definition obETS2 :=
@@ -628,13 +627,13 @@ Section VMSAArm.
   Definition bob :=
     (⦗R⦘⨾po⨾⦗dmb_load cd⦘)
     ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
-    ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
-    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R⦘)
+    ∪ (⦗dmb_store cd⦘⨾po⨾⦗W⦘)
+    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R ∪ W⦘)
     ∪ (⦗L⦘⨾po⨾⦗A⦘)
-    ∪ (⦗A ∪ Q⦘⨾po⨾⦗M⦘)
-    ∪ (⦗M⦘⨾po⨾⦗L⦘)
-    ∪ (⦗dsb cd⦘⨾po⨾⦗MSR ∪ M ∪ F ∪ C ∪ TE ∪ ERET⦘) (* Maybe MSR => RW??*)
-    ∪ (⦗ISB⦘⨾ instruction_order).
+    ∪ (⦗A ∪ Q⦘⨾po⨾⦗R ∪ W⦘)
+    ∪ (⦗R ∪ W⦘⨾po⨾⦗L⦘)
+    ∪ (⦗F ∪ C⦘⨾po⨾⦗dsb_full cd⦘)
+    ∪ (⦗dsb cd⦘⨾po).
 
 
   (* aarch64_mmu_strong_ETS.cat#L37 *)

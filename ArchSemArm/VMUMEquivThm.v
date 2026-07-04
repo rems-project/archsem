@@ -258,7 +258,8 @@ Section Phase1.
       set_solver ## trf_empty.
     Qed.
 
-    Lemma UM_to_VMSA_bob : VMSA.bob cd = UM.bob cd.
+    Lemma VMSA_UM_bob :
+      VMSA.bob cd ∪ (⦗ISB⦘⨾instruction_order) = UM.bob cd.
     Proof using NoCacheOp no_msr no_exceptions.
       clear -NoCacheOp no_msr no_exceptions.
       unfold VMSA.bob, UM.bob. set_solver.
@@ -406,6 +407,5 @@ Section Phase1.
   Qed.
 
 End Phase1.
-
 
 

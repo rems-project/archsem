@@ -163,7 +163,7 @@ Section UMArm.
 
   Definition obs := rfe ∪ fr ∪ coherence cd.
 
-  Definition speculative := ctrl ∪ (addr⨾po).
+  Definition speculative := ctrl ∪ (addr⨾po) ∪ (⦗T⦘⨾instruction_order).
 
   Definition dob :=
     addr ∪ data
@@ -178,12 +178,13 @@ Section UMArm.
   Definition bob :=
     (⦗R⦘⨾po⨾⦗dmb_load cd⦘)
     ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
-    ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
-    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R⦘)
+    ∪ (⦗dmb_store cd⦘⨾po⨾⦗W⦘)
+    ∪ (⦗dmb_load cd⦘⨾po⨾⦗R ∪ W⦘)
     ∪ (⦗L⦘⨾po⨾⦗A⦘)
-    ∪ (⦗A ∪ Q⦘⨾po⨾⦗M⦘)
-    ∪ (⦗M⦘⨾po⨾⦗L⦘)
-    ∪ (⦗dsb cd⦘⨾po⨾⦗M ∪ F⦘)
+    ∪ (⦗A ∪ Q⦘⨾po⨾⦗R ∪ W⦘)
+    ∪ (⦗R ∪ W⦘⨾po⨾⦗L⦘)
+    ∪ (⦗F ∪ C⦘⨾po⨾⦗dsb_full cd⦘)
+    ∪ (⦗dsb cd⦘⨾po)
     ∪ (⦗ISB⦘⨾ instruction_order).
 
   (* Ordered-before *)
