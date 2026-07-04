@@ -59,6 +59,7 @@
 %token RBRACKET "]"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
+%token VIRTUAL
 %token PHYSICAL
 %token IDENTITY
 %token WITH
@@ -104,6 +105,8 @@ page_table_stmt:
   | s = page_table_stmt_inner; ";" { s }
 
 page_table_stmt_inner:
+  | VIRTUAL; names = nonempty_list(IDENT)
+    { Page_table_ast.Virtual names }
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
   | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs

@@ -131,6 +131,15 @@ let reserved_section_addrs sections =
 
 let thread_section_name tid = Printf.sprintf "__thread%d" tid
 
+let symbolic_names ir =
+  let add names name = if List.mem name names then names else names @ [name] in
+  List.fold_left
+    (fun names -> function
+       | Page_table_ast.Virtual stmt_names -> List.fold_left add names stmt_names
+       | _ -> names
+       )
+    ir.Ir.symbolic ir.Ir.page_table_setup
+
 (* Build assembly input after assigning concrete addresses to every section and
    symbolic location. *)
 let to_assembly_input allocator (ir : Ir.t) : Assembler.assembly_input =
@@ -162,7 +171,7 @@ let to_assembly_input allocator (ir : Ir.t) : Assembler.assembly_input =
          let addr = Allocator.alloc_page allocator in
          {Assembler.name = sym; addr}
        )
-      ir.symbolic
+      (symbolic_names ir)
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 

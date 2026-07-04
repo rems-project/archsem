@@ -1,8 +1,8 @@
 arch = "AArch64"
 name = "STR+32"
-symbolic = ["x"]
 
 page_table_setup = """
+virtual x;
 physical pa_x;
 x |-> pa_x;
 *pa_x = 0x000000010000000100000001;
