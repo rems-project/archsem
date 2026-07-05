@@ -2259,13 +2259,14 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     (tid : nat) (init : memoryMap) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
+  iis ← mget PPState.iis;
   mem ← mget PPState.mem;
 
   let is_ifetch :=
     trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
     AccessType_IFETCH in
   is_ets2 ← mlift (ets2 ts);
-  let vpre_t := ts.(TState.vcse) ⊔
+  let vpre_t := ts.(TState.vcse) ⊔ IIS.strict iis ⊔
                  (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
   (* lookup (successful results or faults) *)
