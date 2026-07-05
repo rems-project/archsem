@@ -1404,6 +1404,33 @@ Module TLB.
       else [(tlb, time)]
     end.
 
+  Record snapshot_range :=
+    make_snapshot_range {
+        range_tlb : t;
+        range_start : nat;
+        range_end : nat
+      }.
+
+  (** Attach validity ranges to snapshots.
+
+      Snapshots are sorted in descending timestamp order. Each input pair
+      [(tlb, t)] records the TLB at timestamp [t], with [t <= end_time]. That
+      TLB is used until the timestamp immediately before the next newer
+      snapshot. The first and last range are bounded by [start_time] and
+      [end_time]. *)
+  Fixpoint snapshots_from_until (start_time end_time : nat)
+      (snapshots : list (t * nat)) : list snapshot_range :=
+    match snapshots with
+    | [] => []
+    | (tlb, snapshot_time) :: snapshots =>
+      let rest :=
+        snapshots_from_until start_time (snapshot_time - 1) snapshots in
+      let start_time := start_time ⊔ snapshot_time in
+      if start_time <=? end_time then
+        make_snapshot_range tlb start_time end_time :: rest
+      else rest
+    end.
+
   (** ** TLB Snapshot Functions for All VAs (BBM Checking) *)
 
   (** Compute unique TLB snapshots over a time range for BBM checking.
@@ -1653,62 +1680,50 @@ Module TLB.
     end;
   mret $ List.concat fault_ptes.
 
-  Definition invalidation_time_lt (ti_old ti_new : option nat) : bool :=
-    match ti_old, ti_new with
-    | Some ti_old, Some ti_new => ti_old <? ti_new
-    | None, None => false
-    | None, Some _ => false
-    | Some _, None => true
-    end.
+  Record trans_candidate :=
+    make_trans_candidate {
+        candidate_ttbr : bv 64;
+        candidate_path : list (bv 64);
+        candidate_start : nat;
+        candidate_end : nat;
+        candidate_inv_time : option nat
+      }.
 
-  Definition is_new_entry (val_ttbr : bv 64) (path : list (bv 64))
-      (ti_new : option nat)
-      (entries : list (bv 64 * list (bv 64) * nat * option nat)) : Prop :=
-    ¬ ∃ entry ∈ entries,
-      let '(vt, p, _, ti) := entry in
-      val_ttbr = vt ∧ path = p ∧ invalidation_time_lt ti ti_new = false.
-
-  Instance Decision_is_new_entry val_ttbr path ti_new entries :
-      Decision (is_new_entry val_ttbr path ti_new entries).
-  Proof. unfold is_new_entry. apply _. Defined.
-
-  (* Snapshots are sorted in the descending order of [trans_time].
-    Thus, we do not have to use [trans_time] to check the interval *)
-  Definition get_valid_entries_from_snapshots (snapshots : list (t * nat))
+  Definition get_valid_entries_from_snapshots
+                (snapshots : list snapshot_range)
                 (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
-    foldrM (λ '(tlb, trans_time) entries,
-      candidates ← TLB.lookup mem tid tlb trans_time va asid;
+              result string (list trans_candidate) :=
+    foldrM (λ range entries,
+      candidates ←
+        TLB.lookup mem tid range.(range_tlb) range.(range_start) va asid;
       let new :=
-        omap (λ '(val_ttbr, path, ti_opt),
-          if decide (is_new_entry val_ttbr path ti_opt entries) then
-            Some (val_ttbr, path, trans_time, ti_opt)
-          else None
+        map (λ '(val_ttbr, path, ti_opt),
+          make_trans_candidate val_ttbr path
+            range.(range_start) range.(range_end) ti_opt
         ) candidates in
       mret (new ++ entries)
     ) snapshots [].
 
-  Definition get_invalid_entries_from_snapshots (snapshots : list (t * nat))
+  Definition get_invalid_entries_from_snapshots
+                (snapshots : list snapshot_range)
                 (ts : TState.t)
                 (init : memoryMap)
                 (mem : Memory.t)
-                (tid : nat) (is_ets2 : bool)
+                (tid : nat)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
-    foldrM (λ '(tlb, trans_time) entries,
-      if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
-        mret entries
-      else
-        candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
-        let new :=
-          omap (λ '(val_ttbr, path, ti_opt),
-            if decide (is_new_entry val_ttbr path ti_opt entries) then
-              Some (val_ttbr, path, trans_time, ti_opt)
-            else None
-          ) candidates in
-        mret (new ++ entries)
+              result string (list trans_candidate) :=
+    foldrM (λ range entries,
+      candidates ←
+        TLB.get_invalid_ptes_with_inv_time
+          ts init mem tid range.(range_tlb) range.(range_start) va asid ttbr;
+      let new :=
+        map (λ '(val_ttbr, path, ti_opt),
+          make_trans_candidate val_ttbr path
+            range.(range_start) range.(range_end) ti_opt
+        ) candidates in
+      mret (new ++ entries)
     ) snapshots [].
 End TLB.
 Export (hints) TLB.
@@ -1735,7 +1750,8 @@ Module IIS.
     Record t :=
       make {
           va : bv 36;
-          time : nat;
+          trans_start : nat;
+          trans_end : nat;
           root : option {ttbr : reg & reg_type ttbr};
           remaining : list (bv 64)
         }.
@@ -1983,7 +1999,7 @@ Definition read_pte :
   tres_opt ← mget (IIS.trs ∘ PPState.iis);
   tres ← othrow "TTW read before translation start" tres_opt;
   viio ← mget (IIS.strict ∘ PPState.iis);
-  let vpost := viio ⊔ tres.(IIS.TransRes.time) in
+  let vpost := viio ⊔ tres.(IIS.TransRes.trans_start) in
   ts ← mget PPState.state;
   guard_discard (TState.no_promises_until vpost ts);;
   '(ntres, val) ← mlift (IIS.TransRes.pop tres);
@@ -2273,34 +2289,52 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      snapshots ← mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
-      let snapshots := TLB.snapshots_from vpre_t snapshots in
+      snapshots ←
+        mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
+      let invalid_start_time :=
+        vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      let invalid_snapshots :=
+        TLB.snapshots_from_until invalid_start_time vmax_t snapshots in
+      let snapshots :=
+        TLB.snapshots_from_until vpre_t vmax_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          snapshots ts init mem tid is_ets2 va asid ttbr;
+          invalid_snapshots ts init mem tid va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
+        for candidate in valid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
+            (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
           let root := (Some (existT ttbr val_ttbr)) in
-          let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          let ti :=
+            if is_ifetch then None else candidate.(TLB.candidate_inv_time) in
+          mret $
+            (IIS.TransRes.make
+              (va_to_vpn va)
+              candidate.(TLB.candidate_start)
+              candidate.(TLB.candidate_end)
+              root candidate.(TLB.candidate_path), ti)
         end;
       invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
+        for candidate in invalid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr val_ttbr);
+            (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
           let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          mret $
+            (IIS.TransRes.make
+              (va_to_vpn va)
+              candidate.(TLB.candidate_start)
+              candidate.(TLB.candidate_end)
+              root candidate.(TLB.candidate_path),
+              candidate.(TLB.candidate_inv_time))
         end;
       mchoosel (valid_res ++ invalid_res)
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
+      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t vmax_t None [], None);
   mset PPState.iis $ IIS.set_trs trans_res.1;;
   mset PPState.iis $ IIS.set_inv_time trans_res.2.
 
@@ -2335,16 +2369,22 @@ Definition run_trans_end (trans_end : trans_end) :
   ts ← mget fst;
   iis ← mget snd;
   if iis.(IIS.trs) is Some trs then
-    let trans_time := trs.(IIS.TransRes.time) in
+    let trans_start := trs.(IIS.TransRes.trans_start) in
     let fault := trans_end.(AddressDescriptor_fault) in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-      mset snd $ IIS.add trans_time;;
+      mset snd $ IIS.add trans_start;;
       msetv (IIS.trs ∘ snd) None
     else
       is_ets3 ← mlift (ets3 ts);
-      if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
-      then mdiscard
-      else
+      let is_ifetch :=
+        fault.(FaultRecord_access).(AccessDescriptor_acctype) =?
+        AccessType_IFETCH in
+      let trans_time :=
+        trans_start ⊔
+        view_if (is_ets3 && (negb is_ifetch))
+          (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+      (* Faults may be delayed within the selected translation range. *)
+      if trans_time <=? trs.(IIS.TransRes.trans_end) then
         mset snd $ IIS.add trans_time;;
         (* if the fault is from read, add the read view *)
         let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
@@ -2358,6 +2398,7 @@ Definition run_trans_end (trans_end : trans_end) :
         write_view ← write_fault_vpre is_rel trans_time;
         mset snd $ IIS.add (view_if is_write write_view);;
         msetv (IIS.trs ∘ snd) None
+      else mdiscard
   else
     mthrow "Translation ends with an empty translation".
 
