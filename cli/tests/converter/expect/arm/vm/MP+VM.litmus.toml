@@ -17,6 +17,30 @@ name = "MP+VM"
 
 [[memory]]
   kind = "pagetable"
+  addr = 0x200000
+  step = 8
+  data = 0x201003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x201000
+  step = 8
+  data = 0x202003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x202000
+  step = 8
+  data = 0x203003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x202008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
   addr = 0x203008
   step = 8
   data = 0x14c3
@@ -38,30 +62,6 @@ name = "MP+VM"
   addr = 0x203020
   step = 8
   data = 0x401443
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x202000
-  step = 8
-  data = 0x203003
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x202008
-  step = 8
-  data = 0x200441
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x201000
-  step = 8
-  data = 0x202003
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x200000
-  step = 8
-  data = 0x201003
 
 [[memory]]
   sym = "pa_x"

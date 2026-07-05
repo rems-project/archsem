@@ -48,8 +48,6 @@ type pa = int
 
 type descriptor = int64
 
-type table = Bytes.t
-
 type data_value = Z.t
 
 type layout =
@@ -68,17 +66,15 @@ type t =
   { allocator : Allocator.t;
     root : pa;
     mutable next_table_pa : pa;
-    mutable tables : (pa * table) list;
+    entries : (pa, descriptor) Hashtbl.t;
     mutable symbols_pa : (string * pa) list;
     mutable data_inits : (pa * data_value) list
   }
 
-let empty_table () = Bytes.make Desc.table_size '\x00'
-
 let make allocator ~root =
-  let tables = [(root, empty_table ())] in
+  let entries = Hashtbl.create 256 in
   { allocator;
-    tables;
+    entries;
     root;
     next_table_pa = root + Allocator.page_size;
     symbols_pa = [];
@@ -101,48 +97,51 @@ let alloc_pa builder name =
 
 (** {1 Table page allocation} *)
 
-(** Allocate a fresh table page and remember its backing bytes. *)
+(** Allocate a fresh table page. *)
 let create_table_page builder =
   if builder.next_table_pa >= builder.root + Allocator.big_size then
     error "page_table: 2MB page-table pool exhausted";
   let addr = builder.next_table_pa in
   builder.next_table_pa <- addr + Allocator.page_size;
-  let table = empty_table () in
-  builder.tables <- (addr, table) :: builder.tables;
-  (addr, table)
+  addr
 
-let create_child_table builder parent_table idx =
-  let (child_addr, child_table) = create_table_page builder in
-  Desc.write_entry parent_table idx (Desc.table_descriptor child_addr);
-  child_table
+let entry_addr table_addr idx = table_addr + (idx * Desc.entry_size)
+
+let read_entry builder table_addr idx =
+  Hashtbl.find_opt builder.entries (entry_addr table_addr idx)
+
+exception Conflicting_entry of pa * descriptor * descriptor
+
+let write_entry builder table_addr idx desc =
+  let slot_addr = entry_addr table_addr idx in
+  ( match Hashtbl.find_opt builder.entries slot_addr with
+  | Some existing when existing <> desc ->
+      raise (Conflicting_entry (slot_addr, existing, desc))
+  | _ -> ()
+  );
+  Hashtbl.replace builder.entries slot_addr desc
+
+let create_child_table builder parent_addr idx =
+  let child_addr = create_table_page builder in
+  try
+    write_entry builder parent_addr idx (Desc.table_descriptor child_addr);
+    child_addr
+  with Conflicting_entry (slot_addr, existing, desc) ->
+    error
+      "page_table: conflicting mapping for table slot 0x%x: existing descriptor \
+       0x%Lx, new descriptor 0x%Lx"
+       slot_addr existing desc
+
+let child_table_addr builder table_addr idx =
+  Option.bind (read_entry builder table_addr idx) Desc.table_addr_of_descriptor
 
 (** {1 Mapping path construction} *)
 
-let find_table tables addr =
-  match List.assoc_opt addr tables with
-  | Some tbl -> tbl
-  | None -> error "page_table: table 0x%x not found" addr
-
-let read_child_table_addr table idx =
-  Desc.read_entry table idx |> Desc.table_addr_of_descriptor
-
 (** Reuse an existing child table descriptor, or install a new child table. *)
-let ensure_child_table builder parent_table idx =
-  match read_child_table_addr parent_table idx with
-  | Some next_addr -> find_table builder.tables next_addr
-  | None -> create_child_table builder parent_table idx
-
-(** {1 Mapping insertion} *)
-
-(** Write a leaf mapping, allowing same writes but rejecting conflicts. *)
-let write_leaf table idx va desc =
-  let existing = Desc.read_entry table idx in
-  if existing <> 0L && existing <> desc then
-    error
-      "page_table: conflicting mapping for VA 0x%x: existing descriptor 0x%Lx, \
-       new descriptor 0x%Lx"
-       va existing desc;
-  Desc.write_entry table idx desc
+let ensure_child_table builder parent_addr idx =
+  match child_table_addr builder parent_addr idx with
+  | Some next_addr -> next_addr
+  | None -> create_child_table builder parent_addr idx
 
 (** Align a VA or PA for the descriptor level being inserted. *)
 let check_aligned_at_level name level addr =
@@ -154,15 +153,20 @@ let check_aligned_at_level name level addr =
 
 (** Write an encoded descriptor at [va], allocating intermediate tables. *)
 let write_descriptor ?(level = Desc.last_level) builder ~va desc =
-  let rec walk table current_level =
+  let rec walk table_addr current_level =
     let idx = Desc.va_index va current_level in
-    if current_level = level then write_leaf table idx va desc
+    if current_level = level then
+      try write_entry builder table_addr idx desc
+      with Conflicting_entry (_, existing, desc) ->
+        error
+          "page_table: conflicting mapping for VA 0x%x: existing descriptor \
+           0x%Lx, new descriptor 0x%Lx"
+           va existing desc
     else
-      let child_table = ensure_child_table builder table idx in
-      walk child_table (current_level + 1)
+      let child_addr = ensure_child_table builder table_addr idx in
+      walk child_addr (current_level + 1)
   in
-  let root_table = find_table builder.tables builder.root in
-  walk root_table Desc.root_level
+  walk builder.root Desc.root_level
 
 (** Add the requested mapping, allocating intermediate tables on demand. *)
 let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
@@ -188,6 +192,11 @@ let check_table_level = function
         Desc.root_level (Desc.last_level - 1)
   | Some level -> level
 
+let addr_of_z name addr =
+  try Z.to_int addr
+  with Z.Overflow ->
+    error "page_table: %s out of range: %s" name (Z.format "%#x" addr)
+
 let eval_mapping_target ?level ?(attrs = []) builder ~va = function
   | Page_table_ast.PaName pa_name ->
       let pa = alloc_pa builder pa_name in
@@ -200,11 +209,7 @@ let eval_mapping_target ?level ?(attrs = []) builder ~va = function
       if attrs <> [] then
         error "page_table: descriptor fields are only supported on PA mappings";
       let level = check_table_level level in
-      let table_pa =
-        try Z.to_int addr
-        with Z.Overflow ->
-          error "page_table: table address out of range: %s" (Z.format "%#x" addr)
-      in
+      let table_pa = addr_of_z "table address" addr in
       let desc =
         try Desc.table_descriptor table_pa
         with Failure msg -> error "page_table: %s" msg
@@ -227,28 +232,17 @@ let eval_stmt builder ~symbolic_vas = function
       let pa = alloc_pa builder pa_name in
       builder.data_inits <- (pa, value) :: builder.data_inits
   | Page_table_ast.IdentityMapping {addr; attr} ->
-      let addr =
-        try Z.to_int addr
-        with Z.Overflow ->
-          error "page_table: address out of range: %s" (Z.format "%#x" addr)
-      in
+      let addr = addr_of_z "address" addr in
       add_mapping builder ~va:addr ~pa:addr attr
 
 (** {1 Layout construction} *)
 
-(** Convert mutable table bytes into sparse concrete memory entries. *)
+(** Convert table bytes into concrete memory entries. *)
 let to_entries builder =
-  List.concat_map
-    (fun (addr, table) ->
-       let n = Bytes.length table / Desc.entry_size in
-       List.filter_map
-         (fun i ->
-            let value = Desc.read_entry table i in
-            if value = 0L then None else Some (addr + (i * Desc.entry_size), value)
-          )
-         (List.init n Fun.id)
-     )
-    builder.tables
+  Hashtbl.fold
+    (fun addr desc entries -> (addr, desc) :: entries)
+    builder.entries []
+  |> List.sort (fun (addr1, _) (addr2, _) -> Int.compare addr1 addr2)
 
 (** Freeze the builder state into the immutable layout used downstream. *)
 let to_layout builder =
