@@ -1,0 +1,13 @@
+arch = "AArch64"
+name = "LDR+negative-location"
+symbolic = ["x"]
+
+[thread.0]
+init = { X1 = "x" }
+code = "LDR X0, [X1]"
+
+[locations]
+x = "-1"
+
+[final]
+assertion = "0:X0 = 0xffffffffffffffff"
