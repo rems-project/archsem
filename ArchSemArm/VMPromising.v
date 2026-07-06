@@ -1754,6 +1754,7 @@ Module IIS.
           trans_start : nat;
           trans_end : nat;
           root : option {ttbr : reg & reg_type ttbr};
+          ifetch_check : bool;
           remaining : list (bv 64)
         }.
 
@@ -2258,6 +2259,15 @@ Definition ets3 (ts : TState.t) : result string bool :=
     (regval_to_val ID_AA64MMFR1_EL1 mmfr1);
   mret (bv_extract 36 4 val =? 3%bv).
 
+Definition entry_in_tlb_entries (val_ttbr : bv 64) (path : list (bv 64))
+    (entries : list TLB.trans_candidate) : Prop :=
+  ∃ entry ∈ entries,
+    val_ttbr = entry.(TLB.candidate_ttbr) ∧
+    path = entry.(TLB.candidate_path).
+Instance Decision_entry_in_tlb_entries val_ttbr path entries :
+    Decision (entry_in_tlb_entries val_ttbr path entries).
+Proof. unfold entry_in_tlb_entries. apply _. Defined.
+
 (** Handle the start of an address translation.
 
     This is called when the architecture initiates a translation table walk.
@@ -2299,6 +2309,17 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
         TLB.snapshots_from_until invalid_start_time vmax_t snapshots in
       let snapshots :=
         TLB.snapshots_from_until vpre_t vmax_t snapshots in
+      (* Snapshots are sorted descending; the reversed head is the earliest
+         state visible to this translation. *)
+      first_valid_entries ←
+        if is_ifetch then
+          match reverse snapshots with
+          | first_snapshot :: _ =>
+              mlift $ TLB.get_valid_entries_from_snapshots
+                [first_snapshot] mem tid va asid
+          | [] => mret ([] : list TLB.trans_candidate)
+          end
+        else mret ([] : list TLB.trans_candidate);
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
@@ -2307,36 +2328,53 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for candidate in valid_entries do
+          let val_ttbr_raw := candidate.(TLB.candidate_ttbr) in
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
           let root := (Some (existT ttbr val_ttbr)) in
           let ti :=
             if is_ifetch then None else candidate.(TLB.candidate_inv_time) in
+          let ifetch_check :=
+            negb is_ifetch ||
+            bool_decide
+              (entry_in_tlb_entries
+                val_ttbr_raw candidate.(TLB.candidate_path)
+                first_valid_entries) in
           mret $
             (IIS.TransRes.make
               (va_to_vpn va)
               candidate.(TLB.candidate_start)
               candidate.(TLB.candidate_end)
-              root candidate.(TLB.candidate_path), ti)
+              root ifetch_check candidate.(TLB.candidate_path), ti)
         end;
       invalid_res ←
         for candidate in invalid_entries do
+          let val_ttbr_raw := candidate.(TLB.candidate_ttbr) in
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
           let root := (Some (existT ttbr val_ttbr)) in
+          let ifetch_check :=
+            negb is_ifetch ||
+            bool_decide
+              (entry_in_tlb_entries
+                val_ttbr_raw candidate.(TLB.candidate_path)
+                first_valid_entries) in
           mret $
             (IIS.TransRes.make
               (va_to_vpn va)
               candidate.(TLB.candidate_start)
               candidate.(TLB.candidate_end)
-              root candidate.(TLB.candidate_path),
+              root ifetch_check candidate.(TLB.candidate_path),
               candidate.(TLB.candidate_inv_time))
         end;
       mchoosel (valid_res ++ invalid_res)
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t vmax_t None [], None);
+      let ifetch_check := negb is_ifetch in
+      mret $
+        (IIS.TransRes.make
+          (va_to_vpn va) vpre_t vmax_t None ifetch_check [], None);
   mset PPState.iis $ IIS.set_trs trans_res.1;;
   mset PPState.iis $ IIS.set_inv_time trans_res.2.
 
@@ -2360,6 +2398,16 @@ Definition write_fault_vpre (is_rel : bool)
               ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
   mret $ iis.(IIS.strict) ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
+Definition check_ifetch_trans_end (trs : IIS.TransRes.t) :
+    Exec.t (TState.t * IIS.t) string () :=
+  guard_or
+    "Ifetch translation used a TLB entry that differs from the first snapshot"
+    (trs.(IIS.TransRes.ifetch_check) = true);;
+  guard_or
+    "Ifetch translation did not consume the selected TLB entry"
+    (trs.(IIS.TransRes.remaining) = []);;
+  mret ().
+
 (** Handle the end of an address translation.
 
     If the translation succeeded (no fault), clears the translation state.
@@ -2373,18 +2421,20 @@ Definition run_trans_end (trans_end : trans_end) :
   if iis.(IIS.trs) is Some trs then
     let trans_start := trs.(IIS.TransRes.trans_start) in
     let fault := trans_end.(AddressDescriptor_fault) in
+    let is_ifetch :=
+      fault.(FaultRecord_access).(AccessDescriptor_acctype) =? AccessType_IFETCH in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
+      ( if is_ifetch then check_ifetch_trans_end trs else mret () );;
       mset snd $ IIS.add trans_start;;
       msetv (IIS.trs ∘ snd) None
     else
+      if is_ifetch then
+        mthrow "Ifetch fault is unsupported"
+      else
       is_ets3 ← mlift (ets3 ts);
-      let is_ifetch :=
-        fault.(FaultRecord_access).(AccessDescriptor_acctype) =?
-        AccessType_IFETCH in
       let trans_time :=
         trans_start ⊔
-        view_if (is_ets3 && (negb is_ifetch))
-          (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+        view_if is_ets3 (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
       (* Faults may be delayed within the selected translation range. *)
       if trans_time <=? trs.(IIS.TransRes.trans_end) then
         mset snd $ IIS.add trans_time;;
