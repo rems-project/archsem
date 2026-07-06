@@ -767,7 +767,8 @@ Instance Decision_is_block (e : bv 64) : Decision (is_block e).
 Proof. unfold_decide. Defined.
 
 Definition is_final (lvl : Level) (e : bv 64) : Prop :=
-  if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv else is_block e.
+  if lvl is 3%fin then (bv_extract 0 2 e) = 3%bv
+  else lvl ≠ root_lvl ∧ is_block e.
 Instance Decision_is_final (lvl : Level) (e : bv 64) : Decision (is_final lvl e).
 Proof. unfold_decide. Defined.
 
