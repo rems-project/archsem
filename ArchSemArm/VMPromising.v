@@ -1327,9 +1327,16 @@ Module TLB.
   Definition tlbi_apply (tlbi : TLBI.t) (tlb : t) : t :=
     set vatlb (filter (λ '(existT ctxt te), ¬ affects tlbi ctxt te)) tlb.
 
+  Definition tlbi_affects_tlb (tlbi : TLBI.t) (tlb : t) : bool :=
+    existsb (λ '(existT ctxt te), bool_decide (affects tlbi ctxt te))
+      (elements tlb.(vatlb)).
+
   Definition apply_tlbi_for_tid (tid : nat) (tlbi : TLBI.t)
       (recipient : nat) (tlb : t) : t * bool :=
-    if decide (recipient = tid) then (tlbi_apply tlbi tlb, true)
+    if decide (recipient = tid) then
+      if (tlbi_affects_tlb tlbi tlb : bool)
+      then (tlbi_apply tlbi tlb, true)
+      else (tlb, false)
     else (tlb, false).
 
   (** ** TLB Snapshot Functions for Specific VA (Translation) *)
