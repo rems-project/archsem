@@ -2515,10 +2515,14 @@ Section BBM.
       let va1 := TLB.Ctxt.va c1 in
       let va2 := TLB.Ctxt.va c2 in
       if decide (lvl1 ≤ lvl2)%fin then
-        let va2_trunc : prefix lvl1 := bv_extract 0 (level_length lvl1) va2 in
+        let va2_trunc : prefix lvl1 :=
+          bv_extract (level_length lvl2 - level_length lvl1)
+            (level_length lvl1) va2 in
         va1 =? va2_trunc
       else
-        let va1_trunc : prefix lvl2 := bv_extract 0 (level_length lvl2) va1 in
+        let va1_trunc : prefix lvl2 :=
+          bv_extract (level_length lvl1 - level_length lvl2)
+            (level_length lvl2) va1 in
         va1_trunc =? va2.
 
   (** Check for BBM violation between two TLB entries. *)
