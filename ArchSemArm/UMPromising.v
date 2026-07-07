@@ -488,7 +488,10 @@ Section RunOutcome.
   Equations run_outcome (out : outcome) :
       Exec.t (PPState.t TState.t Msg.t IIS.t) string (eff_ret out * option view) :=
   | RegWrite reg racc val =>
-      guard_or "Non trivial reg access types unsupported" (racc = None);;
+      (if racc is Some _ then
+         guard_or "Non trivial reg access types unsupported" (reg = R_bitvector_4 NZCV);;
+         mret ()
+       else mret ());;
       vreg ← mget (IIS.strict ∘ PPState.iis);
       vreg' ←
         (if reg =? pc_reg
@@ -504,7 +507,10 @@ Section RunOutcome.
       msetv PPState.state nts;;
       mret ((), None)
   | RegRead reg racc =>
-      guard_or "Non trivial reg access types unsupported" (racc = None);;
+      (if racc is Some _ then
+         guard_or "Non trivial reg access types unsupported" (reg = R_bitvector_4 NZCV);;
+         mret ()
+       else mret ());;
       ts ← mget PPState.state;
       '(val, view) ← othrow "Register isn't mapped can't read" $
           dmap_lookup reg ts.(TState.regs);
