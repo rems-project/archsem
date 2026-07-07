@@ -2556,25 +2556,41 @@ Section BBM.
       | right _ => true
       end.
 
-  (** Check for BBM violations within a single TLB snapshot. *)
-  Definition has_bbm_violation (mem : Memory.t)
+  Definition fe_in (fe : TLB.FE.t) (fes : list TLB.FE.t) : bool :=
+    existsb (λ fe', bool_decide (fe = fe')) fes.
+
+  (** Check for BBM violations introduced by one TLB snapshot transition.
+
+      This compares final entries that were already present in the older
+      snapshot with final entries newly introduced in the newer snapshot.
+      In particular, an invalid->valid PTE update with no previous final
+      entry does not count as a BBM violation. *)
+  Definition has_bbm_transition_violation (mem : Memory.t)
                 (init : memoryMap)
-                (tlb : TLB.t)
-                (time : nat) : Prop :=
+                (tlb_old tlb_new : TLB.t)
+                (time_new : nat) : bool :=
     let relevant_addrs := elements (dom init) in
-    let finals := TLB.VATLB.final_entries (TLB.vatlb tlb) in
-    ∃ '(fe1, fe2) ∈ list_prod finals finals,
-      fe1 ≠ fe2 ∧
-      is_bbm_violation mem init time relevant_addrs fe1 fe2 = true.
+    let old_finals := TLB.VATLB.final_entries (TLB.vatlb tlb_old) in
+    let new_finals := TLB.VATLB.final_entries (TLB.vatlb tlb_new) in
+    existsb (λ fe_old,
+      existsb (λ fe_new,
+        negb (fe_in fe_new old_finals) &&
+        is_bbm_violation mem init time_new relevant_addrs fe_old fe_new
+      ) new_finals
+    ) old_finals.
 
-  Instance Decision_has_bbm_violation mem init tlb time :
-      Decision (has_bbm_violation mem init tlb time).
-  Proof. unfold has_bbm_violation. apply _. Defined.
-
-  (** Find the TLB snapshot that was active at a given time. *)
-  Definition find_latest_snapshot_before (snapshots : list (TLB.t * nat))
-      (target : nat) : option (TLB.t * nat) :=
-    List.find (λ '(_, t), (t <=? target)%nat) snapshots.
+  (** Snapshots are in descending timestamp order. Compare only the initial
+      snapshot with the first later snapshot. *)
+  Fixpoint has_bbm_initial_transition_violation (mem : Memory.t)
+                (init : memoryMap)
+                (snapshots : list (TLB.t * nat)) : bool :=
+    match snapshots with
+    | (tlb_new, time_new) :: [(tlb_init, _)] =>
+        has_bbm_transition_violation mem init tlb_init tlb_new time_new
+    | _ :: older_snapshots =>
+        has_bbm_initial_transition_violation mem init older_snapshots
+    | _ => false
+    end.
 
   (** Main BBM violation check. Returns [Ok true] if violation detected. *)
   Definition check_bbm_violation (tid : nat) (ts : TState.t)
@@ -2584,24 +2600,12 @@ Section BBM.
       let max_t := length mem in
       let ttbrs_to_check :=
         filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
-      let tlbi_times := filter (λ i,
-        if mem !! i is Some (Ev.Tlbi _ recipient) then
-          bool_decide (recipient = tid)
-        else false
-      ) (seq 1 max_t) in
-      let times_to_check := max_t :: (map (λ t, t - 1) tlbi_times) in
       foldlM (λ violated ttbr,
         if (violated : bool) then mret true
         else
           snapshots ←
             TLB.unique_snapshots_until ts initmem mem max_t tid ttbr mem_strict;
-          mret $
-            bool_decide
-              (∃ target_time ∈ times_to_check,
-                match find_latest_snapshot_before snapshots target_time with
-                | Some (tlb, _) => has_bbm_violation mem initmem tlb target_time
-                | None => False
-                end)
+          mret $ has_bbm_initial_transition_violation mem initmem snapshots
       ) false (elements ttbrs_to_check)
     else
       mret false.
