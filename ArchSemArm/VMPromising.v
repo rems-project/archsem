@@ -1707,24 +1707,42 @@ Module TLB.
       mret (new ++ entries)
     ) snapshots [].
 
+  (** Sample every timestamp in one TLB snapshot range. Invalid translations
+      depend on the page-table memory at the time of the walk, so an unchanged
+      TLB does not imply an unchanged set of invalid candidates. *)
+  Fixpoint get_invalid_entries_from_range
+                (range : snapshot_range) (count : nat)
+                (ts : TState.t) (init : memoryMap) (mem : Memory.t)
+                (tid : nat)
+                (va : bv 64) (asid : bv 16) (ttbr : reg)
+                (entries : list trans_candidate) :
+              result string (list trans_candidate) :=
+    match count with
+    | O => mret entries
+    | S count =>
+      let trans_time := range.(range_start) + count in
+      candidates ←
+        TLB.get_invalid_ptes_with_inv_time
+          ts init mem tid range.(range_tlb) trans_time va asid ttbr;
+      let new :=
+        map (λ '(val_ttbr, path, ti_opt),
+          make_trans_candidate val_ttbr path
+            trans_time trans_time ti_opt
+        ) candidates in
+      get_invalid_entries_from_range range count
+        ts init mem tid va asid ttbr (new ++ entries)
+    end.
+
   Definition get_invalid_entries_from_snapshots
                 (snapshots : list snapshot_range)
-                (ts : TState.t)
-                (init : memoryMap)
-                (mem : Memory.t)
+                (ts : TState.t) (init : memoryMap) (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
               result string (list trans_candidate) :=
     foldrM (λ range entries,
-      candidates ←
-        TLB.get_invalid_ptes_with_inv_time
-          ts init mem tid range.(range_tlb) range.(range_start) va asid ttbr;
-      let new :=
-        map (λ '(val_ttbr, path, ti_opt),
-          make_trans_candidate val_ttbr path
-            range.(range_start) range.(range_end) ti_opt
-        ) candidates in
-      mret (new ++ entries)
+        get_invalid_entries_from_range
+          range (S (range.(range_end) - range.(range_start)))
+          ts init mem tid va asid ttbr entries
     ) snapshots [].
 End TLB.
 Export (hints) TLB.
