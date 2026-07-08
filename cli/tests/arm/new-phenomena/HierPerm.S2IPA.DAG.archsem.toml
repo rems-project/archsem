@@ -1,0 +1,424 @@
+# Concrete ArchSem version of archsem-private/tests/new-phenomena/isla/
+# HierPerm.S2IPA.DAG.litmus.toml.
+#
+# Fixed symbolic addresses:
+#   x         = 0x0
+#   ipa_data  = 0x400000
+#   ipa_l3_a  = 0x2c3000
+#   ipa_l3_b  = 0x2c4000
+#   pa1       = 0x500000
+#   pa_l3     = 0x600000
+#   stage1    = 0x2c0000
+#   stage2    = 0x240000
+#   hyp       = 0x200000
+#
+# Question: in a DAG-shaped Stage-2 setup, can an EL1 walk use a shared
+# final Stage-1 table through ipa_l3_b after EL2 invalidates both Stage-2
+# translations ipa_l3_a->pa_l3 and ipa_l3_b->pa_l3?
+#
+# The source DSL uses mkdesc2(table=ipa_l3_b, APTable=0b00).  APTable is a
+# Stage-1 table-descriptor field; for APTable=0b00 no high attribute bits are
+# set, so the concrete descriptor is just ipa_l3_b | 0x3 = 0x2c4003.
+
+arch = "Arm"
+name = "HierPerm.S2IPA.DAG"
+
+[thread.0.regs]
+_PC = 0x3000
+R0 = 0x0
+R1 = 0x244618      # pte3(ipa_l3_a, stage2), ipa_l3_a = 0x2c3000
+R2 = 0x0
+R3 = 0x2c2000      # pte2(x, stage1), x = 0
+R4 = 0x2c4003      # mkdesc2(table=ipa_l3_b, APTable=0b00)
+R5 = 0x244620      # pte3(ipa_l3_b, stage2), ipa_l3_b = 0x2c4000
+R6 = 0x2c3         # page(ipa_l3_a)
+R7 = 0x0           # x
+R8 = 0x0
+R9 = 0x2c4         # page(ipa_l3_b)
+R10 = 0x0
+R11 = 0x0
+R12 = 0x0
+R13 = 0x0
+R14 = 0x0
+R15 = 0x0
+R16 = 0x0
+R17 = 0x0
+R18 = 0x0
+R19 = 0x0
+R20 = 0x0
+R21 = 0x0
+R22 = 0x0
+R23 = 0x0
+R24 = 0x0
+R25 = 0x0
+R26 = 0x0
+R27 = 0x0
+R28 = 0x0
+R29 = 0x0
+R30 = 0x0
+VBAR_EL1 = 0x1000
+VBAR_EL2 = 0x2000
+TTBR0_EL1 = 0x2c0000
+TTBR1_EL1 = 0x2c0000
+VTTBR_EL2 = 0x240000
+TTBR0_EL2 = 0x200000
+TTBR1_EL2 = 0x200000
+SCTLR_EL1 = 0x1
+TCR_EL1 = 0x0
+ID_AA64MMFR1_EL1 = 0x2000000000
+ESR_EL1 = 0x0
+ESR_EL2 = 0x0
+ESR_EL3 = 0x0
+FAR_EL1 = 0x0
+FAR_EL2 = 0x0
+FAR_EL3 = 0x0
+ELR_EL1 = 0x0
+CurrentEL = 0b10
+SPSel = 0b1
+SP_EL0 = 0x0
+SP_EL1 = 0x0
+SP_EL2 = 0x0
+SP_EL3 = 0x0
+SPSR_EL1 = 0x0
+SPSR_EL2 = 0b00100
+SPSR_EL3 = 0x0
+ELR_EL2 = 0x3028
+ELR_EL3 = 0x0
+PAR_EL1 = 0x0
+NZCV = 0x0
+DAIF = 0x0
+
+[[memory]]
+addr = 0x3000
+kind = "code"
+step = 4
+data = [
+  0xd2800002, # MOV X2, #0
+  0xf9000022, # STR X2, [X1]
+  0xf90000a2, # STR X2, [X5]
+  0xd5033f9f, # DSB SY
+  0xd50c8426, # TLBI IPAS2E1, X6
+  0xd50c8429, # TLBI IPAS2E1, X9
+  0xd5033f9f, # DSB SY
+  0xf9000064, # STR X4, [X3]
+  0xd5033f9f, # DSB SY
+  0xd69f03e0, # ERET
+  0xd2800548, # L: MOV X8, #42
+  0xf90000e8  # STR X8, [X7]
+]
+
+[[memory]]
+addr = 0x1200
+kind = "code"
+step = 4
+data = [
+  0xd2800008, # MOV X8, #0
+  0xd538402d, # MRS X13, ELR_EL1
+  0x910011ad, # ADD X13, X13, #4
+  0xd518402d, # MSR ELR_EL1, X13
+  0xd69f03e0  # ERET
+]
+
+[[memory]]
+addr = 0x2400
+kind = "code"
+step = 4
+data = [
+  0xd2800008, # MOV X8, #0
+  0xd53c402d, # MRS X13, ELR_EL2
+  0x910011ad, # ADD X13, X13, #4
+  0xd51c402d, # MSR ELR_EL2, X13
+  0xd69f03e0  # ERET
+]
+
+[thread.0]
+breakpoints = [0x3030]
+
+[[memory]]
+sym = "pa1"
+addr = 0x500000
+step = 8
+data = 0x0
+
+# Shared final Stage-1 L3 table contents at the physical table page.
+[[memory]]
+addr = 0x600000
+kind = "pagetable"
+step = 8
+data = 0x400403      # x |-> ipa_data with AP=0b00
+
+# Stage-1 table rooted at 0x2c0000.  The L2 entry for x initially points to
+# ipa_l3_a and is later changed by EL2 to point to ipa_l3_b.
+[[memory]]
+addr = 0x2c0000
+kind = "pagetable"
+step = 8
+data = 0x2c1003
+
+[[memory]]
+addr = 0x2c1000
+kind = "pagetable"
+step = 8
+data = 0x2c2003
+
+[[memory]]
+addr = 0x2c2000
+kind = "pagetable"
+step = 8
+data = 0x2c3003
+
+[[memory]]
+addr = 0x2c2008
+kind = "pagetable"
+step = 8
+data = 0x2c5003
+
+# These two IPA pages mirror the shared L3 contents for the current ArchSem
+# single-stage TLB abstraction; the Stage-2 tables below keep the intended
+# ipa_l3_a/ipa_l3_b -> pa_l3 DAG explicit.
+[[memory]]
+addr = 0x2c3000
+kind = "pagetable"
+step = 8
+data = 0x400403
+
+[[memory]]
+addr = 0x2c4000
+kind = "pagetable"
+step = 8
+data = 0x400403
+
+[[memory]]
+addr = 0x2c4008
+kind = "pagetable"
+step = 8
+data = 0x14c3
+
+[[memory]]
+addr = 0x2c4010
+kind = "pagetable"
+step = 8
+data = 0x24c3
+
+[[memory]]
+addr = 0x2c4018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x2c3008
+kind = "pagetable"
+step = 8
+data = 0x14c3
+
+[[memory]]
+addr = 0x2c3018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x2c5220
+kind = "pagetable"
+step = 8
+data = 0x244443
+
+[[memory]]
+addr = 0x2c5610
+kind = "pagetable"
+step = 8
+data = 0x2c2443
+
+# Stage-2 table rooted at 0x240000.
+[[memory]]
+addr = 0x240000
+kind = "pagetable"
+step = 8
+data = 0x241003
+
+[[memory]]
+addr = 0x241000
+kind = "pagetable"
+step = 8
+data = 0x242003
+
+[[memory]]
+addr = 0x242000
+kind = "pagetable"
+step = 8
+data = 0x243003
+
+[[memory]]
+addr = 0x242008
+kind = "pagetable"
+step = 8
+data = 0x244003
+
+[[memory]]
+addr = 0x242010
+kind = "pagetable"
+step = 8
+data = 0x245003
+
+[[memory]]
+addr = 0x243008
+kind = "pagetable"
+step = 8
+data = 0x14c3
+
+[[memory]]
+addr = 0x243018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x244600
+kind = "pagetable"
+step = 8
+data = 0x2c0443
+
+[[memory]]
+addr = 0x244608
+kind = "pagetable"
+step = 8
+data = 0x2c1443
+
+[[memory]]
+addr = 0x244610
+kind = "pagetable"
+step = 8
+data = 0x2c2443
+
+[[memory]]
+addr = 0x244618
+kind = "pagetable"
+step = 8
+data = 0x600443      # ipa_l3_a |-> pa_l3
+
+[[memory]]
+addr = 0x244620
+kind = "pagetable"
+step = 8
+data = 0x600443      # ipa_l3_b |-> pa_l3
+
+[[memory]]
+addr = 0x245000
+kind = "pagetable"
+step = 8
+data = 0x500443      # ipa_data |-> pa1
+
+# EL2 hyp_map rooted at 0x200000.  It maps EL2 code plus the concrete Stage-1
+# and Stage-2 table pages so EL2 can rewrite their PTEs.
+[[memory]]
+addr = 0x200000
+kind = "pagetable"
+step = 8
+data = 0x201003
+
+[[memory]]
+addr = 0x201000
+kind = "pagetable"
+step = 8
+data = 0x202003
+
+[[memory]]
+addr = 0x202000
+kind = "pagetable"
+step = 8
+data = 0x203003
+
+[[memory]]
+addr = 0x202008
+kind = "pagetable"
+step = 8
+data = 0x204003
+
+[[memory]]
+addr = 0x203000
+kind = "pagetable"
+step = 8
+data = 0x0
+
+[[memory]]
+addr = 0x203010
+kind = "pagetable"
+step = 8
+data = 0x24c3
+
+[[memory]]
+addr = 0x203018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x204200
+kind = "pagetable"
+step = 8
+data = 0x240443
+
+[[memory]]
+addr = 0x204208
+kind = "pagetable"
+step = 8
+data = 0x241443
+
+[[memory]]
+addr = 0x204210
+kind = "pagetable"
+step = 8
+data = 0x242443
+
+[[memory]]
+addr = 0x204218
+kind = "pagetable"
+step = 8
+data = 0x243443
+
+[[memory]]
+addr = 0x204220
+kind = "pagetable"
+step = 8
+data = 0x244443
+
+[[memory]]
+addr = 0x204228
+kind = "pagetable"
+step = 8
+data = 0x245443
+
+[[memory]]
+addr = 0x204600
+kind = "pagetable"
+step = 8
+data = 0x2c0443
+
+[[memory]]
+addr = 0x204608
+kind = "pagetable"
+step = 8
+data = 0x2c1443
+
+[[memory]]
+addr = 0x204610
+kind = "pagetable"
+step = 8
+data = 0x2c2443
+
+[[memory]]
+addr = 0x204618
+kind = "pagetable"
+step = 8
+data = 0x2c3443
+
+[[memory]]
+addr = 0x204620
+kind = "pagetable"
+step = 8
+data = 0x2c4443
+
+[final]
+kind = "exists"
+assertion.and = [{"0:R8" = 42}, {"pa1" = 42}]

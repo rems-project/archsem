@@ -60,6 +60,12 @@ type mapping_target =
 type stmt =
   (* [virtual x y;] predeclares VA-side names. *)
   | Virtual of string list
+  (* [aligned n virtual x y;] predeclares VA-side names with an allocation
+     alignment/extent. *)
+  | AlignedVirtual of
+      { alignment : Z.t;
+        names : string list
+      }
   (* [physical pa_x pa_y;] predeclares PA-side names. *)
   | Physical of string list
   (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side target.

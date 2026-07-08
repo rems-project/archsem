@@ -233,6 +233,13 @@ Module Memory.
     bytes ← read_from addr 8 time init mem;
     Some (bv_of_bytes 64 bytes.*1).
 
+  (** Reads an 8-byte memory word together with the source timestamp of each
+      byte used to construct it. *)
+  Definition read_word_with_sources (addr : address) (init : memoryMap)
+      (mem : t) (time : nat) : option (bv 64 * list (address * view)) :=
+    bytes ← read_from addr 8 time init mem;
+    Some (bv_of_bytes 64 bytes.*1, zip (addr_range addr 8) bytes.*2).
+
   (** Transforms an initial [memoryMap] and a promising memory history back to
       a [memoryMap] *)
   Definition to_memMap (init : memoryMap) (mem : t) : memoryMap :=
@@ -457,8 +464,9 @@ Module TState.
         (* Per-byte forwarding database *)
         fwdb : gmap address FwdItem.t;
 
-        (* Exclusive database: (load-time, physical address, size) *)
-        xclb : option (nat * address * N);
+        (* Exclusive database: (load-time, physical address, size, and
+           post-view of the load exclusive) *)
+        xclb : option (nat * address * N * view);
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -610,8 +618,9 @@ Module TState.
 
   (** Set the exclusive database to the footprint of the latest load
       exclusive. *)
-  Definition set_xclb (time : nat) (addr : address) (size : N) : t → t :=
-    setv xclb (Some (time, addr, size)).
+  Definition set_xclb (time : nat) (addr : address) (size : N)
+      (vpost : view) : t → t :=
+    setv xclb (Some (time, addr, size, vpost)).
 
   (** Clears the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
@@ -884,6 +893,7 @@ Module TLB.
       make {
         val_ttbr : bv 64;
         ptes : vec (bv 64) (S lvl);
+        pte_sources : list (address * view);
       }.
     Arguments t : clear implicits.
 
@@ -895,8 +905,8 @@ Module TLB.
 
     #[global] Instance count lvl : Countable (t lvl).
     Proof.
-      eapply (inj_countable' (fun ent => (val_ttbr ent, ptes ent))
-                        (fun x => make lvl x.1 x.2)).
+      eapply (inj_countable' (fun ent => (val_ttbr ent, ptes ent, pte_sources ent))
+                        (fun x => make lvl x.1.1 x.1.2 x.2)).
       abstract sauto.
     Defined.
 
@@ -905,8 +915,10 @@ Module TLB.
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
         (pte : bv 64)
+        (sources : list (address * view))
         (CHILD : lvl + 1 = clvl) : @t clvl :=
-      make _ tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte])).
+      make _ tlbe.(val_ttbr) (ctrans _ (tlbe.(ptes) +++ [#pte]))
+        (tlbe.(pte_sources) ++ sources).
     Solve All Obligations with lia.
   End Entry.
   Export (hints) Entry.
@@ -1060,13 +1072,13 @@ Module TLB.
       (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb, is_changed) val_ttbr,
       let entry_addr := next_entry_addr val_ttbr va in
-      if Memory.read_word entry_addr init mem time is Some memval then
+      if Memory.read_word_with_sources entry_addr init mem time is Some (memval, sources) then
         if decide (is_table root_lvl memval) then
           let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
           let entry : Entry.t (Ctxt.lvl ctxt) :=
-            Entry.make 0%fin val_ttbr [#memval] in
+            Entry.make 0%fin val_ttbr [#memval] sources in
           (* add the entry to vatlb only when it is not in the original vatlb *)
           if decide (entry ∉ (VATLB.get ctxt vatlb)) then
             Ok (VATLB.insert ctxt entry vatlb, true)
@@ -1104,7 +1116,7 @@ Module TLB.
     if decide (¬is_table plvl (Entry.pte te)) then Ok (vatlb, false)
     else
       let entry_addr := next_entry_addr (Entry.pte te) index in
-      if Memory.read_word entry_addr init mem time is Some next_pte then
+      if Memory.read_word_with_sources entry_addr init mem time is Some (next_pte, sources) then
         match inspect $ child_lvl (Ctxt.lvl ctxt) with
         | Some clvl eq:e =>
           if decide (is_tlb_fillable clvl next_pte) then
@@ -1113,7 +1125,7 @@ Module TLB.
                         else Ctxt.asid ctxt in
             let ndctxt := NDCtxt.make (Ctxt.upper ctxt) va asid in
             let ctxt := existT clvl ndctxt in
-            let entry := Entry.append te next_pte (child_lvl_add_one _ _ e) in
+            let entry := Entry.append te next_pte sources (child_lvl_add_one _ _ e) in
             (* add the entry to vatlb only when it is not in the original vatlb *)
             if decide (entry ∉ (VATLB.get ctxt vatlb)) then
               Ok (VATLB.insert ctxt entry vatlb, true)
@@ -1522,14 +1534,16 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (ndctxt : NDCtxt.t lvl) :
-            result string (list (bv 64 * list (bv 64) * (option nat))) :=
+            result string
+              (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
     let ctxt := existT lvl ndctxt in
     let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
     let tes := if decide (lvl = leaf_lvl) then tes
                else filter (λ te, is_block (TLB.Entry.pte te)) tes in
     for te in (elements tes) do
       ti ← invalidation_time mem tid trans_time ctxt te;
-      mret ((Entry.val_ttbr te), (vec_to_list (Entry.ptes te)), ti)
+      mret ((Entry.val_ttbr te), (vec_to_list (Entry.ptes te)),
+            (Entry.pte_sources te), ti)
     end.
 
   (** Get all the TLB entries (including the TTBR value) TTBR value that
@@ -1542,7 +1556,8 @@ Module TLB.
               (tlb : t) (trans_time : nat)
               (lvl : Level)
               (va : bv 64) (asid : bv 16) :
-            result string (list (bv 64 * list (bv 64) * (option nat))) :=
+            result string
+              (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
     upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
                 (is_upper_va va);
     let ndctxt_asid := NDCtxt.make upper (level_prefix va lvl) (Some asid) in
@@ -1561,7 +1576,8 @@ Module TLB.
               (tid : nat)
               (tlb : TLB.t) (trans_time : nat)
               (va : bv 64) (asid : bv 16) :
-            result string (list (bv 64 * list (bv 64) * (option nat))) :=
+            result string
+              (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
     res1 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 1%fin va asid;
     res2 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time 2%fin va asid;
     res3 ← get_leaf_ptes_with_inv_time mem tid tlb trans_time leaf_lvl va asid;
@@ -1581,7 +1597,8 @@ Module TLB.
                 (va : bv 64)
                 (asid : option (bv 16))
                 (ttbr : reg) :
-        result string (list (bv 64 * list (bv 64) * (option nat))) :=
+        result string
+          (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
     if parent_lvl lvl is Some parent_lvl then
       upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
         (is_upper_va va);
@@ -1593,11 +1610,13 @@ Module TLB.
         for te in (elements tes) do
           let entry_addr :=
             next_entry_addr (Entry.pte te) (level_index va lvl) in
-          if Memory.read_word entry_addr init mem trans_time is Some memval then
+          if Memory.read_word_with_sources entry_addr init mem trans_time is
+              Some (memval, sources) then
             if decide (¬ is_tlb_fillable lvl memval) then
               ti ← invalidation_time mem tid trans_time ctxt te;
               let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
-              mret $ Some (Entry.val_ttbr te, vals, ti)
+              let sources := Entry.pte_sources te ++ sources in
+              mret $ Some (Entry.val_ttbr te, vals, sources, ti)
             else mret None
           else
             mthrow "The PTE is missing"
@@ -1612,9 +1631,10 @@ Module TLB.
             $ regval_to_val ttbr sreg.1;
           let entry_addr :=
               next_entry_addr (val_to_addr (size:= 8) val_ttbr) (level_index va lvl) in
-          if Memory.read_word entry_addr init mem trans_time is Some memval then
+          if Memory.read_word_with_sources entry_addr init mem trans_time is
+              Some (memval, sources) then
             if decide (¬ is_tlb_fillable lvl memval) then
-              mret $ Some ((val_ttbr : bv 64), [memval], None)
+              mret $ Some ((val_ttbr : bv 64), [memval], sources, None)
             else mret None
           else mthrow "The root PTE is missing"
         end;
@@ -1633,7 +1653,8 @@ Module TLB.
                 (lvl : Level)
                 (va : bv 64) (asid : bv 16)
                 (ttbr : reg) :
-      result string (list (bv 64 * list (bv 64) * (option nat))) :=
+      result string
+        (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
     candidates_asid ←
       get_invalid_ptes_with_inv_time_by_lvl_asid
         ts init mem tid tlb trans_time lvl va (Some asid) ttbr;
@@ -1648,7 +1669,8 @@ Module TLB.
                        (tlb : TLB.t) (time : nat)
                        (va : bv 64) (asid : bv 16)
                        (ttbr : reg) :
-    result string (list (bv 64 * list (bv 64) * (option nat))) :=
+    result string
+      (list (bv 64 * list (bv 64) * list (address * view) * (option nat))) :=
   fault_ptes ←
     for lvl in enum Level do
       get_invalid_ptes_with_inv_time_by_lvl ts init mem tid tlb time lvl va asid ttbr
@@ -1664,14 +1686,17 @@ Module TLB.
     end.
 
   Definition is_new_entry (val_ttbr : bv 64) (path : list (bv 64))
+      (sources : list (address * view))
       (ti_new : option nat)
-      (entries : list (bv 64 * list (bv 64) * nat * option nat)) : Prop :=
+      (entries : list
+        (bv 64 * list (bv 64) * list (address * view) * nat * option nat)) : Prop :=
     ¬ ∃ entry ∈ entries,
-      let '(vt, p, _, ti) := entry in
-      val_ttbr = vt ∧ path = p ∧ invalidation_time_lt ti ti_new = false.
+      let '(vt, p, srcs, _, ti) := entry in
+      val_ttbr = vt ∧ path = p ∧ sources = srcs ∧
+      invalidation_time_lt ti ti_new = false.
 
-  Instance Decision_is_new_entry val_ttbr path ti_new entries :
-      Decision (is_new_entry val_ttbr path ti_new entries).
+  Instance Decision_is_new_entry val_ttbr path sources ti_new entries :
+      Decision (is_new_entry val_ttbr path sources ti_new entries).
   Proof. unfold is_new_entry. apply _. Defined.
 
   (* Snapshots are sorted in the descending order of [trans_time].
@@ -1680,13 +1705,15 @@ Module TLB.
                 (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
+              result string
+                (list (bv 64 * list (bv 64) * list (address * view) * nat *
+                  option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       candidates ← TLB.lookup mem tid tlb trans_time va asid;
       let new :=
-        omap (λ '(val_ttbr, path, ti_opt),
-          if decide (is_new_entry val_ttbr path ti_opt entries) then
-            Some (val_ttbr, path, trans_time, ti_opt)
+        omap (λ '(val_ttbr, path, sources, ti_opt),
+          if decide (is_new_entry val_ttbr path sources ti_opt entries) then
+            Some (val_ttbr, path, sources, trans_time, ti_opt)
           else None
         ) candidates in
       mret (new ++ entries)
@@ -1698,16 +1725,18 @@ Module TLB.
                 (mem : Memory.t)
                 (tid : nat) (is_ets2 : bool)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
+              result string
+                (list (bv 64 * list (bv 64) * list (address * view) * nat *
+                  option nat)) :=
     foldrM (λ '(tlb, trans_time) entries,
       if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
         mret entries
       else
         candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
         let new :=
-          omap (λ '(val_ttbr, path, ti_opt),
-            if decide (is_new_entry val_ttbr path ti_opt entries) then
-              Some (val_ttbr, path, trans_time, ti_opt)
+          omap (λ '(val_ttbr, path, sources, ti_opt),
+            if decide (is_new_entry val_ttbr path sources ti_opt entries) then
+              Some (val_ttbr, path, sources, trans_time, ti_opt)
             else None
           ) candidates in
         mret (new ++ entries)
@@ -1739,7 +1768,8 @@ Module IIS.
           va : bv 36;
           time : nat;
           root : option {ttbr : reg & reg_type ttbr};
-          remaining : list (bv 64)
+          remaining : list (bv 64);
+          sources : list (address * view)
         }.
 
     Definition pop (tres : t): result string (t * bv 64) :=
@@ -1911,8 +1941,8 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
     byte/view/timestamp with the ones of the forwarded write. The timestamp
     returned (last value) is for coherence checking purposes). Returns [None] if
     no forwarding occurs *)
-Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
-    (mem : Memory.t) (tread : nat) (addr : address) :
+Definition read_fwd (fwdb : gmap address FwdItem.t) (mem : Memory.t)
+    (tread : nat) (addr : address) :
     Exec.res string (option (bv 8 * view * nat)) :=
   match fwdb !! addr with
   | Some fwd =>
@@ -1920,7 +1950,7 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
       ev ← othrow "Failed to retrieve forwarded event" (mem !! fwd.(FwdItem.time));
       msg ← othrow "Forwarded event is not a memory write" (Ev.get_msg ev);
       byte' ← othrow "Failed to read a byte from the message" (Msg.read_byte addr msg);
-      mret (Some (byte', FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time)))
+      mret (Some (byte', fwd.(FwdItem.view), fwd.(FwdItem.time)))
     else mret None
   | None => mret None
   end.
@@ -1954,7 +1984,7 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   (* per-byte (value, view, write-timestamp) after forwarding *)
   fwd_bytes ← mlift $
     for (addr, (byte, twrite)) in zip addrs raw_bytes do
-      read_fwd ts.(TState.fwdb) macc mem tread addr
+      read_fwd ts.(TState.fwdb) mem tread addr
         |$> default (byte, tread, twrite)
     end;
 
@@ -1974,7 +2004,7 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset PPState.state $ TState.update TState.vspec vaddr;;
   ( if is_exclusive macc
-    then mset PPState.state $ TState.set_xclb tread addr size
+    then mset PPState.state $ TState.set_xclb tread addr size vpost
     else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
@@ -2034,21 +2064,21 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update TState.vwr time;;
   mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
 
-  xcl ← if is_exclusive macc then
+  '(xcl, fwd_view) ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
-      | Some (tread, raddr, rsize) =>
+      | Some (tread, raddr, rsize, xview) =>
         mset PPState.state $ TState.clear_xclb;;
         if decide (addr = raddr ∧ size = rsize) then
           guard_discard' (Memory.exclusive tid addr size tread time mem);;
-          mret true
+          mret (true, xview ⊔ vdata)
         else
           (* PA/size mismatch fails the exclusive-monitor check; STXR failure is no-write. *)
           mdiscard
       end
-    else mret false;
+    else mret (false, vdata);
 
-  mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
+  mset PPState.state $ TState.set_fwdbs addrs time fwd_view xcl;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
@@ -2285,27 +2315,37 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
           snapshots ts init mem tid is_ets2 va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
+        for (val_ttbr, path, sources, t, ti) in valid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
           let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          mret $ (IIS.TransRes.make (va_to_vpn va) t root path sources, ti)
         end;
       invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
+        for (val_ttbr, path, sources, t, ti) in invalid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          mret $ (IIS.TransRes.make (va_to_vpn va) t root path sources, ti)
         end;
       mchoosel (valid_res ++ invalid_res)
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
-  mset PPState.iis $ IIS.set_trs trans_res.1;;
-  mset PPState.iis $ IIS.set_inv_time trans_res.2.
+      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [] [], None);
+  let '(tres, inv_time) := trans_res in
+  let selected_walk_has_invalid_pte :=
+    existsb (λ pte, bool_decide (¬ is_valid pte))
+      tres.(IIS.TransRes.remaining) in
+  guard_discard'
+    (if selected_walk_has_invalid_pte
+     then ∀ '(a,t) ∈ tres.(IIS.TransRes.sources),
+       (ts.(TState.coh) !!! a ≤ t)%nat
+     else True);;
+  mset PPState.state $ TState.update_cohs tres.(IIS.TransRes.sources);;
+  mset PPState.iis $ IIS.set_trs tres;;
+  mset PPState.iis $ IIS.set_inv_time inv_time.
 
 (** Compute the pre-view for a translation fault on a read access. *)
 Definition read_fault_vpre (is_acq : bool)
@@ -2581,7 +2621,9 @@ Section BBM.
     ) old_finals.
 
   (** Snapshots are in descending timestamp order. Compare only the initial
-      snapshot with the first later snapshot. *)
+      snapshot with the first later snapshot. This is a deliberately narrow
+      check used to avoid treating plain invalid->valid makes as BBM
+      violations. *)
   Fixpoint has_bbm_initial_transition_violation (mem : Memory.t)
                 (init : memoryMap)
                 (snapshots : list (TLB.t * nat)) : bool :=

@@ -1,0 +1,156 @@
+# Concrete ArchSem version of archsem-private/tests/new-phenomena/isla/
+# UpdateWhileUnmappedSimple.litmus.toml.
+#
+# Fixed symbolic addresses:
+#   x         = 0x400000
+#   pa1       = 0x500000
+#   pa2       = 0x600000
+#   root      = 0x200000
+#   new_table = 0x280000
+#
+# The first store updates the L3 entry in new_table from pa1 to pa2.  The
+# second store installs the L2 table entry that makes new_table reachable.
+
+arch = "Arm"
+name = "UpdateWhileUnmappedSimple"
+
+[thread.0.regs]
+_PC = 0x2000
+R1 = 0x283000      # pte3(x, new_table)
+R2 = 0x600443      # mkdesc3(oa=pa2)
+R3 = 0x202010      # pte2(x, root)
+R4 = 0x283003      # mkdesc2(table=0x283000)
+R5 = 0x400000      # x
+R6 = 0x0
+R13 = 0x0
+VBAR_EL1 = 0x1000
+TTBR0_EL1 = 0x200000
+TTBR1_EL1 = 0x200000
+SCTLR_EL1 = 1
+TCR_EL1 = 0
+ID_AA64MMFR1_EL1 = 0
+ESR_EL1 = 0
+FAR_EL1 = 0
+ELR_EL1 = 0
+SPSR_EL1 = 0
+PAR_EL1 = 0
+CurrentEL = 1
+SPSel = 1
+NZCV = 0
+DAIF = 0
+
+[[memory]]
+kind = "code"
+addr = 0x2000
+step = 4
+data = [
+  0xf9000022, # STR X2, [X1]
+  0xd5033f9f, # DSB SY
+  0xf9000064, # STR X4, [X3]
+  0xd5033f9f, # DSB SY
+  0xd5033fdf, # ISB
+  0xf94000a6  # LDR X6, [X5]
+]
+
+[[memory]]
+kind = "code"
+addr = 0x1200
+step = 4
+data = [
+  0xd2800006, # MOV X6, #0
+  0xd538402d, # MRS X13, ELR_EL1
+  0x910011ad, # ADD X13, X13, #4
+  0xd518402d, # MSR ELR_EL1, X13
+  0xd69f03e0  # ERET
+]
+
+[thread.0]
+breakpoints = [0x2018]
+
+# Backing physical data.
+[[memory]]
+sym = "pa1"
+addr = 0x500000
+step = 8
+data = 1
+
+[[memory]]
+sym = "pa2"
+addr = 0x600000
+step = 8
+data = 2
+
+# Root stage-1 table.  VA x is initially invalid at level 2; the page-table
+# pool is mapped as a level-2 data block so the test can write PTEs by VA.
+[[memory]]
+kind = "pagetable"
+addr = 0x200000
+step = 8
+data = 0x201003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x201000
+step = 8
+data = 0x202003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202000
+step = 8
+data = 0x203003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202008
+step = 8
+data = 0x200441
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202010
+step = 8
+data = 0x0
+
+# Code/vector pages in the root table.
+[[memory]]
+kind = "pagetable"
+addr = 0x203008
+step = 8
+data = 0x14c3
+
+[[memory]]
+kind = "pagetable"
+addr = 0x203010
+step = 8
+data = 0x24c3
+
+# new_table rooted at 0x280000.  Its L3 table at 0x283000 is not reachable
+# through the root table until the second store installs the L2 table entry.
+[[memory]]
+kind = "pagetable"
+addr = 0x280000
+step = 8
+data = 0x281003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x281000
+step = 8
+data = 0x282003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x282010
+step = 8
+data = 0x283003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x283000
+step = 8
+data = 0x500443
+
+[final]
+kind = "exists"
+assertion."0:R6" = 1

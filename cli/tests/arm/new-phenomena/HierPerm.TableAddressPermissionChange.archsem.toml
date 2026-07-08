@@ -1,0 +1,142 @@
+# Concrete ArchSem version of archsem-private/tests/new-phenomena/isla/
+# HierPerm.TableAddressPermissionChange.litmus.toml.
+#
+# Fixed symbolic addresses:
+#   x       = 0x400000
+#   pa1     = 0x500000
+#   root    = 0x200000
+#   old_l3  = 0x283000
+#   zero_l3 = 0x303000
+#
+# The initial L2 table descriptor points to old_l3 and has APTable=0b10
+# (write-forbid).  The test invalidates old_l3[x], then atomically replaces
+# the L2 descriptor with one that points to zero_l3 and has APTable=0b00
+# (write-allow).  The final store can succeed only if the model can combine
+# the old final descriptor with the new parent permission.
+
+arch = "Arm"
+name = "HierPerm.TableAddressPermissionChange"
+
+[thread.0.regs]
+_PC = 0x2000
+R1 = 0x283000                 # pte3(x, old_l3)
+R2 = 0x0
+R3 = 0x202010                 # pte2(x, root)
+R4 = 0x303003                 # mkdesc2(table=zero_l3, APTable=0b00)
+R5 = 0x400000                 # x
+R6 = 0x0
+R13 = 0x0
+VBAR_EL1 = 0x1000
+TTBR0_EL1 = 0x200000
+TTBR1_EL1 = 0x200000
+SCTLR_EL1 = 1
+TCR_EL1 = 0
+ID_AA64MMFR1_EL1 = 0
+ESR_EL1 = 0
+FAR_EL1 = 0
+ELR_EL1 = 0
+SPSR_EL1 = 0
+PAR_EL1 = 0
+CurrentEL = 1
+SPSel = 1
+NZCV = 0
+DAIF = 0
+
+[[memory]]
+kind = "code"
+addr = 0x2000
+step = 4
+data = [
+  0xd2800002, # MOV X2, #0
+  0xf9000022, # STR X2, [X1]
+  0xd5033f9f, # DSB SY
+  0xf9000064, # STR X4, [X3]
+  0xd5033f9f, # DSB SY
+  0xd2800546, # MOV X6, #42
+  0xf90000a6  # STR X6, [X5]
+]
+
+[[memory]]
+kind = "code"
+addr = 0x1200
+step = 4
+data = [
+  0xd2800006, # MOV X6, #0
+  0xd538402d, # MRS X13, ELR_EL1
+  0x910011ad, # ADD X13, X13, #4
+  0xd518402d, # MSR ELR_EL1, X13
+  0xd69f03e0  # ERET
+]
+
+[thread.0]
+breakpoints = [0x201c]
+
+# Backing physical data.
+[[memory]]
+sym = "pa1"
+addr = 0x500000
+step = 8
+data = 0
+
+# Root stage-1 table.  The page-table pool is mapped as a level-2 data block so
+# the test can update PTEs by VA.  VA x is in L2 slot 2, separate from code.
+[[memory]]
+kind = "pagetable"
+addr = 0x200000
+step = 8
+data = 0x201003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x201000
+step = 8
+data = 0x202003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202000
+step = 8
+data = 0x203003
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202008
+step = 8
+data = 0x200441
+
+[[memory]]
+kind = "pagetable"
+addr = 0x202010
+step = 8
+data = 0x4000000000283003
+
+# Code/vector pages in the root table.
+[[memory]]
+kind = "pagetable"
+addr = 0x203008
+step = 8
+data = 0x14c3
+
+[[memory]]
+kind = "pagetable"
+addr = 0x203010
+step = 8
+data = 0x24c3
+
+# Old L3 table reached through the initial write-forbid APTable parent.
+[[memory]]
+kind = "pagetable"
+addr = 0x283000
+step = 8
+data = 0x500443
+
+# New table page reached after the parent update.  Its x entry is invalid.
+[[memory]]
+kind = "pagetable"
+addr = 0x303000
+step = 8
+data = 0
+
+[final]
+kind = "exists"
+assertion.and = [{"0:R6" = 42}, {"pa1" = 42}]

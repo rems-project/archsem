@@ -136,9 +136,28 @@ let symbolic_names ir =
   List.fold_left
     (fun names -> function
        | Page_table_ast.Virtual stmt_names -> List.fold_left add names stmt_names
+       | Page_table_ast.AlignedVirtual {names = stmt_names; _} ->
+           List.fold_left add names stmt_names
        | _ -> names
        )
     ir.Ir.symbolic ir.Ir.page_table_setup
+
+let symbolic_alignments ir =
+  let to_int alignment =
+    try Z.to_int alignment
+    with Z.Overflow ->
+      eval_error Page_table_setup "virtual alignment out of range: %s"
+        (Z.format "%#x" alignment)
+  in
+  List.fold_left
+    (fun alignments -> function
+       | Page_table_ast.AlignedVirtual {alignment; names} ->
+           let alignment = to_int alignment in
+           List.fold_left (fun acc name -> (name, alignment) :: acc) alignments
+             names
+       | _ -> alignments
+       )
+    [] ir.Ir.page_table_setup
 
 (* Build assembly input after assigning concrete addresses to every section and
    symbolic location. *)
@@ -165,10 +184,16 @@ let to_assembly_input allocator (ir : Ir.t) : Assembler.assembly_input =
        )
       ir.sections
   in
+  let alignments = symbolic_alignments ir in
   let symbols =
     List.map
       (fun sym ->
-         let addr = Allocator.alloc_page allocator in
+         let addr =
+           match List.assoc_opt sym alignments with
+           | Some alignment ->
+               Allocator.alloc_aligned allocator ~size:alignment ~alignment
+           | None -> Allocator.alloc_page allocator
+         in
          {Assembler.name = sym; addr}
        )
       (symbolic_names ir)

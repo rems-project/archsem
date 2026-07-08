@@ -1,0 +1,304 @@
+# Concrete ArchSem version of archsem-private/tests/new-phenomena/isla/
+# IntermediateTLB+MultiStage.inv33.litmus.toml.
+#
+# Fixed symbolic addresses:
+#   x      = 0x0
+#   ipa1   = 0x400000
+#   pa1    = 0x500000
+#   stage1 = 0x2c0000
+#   stage2 = 0x240000
+#   hyp    = 0x200000
+#
+# Question: after the Stage-2 translation used to fetch the final Stage-1 PTE
+# is invalidated with TLBI IPAS2, can the final Stage-1 translation still
+# succeed using cached information?
+
+arch = "Arm"
+name = "IntermediateTLB+MultiStage.inv33"
+
+[thread.0.regs]
+_PC = 0x3000
+R1 = 0x244618      # pte3(0x2c3000, stage2)
+R2 = 0x0
+R3 = 0x2c3         # page(0x2c3000)
+R5 = 0x2c3000      # pte3(x, stage1), with x = 0
+R6 = 0x400443      # mkdesc3(oa=ipa1)
+R7 = 0x0           # x
+VBAR_EL1 = 0x1000
+VBAR_EL2 = 0x2000
+TTBR0_EL1 = 0x2c0000
+TTBR1_EL1 = 0x2c0000
+VTTBR_EL2 = 0x240000
+TTBR0_EL2 = 0x200000
+CurrentEL = 0b10
+SPSel = 0b1
+SPSR_EL2 = 0b00100
+ELR_EL2 = 0x301c
+
+[[memory]]
+addr = 0x3000
+kind = "code"
+step = 4
+data = [
+  0xf9000022, # STR X2, [X1]
+  0xd5033f9f, # DSB SY
+  0xd50c8423, # TLBI IPAS2E1, X3
+  0xd5033f9f, # DSB SY
+  0xf90000a6, # STR X6, [X5]
+  0xd5033f9f, # DSB SY
+  0xd69f03e0, # ERET
+  0xf94000e8, # L: LDR X8, [X7]
+  0xd503201f  # NOP
+]
+
+[[memory]]
+addr = 0x1200
+kind = "code"
+step = 4
+data = [
+  0xd2800028, # MOV X8, #1
+  0xd538402d, # MRS X13, ELR_EL1
+  0x910011ad, # ADD X13, X13, #4
+  0xd518402d, # MSR ELR_EL1, X13
+  0xd69f03e0  # ERET
+]
+
+[[memory]]
+addr = 0x2400
+kind = "code"
+step = 4
+data = [
+  0xd2800028, # MOV X8, #1
+  0xd53c402d, # MRS X13, ELR_EL2
+  0x910011ad, # ADD X13, X13, #4
+  0xd51c402d, # MSR ELR_EL2, X13
+  0xd69f03e0  # ERET
+]
+
+[thread.0]
+breakpoints = [0x3024]
+
+# Backing data page. The original test leaves pa1 uninitialised; use 0.
+[[memory]]
+addr = 0x500000
+step = 8
+data = 0x0
+
+# Stage-1 table rooted at 0x2c0000. x is initially invalid at L3.
+[[memory]]
+addr = 0x2c0000
+kind = "pagetable"
+step = 8
+data = 0x2c1003
+
+[[memory]]
+addr = 0x2c1000
+kind = "pagetable"
+step = 8
+data = 0x2c2003
+
+[[memory]]
+addr = 0x2c2000
+kind = "pagetable"
+step = 8
+data = 0x2c3003
+
+[[memory]]
+addr = 0x2c3000
+kind = "pagetable"
+step = 8
+data = 0x0
+
+[[memory]]
+addr = 0x2c3008
+kind = "pagetable"
+step = 8
+data = 0x14c3
+
+[[memory]]
+addr = 0x2c3018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+# Stage-2 table rooted at 0x240000. The entry at 0x244618 maps the Stage-1
+# L3 table page and is overwritten with 0 by the test before TLBI IPAS2E1.
+[[memory]]
+addr = 0x240000
+kind = "pagetable"
+step = 8
+data = 0x241003
+
+[[memory]]
+addr = 0x241000
+kind = "pagetable"
+step = 8
+data = 0x242003
+
+[[memory]]
+addr = 0x242000
+kind = "pagetable"
+step = 8
+data = 0x243003
+
+[[memory]]
+addr = 0x242008
+kind = "pagetable"
+step = 8
+data = 0x244003
+
+[[memory]]
+addr = 0x242010
+kind = "pagetable"
+step = 8
+data = 0x245003
+
+[[memory]]
+addr = 0x243008
+kind = "pagetable"
+step = 8
+data = 0x14c3
+
+[[memory]]
+addr = 0x243018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x244600
+kind = "pagetable"
+step = 8
+data = 0x2c0443
+
+[[memory]]
+addr = 0x244608
+kind = "pagetable"
+step = 8
+data = 0x2c1443
+
+[[memory]]
+addr = 0x244610
+kind = "pagetable"
+step = 8
+data = 0x2c2443
+
+[[memory]]
+addr = 0x244618
+kind = "pagetable"
+step = 8
+data = 0x2c3443
+
+[[memory]]
+addr = 0x245000
+kind = "pagetable"
+step = 8
+data = 0x500443
+
+# EL2 hyp_map rooted at 0x200000. It maps EL2 code plus the concrete stage1
+# and stage2 table pages so EL2 can update their PTEs.
+[[memory]]
+addr = 0x200000
+kind = "pagetable"
+step = 8
+data = 0x201003
+
+[[memory]]
+addr = 0x201000
+kind = "pagetable"
+step = 8
+data = 0x202003
+
+[[memory]]
+addr = 0x202000
+kind = "pagetable"
+step = 8
+data = 0x203003
+
+[[memory]]
+addr = 0x202008
+kind = "pagetable"
+step = 8
+data = 0x204003
+
+[[memory]]
+addr = 0x203000
+kind = "pagetable"
+step = 8
+data = 0x0
+
+[[memory]]
+addr = 0x203010
+kind = "pagetable"
+step = 8
+data = 0x24c3
+
+[[memory]]
+addr = 0x203018
+kind = "pagetable"
+step = 8
+data = 0x34c3
+
+[[memory]]
+addr = 0x204200
+kind = "pagetable"
+step = 8
+data = 0x240443
+
+[[memory]]
+addr = 0x204208
+kind = "pagetable"
+step = 8
+data = 0x241443
+
+[[memory]]
+addr = 0x204210
+kind = "pagetable"
+step = 8
+data = 0x242443
+
+[[memory]]
+addr = 0x204218
+kind = "pagetable"
+step = 8
+data = 0x243443
+
+[[memory]]
+addr = 0x204220
+kind = "pagetable"
+step = 8
+data = 0x244443
+
+[[memory]]
+addr = 0x204228
+kind = "pagetable"
+step = 8
+data = 0x245443
+
+[[memory]]
+addr = 0x204600
+kind = "pagetable"
+step = 8
+data = 0x2c0443
+
+[[memory]]
+addr = 0x204608
+kind = "pagetable"
+step = 8
+data = 0x2c1443
+
+[[memory]]
+addr = 0x204610
+kind = "pagetable"
+step = 8
+data = 0x2c2443
+
+[[memory]]
+addr = 0x204618
+kind = "pagetable"
+step = 8
+data = 0x2c3443
+
+[final]
+kind = "exists"
+assertion."0:R8" = 0x0

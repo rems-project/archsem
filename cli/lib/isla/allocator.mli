@@ -55,5 +55,8 @@ val make : ?base:int -> ?reserved:int list -> unit -> t
 (** Allocate one 4KB page. *)
 val alloc_page : t -> int
 
+(** Allocate a block with explicit size and alignment. *)
+val alloc_aligned : t -> size:int -> alignment:int -> int
+
 (** Allocate one aligned 2MB block. *)
 val alloc_big : t -> int

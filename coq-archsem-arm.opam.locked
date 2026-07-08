@@ -41,7 +41,7 @@ depends: [
   "coq-hammer-tactics" {= "1.3.2+9.0"}
   "coq-record-update" {= "0.3.6"}
   "coq-sail-stdpp" {= "0.20"}
-  "coq-sail-tiny-arm" {= "dev" & dev}
+  "coq-sail-tiny-arm" {= "9.4-4"}
   "coq-stdlib" {= "9.0.0"}
   "coq-stdpp" {= "1.12.0"}
   "coq-stdpp-bitvector" {= "1.12.0"}
@@ -137,8 +137,8 @@ pin-depends: [
     "git+https://github.com/rems-project/coq-sail.git#6136421"
   ]
   [
-    "coq-sail-tiny-arm.dev"
-    "git+https://github.com/rems-project/sail-tiny-arm.git#5293f045"
+    "coq-sail-tiny-arm.9.4-4"
+    "git+https://github.com/rems-project/sail-tiny-arm.git#f43926c1a96cca5aac89f7246719590b1e2d184b"
   ]
   [
     "coq-stdpp.1.12.0"
