@@ -65,8 +65,8 @@ Module TLBI.
   Inductive t :=
   | All (tid : nat)
   | Asid (tid : nat) (asid : bv 16)
-  | Va (tid : nat) (asid : bv 16) (va : bv 36) (last : bool) (upper : bool)
-  | Vaa (tid : nat) (va : bv 36) (last : bool) (upper : bool).
+  | Va (tid : nat) (asid : bv 16) (va : bv 64) (last : bool) (upper : bool)
+  | Vaa (tid : nat) (va : bv 64) (last : bool) (upper : bool).
 
   #[global] Instance dec : EqDecision t.
   solve_decision.
@@ -91,7 +91,7 @@ Module TLBI.
   Definition asid (tlbi : t) : bv 16 :=
     default (Z_to_bv 16 0) (asid_opt tlbi).
 
-  Definition va_opt (tlbi : t) : option (bv 36) :=
+  Definition va_opt (tlbi : t) : option (bv 64) :=
     match tlbi with
     | All _ => None
     | Asid _ _ => None
@@ -99,8 +99,8 @@ Module TLBI.
     | Vaa _ va _ _ => Some va
     end.
 
-  Definition va (tlbi : t) : bv 36 :=
-    default (Z_to_bv 36 0) (va_opt tlbi).
+  Definition va (tlbi : t) : bv 64 :=
+    default (Z_to_bv 64 0) (va_opt tlbi).
 
   Definition last_opt (tlbi : t) : option bool :=
     match tlbi with
@@ -440,6 +440,8 @@ Module TState.
 
         (* Per-byte coherence views *)
         coh : gmap address view;
+        (* Per-ASID/page-offset translation coherence views. *)
+        tcoh : gmap (bv 16 * bv 12)%type view;
 
         vrd : view; (* The maximum output view of a read  *)
         vwr : view; (* The maximum output view of a write  *)
@@ -457,12 +459,13 @@ Module TState.
         (* Per-byte forwarding database *)
         fwdb : gmap address FwdItem.t;
 
-        (* Exclusive database: (load-time, physical address, size) *)
-        xclb : option (nat * address * N);
+        (* Exclusive database: (load-time, physical address, size, and
+           post-view of the load exclusive) *)
+        xclb : option (nat * address * N * view);
       }.
 
   #[global] Instance eta : Settable _ :=
-    settable! make <prom_wr; prom_tlbi;regs;levs;coh;vrd;vwr;vdmbst;vdmb;vdsb;
+    settable! make <prom_wr; prom_tlbi;regs;levs;coh;tcoh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi_self;vtlbi_other;vmsr;vacq;vrel;fwdb;xclb>.
 
   (* TODO Check and remove mem as an argument here *)
@@ -473,6 +476,7 @@ Module TState.
       regs := dmap_map (λ _ v, (v, 0%nat)) iregs;
       levs := []; (* latest event at the top of the list *)
       coh := ∅;
+      tcoh := ∅;
       vrd := 0;
       vwr := 0;
       vdmbst := 0;
@@ -598,20 +602,46 @@ Module TState.
   Definition max_cohs (addrs : list address) (ts : t) : view :=
     foldr max 0%nat (map (λ a, ts.(coh) !!! a) addrs).
 
+  Definition va_page_offsets (va : address) (size : N) : list (bv 12) :=
+    map (λ va, bv_extract 0 12 va) (addr_range va size).
+
+  Definition get_tcoh (asid : bv 16) (page_offset : bv 12) (ts : t) : view :=
+    ts.(tcoh) !!! (asid, page_offset).
+
+  Definition set_tcoh (asid : bv 16) (page_offset : bv 12) (v : view) : t → t :=
+    set tcoh (insert (asid, page_offset) v).
+
+  Definition update_tcoh (asid : bv 16) (page_offset : bv 12) (v : view) (ts : t) : t :=
+    set_tcoh asid page_offset (max v (get_tcoh asid page_offset ts)) ts.
+
+  Definition update_tcohs (asid : bv 16) (page_offsets : list (bv 12)) (v : view) (ts : t) : t :=
+    foldr (λ page_offset, update_tcoh asid page_offset v) ts page_offsets.
+
+  Definition tcohs_before_inv_time (asid : bv 16) (page_offsets : list (bv 12))
+      (inv_time : option nat) (ts : t) : Prop :=
+    match inv_time with
+    | Some inv_t => ∀ page_offset ∈ page_offsets, (get_tcoh asid page_offset ts < inv_t)%nat
+    | None => True
+    end.
+  #[global] Instance Decision_tcohs_before_inv_time asid page_offsets inv_time ts :
+    Decision (tcohs_before_inv_time asid page_offsets inv_time ts).
+  Proof. unfold tcohs_before_inv_time. apply _. Defined.
+
   (** Sets the forwarding database for an address *)
   Definition set_fwdb (addr : address) (fi : FwdItem.t) : t → t :=
     set fwdb (insert addr fi).
 
   (** Set forwarding entries for all bytes in a range *)
   Definition set_fwdbs (addrs : list address)
-      (time : nat) (vdata : view) (xcl : bool) (ts : t) : t :=
-    let fi := FwdItem.make time vdata xcl in
+      (time : nat) (vdata : view) (xcl_view : option view) (ts : t) : t :=
+    let fi := FwdItem.make time vdata xcl_view in
     foldr (λ a, set_fwdb a fi) ts addrs.
 
   (** Set the exclusive database to the footprint of the latest load
       exclusive. *)
-  Definition set_xclb (time : nat) (addr : address) (size : N) : t → t :=
-    setv xclb (Some (time, addr, size)).
+  Definition set_xclb (time : nat) (addr : address) (size : N)
+      (vpost : view) : t → t :=
+    setv xclb (Some (time, addr, size, vpost)).
 
   (** Clears the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
@@ -1294,15 +1324,13 @@ Module TLB.
   Proof. unfold_decide. Defined.
 
   (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
-  Definition affects_va (va : bv 36) (last : bool) (upper : bool)
+  Definition affects_va (va : bv 64) (last : bool) (upper : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    let '(te_lvl, te_va, te_val) :=
-          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
-    (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else True)
+    (Ctxt.va ctxt = level_prefix va (Ctxt.lvl ctxt))
+    ∧ (if last then is_final (Ctxt.lvl ctxt) (Entry.pte te) else True)
     ∧ (upper = Ctxt.upper ctxt).
-  Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
+  Instance Decision_affects_va (va : bv 64) (last : bool) (upper : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
     Decision (affects_va va last upper ctxt te).
@@ -1404,6 +1432,25 @@ Module TLB.
     | (tlb, t) :: snapshots =>
       if time <? t then (tlb, t) :: snapshots_from time snapshots
       else [(tlb, time)]
+    end.
+
+  (** Attach validity ranges to snapshots.
+
+      Snapshots are sorted in descending timestamp order. Each input pair
+      [(tlb, t)] records the TLB at timestamp [t], with [t <= end_time]. That
+      TLB is used until the timestamp immediately before the next newer
+      snapshot. The first and last range are bounded by [start_time] and
+      [end_time]. *)
+  Fixpoint snapshots_from_until (start_time end_time : nat)
+      (snapshots : list (t * nat)) : list (t * nat * nat) :=
+    match snapshots with
+    | [] => []
+    | (tlb, snapshot_time) :: snapshots =>
+      let rest :=
+        snapshots_from_until start_time (snapshot_time - 1) snapshots in
+      let start_time := start_time ⊔ snapshot_time in
+      if start_time <=? end_time then (tlb, start_time, end_time) :: rest
+      else rest
     end.
 
   (** ** TLB Snapshot Functions for All VAs (BBM Checking) *)
@@ -1663,54 +1710,61 @@ Module TLB.
     | Some _, None => true
     end.
 
-  Definition is_new_entry (val_ttbr : bv 64) (path : list (bv 64))
-      (ti_new : option nat)
-      (entries : list (bv 64 * list (bv 64) * nat * option nat)) : Prop :=
+  Definition is_distinct_entry (val_ttbr : bv 64) (path : list (bv 64))
+      (start_time end_time : nat) (ti_new : option nat)
+      (entries : list (bv 64 * list (bv 64) * nat * nat * option nat)) : Prop :=
     ¬ ∃ entry ∈ entries,
-      let '(vt, p, _, ti) := entry in
-      val_ttbr = vt ∧ path = p ∧ invalidation_time_lt ti ti_new = false.
+      let '(vt, p, entry_start, entry_end, ti) := entry in
+      val_ttbr = vt ∧ path = p
+      ∧ start_time = entry_start ∧ end_time = entry_end
+      ∧ invalidation_time_lt ti ti_new = false.
 
-  Instance Decision_is_new_entry val_ttbr path ti_new entries :
-      Decision (is_new_entry val_ttbr path ti_new entries).
-  Proof. unfold is_new_entry. apply _. Defined.
+  Instance Decision_is_distinct_entry
+      val_ttbr path start_time end_time ti_new entries :
+      Decision
+        (is_distinct_entry val_ttbr path start_time end_time ti_new entries).
+  Proof. unfold is_distinct_entry. apply _. Defined.
 
-  (* Snapshots are sorted in the descending order of [trans_time].
-    Thus, we do not have to use [trans_time] to check the interval *)
-  Definition get_valid_entries_from_snapshots (snapshots : list (t * nat))
+  Definition get_valid_entries_from_snapshots
+                (snapshots : list (t * nat * nat))
                 (mem : Memory.t)
                 (tid : nat)
                 (va : bv 64) (asid : bv 16) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
-    foldrM (λ '(tlb, trans_time) entries,
-      candidates ← TLB.lookup mem tid tlb trans_time va asid;
+              result string (list (bv 64 * list (bv 64) * nat * nat * option nat)) :=
+    foldrM (λ '(tlb, start_time, end_time) entries,
+      candidates ← TLB.lookup mem tid tlb start_time va asid;
       let new :=
         omap (λ '(val_ttbr, path, ti_opt),
-          if decide (is_new_entry val_ttbr path ti_opt entries) then
-            Some (val_ttbr, path, trans_time, ti_opt)
+          if decide
+              (is_distinct_entry
+                val_ttbr path start_time end_time ti_opt entries)
+          then Some (val_ttbr, path, start_time, end_time, ti_opt)
           else None
         ) candidates in
       mret (new ++ entries)
     ) snapshots [].
 
-  Definition get_invalid_entries_from_snapshots (snapshots : list (t * nat))
+  Definition get_invalid_entries_from_snapshots
+                (snapshots : list (t * nat * nat))
                 (ts : TState.t)
                 (init : memoryMap)
                 (mem : Memory.t)
-                (tid : nat) (is_ets2 : bool)
+                (tid : nat)
                 (va : bv 64) (asid : bv 16) (ttbr : reg) :
-              result string (list (bv 64 * list (bv 64) * nat * option nat)) :=
-    foldrM (λ '(tlb, trans_time) entries,
-      if decide (is_ets2 ∧ trans_time < ts.(TState.vwr) ⊔ ts.(TState.vrd)) then
-        mret entries
-      else
-        candidates ← TLB.get_invalid_ptes_with_inv_time ts init mem tid tlb trans_time va asid ttbr;
-        let new :=
-          omap (λ '(val_ttbr, path, ti_opt),
-            if decide (is_new_entry val_ttbr path ti_opt entries) then
-              Some (val_ttbr, path, trans_time, ti_opt)
-            else None
-          ) candidates in
-        mret (new ++ entries)
+              result string (list (bv 64 * list (bv 64) * nat * nat * option nat)) :=
+    foldrM (λ '(tlb, start_time, end_time) entries,
+      candidates ←
+        TLB.get_invalid_ptes_with_inv_time
+          ts init mem tid tlb start_time va asid ttbr;
+      let new :=
+        omap (λ '(val_ttbr, path, ti_opt),
+          if decide
+              (is_distinct_entry
+                val_ttbr path start_time end_time ti_opt entries)
+          then Some (val_ttbr, path, start_time, end_time, ti_opt)
+          else None
+        ) candidates in
+      mret (new ++ entries)
     ) snapshots [].
 End TLB.
 Export (hints) TLB.
@@ -1737,7 +1791,10 @@ Module IIS.
     Record t :=
       make {
           va : bv 36;
-          time : nat;
+          va_addr : address;
+          asid : bv 16;
+          trans_start : nat;
+          trans_end : nat;
           root : option {ttbr : reg & reg_type ttbr};
           remaining : list (bv 64)
         }.
@@ -1752,17 +1809,23 @@ Module IIS.
         strict : view;
         (* The translations results of the latest translation *)
         trs : option TransRes.t;
-        inv_time : option nat
+        trans_active : bool;
+        inv_time : option nat;
+        rmw_read : option (nat * bool)
       }.
 
-  Definition init : t := make 0 None None.
+  Definition init : t := make 0 None false None None.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
     iis |> set strict (max v).
 
-  Definition set_trs (tres : TransRes.t) :=
-    setv trs (Some tres).
+  Definition set_trs (tres : TransRes.t) (iis : t) : t :=
+    iis |> setv trs (Some tres)
+        |> setv trans_active true.
+
+  Definition finish_trans : t → t :=
+    setv trans_active false.
 
   Definition set_inv_time (ti_opt : option nat) :=
     setv inv_time ti_opt.
@@ -1815,7 +1878,9 @@ Definition run_reg_read (reg : reg) (racc : reg_acc) :
   '(val, view) ←
     (* Check if the register is read during the translation *)
     iis ← mget snd;
-    if iis.(IIS.trs) is Some trs then
+    if iis.(IIS.trans_active) then
+      trs ← othrow "Register read during translation without translation state"
+        iis.(IIS.trs);
       Exec.liftSt fst $ run_reg_trans_read reg racc trs
     else
       run_reg_general_read reg racc;
@@ -1911,8 +1976,8 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
     byte/view/timestamp with the ones of the forwarded write. The timestamp
     returned (last value) is for coherence checking purposes). Returns [None] if
     no forwarding occurs *)
-Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
-    (mem : Memory.t) (tread : nat) (addr : address) :
+Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc) (mem : Memory.t)
+    (tread : nat) (addr : address) :
     Exec.res string (option (bv 8 * view * nat)) :=
   match fwdb !! addr with
   | Some fwd =>
@@ -1925,6 +1990,20 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
   | None => mret None
   end.
 
+Definition update_tcoh_for_access (size : N) (inv_time : option nat) (ts : TState.t) :
+    Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
+  trs_opt ← mget (IIS.trs ∘ PPState.iis);
+  match trs_opt with
+  | Some trs =>
+    let page_offsets := TState.va_page_offsets trs.(IIS.TransRes.va_addr) size in
+    guard_discard (TState.tcohs_before_inv_time
+      trs.(IIS.TransRes.asid) page_offsets inv_time ts);;
+    mset PPState.state $
+      TState.update_tcohs
+        trs.(IIS.TransRes.asid) page_offsets trs.(IIS.TransRes.trans_start)
+  | None => mret ()
+  end.
+
 (** Performs a multi-byte explicit memory read. This involves multiple steps:
     - Computing the minimum view
     - Picking an interesting timestamp [tread]with [read_candidates]
@@ -1933,11 +2012,11 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
     - Do a coherence check
     - Do an translation invalidation check (about [invalidation_time])
     - Update all the views that should be updated
-    - If exclusive, set the exclusive database *)
+    - If exclusive, set the exclusive database
+    - If atomic RMW, remember this read for the matching write *)
 Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
     (init : memoryMap) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (bv (8 * size)) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   ts ← mget PPState.state;
   vaddr ← mget (IIS.strict ∘ PPState.iis);
   guard_discard (TState.no_promises_until vaddr ts);;
@@ -1949,6 +2028,11 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
   tread ← mchoosel (read_candidates addr size vpre mem);
+  (* Record every atomic RMW read so the later write can check atomicity and
+     apply acquire ordering. *)
+  ( if is_atomic_rmw macc
+    then msetv (IIS.rmw_read ∘ PPState.iis) (Some (tread, is_rel_acq macc))
+    else mret ());;
   raw_bytes ← othrow "Memory read of unmapped bytes" $
     Memory.read_from addr size tread init mem;
   (* per-byte (value, view, write-timestamp) after forwarding *)
@@ -1969,12 +2053,13 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   (* Check that the explicit access is done before the translation becomes invalid *)
   inv_time ← mget (IIS.inv_time ∘ PPState.iis);
   guard_discard' (if inv_time is Some inv_t then (vpost < inv_t)%nat else True);;
+  update_tcoh_for_access size inv_time ts;;
   mset PPState.state $ TState.update_cohs (zip addrs twrites);;
   mset PPState.state $ TState.update TState.vrd vpost;;
   mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset PPState.state $ TState.update TState.vspec vaddr;;
   ( if is_exclusive macc
-    then mset PPState.state $ TState.set_xclb tread addr size
+    then mset PPState.state $ TState.set_xclb tread addr size vpost
     else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
@@ -1982,10 +2067,11 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
 (** Read a PTE from the TLB entry selected at translation start *)
 Definition read_pte :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (bv 64) :=
-  tres_opt ← mget (IIS.trs ∘ PPState.iis);
-  tres ← othrow "TTW read before translation start" tres_opt;
+  iis ← mget PPState.iis;
+  guard_or "TTW read outside active translation" iis.(IIS.trans_active);;
+  tres ← othrow "TTW read before translation start" iis.(IIS.trs);
   viio ← mget (IIS.strict ∘ PPState.iis);
-  let vpost := viio ⊔ tres.(IIS.TransRes.time) in
+  let vpost := viio ⊔ tres.(IIS.TransRes.trans_start) in
   ts ← mget PPState.state;
   guard_discard (TState.no_promises_until vpost ts);;
   '(ntres, val) ← mlift (IIS.TransRes.pop tres);
@@ -2006,7 +2092,6 @@ Definition read_pte :
 Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
     (data : bv (8 * size)) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
-  guard_or "Atomic RMW unsupported" (¬ (is_atomic_rmw macc));;
   let msg := Msg.make size tid addr data in
   let is_release := is_rel_acq macc in
   let addrs := addr_range addr size in
@@ -2019,6 +2104,14 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
       time ← Exec.liftSt PPState.mem $ Memory.promise (Ev.Msg msg);
       mret (time, true)
     end;
+  '(read_acquire : bool) ←
+    (if is_atomic_rmw macc then
+      rmw_read_opt ← mget (IIS.rmw_read ∘ PPState.iis);
+      '(tread, read_acquire) ← othrow "RMW write without a read" rmw_read_opt;
+      guard_discard' (Memory.exclusive tid addr size tread time mem);;
+      msetv (IIS.rmw_read ∘ PPState.iis) None;;
+      mret read_acquire
+    else mret false);
   let vbob :=
     ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
     ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
@@ -2029,26 +2122,31 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   (* Check that the explicit access is done before the translation becomes invalid *)
   inv_time ← mget (IIS.inv_time ∘ PPState.iis);
   guard_discard' (if inv_time is Some inv_t then (time < inv_t)%nat else True);;
+  update_tcoh_for_access size inv_time ts;;
   mset (TState.prom_wr ∘ PPState.state) $ filter (λ t, t ≠ time);;
   mset PPState.state $ TState.update_cohs (map (., time) addrs);;
   mset PPState.state $ TState.update TState.vwr time;;
   mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
+  (* Advance the acquire view to the write timestamp so later operations are ordered after the full RMW. *)
+  ( if (is_atomic_rmw macc && is_rel_acq macc && read_acquire)
+    then mset PPState.state $ TState.update TState.vacq time
+    else mret ());;
 
-  xcl ← if is_exclusive macc then
+  fwd_xcl_view ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
-      | Some (tread, raddr, rsize) =>
+      | Some (tread, raddr, rsize, xview) =>
         mset PPState.state $ TState.clear_xclb;;
         if decide (addr = raddr ∧ size = rsize) then
           guard_discard' (Memory.exclusive tid addr size tread time mem);;
-          mret true
+          mret (Some xview)
         else
           (* PA/size mismatch fails the exclusive-monitor check; STXR failure is no-write. *)
           mdiscard
       end
-    else mret false;
+    else mret None;
 
-  mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
+  mset PPState.state $ TState.set_fwdbs addrs time vdata fwd_xcl_view;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
@@ -2171,7 +2269,6 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
   let va := tlbi.(TLBIInfo_rec).(TLBIRecord_address) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let upper := bv_extract 55 1 va =? 1%bv in
-  let va_extracted := bv_extract 12 36 va in
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
@@ -2181,8 +2278,8 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     | TLBIOp_ALL => mret $ TLBI.All tid
     | TLBIOp_VMALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
-    | TLBIOp_VAA => mret $ TLBI.Vaa tid va_extracted last upper
-    | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
+    | TLBIOp_VAA => mret $ TLBI.Vaa tid va last upper
+    | TLBIOp_VA => mret $ TLBI.Va tid asid va last upper
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   let recipients :=
@@ -2259,52 +2356,69 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
     (tid : nat) (init : memoryMap) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string unit :=
   ts ← mget PPState.state;
+  iis ← mget PPState.iis;
   mem ← mget PPState.mem;
 
   let is_ifetch :=
     trans_start.(TranslationStartInfo_accdesc).(AccessDescriptor_acctype) =?
     AccessType_IFETCH in
   is_ets2 ← mlift (ets2 ts);
-  let vpre_t := ts.(TState.vcse) ⊔
+  let vpre_t := ts.(TState.vcse) ⊔ IIS.strict iis ⊔
                  (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
   let vmax_t := length mem in
   (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
+  let va_addr : address := bv_extract 0 56 va in
 
   trans_res ←
     if decide (va_in_range va) then
       ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
-      snapshots ← mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
-      let snapshots := TLB.snapshots_from vpre_t snapshots in
+      snapshots ←
+        mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
+      let invalid_start_time :=
+        vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      let invalid_snapshots :=
+        TLB.snapshots_from_until invalid_start_time vmax_t snapshots in
+      let snapshots :=
+        TLB.snapshots_from_until vpre_t vmax_t snapshots in
       valid_entries ← mlift $
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          snapshots ts init mem tid is_ets2 va asid ttbr;
+          invalid_snapshots ts init mem tid va asid ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
-        for (val_ttbr, path, t, ti) in valid_entries do
+        for (val_ttbr, path, start_time, end_time, ti) in valid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
           let ti := if is_ifetch then None else ti in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          mret $
+            (IIS.TransRes.make
+              (va_to_vpn va) va_addr asid start_time end_time root path, ti)
         end;
       invalid_res ←
-        for (val_ttbr, path, t, ti) in invalid_entries do
+        for (val_ttbr, path, start_time, end_time, ti) in invalid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
             (val_to_regval ttbr val_ttbr);
           let root := (Some (existT ttbr val_ttbr)) in
-          mret $ (IIS.TransRes.make (va_to_vpn va) t root path, ti)
+          mret $
+            (IIS.TransRes.make
+              (va_to_vpn va) va_addr asid start_time end_time root path, ti)
         end;
       mchoosel (valid_res ++ invalid_res)
     else
-      mret $ (IIS.TransRes.make (va_to_vpn va) vpre_t None [], None);
-  mset PPState.iis $ IIS.set_trs trans_res.1;;
-  mset PPState.iis $ IIS.set_inv_time trans_res.2.
+      mret $ (IIS.TransRes.make (va_to_vpn va) va_addr asid vpre_t vpre_t None [], None);
+  let '(tres, inv_time) := trans_res in
+  let page_offset : bv 12 := bv_extract 0 12 va in
+  guard_discard (TState.tcohs_before_inv_time asid [page_offset] inv_time ts);;
+  mset PPState.state $
+    TState.update_tcoh asid page_offset tres.(IIS.TransRes.trans_start);;
+  mset PPState.iis $ IIS.set_trs tres;;
+  mset PPState.iis $ IIS.set_inv_time inv_time.
 
 (** Compute the pre-view for a translation fault on a read access. *)
 Definition read_fault_vpre (is_acq : bool)
@@ -2312,8 +2426,7 @@ Definition read_fault_vpre (is_acq : bool)
   ts ← mget fst;
   iis ← mget snd;
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_acq ts.(TState.vrel) in
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
   mret $ iis.(IIS.strict) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Compute the pre-view for a translation fault on a write access. *)
@@ -2322,13 +2435,12 @@ Definition write_fault_vpre (is_rel : bool)
   ts ← mget fst;
   iis ← mget snd;
   let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb) ⊔ ts.(TState.vdsb)
-              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
-              ⊔ view_if is_rel (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+              ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
   mret $ iis.(IIS.strict) ⊔ ts.(TState.vspec) ⊔ vbob ⊔ trans_time ⊔ ts.(TState.vmsr).
 
 (** Handle the end of an address translation.
 
-    If the translation succeeded (no fault), clears the translation state.
+    If the translation succeeded (no fault), marks the translation inactive.
     If a fault occurred, updates views to reflect the fault timing. With
     ETS3, faults may be discarded if they occur before recent memory
     accesses. *)
@@ -2336,17 +2448,24 @@ Definition run_trans_end (trans_end : trans_end) :
     Exec.t (TState.t * IIS.t) string () :=
   ts ← mget fst;
   iis ← mget snd;
-  if iis.(IIS.trs) is Some trs then
-    let trans_time := trs.(IIS.TransRes.time) in
+  if iis.(IIS.trans_active) then
+    trs ← othrow "Translation ends with an empty translation" iis.(IIS.trs);
+    let trans_start := trs.(IIS.TransRes.trans_start) in
     let fault := trans_end.(AddressDescriptor_fault) in
     if decide (fault.(FaultRecord_statuscode) = Fault_None) then
-      mset snd $ IIS.add trans_time;;
-      msetv (IIS.trs ∘ snd) None
+      mset snd $ IIS.add trans_start;;
+      mset snd $ IIS.finish_trans
     else
       is_ets3 ← mlift (ets3 ts);
-      if is_ets3 && (trans_time <? (ts.(TState.vrd) ⊔ ts.(TState.vwr)))
-      then mdiscard
-      else
+      let is_ifetch :=
+        fault.(FaultRecord_access).(AccessDescriptor_acctype) =?
+        AccessType_IFETCH in
+      let trans_time :=
+        trans_start ⊔
+        view_if (is_ets3 && (negb is_ifetch))
+          (ts.(TState.vrd) ⊔ ts.(TState.vwr)) in
+      (* Faults may be delayed within the selected translation range. *)
+      if trans_time <=? trs.(IIS.TransRes.trans_end) then
         mset snd $ IIS.add trans_time;;
         (* if the fault is from read, add the read view *)
         let is_read := fault.(FaultRecord_access).(AccessDescriptor_read) in
@@ -2359,7 +2478,8 @@ Definition run_trans_end (trans_end : trans_end) :
         let is_rel := fault.(FaultRecord_access).(AccessDescriptor_relsc) in
         write_view ← write_fault_vpre is_rel trans_time;
         mset snd $ IIS.add (view_if is_write write_view);;
-        msetv (IIS.trs ∘ snd) None
+        mset snd $ IIS.finish_trans
+      else mdiscard
   else
     mthrow "Translation ends with an empty translation".
 

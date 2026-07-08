@@ -115,7 +115,9 @@
   VectorDef
   Vector
   UMPromising
+  UMPromisingExec
   VMPromising
+  VMPromisingExec
   list_misc
   HVec
   fin_sets

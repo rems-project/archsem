@@ -83,9 +83,12 @@ an architecture instantiation that is missing from the Sail generated code *)
 Module Type ArchExtra (SA : SailArch).
   Import SA.
 
+  Definition reg_type (r : reg) : Type := SA.reg_type r.
+
   Parameter pc_reg : reg.
   Parameter reg_of_string : string → option reg.
-  Parameter reg_type_of_gen : ∀ r : reg, reg_gen_val → result string (reg_type r).
+  Parameter reg_type_of_gen :
+    ∀ r : reg, reg_gen_val → result string (reg_type r).
   Parameter reg_type_to_gen : ∀ r : reg, reg_type r → reg_gen_val.
 End ArchExtra.
 
@@ -107,23 +110,41 @@ Module ArchFromSail (SA : SailArch) (AE : ArchExtra SA) <: Arch.
   Definition pc_reg := AE.pc_reg.
   #[export] Typeclasses Transparent pc_reg.
 
-  Definition reg_type := SA.reg_type.
+  Definition reg_type := AE.reg_type.
   #[export] Typeclasses Transparent reg_type.
-  Definition reg_type_eq := SA.reg_type_eq.
+  Definition reg_type_eq (r : reg) : EqDecision (reg_type r) :=
+    SA.reg_type_eq r.
   #[export] Typeclasses Transparent reg_type_eq.
-  Definition reg_type_countable := SA.reg_type_countable.
+  Definition reg_type_countable (r : reg)
+      : @Countable (reg_type r) (reg_type_eq r) :=
+    SA.reg_type_countable r.
   #[export] Typeclasses Transparent reg_type_countable.
-  Definition reg_type_inhabited := SA.reg_type_inhabited.
+  Definition reg_type_inhabited (r : reg) : Inhabited (reg_type r) :=
+    SA.reg_type_inhabited r.
   #[export] Typeclasses Transparent reg_type_inhabited.
 
-  #[export] Instance ctrans_reg_type : CTrans reg_type := @SA.regval_transport.
-  #[export] Instance ctrans_reg_type_simpl : CTransSimpl reg_type :=
-    @SA.regval_transport_sound.
+  #[export] Instance ctrans_reg_type : CTrans reg_type.
+  Proof.
+    intros ra rb Heq a.
+    exact (SA.regval_transport Heq a).
+  Defined.
+  #[export] Instance ctrans_reg_type_simpl : CTransSimpl reg_type.
+  Proof.
+    intros r p a.
+    exact (SA.regval_transport_sound r p a).
+  Qed.
   #[export] Instance reg_type_eq_dep_dec : EqDepDecision reg_type.
   Proof.
     intros ra rb Heq rva rvb.
-    refine (dec_if (decide (ctrans Heq rva = rvb)));
-      abstract (dependent destruction Heq; simp ctrans in *; by rewrite JMeq_simpl).
+    destruct Heq.
+    destruct (reg_type_eq ra rva rvb) as [->|Hneq].
+    - left.
+      reflexivity.
+    - right.
+      intro Hj.
+      apply Hneq.
+      apply JMeq_eq.
+      exact Hj.
   Defined.
 
   Definition reg_type_of_gen := AE.reg_type_of_gen.

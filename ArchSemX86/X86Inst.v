@@ -58,6 +58,7 @@ Module ArchExtra <: FromSail.ArchExtra SA.
 
   Definition pc_reg : reg := rip.
   Definition reg_of_string := register_of_string.
+  Definition reg_type (r : reg) : Type := SA.reg_type r.
 
   Equations reg_type_of_gen (r : reg) (rv : reg_gen_val) :
     result string (reg_type r) :=

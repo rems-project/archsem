@@ -106,10 +106,6 @@ let eval_term ?page_table_entries ~context ~lookup_addr term =
     | Final_assertion when Z.sign value < 0 ->
         eval_error context "final assertion values must be non-negative: %s"
           (Z.format "%#x" value)
-    (* Memory values are converted with Z.to_bits. *)
-    | Location_init _ when Z.sign value < 0 ->
-        eval_error context "negative memory data is not allowed: %s"
-          (Z.format "%#x" value)
     | _ -> value
   with Failure msg -> eval_error context "%s" msg
 
@@ -288,10 +284,26 @@ let build_lookup_addr asm_result page_table =
 let symbol_size ~default symbol_sizes sym =
   List.assoc_opt sym symbol_sizes |> Option.value ~default
 
+(* Convert signed initializers to the fixed-width unsigned bit pattern that
+   [Z.to_bits] encodes, e.g. -1 at 64 bits becomes 2^64 - 1. *)
+let normalize_init_value mem_size label value =
+  let bit_width = mem_size * 8 in
+  let modulus = Z.shift_left Z.one bit_width in
+  let value =
+    if Z.sign value < 0 then (
+      let min_signed = Z.neg (Z.shift_left Z.one (bit_width - 1)) in
+      if Z.lt value min_signed then
+        Error.fatal "Number doesn't fit in symbol %s" label;
+      Z.add modulus value
+    )
+    else value
+  in
+  if Z.geq value modulus then Error.fatal "Number doesn't fit in symbol %s" label;
+  value
+
 (* Encode integer initialisers as fixed-size little-endian byte strings. *)
 let init_bytes_of_value mem_size label value =
-  if Z.numbits value > mem_size * 8 then
-    Error.fatal "Number doesn't fit in symbol %s" label;
+  let value = normalize_init_value mem_size label value in
   let data = Bytes.make mem_size '\x00' in
   let bits = Z.to_bits value in
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
@@ -338,6 +350,9 @@ let build_locations_memory
          |> Option.map (eval_term ~context:(Location_init sym.name) ~lookup_addr)
          |> Option.value ~default:Z.zero
        in
+       if Z.sign value < 0 && not (List.mem_assoc sym.name symbol_sizes) then
+         eval_error (Location_init sym.name)
+           "negative memory data is not allowed: %s" (Z.format "%#x" value);
        data_memory_block ~step:mem_size ~symbol:sym.name sym.addr value
      )
     symbols

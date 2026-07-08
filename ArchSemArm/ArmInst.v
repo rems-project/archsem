@@ -57,8 +57,9 @@ Module SI := System_types.Interface.
 Module ArchExtra <: FromSail.ArchExtra SA.
   Import SA.
 
-  Definition pc_reg : reg := _PC.
+  Definition pc_reg : reg := R_bitvector_64 _PC.
   Definition reg_of_string := register_of_string.
+  Definition reg_type (r : reg) : Type := SA.reg_type r.
 
   Equations reg_type_of_gen (r : reg) (rv : reg_gen_val) :
     result string (reg_type r) :=
@@ -97,6 +98,15 @@ Export Arm.SeqModel.
 Export Arm.ISAManip.
 Export IMonFromSail.
 
+#[export] Existing Instance Arch.reg_eq.
+#[export] Existing Instance Arch.reg_countable.
+#[export] Existing Instance Arch.pretty_reg.
+#[export] Existing Instance Arch.reg_type_eq.
+#[export] Existing Instance Arch.reg_type_countable.
+#[export] Existing Instance Arch.reg_type_inhabited.
+#[export] Existing Instance Arch.ctrans_reg_type.
+#[export] Existing Instance Arch.ctrans_reg_type_simpl.
+#[export] Existing Instance Arch.reg_type_eq_dep_dec.
 
 (** Make type abbreviations transparent *)
 #[export] Typeclasses Transparent bits.

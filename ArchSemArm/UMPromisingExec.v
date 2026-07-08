@@ -38,63 +38,32 @@
 (*                                                                            *)
 (******************************************************************************)
 
-module RegValGen = RegValGen
-module Utils = Utils
+From ASCommon Require Import Options.
+From ASCommon Require Import Common Exec FMon StateT.
 
-module type Arch = Arch.Arch
+From ArchSem Require Import GenPromising.
+From ArchSemArm Require Import ArmInst UMPromising.
 
-type empty = Utils.empty
+#[local] Open Scope stdpp.
 
-module Arm = struct
-  module Required = struct
-    module Arch = ArmInst.Arch
-    include ArmInst.Arm
+Definition UMPromising_nocert :=
+  Promising_to_Modelnc (*certified=*)false UMPromising.
 
-    let default_address_space = System_types.PAS_NonSecure
-  end
+Definition UMPromising_cert :=
+  Promising_to_Modelnc (*certified=*)true UMPromising.
 
-  include ArchBuild.Build (Required)
+Definition UMPromising_exe := Promising_to_Modelc UMPromising.
 
-  let tiny_isa = ArmInst.sail_tiny_arm_sem true
+Definition UMPromising_pf := Promising_to_Modelc_pf UMPromising.
 
-  let termCond_to_coq (term : termCond) tid rm =
-    let tc = List.nth term (Z.to_int tid) in
-    tc rm
+Definition UMPromising_final_state {n} (isem : iMon ())
+    (term : terminationCondition n) initMs fs : Prop :=
+  ∃ fuel pt,
+    archModel.Res.FinalState fs pt ∈
+      UMPromising_exe isem fuel n term initMs.
 
-  let umProm_model isem fuel term initState =
-    UMPromisingExec.coq_UMPromising_pf isem (Z.of_int fuel)
-      (ArchState.num_thread initState |> Z.of_int)
-      (termCond_to_coq term) initState
-    |> Obj.magic
-
-  module BBM = VMPromising.BBM
-
-  let vmProm_model ?(bbm_param = BBM.Off) isem fuel term initState =
-    VMPromisingExec.coq_VMPromising_pf bbm_param isem (Z.of_int fuel)
-      (ArchState.num_thread initState |> Z.of_int)
-      (termCond_to_coq term) initState
-    |> Obj.magic
-end
-
-module X86 = struct
-  module Required = struct
-    module Arch = X86Inst.Arch
-    include X86Inst.X86
-
-    let default_address_space = ()
-  end
-
-  include ArchBuild.Build (Required)
-
-  let tiny_isa = X86Inst.sail_tiny_x86_sem true
-
-  let termCond_to_coq (term : termCond) tid rm =
-    let tc = List.nth term (Z.to_int tid) in
-    tc rm
-
-  let op_model ?(allow_eager = true) isem fuel term initState =
-    OperationalX86TSO.x86_operational_modelc (Z.of_int fuel) isem allow_eager
-      (ArchState.num_thread initState |> Z.of_int)
-      (termCond_to_coq term) initState
-    |> Obj.magic
-end
+Definition UMPromising_pf_final_state {n} (isem : iMon ())
+    (term : terminationCondition n) initMs fs : Prop :=
+  ∃ fuel pt,
+    archModel.Res.FinalState fs pt ∈
+      UMPromising_pf isem fuel n term initMs.
