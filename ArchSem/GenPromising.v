@@ -428,14 +428,18 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
             ts ← mget (PPState.state ∘ snd);
             mret (term tid (prom.(tState_regs) ts))
         | S fuel =>
-            let handler := run_outcome_with_promise base in
-            cinterp handler isem;;
             ts ← mget (PPState.state ∘ snd);
             if term tid (prom.(tState_regs) ts) then
               mret true
             else
-              msetv (PPState.iis ∘ snd) prom.(iis_init);;
-              run_to_termination fuel base
+              let handler := run_outcome_with_promise base in
+              cinterp handler isem;;
+              ts ← mget (PPState.state ∘ snd);
+              if term tid (prom.(tState_regs) ts) then
+                mret true
+              else
+                msetv (PPState.iis ∘ snd) prom.(iis_init);;
+                run_to_termination fuel base
         end.
 
       Record EnumerationResult :=
@@ -454,15 +458,21 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
             ([], PPState.Make ts mem prom.(iis_init))
         in
         let success_states := Exec.success_state_list res in
-        let out_of_fuel := bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
+        let out_of_fuel :=
+          bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
         let promises :=
           List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
             |> remove_dups in
         let promises := prom.(filter_promises) n tid mem promises in
         let tstates :=
-          success_states
-          |> omap (λ '(new_proms, st),
-                 if is_emptyb new_proms then Some (PPState.state st)
+          Exec.results res
+          |> omap (λ '((new_proms, st), is_done),
+                 if (is_done : bool) then
+                   if is_emptyb new_proms then
+                     if decide (PPState.mem st = mem) then
+                       Some (PPState.state st)
+                     else None
+                   else None
                  else None) in
         let errors :=
           res |> Exec.errors |>
@@ -532,9 +542,11 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         match opt : nat with
         | 0 =>
           tid ← mchoosef (fin n);
-          next_ev ← mchoosel (execution_results !!! tid).(promises);
-          mSet (promise_tid prom tid next_ev);;
-          run_promise_first fuel
+          if terminated_tid prom term st tid then mdiscard
+          else
+            next_ev ← mlift (promise_select_tid fuel st tid);
+            mSet (promise_tid prom tid next_ev);;
+            run_promise_first fuel
         | 1 =>
           (* Compute cartesian products of the possible thread states *)
           tstates ← mchoosel $ cprodn (vmap final_states execution_results);
