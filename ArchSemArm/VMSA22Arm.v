@@ -630,6 +630,17 @@ Section VMSAArm.
     ∪ (⦗W⦘⨾po⨾⦗dmb_store cd⦘)
     ∪ (⦗dmb cd⦘⨾po⨾⦗W⦘)
     ∪ (⦗dmb_load cd⦘⨾po⨾⦗R⦘)
+    (* Forward edge out of an acquire-release AMO write, absent from the ESOP'22
+       bob this model tracks.  The property is in aarch64.cat since 2018 (herd
+       a6c15616, Luc Maranget) and was strengthened to this range(...) form in
+       2022 (herd PR #322, 636b7163); herd aarch64hwreqs.cat:135.  We take the [M]
+       (explicit-memory) target, matching the sibling acquire/release clauses
+       below ([A ∪ Q]; po; [M] and [M]; po; [L]), which likewise target [M].  This
+       model does define Fault effects (Fault_T/Fault_P, used in obfault) and Tag
+       reads, but bob's acquire/release clauses order only [M]; fault/tag ordering
+       comes from other ob components (obfault, tob, obtlbi, ...).  Kept identical
+       to UMArm.bob so UM_to_VMSA_bob still holds. *)
+    ∪ (⦗grel_rng (⦗A⦘⨾amo⨾⦗L⦘)⦘⨾po⨾⦗M⦘)
     ∪ (⦗L⦘⨾po⨾⦗A⦘)
     ∪ (⦗A ∪ Q⦘⨾po⨾⦗M⦘)
     ∪ (⦗M⦘⨾po⨾⦗L⦘)
