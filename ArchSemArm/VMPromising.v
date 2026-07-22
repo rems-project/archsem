@@ -729,10 +729,10 @@ Definition is_upper_va (va : bv 64) : option bool :=
 Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
   bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
 
-Definition match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') : Prop :=
-  level_prefix va lvl = level_prefix va' lvl.
-Instance Decision_match_prefix_at {n n' : N} (lvl : Level) (va : bv n) (va' : bv n') :
-  Decision (match_prefix_at lvl va va').
+Definition match_prefix_at (lvl : Level) (te_va : prefix lvl) (va : bv 36) : Prop :=
+  te_va = bv_extract (9 * (3 - lvl)) (level_length lvl) va.
+Instance Decision_match_prefix_at (lvl : Level) (te_va : prefix lvl) (va : bv 36) :
+  Decision (match_prefix_at lvl te_va va).
 Proof. unfold_decide. Defined.
 
 Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
@@ -1297,10 +1297,8 @@ Module TLB.
   Definition affects_va (va : bv 36) (last : bool) (upper : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    let '(te_lvl, te_va, te_val) :=
-          (Ctxt.lvl ctxt, Ctxt.va ctxt, Entry.pte te) in
-    (match_prefix_at te_lvl te_va va)
-    ∧ (if last then is_final te_lvl te_val else True)
+    (match_prefix_at (Ctxt.lvl ctxt) (Ctxt.va ctxt) va)
+    ∧ (if last then is_final (Ctxt.lvl ctxt) (Entry.pte te) else True)
     ∧ (upper = Ctxt.upper ctxt).
   Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
                                 (ctxt : Ctxt.t)
