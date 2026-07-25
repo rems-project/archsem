@@ -124,11 +124,11 @@ pin-depends: [
   ]
   [
     "coq-stdpp.1.12.0"
-    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
   ]
   [
     "coq-stdpp-bitvector.1.12.0"
-    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
   ]
   [
     "menhir.20250912"
