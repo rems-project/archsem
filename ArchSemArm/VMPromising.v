@@ -2464,10 +2464,12 @@ Section BBM.
 
   (** Check if a physical address falls within the address range
       covered by a given output address prefix. *)
-  Definition is_addr_from_oa {n : N} (addr : address) (oa : bv n) : Prop :=
-    bv_extract (56 - n) n addr = oa.
-  Instance Decision_is_addr_from_oa {n : N} (addr : address) (oa : bv n) :
-    Decision (is_addr_from_oa addr oa).
+  Definition is_addr_from_oa (lvl : Level) (addr : address)
+      (oa : bv (output_addr_size lvl)) : Prop :=
+    bv_extract (offset_size lvl) (output_addr_size lvl) addr = oa.
+  Instance Decision_is_addr_from_oa (lvl : Level) (addr : address)
+      (oa : bv (output_addr_size lvl)) :
+    Decision (is_addr_from_oa lvl addr oa).
   Proof. unfold_decide. Defined.
 
   (** Compare memory contents at two output addresses.
@@ -2478,15 +2480,15 @@ Section BBM.
                 (lvl : Level)
                 (oa1 oa2 : bv (output_addr_size lvl))
                 (relevant_addrs : list address) : Prop :=
-    let offset_bits := (56 - output_addr_size lvl)%N in
+    let offset_bits := offset_size lvl in
     let relevant_offs :=
       omap (λ addr,
-        if decide (is_addr_from_oa addr oa1 ∨ is_addr_from_oa addr oa2)
+        if decide (is_addr_from_oa lvl addr oa1 ∨ is_addr_from_oa lvl addr oa2)
           then Some (bv_extract 0 offset_bits addr)
           else None) relevant_addrs in
     ∀ offs ∈ relevant_offs,
-      let addr1 := bv_concat 56 oa1 offs in
-      let addr2 := bv_concat 56 oa2 offs in
+      let addr1 := bv_concat 56 (bv_0 8) (bv_concat 48 oa1 offs) in
+      let addr2 := bv_concat 56 (bv_0 8) (bv_concat 48 oa2 offs) in
       let byte1 := Memory.read_byte addr1 init mem time in
       let byte2 := Memory.read_byte addr2 init mem time in
       match byte1, byte2 with

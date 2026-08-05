@@ -1,0 +1,151 @@
+arch = "Arm"
+name = "BBMLateLink"
+
+# Link a populated L3 into the translation tree, read its old mapping, then
+# overwrite the leaf valid-to-valid without a break or TLBI.
+[thread.0.regs]
+_PC = 0x500
+R0 = 0x8000001000
+R1 = 0
+R2 = 0x10000
+R3 = 0x83003
+R4 = 0x60000000002783
+R5 = 0
+R6 = 0x11008
+R7 = 0
+R8 = 0
+TTBR0_EL1 = 0x80000
+TCR_EL1 = 0
+SCTLR_EL1 = 1
+ESR_EL1 = 0
+FAR_EL1 = 0
+ELR_EL1 = 0
+VBAR_EL1 = 0
+ID_AA64MMFR1_EL1 = 0x2000000000
+CurrentEL = 0b01
+
+[[memory]]
+addr = 0x500
+kind = "code"
+step = 4
+data = [
+  0xd5033b9f, # DSB ISH
+  0xd508831f, # TLBI VMALLE1IS
+  0xd5033b9f, # DSB ISH
+  0xf8226903, # STR X3, [X8, X2] - link the hidden L3
+  0xd5033a9f, # DSB ISHST
+  0xd5033fdf, # ISB
+  0xf8606825, # LDR X5, [X1, X0] - read PA 0x1000
+  0xf8266904, # STR X4, [X8, X6] - overwrite L3[1]
+  0xd5033a9f, # DSB ISHST
+  0xd5033fdf, # ISB
+  0xf8606827, # LDR X7, [X1, X0] - read PA 0x2000
+]
+
+[thread.0]
+breakpoints = [0x52c]
+
+[[memory]]
+addr = 0x1000
+step = 8
+data = 0x2a
+
+[[memory]]
+addr = 0x2000
+step = 8
+data = 0x42
+
+# Strict traversal reads every slot of each page-table page.  A 4096-byte
+# zero block makes all 512 slots present before the descriptors below override
+# the few nonzero entries.
+[[memory]]
+addr = 0x80000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x81000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x82000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x83000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x84000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x85000
+step = 4096
+data = 0
+
+[[memory]]
+addr = 0x86000
+step = 4096
+data = 0
+
+# Root: index 0 is the code/alias hierarchy; index 1 is the data hierarchy.
+[[memory]]
+addr = 0x80000
+step = 8
+data = 0x84003
+
+[[memory]]
+addr = 0x80008
+step = 8
+data = 0x81003
+
+[[memory]]
+addr = 0x84000
+step = 8
+data = 0x85003
+
+[[memory]]
+addr = 0x85000
+step = 8
+data = 0x86003
+
+# Code plus writable aliases for data L2[0] and the hidden L3.
+[[memory]]
+addr = 0x86000
+step = 8
+data = 0x40000000000783
+
+[[memory]]
+addr = 0x86080
+step = 8
+data = 0x60000000082703
+
+[[memory]]
+addr = 0x86088
+step = 8
+data = 0x60000000083703
+
+[[memory]]
+addr = 0x81000
+step = 8
+data = 0x82003
+
+# L2[0] starts invalid, but the unlinked L3 already maps the target VA.
+[[memory]]
+addr = 0x82000
+step = 8
+data = 0
+
+[[memory]]
+addr = 0x83008
+step = 8
+data = 0x60000000001783
+
+[final]
+kind = "exists"
+assertion.and = [{"0:R5" = 0x2a}, {"0:R7" = 0x42}]
