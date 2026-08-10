@@ -142,11 +142,11 @@ pin-depends: [
   ]
   [
     "coq-stdpp.1.12.0"
-    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
   ]
   [
     "coq-stdpp-bitvector.1.12.0"
-    "https://gitlab.mpi-sws.org/iris/stdpp/-/archive/coq-stdpp-1.12.0.tar.gz"
+    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
   ]
   ["libsail.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"]
   [
