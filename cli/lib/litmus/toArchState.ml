@@ -42,11 +42,6 @@
 
     Parameterized by architecture via the Make functor. *)
 
-let register_defaults =
-  Config.make_getter ~default:[]
-    (Toml.get_table_values Parser.toml_to_gen)
-    ["registers"; "defaults"]
-
 module Make (Arch : Archsem.Arch) = struct
   module AssertionChecker = Assertion.Checker (Arch)
   open Arch
@@ -59,20 +54,9 @@ module Make (Arch : Archsem.Arch) = struct
       (fun rm (name, gen) -> RegMap.insert (RegVal.of_string_gen name gen) rm)
       RegMap.empty reg_list
 
-  let add_register_defaults regs =
-    let has name = List.exists (fun (reg, _) -> reg = name) regs in
-    let default_regs =
-      List.filter_map
-        (fun (reg, value) -> if has reg then None else Some (reg, value))
-        (register_defaults ())
-    in
-    regs @ default_regs
-
   let regmaps_of_threads (threads : Testrepr.thread list) =
     List.map
-      (fun (thread : Testrepr.thread) ->
-         thread.regs |> add_register_defaults |> regmap_of_gen_list
-       )
+      (fun (thread : Testrepr.thread) -> regmap_of_gen_list thread.regs)
       threads
 
   let memory_of_testrepr memory =
