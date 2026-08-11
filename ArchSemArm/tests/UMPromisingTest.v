@@ -269,7 +269,7 @@ Module MP.
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 6%nat.
+  Definition fuel := 7%nat.
 
   Definition test_results :=
     UMPromising_exe arm_sem fuel n_threads termCond initState.
@@ -509,7 +509,7 @@ Module LBDMBS.
       archState.regs := [# init_reg_t1; init_reg_t2];
       archState.address_space := PAS_NonSecure |}.
 
-  Definition fuel := 8%nat.
+  Definition fuel := 9%nat.
 
   Definition test_results :=
     UMPromising_exe arm_sem fuel n_threads termCond initState.
