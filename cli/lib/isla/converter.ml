@@ -106,10 +106,6 @@ let eval_term ?page_table_entries ~context ~lookup_addr term =
     | Final_assertion when Z.sign value < 0 ->
         eval_error context "final assertion values must be non-negative: %s"
           (Z.format "%#x" value)
-    (* Memory values are converted with Z.to_bits. *)
-    | Location_init _ when Z.sign value < 0 ->
-        eval_error context "negative memory data is not allowed: %s"
-          (Z.format "%#x" value)
     | _ -> value
   with Failure msg -> eval_error context "%s" msg
 
@@ -290,8 +286,10 @@ let symbol_size ~default symbol_sizes sym =
 
 (* Encode integer initialisers as fixed-size little-endian byte strings. *)
 let init_bytes_of_value mem_size label value =
-  if Z.numbits value > mem_size * 8 then
+  let bit_width = mem_size * 8 in
+  if Z.numbits value > bit_width then
     Error.fatal "Number doesn't fit in symbol %s" label;
+  let value = Z.extract value 0 bit_width in
   let data = Bytes.make mem_size '\x00' in
   let bits = Z.to_bits value in
   Bytes.blit_string bits 0 data 0 (min mem_size (String.length bits));
