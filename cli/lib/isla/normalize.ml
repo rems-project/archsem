@@ -45,10 +45,10 @@ module Config = Litmus.Config
 
 let normalize_thread (thread : Ir.thread) =
   { thread with
-    init =
+    regs =
       List.map
         (fun (reg, value) -> (Config.get_reg_rename_or reg, value))
-        thread.init
+        thread.regs
   }
 
 let apply (ir : Ir.t) : Ir.t =
