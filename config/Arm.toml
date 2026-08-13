@@ -16,6 +16,7 @@ default_memory_size = 8
 page_bits = 12
 
 [registers.renames]
+PC = "_PC"
 X0 = "R0"
 X1 = "R1"
 X2 = "R2"
