@@ -256,14 +256,11 @@ let cmd_ump =
   Cmd.v info run
 
 let bbm_of_config () =
-  match Toml.find_opt (Config.get ()) Toml.get_string ["vmp"; "bbm"] with
-  | Some "lax" -> Arm.BBM.Lax
-  | Some "strict" -> Arm.BBM.Strict
-  | Some "off" -> Arm.BBM.Off
-  | Some s ->
-      Printf.ksprintf failwith
-        "Config key vmp.bbm contains %s which is not off, lax or strict" s
-  | _ ->
+  match
+    Toml.find_opt (Config.get ()) (Toml.get_boolean ~strict:true) ["vmp"; "bbm"]
+  with
+  | Some bbm -> bbm
+  | None ->
       failwith
         "Config key vmp.bbm is unspecified in config, please specify on CLI with \
          --bbm"
@@ -272,30 +269,27 @@ let bbm_of_config () =
 let cmd_vmp =
   let open Arm in
   let bbm_mode =
-    let doc = "Break-before-make mode: off, lax, or strict" in
-    let values =
-      [("off", Arm.BBM.Off); ("lax", Arm.BBM.Lax); ("strict", Arm.BBM.Strict)]
-    in
+    let doc = "Enable break-before-make checks: true or false" in
     let+ bbm =
-      Arg.(value & opt (some (enum values)) None & info ["bbm"] ~doc ~docv:"MODE")
+      Arg.(value & opt (some bool) None & info ["bbm"] ~doc ~docv:"BOOL")
     in
     match bbm with Some bbm -> bbm | None -> bbm_of_config ()
   in
   let run =
     let+ files = path_and_conf_term
-    and+ bbm_param = bbm_mode
+    and+ bbm = bbm_mode
     and+ fmt = format_term
     and+ () = asm_dump in
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
-      (ArmRunner.run_test_file ~parse (ArmVmp.model ~config:bbm_param tiny_isa))
+      (ArmRunner.run_test_file ~parse (ArmVmp.model ~config:bbm tiny_isa))
       files
   in
   let info =
     let doc =
-      "Run virtual-memory promising model (Arm only). Only one --bbm-* option \
-       can be active at the same time, the default is --bbm-off"
+      "Run virtual-memory promising model (Arm only). Break-before-make checks \
+       are enabled with --bbm=true"
     in
     Cmd.(info "vmp" ~doc)
   in
