@@ -373,10 +373,6 @@ Definition ttbrs : gset reg :=
     TTBR1_EL2;
     VTTBR_EL2]@{reg}.
 
-(** For the supported EL10 A1=0 configuration, TTBR0_EL1 provides the ASID
-    tag even when TTBR1_EL1 provides the page-table root. *)
-Definition asid_ttbr_of_root_ttbr (reg_ttbr : reg) : reg :=
-  if decide (reg_ttbr = TTBR1_EL1) then TTBR0_EL1 else reg_ttbr.
 
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
@@ -698,7 +694,10 @@ Module TState.
     (update vcse v) ∘ (set levs (LEv.Cse v ::.)).
 End TState.
 
-(*** VA helper ***)
+
+(** * Translation helpers ***)
+
+(** ** Levels *)
 
 Definition Level := fin 4.
 
@@ -738,6 +737,15 @@ Proof.
   unfold parent_lvl in PARENT.
   repeat case_split; cdestruct plvl |- ***.
 Qed.
+
+
+(** ** VA helpers *)
+
+Definition va_in_range (va : bv 64) : Prop :=
+  let top_bits := bv_extract 48 16 va in
+  top_bits = (-1)%bv ∨ top_bits = 0%bv.
+Instance Decision_va_in_range (va : bv 64) : Decision (va_in_range va).
+Proof. unfold_decide. Defined.
 
 (* It is important to be consistent on "level_length" and not write it as 9 *
    lvl + 9, otherwise some term won't type because the equality is only
@@ -781,6 +789,9 @@ Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
 
 Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
   bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
+
+
+(** ** PTE helpers *)
 
 Definition is_valid (e : bv 64) : Prop :=
   (bv_extract 0 1 e) = 1%bv.
@@ -874,6 +885,32 @@ Definition output_addr_size (lvl : Level) : N := 48 - (offset_size lvl).
     The OA is the physical address base that the PTE maps to. *)
 Definition output_addr (lvl : Level) (e : bv 64) : bv (output_addr_size lvl) :=
   bv_extract (offset_size lvl) (output_addr_size lvl) e.
+
+
+(** ** Translation register root helpers *)
+
+(** For the supported EL10 A1=0 configuration, TTBR0_EL1 provides the ASID
+    tag even when TTBR1_EL1 provides the page-table root. *)
+Definition asid_ttbr_of_root_ttbr (reg_ttbr : reg) : reg :=
+  if decide (reg_ttbr = TTBR1_EL1) then TTBR0_EL1 else reg_ttbr.
+
+(** Get the active root TTBR in a certain regime (must be EL10 for now)*)
+Definition root_ttbr (regime : Regime) (upper : bool) : result string reg :=
+  match regime with
+  | Regime_EL10 =>
+      if upper then mret (TTBR1_EL1 : reg) else mret (TTBR0_EL1 : reg)
+  | _ => mthrow "The model does not support regimes other than EL10"
+  end.
+
+(** Get the active asid TTBR in a certain regime (must be EL10 for now)*)
+Definition asid_ttbr (ts : TState.t) (regime : Regime) : result string reg :=
+  match regime with
+  | Regime_EL10 =>
+      '(tcr_val, _) ← othrow "TCR_EL1 is not set" (TState.read_reg ts TCR_EL1);
+      guard_or "TCR_EL1.A1 = 1 is not supported" (bv_extract 22 1 tcr_val = 0%bv);;
+      mret (TTBR0_EL1 : reg)
+  | _ => mthrow "The model does not support regimes other than EL10"
+  end.
 
 (** * TLB ***)
 
@@ -1444,6 +1481,22 @@ Module TLB.
     '(tlb, _) ← update init ts mem_init mem 0 va reg_asid_ttbr reg_ttbr;
     unique_snapshots_va_between
       ts mem_init mem tlb 0 time tid va reg_asid_ttbr reg_ttbr [(tlb, 0)].
+
+  (** Compute all unique TLB snapshots for a specific VA.
+
+      Returns snapshots in descending timestamp order, including the initial
+      state at time 0. *)
+    Definition unique_snapshots_va (ts : TState.t)
+                       (mem_init : memoryMap)
+                       (mem : Memory.t)
+                       (tid : nat)
+                       (va : bv 64)
+                       (regime : Regime) :
+                      result string (list (t * nat)) :=
+      upper ← othrow "TLB lookup: VA not in range" $ is_upper_va va;
+      root_ttbr ← root_ttbr regime upper;
+      asid_ttbr ← asid_ttbr ts regime;
+      unique_snapshots_va_until ts mem_init mem (length mem) tid va asid_ttbr root_ttbr.
 
   (** Find snapshots at or after [time].
 
@@ -2313,53 +2366,19 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
      recipient-specific events themselves are collected from the memory delta. *)
   mret (if (created_new_tlbi_events : bool) then Some vpre else None).
 
-(** This model supports the A1=0 EL10 configuration, where TTBR0_EL1
-    provides the ASID tag for both low and high VA ranges. *)
-Definition tcr_a1_supported (ts : TState.t) : result string bool :=
-  match TState.read_reg ts TCR_EL1 with
-  | Some (tcr_val, _) => Ok ((bv_extract 22 1 (tcr_val : bv 64) =? 0%bv) : bool)
-  | None => Error "TCR_EL1 is not set"
-  end.
-
-Definition va_in_range (va : bv 64) : Prop :=
-  let top_bits := bv_extract 48 16 va in
-  top_bits = (-1)%bv ∨ top_bits = 0%bv.
-Instance Decision_va_in_range (va : bv 64) : Decision (va_in_range va).
-Proof. unfold_decide. Defined.
-
-(** Determine the TTBR registers for a VA's ASID and root based on the
-    translation regime. *)
-Definition ttbrs_of_regime (ts : TState.t) (va : bv 64) (regime : Regime) :
-    result string (reg * reg) :=
-  match regime with
-  | Regime_EL10 =>
-    a1_supported ← (tcr_a1_supported ts : result string bool);
-    guard_or "TCR_EL1.A1 = 1 is unsupported" (a1_supported = true);;
-    let varange_bit := bv_extract 48 1 va in
-    if varange_bit =? 1%bv
-      then Ok (TTBR0_EL1 : reg, TTBR1_EL1 : reg)
-      else Ok (TTBR0_EL1 : reg, TTBR0_EL1 : reg)
-  | _ => Error "This model does not support multiple regimes"
-  end.
 
 Definition ets2 (ts : TState.t) : result string bool :=
   '(mmfr1, _) ← othrow
     "ETS is indicated in the ID_AA64MMFR1_EL1 register value"
     (TState.read_reg ts ID_AA64MMFR1_EL1);
-  val ← othrow
-    "ID_AA64MMFR1_EL1 should be a 64 bit value"
-    (regval_to_val ID_AA64MMFR1_EL1 mmfr1);
-  let ets_bits := bv_extract 36 4 val in
+  let ets_bits := bv_extract 36 4 mmfr1 in
   mret ((ets_bits =? 2%bv) || (ets_bits =? 3%bv)).
 
 Definition ets3 (ts : TState.t) : result string bool :=
   '(mmfr1, _) ← othrow
     "ETS is indicated in the ID_AA64MMFR1_EL1 register value"
     (TState.read_reg ts ID_AA64MMFR1_EL1);
-  val ← othrow
-    "ID_AA64MMFR1_EL1 should be a 64 bit value"
-    (regval_to_val ID_AA64MMFR1_EL1 mmfr1);
-  mret (bv_extract 36 4 val =? 3%bv).
+  mret (bv_extract 36 4 mmfr1 =? 3%bv).
 
 (** Handle the start of an address translation.
 
@@ -2386,23 +2405,21 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
   is_ets2 ← mlift (ets2 ts);
   let vpre_t := ts.(TState.vcse) ⊔ IIS.strict iis ⊔
                  (view_if (is_ets2 && (negb is_ifetch)) ts.(TState.vdsb)) in
+  let vpre_inv :=
+      vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
   let vmax_t := length mem in
-  (* lookup (successful results or faults) *)
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
   let size := Z.to_N trans_start.(TranslationStartInfo_size) in
+  let regime := trans_start.(TranslationStartInfo_regime) in
 
   trans_res ←
     if decide (va_in_range va) then
-      '(reg_asid_ttbr, reg_ttbr) ← mlift $
-        ttbrs_of_regime ts va trans_start.(TranslationStartInfo_regime);
-      snapshots ←
-        mlift $
-          TLB.unique_snapshots_va_until ts init mem vmax_t tid va reg_asid_ttbr reg_ttbr;
-      let invalid_start_time :=
-        vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      upper ← othrow "TLB lookup: VA not in range" $ is_upper_va va;
+      reg_ttbr ← mlift $ root_ttbr regime upper;
+      snapshots ← mlift $ TLB.unique_snapshots_va ts init mem tid va regime;
       let invalid_snapshots :=
-        TLB.snapshots_from_until invalid_start_time vmax_t snapshots in
+        TLB.snapshots_from_until vpre_inv vmax_t snapshots in
       let snapshots :=
         TLB.snapshots_from_until vpre_t vmax_t snapshots in
       valid_entries ← mlift $
