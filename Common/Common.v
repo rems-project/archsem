@@ -139,3 +139,5 @@ Global Hint Mode Pretty ! : typeclass_instances.
 
 Definition fin_to_N {n : nat} : fin n → N := N.of_nat ∘ fin_to_nat.
 Coercion fin_to_N : fin >-> N.
+Lemma fin_to_N_lt {n : nat} (i : fin n) : (i < N.of_nat n)%N.
+Proof. use (fin_to_nat_lt i). unfold fin_to_N. cbn. lia. Qed.
