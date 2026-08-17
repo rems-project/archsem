@@ -76,6 +76,13 @@ Instance gmap_imap `{Countable K}: IMap K (gmap K) := λ A B f,
 Instance gmap_iomap `{Countable K}: IOMap K (gmap K) := λ A B f,
     map_fold (λ k v m, if f k v is Some v' then <[ k := v' ]> m else m) ∅.
 
+(** Does a [partial_alter] but gives a default value ([inhabitant]) to the
+    provided function if not present. The function is thus always called and
+    a the new entry is always inserted/modified *)
+Definition alter_default {K A M} `{PartialAlter K A M, Inhabited A} (f : A → A) :
+  K → M → M :=
+  partial_alter (λ opt, Some (f (default inhabitant opt))).
+
 (** * Lookup Unfold ***)
 
 Class LookupUnfold {K A M : Type} {lk : Lookup K A M}
@@ -382,10 +389,10 @@ End FinMapReduce.
 
 (** * FinMap setter *)
 
-#[global] Instance Setter_finmap `{FinMap K M} {A} (k : K) :
-  @Setter (M A) _ (lookup k) := λ f, partial_alter f k.
+#[global] Instance Setter_finmap `{Lookup K A M, PartialAlter K A M} (k : K) :
+  @Setter M _ (lookup k) := λ f, partial_alter f k.
 
-#[global] Program Instance Setter_finmap_wf `{FinMap K M} {A} (k : K) :
+#[global] Program Instance Setter_finmap_wf {K M} `{FinMap K M} {A} (k : K) :
   @SetterWf (M A) _ (lookup k) :=
   { set_wf := Setter_finmap k }.
 Next Obligation.
@@ -397,7 +404,6 @@ Next Obligation.
   intro i.
   destruct decide subst i k; sauto.
 Qed.
-
 
 (** * DMap : Dependant map *)
 
