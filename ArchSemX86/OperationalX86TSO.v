@@ -326,7 +326,9 @@ Section Model.
         msetv ((.!!! tid) ∘ buf) t
     end.
 
-  Context (isem : iMon ()) (term : terminationCondition threads).
+  Context (isem : iMon ()).
+  Section steps.
+  Context (term : terminationCondition threads).
 
   (** ** Execution step transition *)
   Definition execution_step (tid : fin threads) (eager : bool)
@@ -367,6 +369,8 @@ Section Model.
       mret (Some tid).
 
   (** ** Eager transition functions *)
+
+  (** Run an eager transition *)
   Definition run_eager_thread_step (tid : fin threads) :
       Exec.t mstate string bool :=
     (* Eagerly run single thread instruction if possible.
@@ -384,6 +388,8 @@ Section Model.
           Exec.lift_res_st new_outcome;;
           mret true.
 
+  (** Runs all possible eager transition in a given thread [tid].
+      Returns the remaining fuel *)
   Fixpoint run_eager_thread (fuel : nat) (tid : fin threads) :
       Exec.t mstate string nat :=
     (* Run as many instructions as possible for this thread *)
@@ -395,10 +401,19 @@ Section Model.
       else mret (S fuel)
     else mthrow "Out of fuel".
 
+  (** Runs all possible transition in all threads. *)
   Definition run_eager_all (fuel : nat) : Exec.t mstate string nat :=
     (* For each thread, run as many instructions as possible *)
     foldlM run_eager_thread fuel (enum (fin threads)).
 
+  (** Run a non-eager step and then as many eager steps as possible,
+      assuming no eager step could be taken before the normal step *)
+  Definition run_normal_then_eager (fuel : nat) : Exec.t mstate string () :=
+    eager_thread ← step;
+    if eager_thread is Some tid then
+      run_eager_thread fuel tid;;
+      mret ()
+    else mret ().
 
 
   (** * Lift to executable archModel *)
@@ -429,81 +444,52 @@ Section Model.
     if decide (archState.is_terminated term astate) is left p then
       Some (existT astate p)
     else None.
+  End steps.
 
-  (** ** No-eager-transitions runner *)
-
-  (** Just take non-eager transition until reaching termination *)
-  Fixpoint run_to_term_no_eager (fuel : nat) :
-    Exec.t mstate string {s : archState threads & archState.is_terminated term s} :=
-    (* run until out of fuel or conditions met *)
-    if fuel is S fuel then
-      (* Run a non-eager execution step *)
-      step;;
-      (* Check if termination condition met. If not, execute non-eager step *)
-      fstate ← mget to_terminated_archState;
-      if fstate is Some fs then mret fs else run_to_term_no_eager fuel
-    else mthrow "Out of fuel".
+  (** The unoptimised X86-TSO model. Take one step per instruction or flushing
+      transitions. Need [fuel] for all instruction + all flushed writes + 1 for the
+      terminating step *)
+  Definition x86_tso_opmodel : opModel threads :=
+    let opstep term _ _ :=
+      fstate ← mget (to_terminated_archState term);
+      if fstate is Some fs then mret (Some fs) else
+        step term;;
+        mret None
+    in
+    opModel.Make threads mstate from_archState opstep.
 
 
-  (** ** Eager-transition-enabled runner *)
-
-  (** [run_to_term_eager_normal fuel] Assumes that no eager transition is
-      possible and does a normal transition.
-
-      [run_to_term_eager_eager fuel tid] Does all possible transition in thread
-      [tid] then goes back to the "normal" runner. *)
-  Fixpoint run_to_term_eager_normal (fuel : nat) :
-      Exec.t mstate string _ :=
-    (* run until out of fuel or conditions met *)
-    if fuel is S fuel then
-      (* Run a non-eager execution step *)
-      eager_thread ← step;
-      if eager_thread is Some tid then
-        run_to_term_eager_eager fuel tid
+  (** The X86-TSO model with eager steps. The fuel of of the previous model plus
+      one is guaranteed to be sufficient but some lower fuel might work
+      depending on the interleaving of eager and non-eager steps. *)
+  Definition x86_tso_opmodel_eager : opModel threads :=
+    let init term initSt := (from_archState term initSt, true) in
+    let step term _ fuel :=
+      fstate ← mget (to_terminated_archState term ∘ fst);
+      if fstate is Some fs then mret (Some fs)
       else
-        (* Check if termination condition met. If not, execute non-eager step *)
-        fstate ← mget to_terminated_archState;
-        if fstate is Some fs then mret fs else run_to_term_eager_normal fuel
-    else mthrow "Out of fuel"
+        initial ← mget snd;
+        if (initial : bool) then
+          Exec.liftSt fst $ run_eager_all term fuel;;
+          msetv snd false;;
+          mret None
+        else
+          Exec.liftSt fst $ run_normal_then_eager term fuel;;
+          mret None
+    in
+    opModel.Make threads (mstate * bool) init step.
 
-  with run_to_term_eager_eager (fuel : nat) (tid : fin threads)  :
-      Exec.t mstate string {s : archState threads & archState.is_terminated term s} :=
-    if fuel is S fuel then
-      (* Try to do eager execution of thread [tid] if possible *)
-      '(instr_ran : bool) ← run_eager_thread_step tid;
-      if instr_ran then
-        (* If we run an eager transition, run another one *)
-        run_to_term_eager_eager fuel tid
-      else
-        (* Otherwise, check if termination condition met. If not, execute
-            non-eager step *)
-        fstate ← mget to_terminated_archState;
-        if fstate is Some fs then mret fs else run_to_term_eager_normal fuel
-    else mthrow "Out of fuel".
-
-
-  (** ** Full model runner *)
-
-  Definition run_to_term (allow_eager : bool) (fuel : nat) :
-        Exec.t mstate string
-        {s : archState threads & archState.is_terminated term s} :=
-    (* If eager transitions allowed, try to eagerly execute each thread,
-        as we are in the first iteration *)
-    if allow_eager then
-      run_eager_all fuel;;
-      fstate ← mget to_terminated_archState;
-      if fstate is Some fs then mret fs else run_to_term_eager_normal fuel
-    else
-      run_to_term_no_eager fuel.
 End Model.
 Arguments mstate : clear implicits.
-
+Arguments x86_tso_opmodel : clear implicits.
+Arguments x86_tso_opmodel_eager : clear implicits.
 
 (** Top-level one-threaded model function that takes fuel (guaranteed
     termination) and an instruction monad, and returns a computational set of
     all possible final states. *)
-Definition x86_operational_modelc (fuel : nat) (isem : iMon ()) (allow_eager : bool)
+Definition x86_tso_modelc (fuel : nat) (isem : iMon ()) (allow_eager : bool)
   : (archModel.c ∅) :=
-  λ n term (initSt: archState n),
-    from_archState term initSt
-    |> archModel.Res.from_exec (run_to_term isem term allow_eager fuel).
+  if allow_eager then
+    opModel.to_archModel (λ threads, x86_tso_opmodel_eager threads isem) fuel
+  else
+    opModel.to_archModel (λ threads, x86_tso_opmodel threads isem) fuel.

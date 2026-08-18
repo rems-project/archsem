@@ -137,7 +137,7 @@ Module XOR.
       archState.address_space := () |}.
 
   Definition test_results :=
-    x86_operational_modelc 2 x86_sem false 1%nat termCond initState.
+    x86_tso_modelc 2 x86_sem false 1%nat termCond initState.
 
   Goal reg_extract rax 0%fin <$> test_results = Listset [Ok 0x110%Z].
   Proof.
@@ -146,7 +146,7 @@ Module XOR.
   Qed.
 
   Definition test_results_eager :=
-    x86_operational_modelc 2 x86_sem true 1%nat termCond initState.
+    x86_tso_modelc 2 x86_sem true 1%nat termCond initState.
 
   Goal reg_extract rax 0%fin <$> test_results_eager = Listset [Ok 0x110%Z].
     Proof.
@@ -205,7 +205,7 @@ Module MP.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem false n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem false n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, rax); (1%fin, rbx)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x1%Z]].
@@ -215,7 +215,7 @@ Module MP.
   Qed.
 
   Definition test_results_eager :=
-    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem true n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, rax); (1%fin, rbx)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x1%Z]].
@@ -276,7 +276,7 @@ Module SB.
   Definition fuel := 12%nat.
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem false n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem false n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, rax); (1%fin, rax)] <$> test_results) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
@@ -286,7 +286,7 @@ Module SB.
   Qed.
 
   Definition test_results_eager :=
-    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem true n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, rax); (1%fin, rax)] <$> test_results_eager) ≡ₚ
     [Ok [0x0%Z;0x0%Z]; Ok [0x0%Z;0x1%Z]; Ok [0x1%Z; 0x0%Z]; Ok [0x1%Z; 0x1%Z]].
@@ -350,7 +350,7 @@ Module R_PO_MFENCE.
     [reg_extract rax 1%fin test_result; mem_extract 0x1200 8 test_result].
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem false n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem false n_threads termCond initState.
 
   Goal elements (result_extraction <$> test_results) ≡ₚ
     [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
@@ -360,7 +360,7 @@ Module R_PO_MFENCE.
   Qed.
 
   Definition test_results_eager :=
-    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem true n_threads termCond initState.
 
   Goal elements (result_extraction <$> test_results) ≡ₚ
     [[Ok 0x0%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x1%Z]; [Ok 0x1%Z; Ok 0x2%Z]].
@@ -440,7 +440,7 @@ Module IRIW.
   (* Non-eager runner is too slow (> 10s), we're not running it here *)
 
   Definition test_results :=
-    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem true n_threads termCond initState.
 
   Goal elements (regs_extract [(1%fin, rax); (1%fin, rbx); (3%fin, rax); (3%fin, rbx)] <$> test_results) ≡ₚ
     [Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x0%Z; 0x1%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x0%Z]; Ok [0x0%Z; 0x0%Z; 0x1%Z; 0x1%Z];
@@ -517,7 +517,7 @@ Module SB_mixed.
   (* Non-eager runner is too slow (> 10s), we're not running it here *)
 
   Definition test_results_eager :=
-    x86_operational_modelc fuel x86_sem true n_threads termCond initState.
+    x86_tso_modelc fuel x86_sem true n_threads termCond initState.
 
   Goal elements (regs_extract [(0%fin, rcx); (1%fin, rcx); (0%fin, rsi); (1%fin, rsi)] <$> test_results_eager) ≡ₚ
     [Ok [0x200000002%Z; 0x100000001%Z; 0x0%Z; 0x0%Z]; 
