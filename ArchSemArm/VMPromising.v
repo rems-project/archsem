@@ -372,6 +372,11 @@ Definition ttbrs : gset reg :=
     TTBR1_EL2;
     VTTBR_EL2]@{reg}.
 
+(** For the supported EL10 A1=0 configuration, TTBR0_EL1 provides the ASID
+    tag even when TTBR1_EL1 provides the page-table root. *)
+Definition asid_ttbr_of_root_ttbr (reg_ttbr : reg) : reg :=
+  if decide (reg_ttbr = TTBR1_EL1) then TTBR0_EL1 else reg_ttbr.
+
 (** Determine if input register is an unknown register from the architecture *)
 Definition is_reg_unknown (r : reg) : Prop :=
   ¬(r ∈ relaxed_regs ∨ r ∈ strict_regs ∨ r = pc_reg).
@@ -1008,18 +1013,14 @@ Module TLB.
 
   (** ** TLB filling *)
 
-  Definition is_active_asid (ts : TState.t)
+  Definition is_active_asid
       (asid : option (bv 16))
-      (val_ttbrs : list (bv 64)) : Prop :=
-    match asid with
-    | Some asid =>
-      ∃ val_ttbr ∈ val_ttbrs, asid = (bv_extract 48 16 val_ttbr)
-    | None => True
-    end.
-  Instance Decision_is_active_asid (ts : TState.t)
+      (asids : list (bv 16)) : Prop :=
+    from_option (λ asid, asid ∈ asids) True asid.
+  Instance Decision_is_active_asid
       (asid : option (bv 16))
-      (val_ttbrs : list (bv 64)) : Decision (is_active_asid ts asid val_ttbrs).
-  Proof. unfold_decide. Defined.
+      (asids : list (bv 16)) : Decision (is_active_asid asid asids).
+  Proof. destruct asid; unfold_decide. Defined.
 
   Definition next_va {clvl : Level}
     (ctxt : Ctxt.t)
@@ -1037,14 +1038,14 @@ Module TLB.
        ttbr = TTBR1_EL2) then Some true
     else None.
 
-  (** Seed root-level TLB entries from a list of TTBR values.
+  (** Seed root-level TLB entries from a list of ASID/root TTBR value pairs.
 
-      For each TTBR value in [val_ttbrs]:
+      For each [(asid, val_ttbr)] pair:
       - Computes the root page table entry address from the TTBR base and [va] index.
       - Reads the entry from memory at [time].
-      - If the entry is a valid table descriptor, creates a TLB entry with
-        the ASID extracted from the TTBR value (bits 48-63) and the [upper]
-        flag indicating upper/lower VA range.
+      - If the entry is a valid table descriptor, creates a TLB entry with the
+        ASID, the root from [val_ttbr], and the [upper] flag indicating
+        upper/lower VA range.
       - Inserts the entry into the VATLB if not already present.
 
       The [mem_strict] param decides if non-existing memory triggers an error.
@@ -1057,13 +1058,12 @@ Module TLB.
       (time : nat)
       (va : prefix root_lvl)
       (upper : bool)
-      (val_ttbrs : list (bv 64))
+      (asid_roots : list (bv 16 * bv 64))
       (mem_strict : bool) : result string (VATLB.t * bool) :=
-    foldlM (λ '(vatlb, is_changed) val_ttbr,
+    foldlM (λ '(vatlb, is_changed) '(asid, val_ttbr),
       let entry_addr := next_entry_addr val_ttbr va in
       if Memory.read_word entry_addr init mem time is Some memval then
         if decide (is_table root_lvl memval) then
-          let asid := bv_extract 48 16 val_ttbr in
           let ndctxt := NDCtxt.make upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
           let entry : Entry.t (Ctxt.lvl ctxt) :=
@@ -1079,7 +1079,7 @@ Module TLB.
              (pretty entry_addr))%string
           (negb mem_strict);;
         Ok (vatlb, is_changed)
-    ) (vatlb, false) val_ttbrs.
+    ) (vatlb, false) asid_roots.
 
   (** Extend a TLB entry one level down by following a table descriptor.
 
@@ -1144,18 +1144,17 @@ Module TLB.
       (lvl : Level)
       (va : bv 64)
       (upper : bool)
-      (val_ttbrs : list (bv 64))
+      (asid_roots : list (bv 16 * bv 64))
       (mem_strict : bool) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
         va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl)
-                     upper val_ttbrs mem_strict
+                     upper asid_roots mem_strict
       | Some plvl =>
         let pva := level_prefix va plvl in
         let index := level_index va lvl in
-        foldlM (λ prev val_ttbr,
-          let asid := bv_extract 48 16 val_ttbr in
+        foldlM (λ prev '(asid, _),
           let ndctxt := NDCtxt.make upper pva (Some asid) in
           let ctxt := existT plvl ndctxt in
           (* parent entries should be from the original TLB (in the parent level) *)
@@ -1165,32 +1164,57 @@ Module TLB.
               va_fill_lvl vatlb_prev ts init mem time ctxt te index mem_strict;
             mret (vatlb_lvl, is_changed_lvl || is_changed_prev)
           ) prev tes
-        ) (tlb.(vatlb), false) val_ttbrs
+        ) (tlb.(vatlb), false) asid_roots
       end;
     mret $ (TLB.make vatlb_new, is_changed).
 
-  (** Fill TLB entries for a VA through all translation levels 0-3.
+  (** Update the TLB for a single VA through all translation levels 0-3.
 
       Iterates through each level, calling [va_fill] to progressively build
-      the complete translation chain from root to leaf. The [ttbr] register
-      determines both the upper/lower VA range and provides the base addresses.
+      the complete translation chain from root to leaf. [reg_ttbr] determines
+      the upper/lower VA range and page-table roots; [reg_asid_ttbr] provides
+      the ASID tag used for matching TLB entries.
 
       Returns [(tlb', changed)] where [changed] is [true] if new entries
       were added. *)
+  Definition ttbr_values_at (ts : TState.t) (reg_ttbr : reg) (time : nat) :
+      result string (list (bv 64)) :=
+    sregs ← othrow "TTBR should exist in initial state"
+      $ TState.read_sreg_at ts reg_ttbr time;
+    othrow "TTBR should be a 64 bit value"
+      $ mapM (M:=option) (λ sreg, regval_to_val reg_ttbr sreg.1) sregs.
+
+  Definition ttbr_asids_at (ts : TState.t) (reg_ttbr : reg) (time : nat) :
+      result string (list (bv 16)) :=
+    val_ttbrs ← ttbr_values_at ts reg_ttbr time;
+    mret $ map (λ val_ttbr, bv_extract 48 16 val_ttbr) val_ttbrs.
+
+  Definition ttbr_asid_roots_at (ts : TState.t)
+      (reg_asid_ttbr reg_ttbr : reg) (time : nat) :
+      result string (list (bv 16 * bv 64)) :=
+    (* If ASID and root come from the same TTBR, keep each observed TTBR
+       value linked with its own ASID.  When they come from different TTBRs
+       (A1 = 0 with a TTBR1-selected VA), the ASID and root observations are
+       independent, so fills consider every ASID/root pair. *)
+    if decide (reg_asid_ttbr = reg_ttbr) then
+      val_ttbrs ← ttbr_values_at ts reg_ttbr time;
+      mret $ map (λ val_ttbr, (bv_extract 48 16 val_ttbr, val_ttbr)) val_ttbrs
+    else
+      asids ← ttbr_asids_at ts reg_asid_ttbr time;
+      val_ttbrs ← ttbr_values_at ts reg_ttbr time;
+      mret $ asids × val_ttbrs.
+
   Definition update (tlb : t) (ts : TState.t)
       (init : memoryMap)
       (mem : Memory.t)
       (time : nat)
       (va : bv 64)
-      (ttbr : reg) : result string (t * bool) :=
-    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    sregs ← othrow "TTBR should exist in initial state"
-      $ TState.read_sreg_at ts ttbr time;
-    val_ttbrs ← othrow "TTBR should be a 64 bit value"
-      $ mapM (M:=option) (λ sreg, regval_to_val ttbr sreg.1) sregs;
+      (reg_asid_ttbr reg_ttbr : reg) : result string (t * bool) :=
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr reg_ttbr);
+    asid_roots ← ttbr_asid_roots_at ts reg_asid_ttbr reg_ttbr time;
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ←
-        va_fill tlb_prev ts init mem time lvl va upper val_ttbrs (*strict*)true;
+        va_fill tlb_prev ts init mem time lvl va upper asid_roots (*strict*)true;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
@@ -1206,11 +1230,11 @@ Module TLB.
         (mem : Memory.t)
         (time : nat)
         (upper : bool)
-        (val_ttbrs : list (bv 64))
+        (asid_roots : list (bv 16 * bv 64))
         (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb_prev, is_changed_prev) index,
       '(vatlb_new, is_changed) ←
-        va_fill_root vatlb_prev ts init mem time index upper val_ttbrs mem_strict;
+        va_fill_root vatlb_prev ts init mem time index upper asid_roots mem_strict;
       mret (vatlb_new, is_changed || is_changed_prev)
     ) (vatlb, false) (enum (bv 9)).
 
@@ -1241,15 +1265,16 @@ Module TLB.
       (time : nat)
       (lvl : Level)
       (upper : bool)
-      (val_ttbrs : list (bv 64))
+      (asid_roots : list (bv 16 * bv 64))
       (mem_strict : bool) : result string (t * bool) :=
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
-      | None => traverse_root tlb.(vatlb) ts init mem time upper val_ttbrs mem_strict
+      | None => traverse_root tlb.(vatlb) ts init mem time upper asid_roots mem_strict
       | Some plvl =>
+        let asids := map fst asid_roots in
         let fes :=
           omap (λ fe,
-            if decide (FE.lvl fe = plvl ∧ is_active_asid ts (FE.asid fe) val_ttbrs)
+            if decide (FE.lvl fe = plvl ∧ is_active_asid (FE.asid fe) asids)
               then Some fe
               else None) (elements tlb.(vatlb)) in
         foldlM (λ '(vatlb, is_changed_prev) fe,
@@ -1268,16 +1293,13 @@ Module TLB.
         (init : memoryMap)
         (mem : Memory.t)
         (time : nat)
-        (ttbr : reg)
+        (reg_asid_ttbr reg_ttbr : reg)
         (mem_strict : bool) : result string (t * bool) :=
-    upper ← othrow "The register is not TTBR" (is_upper_ttbr ttbr);
-    sregs ← othrow "TTBR should exist in initial state"
-      $ TState.read_sreg_at ts ttbr time;
-    val_ttbrs ← othrow "TTBR should be a 64 bit value"
-      $ mapM (M:=option) (λ sreg, regval_to_val ttbr sreg.1) sregs;
+    upper ← othrow "The register is not TTBR" (is_upper_ttbr reg_ttbr);
+    asid_roots ← ttbr_asid_roots_at ts reg_asid_ttbr reg_ttbr time;
     foldlM (λ '(tlb_prev, is_changed_prev) lvl,
       '(tlb_new, is_changed) ←
-          traverse tlb_prev ts init mem time lvl upper val_ttbrs mem_strict;
+          traverse tlb_prev ts init mem time lvl upper asid_roots mem_strict;
       mret (tlb_new, is_changed || is_changed_prev)
     ) (tlb, false) (enum Level).
 
@@ -1348,7 +1370,7 @@ Module TLB.
                        (time_prev cnt : nat)
                        (tid : nat)
                        (va : bv 64)
-                       (ttbr : reg)
+                       (reg_asid_ttbr reg_ttbr : reg)
                        (acc : list (t * nat)) :
                       result string (list (t * nat)) :=
     match cnt with
@@ -1363,7 +1385,7 @@ Module TLB.
               then apply_tlbi_for_tid tid tlbi recipient tlb_prev
               else (tlb_prev, false) in
             '(tlb, is_changed) ←
-              update tlb_inv ts mem_init mem time_cur va ttbr;
+              update tlb_inv ts mem_init mem time_cur va reg_asid_ttbr reg_ttbr;
             mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
@@ -1373,7 +1395,7 @@ Module TLB.
         | false => acc
         end in
       unique_snapshots_va_between
-        ts mem_init mem tlb time_cur ccnt tid va ttbr acc
+        ts mem_init mem tlb time_cur ccnt tid va reg_asid_ttbr reg_ttbr acc
     end.
 
   (** Compute all unique TLB snapshots for a specific VA from time 0 to [time].
@@ -1387,10 +1409,11 @@ Module TLB.
                        (time : nat)
                        (tid : nat)
                        (va : bv 64)
-                       (ttbr : reg) : result string (list (t * nat)) :=
-    '(tlb, _) ← update init ts mem_init mem 0 va ttbr;
+                       (reg_asid_ttbr reg_ttbr : reg) :
+                      result string (list (t * nat)) :=
+    '(tlb, _) ← update init ts mem_init mem 0 va reg_asid_ttbr reg_ttbr;
     unique_snapshots_va_between
-      ts mem_init mem tlb 0 time tid va ttbr [(tlb, 0)].
+      ts mem_init mem tlb 0 time tid va reg_asid_ttbr reg_ttbr [(tlb, 0)].
 
   (** Find snapshots at or after [time].
 
@@ -1448,7 +1471,7 @@ Module TLB.
                        (tlb_prev : t)
                        (time_prev cnt : nat)
                        (tid : nat)
-                       (ttbr : reg)
+                       (reg_asid_ttbr reg_ttbr : reg)
                        (acc : list (t * nat))
                        (mem_strict : bool) :
                       result string (list (t * nat)) :=
@@ -1464,7 +1487,7 @@ Module TLB.
               then apply_tlbi_for_tid tid tlbi recipient tlb_prev
               else (tlb_prev, false) in
             '(tlb, is_changed) ←
-              update_all tlb_inv ts mem_init mem time_cur ttbr mem_strict;
+              update_all tlb_inv ts mem_init mem time_cur reg_asid_ttbr reg_ttbr mem_strict;
             mret (tlb, is_changed || is_changed_by_tlbi)
         | None => mret (init, false)
         end;
@@ -1473,7 +1496,8 @@ Module TLB.
         | true => (tlb, time_cur) :: acc
         | false => acc
         end in
-      unique_snapshots_between ts mem_init mem tlb time_cur ccnt tid ttbr acc mem_strict
+      unique_snapshots_between
+        ts mem_init mem tlb time_cur ccnt tid reg_asid_ttbr reg_ttbr acc mem_strict
     end.
 
   (** Compute all unique TLB snapshots from time 0 to [time] for BBM checking.
@@ -1486,10 +1510,11 @@ Module TLB.
                        (mem : Memory.t)
                        (time : nat)
                        (tid : nat)
-                       (ttbr : reg)
+                       (reg_asid_ttbr reg_ttbr : reg)
                        (mem_strict : bool) : result string (list (t * nat)) :=
-    '(tlb, _) ← update_all init ts mem_init mem 0 ttbr mem_strict;
-    unique_snapshots_between ts mem_init mem tlb 0 time tid ttbr [(tlb, 0)] mem_strict.
+    '(tlb, _) ← update_all init ts mem_init mem 0 reg_asid_ttbr reg_ttbr mem_strict;
+    unique_snapshots_between
+      ts mem_init mem tlb 0 time tid reg_asid_ttbr reg_ttbr [(tlb, 0)] mem_strict.
 
   (** Check if a TLB entry is invalidated by a TLBI from a different thread.
 
@@ -1737,12 +1762,12 @@ Module TLB.
                 (snapshots : list snapshot_range)
                 (ts : TState.t) (init : memoryMap) (mem : Memory.t)
                 (tid : nat)
-                (va : bv 64) (asid : bv 16) (ttbr : reg) :
+                (va : bv 64) (asid : bv 16) (reg_ttbr : reg) :
               result string (list trans_candidate) :=
     foldrM (λ range entries,
-        get_invalid_entries_from_range
-          range (S (range.(range_end) - range.(range_start)))
-          ts init mem tid va asid ttbr entries
+      get_invalid_entries_from_range
+        range (S (range.(range_end) - range.(range_start)))
+        ts init mem tid va asid reg_ttbr entries
     ) snapshots [].
 End TLB.
 Export (hints) TLB.
@@ -2240,20 +2265,32 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
      recipient-specific events themselves are collected from the memory delta. *)
   mret (if (created_new_tlbi_events : bool) then Some vpre else None).
 
+(** This model supports the A1=0 EL10 configuration, where TTBR0_EL1
+    provides the ASID tag for both low and high VA ranges. *)
+Definition tcr_a1_supported (ts : TState.t) : result string bool :=
+  match TState.read_reg ts TCR_EL1 with
+  | Some (tcr_val, _) => Ok ((bv_extract 22 1 (tcr_val : bv 64) =? 0%bv) : bool)
+  | None => Error "TCR_EL1 is not set"
+  end.
+
 Definition va_in_range (va : bv 64) : Prop :=
   let top_bits := bv_extract 48 16 va in
   top_bits = (-1)%bv ∨ top_bits = 0%bv.
 Instance Decision_va_in_range (va : bv 64) : Decision (va_in_range va).
 Proof. unfold_decide. Defined.
 
-(** Determine the TTBR register for a VA based on the translation regime. *)
-Definition ttbr_of_regime (va : bv 64) (regime : Regime) : result string reg :=
+(** Determine the TTBR registers for a VA's ASID and root based on the
+    translation regime. *)
+Definition ttbrs_of_regime (ts : TState.t) (va : bv 64) (regime : Regime) :
+    result string (reg * reg) :=
   match regime with
   | Regime_EL10 =>
+    a1_supported ← (tcr_a1_supported ts : result string bool);
+    guard_or "TCR_EL1.A1 = 1 is unsupported" (a1_supported = true);;
     let varange_bit := bv_extract 48 1 va in
     if varange_bit =? 1%bv
-      then Ok (TTBR1_EL1 : reg)
-      else Ok (TTBR0_EL1 : reg)
+      then Ok (TTBR0_EL1 : reg, TTBR1_EL1 : reg)
+      else Ok (TTBR0_EL1 : reg, TTBR0_EL1 : reg)
   | _ => Error "This model does not support multiple regimes"
   end.
 
@@ -2308,9 +2345,11 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
 
   trans_res ←
     if decide (va_in_range va) then
-      ttbr ← mlift $ ttbr_of_regime va trans_start.(TranslationStartInfo_regime);
+      '(reg_asid_ttbr, reg_ttbr) ← mlift $
+        ttbrs_of_regime ts va trans_start.(TranslationStartInfo_regime);
       snapshots ←
-        mlift $ TLB.unique_snapshots_va_until ts init mem vmax_t tid va ttbr;
+        mlift $
+          TLB.unique_snapshots_va_until ts init mem vmax_t tid va reg_asid_ttbr reg_ttbr;
       let invalid_start_time :=
         vpre_t ⊔ view_if is_ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
       let invalid_snapshots :=
@@ -2321,14 +2360,14 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
         TLB.get_valid_entries_from_snapshots snapshots mem tid va asid;
       invalid_entries ← mlift $
         TLB.get_invalid_entries_from_snapshots
-          invalid_snapshots ts init mem tid va asid ttbr;
+          invalid_snapshots ts init mem tid va asid reg_ttbr;
       (* update IIS with either a valid translation result or an invalid result *)
       valid_res ←
         for candidate in valid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
-          let root := (Some (existT ttbr val_ttbr)) in
+            (val_to_regval reg_ttbr candidate.(TLB.candidate_ttbr));
+          let root := (Some (existT reg_ttbr val_ttbr)) in
           let ti :=
             if is_ifetch then None else candidate.(TLB.candidate_inv_time) in
           mret $
@@ -2342,8 +2381,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo)
         for candidate in invalid_entries do
           val_ttbr ← othrow
             "TTBR value type does not match with the value from the translation"
-            (val_to_regval ttbr candidate.(TLB.candidate_ttbr));
-          let root := (Some (existT ttbr val_ttbr)) in
+            (val_to_regval reg_ttbr candidate.(TLB.candidate_ttbr));
+          let root := (Some (existT reg_ttbr val_ttbr)) in
           mret $
             (IIS.TransRes.make
               (va_to_vpn va)
@@ -2643,19 +2682,26 @@ Section BBM.
     mmu_enabled ← is_mmu_enabled ts;
     if (mmu_enabled : bool) then
       let max_t := length mem in
-      let ttbrs_to_check :=
-        filter (λ ttbr, is_Some (dmap_lookup ttbr ts.(TState.regs))) ttbrs in
+      let root_ttbrs_to_check :=
+        filter (λ reg_ttbr, is_Some (dmap_lookup reg_ttbr ts.(TState.regs))) ttbrs in
+      let asid_root_ttbrs_to_check :=
+        omap (λ reg_ttbr,
+          let reg_asid_ttbr := asid_ttbr_of_root_ttbr reg_ttbr in
+          if decide (is_Some (dmap_lookup reg_asid_ttbr ts.(TState.regs)))
+            then Some (reg_asid_ttbr, reg_ttbr)
+            else None) (elements root_ttbrs_to_check) in
       let tlbi_times := filter (λ i,
         if mem !! i is Some (Ev.Tlbi _ recipient) then
           bool_decide (recipient = tid)
         else false
       ) (seq 1 max_t) in
       let times_to_check := max_t :: (map (λ t, t - 1) tlbi_times) in
-      foldlM (λ violated ttbr,
+      foldlM (λ violated '(reg_asid_ttbr, reg_ttbr),
         if (violated : bool) then mret true
         else
           snapshots ←
-            TLB.unique_snapshots_until ts initmem mem max_t tid ttbr mem_strict;
+            TLB.unique_snapshots_until
+              ts initmem mem max_t tid reg_asid_ttbr reg_ttbr mem_strict;
           mret $
             bool_decide
               (∃ target_time ∈ times_to_check,
@@ -2663,7 +2709,7 @@ Section BBM.
                 | Some (tlb, _) => has_bbm_violation mem initmem tlb target_time
                 | None => False
                 end)
-      ) false (elements ttbrs_to_check)
+      ) false asid_root_ttbrs_to_check
     else
       mret false.
 End BBM.
