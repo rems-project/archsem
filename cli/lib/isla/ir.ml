@@ -50,7 +50,7 @@ module Toml = Litmus.Toml
 type thread =
   { tid : int;
     code : string;
-    init : (string * Term.t) list (* TODO: Add extra breakpoints *)
+    regs : (string * Term.t) list (* TODO: Add extra breakpoints *)
   }
 
 type section =
@@ -117,8 +117,8 @@ let parse_thread (tid, table) =
          Toml.error "register %s is defined in both init and reset" k
      )
     reset;
-  let merged = init @ reset in
-  {tid; code; init = merged}
+  let regs = init @ reset in
+  {tid; code; regs}
 
 let parse_threads toml =
   let table = Toml.get_table toml in

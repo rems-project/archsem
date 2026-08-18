@@ -199,7 +199,7 @@ let build_registers
          in
          (reg, normalize_register_gen ~arch ~context reg gen)
        )
-      thread.init
+      thread.regs
   in
   let base_regs = pc_entry :: used_regs in
   let has regs name = List.exists (fun (reg, _) -> reg = name) regs in
