@@ -151,29 +151,28 @@ Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
       | TranslationEnd _ => mret ()
       | GenericFail s => mthrow ("Instruction failure: " ++ s)%string.
 
-    (** Run instructions until a final state has been reached or fuel is depleted *)
-    Fixpoint sequential_model_seqmon (fuel : nat) (isem : iMon ()) (term : terminationCondition 1)
-      : seqmon {s : archState 1 & archState.is_terminated term s}:=
-      if fuel is S fuel
-      then
-        FMon.cinterp sequential_model_outcome isem;;
+    (** The sequential model as an operational model. This one does one
+        transition per instruction, but one could easily make one that does one
+        transition per outcome *)
+    Definition sequential_opmodel (isem : iMon ()) : opModel 1 :=
+      let init _ initSt := {| sst := initSt; written := ∅ |} in
+      let step term _ _ :=
         st ← mget sst;
         if decide (archState.is_terminated term st) is left p
-        then mret (existT st p)
-        else sequential_model_seqmon fuel isem term
-      else mthrow "Out of fuel".
+        then mret (Some (existT st p))
+        else
+          FMon.cinterp sequential_model_outcome isem;;
+          mret None
+      in
+      opModel.Make 1%nat seq_state init step.
 
     (** Top-level one-threaded sequential model function that takes fuel (guaranteed
         termination) and an instruction monad, and returns a computational set of
-        all possible final states. *)
+        all possible final states.
+
+        [fuel] needed is one per-instruction + one for final transition *)
     Definition sequential_modelc (fuel : nat) (isem : iMon ()) : (archModel.c ∅) :=
-      λ n,
-      match n with
-      | 1 => λ term initSt,
-        {| sst := initSt; written := ∅ |}
-        |> archModel.Res.from_exec (sequential_model_seqmon fuel isem term)
-      | _ => λ _ _, mret (archModel.Res.Error "Exptected one thread")
-      end.
+      opModel.to_archModel1 (sequential_opmodel isem) fuel.
 
   End Seq.
 End SequentialModel.

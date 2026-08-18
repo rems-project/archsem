@@ -388,6 +388,55 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
       map_set (λ A, set_to_propset).
   End archModel.
 
+  Module opModel.
+
+    (* TODO figure out flags *)
+    (* TODO Do we also want a non-executable representation where [step] is a
+            proposition? *)
+    (** Generic representation of an operational model, Can be driven from Rocq
+        with [run] and [to_archModel], but can also be driven from Ocaml
+        directly for debugging *)
+    Record t {nth : nat} :=
+      Make {
+          state : Type;
+          init : terminationCondition nth → archState nth → state;
+          step : ∀ term : terminationCondition nth,
+            (* Initial state again *) archState nth → (* fuel *) nat →
+            (* Returning None means this is not a final transition *)
+            Exec.t state string (option {s & archState.is_terminated term s});
+        }.
+    Arguments t : clear implicits.
+
+    (** Run the operational model until termination (or out of fuel) *)
+    Fixpoint run {nth : nat} (opmod : t nth) (fuel : nat)
+        (term : terminationCondition nth) (initSt : archState nth) :
+        Exec.t opmod.(state) string {s & archState.is_terminated term s} :=
+      if fuel is S nfuel then
+        final_or_not ← opmod.(step) term initSt fuel;
+        if final_or_not is Some final then mret final
+        else run opmod nfuel term initSt
+      else mthrow "Out of fuel".
+
+    (** Convert an multi-core operational model to a architectural model *)
+    Definition to_archModel (opmod : ∀ nth, t nth) (fuel : nat) : archModel.c ∅ :=
+      λ nth term (initSt : archState nth),
+        let opmod := opmod nth in
+        opmod.(init) term initSt |>
+          archModel.Res.from_exec
+            $ run opmod fuel term initSt.
+
+    (** Convert a single-core operational model to a architectural model *)
+    Definition to_archModel1 (opmod : t 1) (fuel : nat) : archModel.c ∅ :=
+      λ nth,
+        match nth with
+        | 1 => λ term initSt,
+            opmod.(init) term initSt
+            |> archModel.Res.from_exec (run opmod fuel term initSt)
+        | _ => λ _ _, mret (archModel.Res.Error "Expected one thread")
+        end.
+
+  End opModel.
+  Notation opModel := opModel.t.
 
 End TermModels.
 

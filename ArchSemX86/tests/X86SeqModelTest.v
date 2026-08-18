@@ -158,7 +158,7 @@ Module STRLDR. (* MOV [EAX + 0x100], ECX; MOV EAX, [EAX + 0x100] at 0x500, using
       archState.regs := [# init_reg];
       archState.address_space := () |}.
   Definition test_results :=
-    sequential_modelc None 2 x86_sem 1%nat termCond initState.
+    sequential_modelc None 3 x86_sem 1%nat termCond initState.
 
   Goal RAX_extract <$> test_results = Listset [Ok 0x2a%Z].
     vm_compute (_ <$> _).
