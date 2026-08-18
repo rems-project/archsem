@@ -371,7 +371,6 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     Context (isem : iMon ()).
     Context (prom : Model).
     Context {n : nat}.
-    Context (term : terminationCondition n).
     Local Notation tState := (tState prom).
     Local Notation mEvent := (mEvent prom).
     Local Notation iis := (iis prom).
@@ -379,6 +378,9 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
     Let mEvent_eq_dec := prom.(mEvent_eq_dec).
     Local Existing Instance mEvent_eq_dec.
+
+    Section Steps.
+    Context (term : terminationCondition n).
 
     (** The type of final promising state return by run *)
     Definition final := { x : t | terminated prom term x }.
@@ -421,22 +423,23 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         else
           mret res.
 
+      (** Runs a thread sequentially to termination, collecting all promises
+          that had to be made. Returns [false] if it ran out of fuel during
+          exploration. [fuel] is the maximum number of instructions to be run.*)
       Fixpoint run_to_termination (fuel : nat) (base : nat) :
           Exec.t (list mEvent * PPState.t tState mEvent iis) string bool :=
-        match fuel with
-        | 0%nat =>
-            ts ← mget (PPState.state ∘ snd);
-            mret (term tid (prom.(tState_regs) ts))
-        | S fuel =>
-            let handler := run_outcome_with_promise base in
-            cinterp handler isem;;
-            ts ← mget (PPState.state ∘ snd);
-            if term tid (prom.(tState_regs) ts) then
-              mret true
-            else
+        ts ← mget (PPState.state ∘ snd);
+        if term tid (prom.(tState_regs) ts) then
+          mret true
+        else
+          match fuel with
+          | 0%nat => mret false
+          | S fuel =>
               msetv (PPState.iis ∘ snd) prom.(iis_init);;
+              let handler := run_outcome_with_promise base in
+              cinterp handler isem;;
               run_to_termination fuel base
-        end.
+          end.
 
       Record EnumerationResult :=
         {
@@ -446,6 +449,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           out_of_fuel : bool
         }.
 
+      (** Enumerate all possible executions for a thread in a given memory.
+
+          [fuel] Is the maximum number of instructions to be run for each
+          thread. *)
       Definition enumerate_results (fuel : nat) (ts : tState)
           (mem : PromMemory.t mEvent) : EnumerationResult :=
         let base := List.length mem in
@@ -504,78 +511,107 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         promise ← mchoosel (enum bool);
         if (promise : bool) then cpromise_tid fuel tid else run_tid isem prom tid.
 
-    (** Computationally evaluate all the possible allowed final states according
-        to the promising model prom starting from st *)
-    Fixpoint run (fuel : nat) : Exec.t t string final :=
+    (** A single transition of the direct promising model: either the current
+        state is final, or any certified promise or instruction step is taken.
+
+        [fuel] is the maximum number of instruction to run in each thread to
+        find a certified promise.
+
+        Returning [None] means it was a non-final step *)
+    Definition run_transition (fuel : nat) :
+        Exec.t t string (option {s & archState.is_terminated term s}) :=
       st ← mGet;
       if decide $ terminated prom term st is left pt then
         validate_final st;;
-        mret (make_final st pt)
+        mret (Some (to_final_archState (make_final st pt)))
       else
-        if fuel is S fuel then
-          run_step (S fuel);;
-          run fuel
-        else mthrow "Could not finish running within the size of the fuel".
+        run_step fuel;;
+        mret None.
 
-    (** Computationally evaluate all the possible allowed final states according
-        to the promising model prom starting from st with promise-first optimization.
-        The size of fuel should be at least (# of promises) + max(# of instructions) + 1 *)
-    Fixpoint run_promise_first (fuel : nat) : Exec.t t string final :=
-      if fuel is S fuel then
-        st ← mGet;
-        (* Find out next possible promises or terminating states for each thread *)
-        let execution_results :=
-          vmap (λ '(tid, ts),
-              enumerate_results tid (initmem st) fuel ts (events st)
-            ) (venumerate (tstates st)) in
-        opt ← mchoosel (seq 0 4);
-        match opt : nat with
-        | 0 =>
-          tid ← mchoosef (fin n);
-          next_ev ← mchoosel (execution_results !!! tid).(promises);
-          mSet (promise_tid prom tid next_ev);;
-          run_promise_first fuel
-        | 1 =>
-          (* Compute cartesian products of the possible thread states *)
-          tstates ← mchoosel $ cprodn (vmap final_states execution_results);
-          (* Lift them into full promising state *)
-          let st := Make tstates st.(initmem) st.(events) in
-          (* Discard the non-terminated ones *)
-          term_proof ← guard_discard $ terminated prom term st;
-          validate_final st;;
-          mret (make_final st term_proof)
-        | 2 =>
-          let errs := List.concat (vmap errors execution_results) in
-          err ← mchoosel errs;
-          mthrow err
-        | _ =>
-          if bool_decide (∃ x ∈ map out_of_fuel execution_results, (x : bool)) then
-            mthrow "Promise first: out of fuel in enumeration"
-          else mdiscard
-        end
-      else
-        mthrow "Promise first: out of fuel in main loop".
+    (** A single transition of the promise-first promising model.
+
+        It explore executions of all threads collecting promises and either
+        choose one of them, or, if it's possible to reach a final state without
+        making any new promises, return that final state.
+
+        [fuel] is the maximum number of instruction to be explored for each
+        thread.
+
+        Returning [None] means it was a non-final step *)
+    Definition run_transition_promise_first (fuel : nat) :
+        Exec.t t string (option {s & archState.is_terminated term s}) :=
+      st ← mGet;
+      (* Find out next possible promises or terminating states for each thread *)
+      let execution_results :=
+        vmap (λ '(tid, ts),
+            enumerate_results tid (initmem st) fuel ts (events st)
+          ) (venumerate (tstates st)) in
+      opt ← mchoosel (seq 0 4);
+      match opt : nat with
+      | 0 =>
+        tid ← mchoosef (fin n);
+        next_ev ← mchoosel (execution_results !!! tid).(promises);
+        mSet (promise_tid prom tid next_ev);;
+        mret None
+      | 1 =>
+        (* Compute cartesian products of the possible thread states *)
+        tstates ← mchoosel $ cprodn (vmap final_states execution_results);
+        (* Lift them into full promising state *)
+        let st := Make tstates st.(initmem) st.(events) in
+        (* Discard the non-terminated ones *)
+        term_proof ← guard_discard $ terminated prom term st;
+        validate_final st;;
+        mret (Some (to_final_archState (make_final st term_proof)))
+      | 2 =>
+        let errs := List.concat (vmap errors execution_results) in
+        err ← mchoosel errs;
+        mthrow err
+      | _ =>
+        if bool_decide (∃ x ∈ map out_of_fuel execution_results, (x : bool)) then
+          mthrow "Promise first: out of fuel in enumeration"
+        else mdiscard
+      end.
+    End Steps.
+
+    (** The promising model as an operational model. Each transition is either a
+        promise step or a full instruction step of any thread, which means all
+        the interleavings of promises and instructions are explored.
+
+        The required fuel is:
+          (# of promises) + # of instructions of all threads + 1 *)
+    Definition opmodel : opModel n :=
+      let init _ initSt := from_archState prom initSt in
+      let step term _ fuel := run_transition term fuel in
+      opModel.Make n t init step.
+
+    (** The promise-first promising model as an operational model.
+
+        Transitions are just certified promises until the last transition that
+        run all threads instructions to the end in one step.
+
+        The required fuel is (# of promises) + max(# of instructions or 1) *)
+    Definition opmodel_pf : opModel n :=
+      let init _ initSt := from_archState prom initSt in
+      let step term _ fuel := run_transition_promise_first term fuel in
+      opModel.Make n t init step.
 
     End CPS.
     Arguments to_final_archState {_ _ _}.
   End CPState.
 
-  (** Create computational models from an ISA model and promising model *)
+  (** Create a computational model from an ISA model and promising model.
+
+      [fuel] needed is one per promise and per instruction of any thread + one
+      for the final transition *)
   Definition Promising_to_Modelc (prom : Promising.Model) (isem : iMon ())
       (fuel : nat) : archModel.c ∅ :=
-    λ n term (initMs : archState n),
-      PState.from_archState prom initMs |>
-      archModel.Res.from_exec
-        $ CPState.to_final_archState
-        <$> CPState.run isem prom term fuel.
+    opModel.to_archModel (@CPState.opmodel isem prom) fuel.
 
+  (** Create a computational model from an ISA model and promising model, using
+      the promise-first optimisation *)
   Definition Promising_to_Modelc_pf (prom : Promising.Model) (isem : iMon ())
       (fuel : nat) : archModel.c ∅ :=
-    λ n term (initMs : archState n),
-      PState.from_archState prom initMs |>
-      archModel.Res.from_exec
-        $ CPState.to_final_archState
-        <$> CPState.run_promise_first isem prom term fuel.
+    opModel.to_archModel (@CPState.opmodel_pf isem prom) fuel.
 
 End GenPromising.
 
