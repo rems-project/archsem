@@ -1982,7 +1982,7 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
   tread ← mchoosel (read_candidates addr size vpre mem);
-  raw_bytes ← othrow "Memory read of unmapped bytes" $
+  raw_bytes ← othrow ("Memory read of unmapped bytes at " ++ (pretty addr))%string $
     Memory.read_from addr size tread init mem;
   (* per-byte (value, view, write-timestamp) after forwarding *)
   fwd_bytes ← mlift $

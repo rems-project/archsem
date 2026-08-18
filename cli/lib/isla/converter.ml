@@ -78,6 +78,7 @@ let default_memory_size =
 type eval_context =
   | Location_init of string
   | Register_init of int * string
+  | Breakpoints of int
   | Final_assertion
   | Page_table_setup
 
@@ -86,6 +87,7 @@ exception Eval_error of string list * string
 let eval_context_path = function
   | Location_init sym -> ["locations"; sym]
   | Register_init (tid, reg) -> ["thread"; string_of_int tid; "init"; reg]
+  | Breakpoints tid -> ["thread"; string_of_int tid; "breakpoints"]
   | Final_assertion -> ["final"; "assertion"]
   | Page_table_setup -> ["page_table_setup"]
 
@@ -105,6 +107,9 @@ let eval_term ?page_table_entries ~context ~lookup_addr term =
     (* Final constants stay raw Z.t; registers read via bv_unsigned. *)
     | Final_assertion when Z.sign value < 0 ->
         eval_error context "final assertion values must be non-negative: %s"
+          (Z.format "%#x" value)
+    | Breakpoints _ when Z.sign value < 0 ->
+        eval_error context "Breakpoint values must be non-negative: %s"
           (Z.format "%#x" value)
     | _ -> value
   with Failure msg -> eval_error context "%s" msg
@@ -232,7 +237,13 @@ let build_threads
          build_registers ~arch ?page_table_entries ?page_table_root ~lookup_addr
            ~pc sec.addr thread
        in
-       let breakpoints = [Z.of_int (sec.addr + Bytes.length sec.data)] in
+       let breakpoints =
+         let context = Breakpoints tid in
+         Z.of_int (sec.addr + Bytes.length sec.data)
+         :: List.map
+              (eval_term ?page_table_entries ~context ~lookup_addr)
+              thread.breakpoints
+       in
        {Testrepr.regs; breakpoints}
      )
     threads
