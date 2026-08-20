@@ -302,6 +302,7 @@ let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
       write_descriptor ~level builder ~root ~va desc
 
 let rec eval_stmt builder ~symbolic_vas ~root = function
+  | Page_table_ast.OptionDefaultTablesTrue -> ()
   | Page_table_ast.Virtual _ -> ()
   | Page_table_ast.Physical names ->
       builder.declared_pa_names_rev <-
