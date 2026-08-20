@@ -56,10 +56,17 @@ let asid_function =
     | args -> Fn_registry.arity_error "asid" 1 (List.length args)
   )
 
-let descriptor_field_arg kwargs field_name default =
-  { Page_table_ast.name = field_name;
-    value = Fn_registry.optional_kwarg field_name default kwargs
-  }
+let descriptor_fields_of_kwargs ?(defaults = []) kwargs =
+  List.filter_map
+    (fun name ->
+       match List.assoc_opt name kwargs with
+       | Some value -> Some Page_table_ast.{name; value}
+       | None ->
+           Option.map
+             (fun value -> Page_table_ast.{name; value})
+             (List.assoc_opt name defaults)
+     )
+    Page_table_desc.descriptor_field_names
 
 (** Find the page-table entry address for [va] at [level]. *)
 let pte_addr name entries ~base ~va ~level =
@@ -122,15 +129,14 @@ let desc_function entries level =
 
 (** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
 let eval_desc name level kwargs =
-  Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"] kwargs;
+  Fn_registry.check_kwargs name
+    ("oa" :: Page_table_desc.descriptor_field_names)
+    kwargs;
   let oa = Fn_registry.required_kwarg name "oa" kwargs in
-  let fields =
-    [ descriptor_field_arg kwargs "Valid" Z.one;
-      descriptor_field_arg kwargs "AF" Z.one;
-      descriptor_field_arg kwargs "AP" Z.one;
-      descriptor_field_arg kwargs "DBM" Z.zero
-    ]
+  let defaults =
+    [("Valid", Z.one); ("AF", Z.one); ("AP", Z.one); ("DBM", Z.zero)]
   in
+  let fields = descriptor_fields_of_kwargs ~defaults kwargs in
   Z.of_int64
     (Page_table_desc.make_descriptor ~level
        ~oa:(Fn_registry.int_arg name "oa" oa)
@@ -139,11 +145,16 @@ let eval_desc name level kwargs =
 
 (** [mkdescN(table=...)] encodes a next-level table descriptor. *)
 let eval_table_desc name kwargs =
-  Fn_registry.check_kwargs name ["table"] kwargs;
+  Fn_registry.check_kwargs name
+    ("table" :: Page_table_desc.descriptor_field_names)
+    kwargs;
   let table_addr = Fn_registry.required_kwarg name "table" kwargs in
+  let desc =
+    Page_table_desc.table_descriptor (Fn_registry.int_arg name "table" table_addr)
+  in
   Z.of_int64
-    (Page_table_desc.table_descriptor
-       (Fn_registry.int_arg name "table" table_addr)
+    (Page_table_desc.apply_descriptor_fields desc
+       (descriptor_fields_of_kwargs kwargs)
     )
 
 let mkdesc_function level =
