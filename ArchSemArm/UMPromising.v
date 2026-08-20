@@ -609,3 +609,9 @@ Definition UMPromising_cert :=
 Definition UMPromising_exe := Promising_to_Modelc UMPromising.
 
 Definition UMPromising_pf := Promising_to_Modelc_pf UMPromising.
+
+Definition UMPromising_opmodel (isem : iMon ()) (n : nat) : opModel n :=
+  CPState.opmodel isem UMPromising.
+
+Definition UMPromising_opmodel_pf (isem : iMon ()) (n : nat) : opModel n :=
+  CPState.opmodel_pf isem UMPromising.

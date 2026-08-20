@@ -2790,3 +2790,9 @@ Definition VMPromising_exe (bbm_param : BBM.param) :=
 
 Definition VMPromising_pf (bbm_param : BBM.param) :=
   Promising_to_Modelc_pf (VMPromising bbm_param).
+
+Definition VMPromising_opmodel (bbm_param : BBM.param) (isem : iMon ())
+    (n : nat) : opModel n := CPState.opmodel isem (VMPromising bbm_param).
+
+Definition VMPromising_opmodel_pf (bbm_param : BBM.param) (isem : iMon ())
+    (n : nat) : opModel n := CPState.opmodel_pf isem (VMPromising bbm_param).

@@ -200,17 +200,88 @@ module Build (ArchReq : ArchRequired) = struct
     type 'a t = iSem -> (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
   end
 
-  let seq_model isem fuel term initState =
-    let termCond_coq tid rm =
-      let tc = List.nth term (Z.to_int tid) in
-      tc rm
-    in
-    if List.length term != 1 then
-      raise
-        (Failure
-           "termination condition list must be of size 1 for sequential model"
-        );
-    SeqModel.sequential_modelc None (Z.of_int fuel) isem (Z.of_int 1) termCond_coq
-      initState
-    |> Obj.magic
+  module OpModel = struct
+    type 'st step_result =
+      { next : 'st list;
+        finals : ('st * ArchState.t) list;
+        errors : ('st * string) list
+      }
+
+    module type S = sig
+      type config
+
+      val default_config : config
+
+      type t
+
+      val make : config -> iSem -> nth:int -> t
+
+      type state
+
+      val init : t -> termCond -> ArchState.t -> state
+
+      val step :
+         t ->
+        termCond ->
+        ArchState.t ->
+        fuel:int ->
+        state ->
+        state step_result
+    end
+
+    (** Wrap an extracted [TermModels.opModel] into an [S] module. The model is
+        built once by [make], for a fixed number of threads *)
+    module Of_coq (P : sig
+        type config
+
+        val default_config : config
+
+        (** May raise [Failure] if [nth] is not supported by the model *)
+        val opmodel : config -> iSem -> nth:int -> TM.Coq_opModel.t
+      end) : S with type config = P.config = struct
+      type config = P.config
+
+      let default_config = P.default_config
+
+      type t = TM.Coq_opModel.t
+
+      let make config isem ~nth = P.opmodel config isem ~nth
+
+      type state = TM.Coq_opModel.state
+
+      let termCond_to_coq (term : termCond) tid rm =
+        let tc = List.nth term (Z.to_int tid) in
+        tc rm
+
+      let init (opmod : t) term initSt =
+        opmod.TM.Coq_opModel.init (termCond_to_coq term) initSt
+
+      let step (opmod : t) term initSt ~fuel state =
+        let res =
+          opmod.TM.Coq_opModel.step (termCond_to_coq term) initSt (Z.of_int fuel)
+            state
+        in
+        let (next, finals) =
+          List.partition_map
+            (function
+              | (st, None) -> Either.Left st
+              | (st, Some (Specif.Coq_existT (fs, _))) -> Either.Right (st, fs)
+              )
+            res.Exec.Exec.results
+        in
+        {next; finals; errors = res.Exec.Exec.errors}
+    end
+  end
+
+  module Seq = OpModel.Of_coq (struct
+      type config = unit
+
+      let default_config = ()
+
+      let opmodel () isem ~nth =
+        if nth <> 1 then
+          Printf.ksprintf failwith
+            "The sequential model only supports one thread, got %d" nth;
+        SeqModel.sequential_opmodel None isem
+    end)
 end

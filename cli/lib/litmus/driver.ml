@@ -38,67 +38,38 @@
 (*                                                                            *)
 (******************************************************************************)
 
-module RegValGen = RegValGen
-module Utils = Utils
+(** Drive an operational model from OCaml.
 
-module type Arch = Arch.Arch
+    This is the OCaml counterpart of [TermModels.opModel.run] in
+    [ArchSem/TermModels.v]: instead of letting Rocq run the model, the
+    transition tree is explored here, which gives OCaml access to every
+    individual step. *)
 
-type empty = Utils.empty
+module Make (A : Archsem.Arch) (M : A.OpModel.S) = struct
+  (** Explore the model exhaustively and return all the final states, as well as
+      the errors of the branches that failed or ran out of fuel.
 
-module Arm = struct
-  module Required = struct
-    module Arch = ArmInst.Arch
-    include ArmInst.Arm
-
-    let default_address_space = System_types.PAS_NonSecure
-  end
-
-  include ArchBuild.Build (Required)
-
-  let tiny_isa = ArmInst.sail_tiny_arm_sem true
-
-  module UMProm = OpModel.Of_coq (struct
-      type config = unit
-
-      let default_config = ()
-
-      let opmodel () isem ~nth =
-        UMPromising.coq_UMPromising_opmodel_pf isem (Z.of_int nth)
-    end)
-
-  module BBM = VMPromising.BBM
-
-  module VMProm = OpModel.Of_coq (struct
-      type config = BBM.param
-
-      let default_config = BBM.Off
-
-      let opmodel bbm_param isem ~nth =
-        VMPromising.coq_VMPromising_opmodel_pf bbm_param isem (Z.of_int nth)
-    end)
-end
-
-module X86 = struct
-  module Required = struct
-    module Arch = X86Inst.Arch
-    include X86Inst.X86
-
-    let default_address_space = ()
-  end
-
-  include ArchBuild.Build (Required)
-
-  let tiny_isa = X86Inst.sail_tiny_x86_sem true
-
-  module Tso = OpModel.Of_coq (struct
-      (** Whether eager transitions are allowed *)
-      type config = bool
-
-      let default_config = true
-
-      let opmodel allow_eager isem ~nth =
-        let nth = Z.of_int nth in
-        if allow_eager then OperationalX86TSO.x86_tso_opmodel_eager nth isem
-        else OperationalX86TSO.x86_tso_opmodel nth isem
-    end)
+      The exploration uses an explicit stack instead of the native one, so that
+      all the calls to [M.step] happen at the same native stack depth, which
+      merges the exploration paths when profiling. *)
+  let model ?(config = M.default_config) isem fuel term initSt =
+    let m = M.make config isem ~nth:(A.ArchState.num_thread initSt) in
+    (* [finals] and [errors] are accumulated in reverse order *)
+    let rec loop finals errors = function
+      | [] -> (finals, errors)
+      | (_, 0) :: rest -> loop finals ("Out of fuel" :: errors) rest
+      | (st, fuel) :: rest ->
+          let {A.OpModel.next; finals = fs; errors = errs} =
+            M.step m term initSt ~fuel st
+          in
+          let finals = List.fold_left (fun acc (_, f) -> f :: acc) finals fs in
+          let errors = List.fold_left (fun acc (_, e) -> e :: acc) errors errs in
+          let rest =
+            List.fold_left (fun acc st -> (st, fuel - 1) :: acc) rest next
+          in
+          loop finals errors rest
+    in
+    let (finals, errors) = loop [] [] [(M.init m term initSt, fuel)] in
+    List.rev_map (fun fs -> A.ArchModel.Res.FinalState fs) finals
+    @ List.rev_map (fun e -> A.ArchModel.Res.Error e) errors
 end

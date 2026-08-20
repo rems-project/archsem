@@ -130,6 +130,8 @@ module type Arch = sig
 
     val reg : int -> t -> RegMap.t
 
+    val num_thread : t -> int
+
     val mem : t -> MemMap.t
   end
 
@@ -149,5 +151,46 @@ module type Arch = sig
     type 'a t = iSem -> (* fuel *) int -> termCond -> ArchState.t -> 'a Res.t list
   end
 
-  val seq_model : Utils.empty ArchModel.t
+  (** Operational models, that can be driven one transition at a time from
+      OCaml. This is the OCaml view of [TermModels.opModel] *)
+  module OpModel : sig
+    (** The possible outcomes of a single non-deterministic transition, split by
+        kind. ['st] is the internal state of the model *)
+    type 'st step_result =
+      { next : 'st list;  (** non-final transitions *)
+        finals : ('st * ArchState.t) list;  (** terminating transitions *)
+        errors : ('st * string) list
+      }
+
+    module type S = sig
+      (** Model-specific configuration, e.g. break-before-make mode *)
+      type config
+
+      val default_config : config
+
+      (** A model instantiated for a fixed number of threads *)
+      type t
+
+      val make : config -> iSem -> nth:int -> t
+
+      (** The internal state of the model *)
+      type state
+
+      val init : t -> termCond -> ArchState.t -> state
+
+      (** [step model term initSt ~fuel st] takes one transition from [st].
+          [initSt] is the initial architectural state and [fuel] the amount of
+          fuel left, both of which some models use internally *)
+      val step :
+         t ->
+        termCond ->
+        ArchState.t ->
+        fuel:int ->
+        state ->
+        state step_result
+    end
+  end
+
+  (** The sequential model, only supports a single thread *)
+  module Seq : OpModel.S with type config = unit
 end
