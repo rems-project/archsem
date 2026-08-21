@@ -1,0 +1,11 @@
+arch = "AArch64"
+name = "conflicting-page-table-root-code"
+
+page_table_setup = """
+s1table root 0x1000 {}
+"""
+
+[thread.0]
+code = """
+nop
+"""

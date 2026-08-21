@@ -1,0 +1,12 @@
+arch = "AArch64"
+name = "duplicate-page-table-root-name"
+
+page_table_setup = """
+s1table root 0x2c0000 {}
+s2table root 0x300000 {}
+"""
+
+[thread.0]
+code = """
+nop
+"""

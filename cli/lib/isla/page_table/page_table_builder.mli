@@ -54,10 +54,10 @@ type data_value = Z.t
 type layout =
   { root : pa;
     table_entries : (pa * descriptor) list;
-    (* Mapping from PA-side symbols to concrete PAs: pa_x -> PA. *)
-    symbols_pa : (string * pa) list;
-    (* PA-side data symbols, excluding generated root aliases. *)
-    phys_symbols_pa : (string * pa) list;
+    (* PA-side table root symbols. *)
+    table_symbols_pa : (string * pa) list;
+    (* PA-side data symbols. *)
+    data_symbols_pa : (string * pa) list;
     (* [*pa = value] initialisers resolved to concrete PAs. *)
     data_inits : (pa * data_value) list
   }
@@ -72,6 +72,8 @@ val build :
   symbolic_vas:(string * va) list ->
   (* Lists built-in thread code pages that should get identity mappings *)
   code_pages:va list ->
+  (* Physical pages already occupied by assembled code sections *)
+  reserved_pages:pa list ->
   (* Parsed [page_table_setup] statement list *)
   Page_table_ast.stmt list ->
   layout
