@@ -218,17 +218,17 @@ Module AxArmNames.
 
   Definition trf := reads_from cd⨾⦗T⦘.
   Definition trfi := trf ∩ int.
-  Definition trfe := trf ∖ rfi.
+  Definition trfe := trf ∖ trfi.
   Definition tfr := ⦗T⦘⨾from_reads cd.
   Definition tfri := tfr ∩ int.
-  Definition tfre := tfr ∖ fri.
+  Definition tfre := tfr ∖ tfri.
 
   Definition irf := reads_from cd⨾⦗IF⦘.
   Definition irfi := irf ∩ int.
-  Definition irfe := irf ∖ rfi.
+  Definition irfe := irf ∖ irfi.
   Definition ifr := ⦗IF⦘⨾from_reads cd.
   Definition ifri := ifr ∩ int.
-  Definition ifre := ifr ∖ fri.
+  Definition ifre := ifr ∖ ifri.
 
 
 
