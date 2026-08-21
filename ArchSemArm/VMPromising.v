@@ -272,6 +272,7 @@ End Memory.
 Import (hints) Memory.
 
 Module FwdItem := UMPromising.FwdItem.
+Module XclItem := UMPromising.XclItem.
 
 Definition EL := (fin 4).
 #[export] Typeclasses Transparent EL.
@@ -464,8 +465,9 @@ Module TState.
         (* Per-byte forwarding database *)
         fwdb : gmap address FwdItem.t;
 
-        (* Exclusive database: (load-time, physical address, size) *)
-        xclb : option (nat * address * N);
+        (* The latest load-exclusive, if its matching store-exclusive has not
+           run yet. *)
+        xclb : option XclItem.t;
       }.
 
   #[global] Instance eta : Settable _ :=
@@ -636,14 +638,15 @@ Module TState.
 
   (** Set forwarding entries for all bytes in a range *)
   Definition set_fwdbs (addrs : list address)
-      (time : nat) (vdata : view) (xcl : bool) (ts : t) : t :=
-    let fi := FwdItem.make time vdata xcl in
+      (time : nat) (vdata : view) (xcl_view : option view) (ts : t) : t :=
+    let fi := FwdItem.make time vdata xcl_view in
     foldr (λ a, set_fwdb a fi) ts addrs.
 
   (** Set the exclusive database to the footprint of the latest load
       exclusive. *)
-  Definition set_xclb (time : nat) (addr : address) (size : N) : t → t :=
-    setv xclb (Some (time, addr, size)).
+  Definition set_xclb (time : nat) (addr : address) (size : N)
+      (vpost : view) : t → t :=
+    setv xclb (Some (XclItem.make time addr size vpost)).
 
   (** Clears the exclusive database, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
@@ -1996,8 +1999,8 @@ Definition read_candidates (addr : address) (size : N) (vpre : view)
     byte/view/timestamp with the ones of the forwarded write. The timestamp
     returned (last value) is for coherence checking purposes). Returns [None] if
     no forwarding occurs *)
-Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
-    (mem : Memory.t) (tread : nat) (addr : address) :
+Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc) (mem : Memory.t)
+    (tread : nat) (addr : address) :
     Exec.res string (option (bv 8 * view * nat)) :=
   match fwdb !! addr with
   | Some fwd =>
@@ -2059,7 +2062,7 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update TState.vacq (view_if (is_rel_acq macc) vpost);;
   mset PPState.state $ TState.update TState.vspec vaddr;;
   ( if is_exclusive macc
-    then mset PPState.state $ TState.set_xclb tread addr size
+    then mset PPState.state $ TState.set_xclb tread addr size vpost
     else mret ());;
   mset PPState.iis $ IIS.add vpost;;
   mret res.
@@ -2119,21 +2122,22 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
   mset PPState.state $ TState.update TState.vwr time;;
   mset PPState.state $ TState.update TState.vrel (view_if is_release time);;
 
-  xcl ← if is_exclusive macc then
+  fwd_xcl_view ← if is_exclusive macc then
       match TState.xclb ts with
       | None => mdiscard
-      | Some (tread, raddr, rsize) =>
+      | Some xcl =>
         mset PPState.state $ TState.clear_xclb;;
-        if decide (addr = raddr ∧ size = rsize) then
-          guard_discard' (Memory.exclusive tid addr size tread time mem);;
-          mret true
+        if decide (addr = xcl.(XclItem.addr) ∧ size = xcl.(XclItem.size)) then
+          guard_discard'
+            (Memory.exclusive tid addr size xcl.(XclItem.time) time mem);;
+          mret (Some xcl.(XclItem.view))
         else
           (* PA/size mismatch fails the exclusive-monitor check; STXR failure is no-write. *)
           mdiscard
       end
-    else mret false;
+    else mret None;
 
-  mset PPState.state $ TState.set_fwdbs addrs time vdata xcl;;
+  mset PPState.state $ TState.set_fwdbs addrs time vdata fwd_xcl_view;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
