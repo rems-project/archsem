@@ -158,10 +158,10 @@ Module AxRiscVNames.
 
   Definition irf := reads_from cd⨾⦗IF⦘.
   Definition irfi := irf ∩ int.
-  Definition irfe := irf ∖ rfi.
+  Definition irfe := irf ∖ irfi.
   Definition ifr := ⦗IF⦘⨾from_reads cd.
   Definition ifri := ifr ∩ int.
-  Definition ifre := ifr ∖ fri.
+  Definition ifre := ifr ∖ ifri.
 
   (** ** Internal coherence *)
 
