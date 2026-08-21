@@ -54,5 +54,5 @@ Set Extraction Output Directory ".".
 
 #[warnings="-extraction-remaining-implicit,-extraction-reserved-identifier"]
 Separate Extraction
-  Arm sail_tiny_arm_sem UMPromising_pf VMPromising_pf
-  X86Inst.X86 sail_tiny_x86_sem x86_tso_modelc.
+  Arm sail_tiny_arm_sem UMPromising_opmodel_pf VMPromising_opmodel_pf
+  X86Inst.X86 sail_tiny_x86_sem x86_tso_opmodel x86_tso_opmodel_eager.

@@ -50,7 +50,8 @@ module Arm : sig
 
   val tiny_isa : iSem
 
-  val umProm_model : empty ArchModel.t
+  (** The user-mode promising model, with the promise-first optimisation *)
+  module UMProm : OpModel.S with type config = unit
 
   module BBM : sig
     type param =
@@ -59,7 +60,9 @@ module Arm : sig
       | Strict
   end
 
-  val vmProm_model : ?bbm_param:BBM.param -> empty ArchModel.t
+  (** The virtual-memory promising model, with the promise-first optimisation.
+      Its config is the break-before-make mode *)
+  module VMProm : OpModel.S with type config = BBM.param
 end
 
 module X86 : sig
@@ -67,5 +70,7 @@ module X86 : sig
 
   val tiny_isa : iSem
 
-  val op_model : ?allow_eager:bool -> empty ArchModel.t
+  (** The X86-TSO operational model. Its config says whether eager transitions
+      are allowed *)
+  module Tso : OpModel.S with type config = bool
 end

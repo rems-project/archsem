@@ -51,6 +51,13 @@ open Litmus
 module ArmRunner = Runner.Make (Arm)
 module X86Runner = Runner.Make (X86)
 
+(* Drivers for each operational model *)
+module ArmSeq = Driver.Make (Arm) (Arm.Seq)
+module ArmUmp = Driver.Make (Arm) (Arm.UMProm)
+module ArmVmp = Driver.Make (Arm) (Arm.VMProm)
+module X86Seq = Driver.Make (X86) (X86.Seq)
+module X86Tso = Driver.Make (X86) (X86.Tso)
+
 (** {1 Running litmus tests} *)
 
 (** {2 Running litmus tests utilities} *)
@@ -219,11 +226,11 @@ let cmd_seq =
     match Config.get_arch () with
     | Arm ->
         run_tests "arm-seq"
-          (ArmRunner.run_test_file ~parse Arm.(seq_model tiny_isa))
+          (ArmRunner.run_test_file ~parse (ArmSeq.model Arm.tiny_isa))
           files
     | X86 ->
         run_tests "x86-seq"
-          (X86Runner.run_test_file ~parse X86.(seq_model tiny_isa))
+          (X86Runner.run_test_file ~parse (X86Seq.model X86.tiny_isa))
           files
   in
   let info =
@@ -239,7 +246,7 @@ let cmd_ump =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "ump"
-      (ArmRunner.run_test_file ~parse Arm.(umProm_model tiny_isa))
+      (ArmRunner.run_test_file ~parse (ArmUmp.model Arm.tiny_isa))
       files
   in
   let info =
@@ -282,7 +289,7 @@ let cmd_vmp =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.Arm);
     run_tests "vmp"
-      (ArmRunner.run_test_file ~parse (vmProm_model ~bbm_param tiny_isa))
+      (ArmRunner.run_test_file ~parse (ArmVmp.model ~config:bbm_param tiny_isa))
       files
   in
   let info =
@@ -308,7 +315,9 @@ let cmd_tso =
     let parse = parse_testfile fmt in
     assert (Config.get_arch () = Arch_id.X86);
     run_tests "tso"
-      (X86Runner.run_test_file ~parse X86.(op_model ~allow_eager tiny_isa))
+      (X86Runner.run_test_file ~parse
+         (X86Tso.model ~config:allow_eager X86.tiny_isa)
+      )
       files
   in
   let info =
