@@ -91,3 +91,13 @@ let bv_extract o l z =
   else
     let o = Z.to_int o in
     Z.extract z o l
+
+let[@tail_mod_cons] rec list_map f = function
+  | [] -> []
+  | [a1] ->
+      let r1 = f a1 in
+      [r1]
+  | a1 :: a2 :: l ->
+      let r1 = f a1 in
+      let r2 = f a2 in
+      r1 :: r2 :: list_map f l
