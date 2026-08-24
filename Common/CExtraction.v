@@ -285,6 +285,36 @@ Extract Inlined Constant N.testbit => "ZO.testbitZ".
 Extract Inlined Constant Z.testbit => "ZO.testbitZ".
 
 
+(** * Bitvector *)
+
+Extract Inlined Constant bv_modulus => "Support.bv_modulus".
+Extract Inlined Constant bv_half_modulus => "Support.bv_half_modulus".
+Extract Inlined Constant bv_wrap => "Support.bv_wrap".
+Extract Inlined Constant bv_swrap => "Support.bv_swrap".
+Extraction Implicit bv_extract [n].
+Extract Inlined Constant bv_extract => "Support.bv_extract".
+
+Extraction Inline Z_to_bv.
+Extraction Implicit bv_eq_dec [n].
+Extraction Inline bv_eq_dec.
+Extraction Implicit bv_0 [n].
+Extraction Inline bv_0.
+Extraction Implicit bv_inhabited [n].
+Extraction Inline bv_inhabited.
+
+Extraction Implicit bv_concat [n1].
+
+Extraction Implicit bv_zero_extend [n].
+Extraction Inline bv_zero_extend.
+Extraction Implicit bv_or [n].
+Extraction Inline bv_or.
+Extraction Implicit bv_and [n].
+Extraction Inline bv_and.
+Extraction Implicit bv_xor [n].
+Extraction Inline bv_xor.
+Extraction Implicit bv_shiftr [n].
+Extraction Inline bv_shiftr.
+
 (** * Strings *)
 
 From Stdlib Require Import ExtrOcamlNativeString.
