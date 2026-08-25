@@ -101,8 +101,6 @@ Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
     Fixpoint write_mem_seq_state (addr : address) (bytes : list (bv 8)) : seqmon unit :=
       if bytes is byte :: bytes
       then
-        opt ← mget $ read_mem_seq_state (N.of_nat (length bytes)) addr;
-        guard_or "Memory isn't mapped to write" $ is_Some opt;;
         msetv (lookup addr ∘ archState.memory ∘ sst) (Some byte);;
         mset written (.∪{[addr]});;
         write_mem_seq_state (addr `+Z` 1)%bv bytes
@@ -139,6 +137,9 @@ Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
       | MemWrite (MemReq.make macc addr addr_space size 0) val _ =>
           guard_or "Non-explicit write" $ is_explicit macc;;
           check_address_space addr_space;;
+          '(mapped : bool) ←
+            mget (mem_present addr size ∘ archState.memory ∘ sst);
+          guard_or "Memory isn't mapped to write" mapped;;
           write_mem_seq_state addr (val |> bv_to_bytes 8);;
         mret (Ok ())
       | MemWrite _ _ _ => mthrow "CHERI tags are unsupported for now"
