@@ -2848,9 +2848,12 @@ End BBM.
 
 Import Promising.
 
-Definition emit_promise' (tid : nat) (initmem : memoryMap) (mem : Memory.t) ev :=
-  if ev is Ev.Msg _ then TState.promise_write (length mem)
-  else TState.promise_tlbi (length mem).
+Definition emit_promise' (tid : nat) (initmem : memoryMap) (mem : Memory.t)
+    (ev : Ev.t) (ts : TState.t) : TState.t :=
+  if bool_decide (Ev.tid ev = tid) then
+    if ev is Ev.Msg _ then TState.promise_write (length mem) ts
+    else TState.promise_tlbi (length mem) ts
+  else ts.
 
 (** Avoid exploring duplicate TLBI promise orders.  During one enumeration run,
     we keep TLBI recipients in nondecreasing order, comparing each candidate
