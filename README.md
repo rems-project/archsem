@@ -119,14 +119,12 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
 
 ## Documentation
 
-To build the documentation call `dune build @doc` and then the documentation
-will be generated in:
+The documentation of the `main` branch is published at
+<https://rems-project.github.io/archsem/>.
 
-- `_build/default/Common/ASCommon.html/toc.html`
-- `_build/default/ArchSem/ArchSem.html/toc.html`
-- `_build/default/ArchSemArm/ArchSemArm.html/toc.html`
-- `_build/default/ArchSemRiscV/ArchSemRiscV.html/toc.html`
-- `_build/default/ArchSemX86/ArchSemX86.html/toc.html`
+To build it locally, do `dune build @doc`. It will live in various places in 
+`_build`. You can assemble the documentation webside with `make doc-site` and
+serve it locally with `make serve-doc-site`
 
 
 ## Current limitations

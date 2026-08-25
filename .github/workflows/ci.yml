@@ -8,19 +8,23 @@ on:
   workflow_dispatch:
   merge_group:
 
-# cancel in-progress job when a new push is performed (except on main)
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    # Cancels in-progress job when a new push is performed (except on main)
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: ${{ !contains(github.ref, 'main')}}
+
 
     steps:
 
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Install system dependencies (ubuntu)
       run: |
@@ -47,7 +51,7 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: ~/.opam
-        key: locked-${{ hashFiles('*.opam.locked') }}
+        key: locked-doc-${{ hashFiles('*.opam.locked') }}
 
     - name: Initialize OPAM
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
@@ -67,7 +71,7 @@ jobs:
     - name: Install OPAM dependencies
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       run: |
-        opam install . --deps-only --locked --with-test --with-dev-setup --confirm-level=unsafe-yes
+        opam install . --deps-only --locked --with-test --with-dev-setup --with-doc --confirm-level=unsafe-yes
 
     - name: Clean OPAM folder for caching
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
@@ -83,7 +87,7 @@ jobs:
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
       with:
         path: ~/.opam
-        key: locked-${{ hashFiles('*.opam.locked') }}
+        key: locked-doc-${{ hashFiles('*.opam.locked') }}
 
     - name: Build
       run: |
@@ -106,3 +110,42 @@ jobs:
         eval $(opam env)
         make headers
         git diff --quiet
+
+    - name: Build documentation
+      run: |
+        opam exec -- dune build @doc
+
+    - name: Assemble documentation site
+      run: |
+        ./etc/mk-doc-site.sh _site
+
+    - name: Upload GitHub Pages artifact
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: _site
+
+  # Publishes the documentation on https://rems-project.github.io/archsem/
+  deploy-docs:
+    needs: build
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    # Never run two Pages deployments at once, and never cancel one halfway
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    steps:
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
