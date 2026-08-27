@@ -40,7 +40,12 @@
 
 (** Page-oriented address allocator. *)
 
-type t = {mutable current : int}
+module Error = Litmus.Error
+
+type t =
+  { mutable current : int;
+    limit : int option
+  }
 
 let default_base = 0x1000
 
@@ -49,24 +54,32 @@ let page_size = 0x1000
 let big_size = 1 lsl 21
 
 let align_up addr alignment =
-  if alignment <= 0 then
-    Litmus.Error.fatal "allocator: alignment must be positive";
+  if alignment <= 0 then Error.fatal "allocator: alignment must be positive";
   let rem = addr mod alignment in
   if rem = 0 then addr else addr + alignment - rem
 
 let page_after addr = align_up (addr + 1) page_size
 
-let make ?(base = default_base) ?(reserved = []) () =
+let make ?(base = default_base) ?limit ?(reserved = []) () =
   let current =
     List.fold_left
       (fun current addr -> max current (page_after addr))
       base reserved
   in
-  {current}
+  ( match limit with
+  | Some limit when current > limit ->
+      Error.failwith "allocator: initial address exceeds limit"
+  | _ -> ()
+  );
+  {current; limit}
 
 let alloc_aligned allocator ~size ~alignment =
   let addr = align_up allocator.current alignment in
-  allocator.current <- addr + size;
+  let next = addr + size in
+  ( match allocator.limit with
+  | Some limit when next > limit -> Error.failwith "allocator: limit exceeded"
+  | _ -> allocator.current <- next
+  );
   addr
 
 let alloc_page allocator =
