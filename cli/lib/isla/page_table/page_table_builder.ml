@@ -53,8 +53,8 @@ type data_value = Z.t
 type layout =
   { root : pa;
     table_entries : (pa * descriptor) list;
-    symbols_pa : (string * pa) list;
-    phys_symbols_pa : (string * pa) list;
+    table_symbols_pa : (string * pa) list;
+    data_symbols_pa : (string * pa) list;
     data_inits : (pa * data_value) list
   }
 
@@ -62,31 +62,40 @@ exception Error of string
 
 let error fmt = Printf.ksprintf (fun msg -> raise (Error msg)) fmt
 
+type table_root =
+  { name : string option;
+    base : pa
+  }
+
 type t =
   { (* Allocates physical addresses for data symbols. *)
     symbol_allocator : Allocator.t;
     (* Allocates root and child translation-table pages. *)
     table_allocator : Allocator.t;
-    (* Root translation-table address. *)
-    root : pa;
+    (* Default root translation-table used when statements are not nested in a
+       named table block. *)
+    default_root : table_root;
+    (* Named translation-table roots. *)
+    mutable named_roots : table_root list;
     (* Page-table descriptors, keyed by their physical addresses. *)
     entries : (pa, descriptor) Hashtbl.t;
     (* Required alignment for each physical-address symbol. *)
     pa_alignments : (string * int) list;
     (* PA names and their allocated physical addresses. *)
-    mutable symbols_pa : (string * pa) list;
+    mutable data_symbols_pa : (string * pa) list;
     (* Initial data values, keyed by their allocated PAs. *)
     mutable data_inits : (pa * data_value) list
   }
 
 let make ~symbol_allocator ~table_allocator ~pa_alignments ~root =
-  let entries = Hashtbl.create 256 in
+  let default_root = {name = None; base = root} in
   { symbol_allocator;
     table_allocator;
-    entries;
-    root;
+    default_root;
+    named_roots = [];
+    entries = Hashtbl.create 256;
     pa_alignments;
-    symbols_pa = [];
+    data_symbols_pa = [];
     data_inits = []
   }
 
@@ -103,7 +112,7 @@ let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
       |> Option.value ~default:Allocator.page_size
       )
   in
-  match List.assoc_opt name builder.symbols_pa with
+  match List.assoc_opt name builder.data_symbols_pa with
   | Some addr -> (
       if addr mod alignment = 0 then addr
       else
@@ -122,12 +131,33 @@ let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
         Allocator.alloc_aligned builder.symbol_allocator ~size:alignment
           ~alignment
       in
-      builder.symbols_pa <- (name, addr) :: builder.symbols_pa;
+      builder.data_symbols_pa <- (name, addr) :: builder.data_symbols_pa;
       addr
 
-(** {1 Table page allocation} *)
+(** {1 Table roots and page allocation} *)
 
-(** Allocate a fresh table page. *)
+let addr_of_z name addr =
+  try Z.to_int addr
+  with Z.Overflow ->
+    error "page_table: %s out of range: %s" name (Z.format "%#x" addr)
+
+let table_storage_base = Allocator.big_size
+
+let table_storage_limit = table_storage_base + Allocator.big_size
+
+let check_table_addr name addr =
+  if addr < table_storage_base || addr >= table_storage_limit then
+    error "page_table: %s 0x%x is outside table storage [0x%x, 0x%x)" name addr
+      table_storage_base table_storage_limit
+
+let table_addr name value =
+  let addr = addr_of_z name value in
+  if addr mod Allocator.page_size <> 0 then
+    error "page_table: %s 0x%x is not page aligned" name addr;
+  check_table_addr name addr;
+  addr
+
+(** Allocate a fresh child translation-table page. *)
 let create_table_page builder =
   let addr =
     try Allocator.alloc_page builder.table_allocator
@@ -182,7 +212,7 @@ let check_aligned_at_level name level addr =
       level
 
 (** Write an encoded descriptor at [va], allocating intermediate tables. *)
-let write_descriptor ?(level = Desc.last_level) builder ~va desc =
+let write_descriptor ?(level = Desc.last_level) builder ~root ~va desc =
   let rec walk table_addr current_level =
     let idx = Desc.va_index va current_level in
     if current_level = level then
@@ -196,17 +226,30 @@ let write_descriptor ?(level = Desc.last_level) builder ~va desc =
       let child_addr = ensure_child_table builder table_addr idx in
       walk child_addr (current_level + 1)
   in
-  walk builder.root Desc.root_level
+  walk root.base Desc.root_level
 
 (** Add the requested mapping, allocating intermediate tables on demand. *)
-let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
+let add_mapping
+      ?(fields = [])
+      ?(level = Desc.last_level)
+      builder
+      ~root
+      ~va
+      ~pa
+      kind
+  =
   let va = check_aligned_at_level "VA" level va in
   let pa = check_aligned_at_level "PA" level pa in
   let desc =
     try Desc.make_descriptor ~fields ~level ~oa:pa ~kind ()
     with Failure msg -> error "page_table: %s" msg
   in
-  write_descriptor ~level builder ~va desc
+  write_descriptor ~level builder ~root ~va desc
+
+let initialise_root builder ~table_block root =
+  add_mapping ~level:2 builder ~root ~va:0 ~pa:0 Page_table_ast.Code;
+  add_mapping ~level:2 builder ~root ~va:table_block ~pa:table_block
+    Page_table_ast.Data
 
 (** {1 Statement evaluation} *)
 
@@ -217,26 +260,21 @@ let check_table_level = function
         Desc.root_level (Desc.last_level - 1)
   | Some level -> level
 
-let addr_of_z name addr =
-  try Z.to_int addr
-  with Z.Overflow ->
-    error "page_table: %s out of range: %s" name (Z.format "%#x" addr)
-
 let mapping_alignment level =
   try Desc.level_size level
   with Invalid_argument _ -> error "page_table: invalid mapping level: %d" level
 
 let pa_alignment_requests stmts =
-  let requests =
-    List.filter_map
-      (function
-        | Page_table_ast.Mapping
-            {target = Page_table_ast.PaName name; level = Some level; _} ->
-            Some (name, mapping_alignment level)
-        | _ -> None
-        )
-      stmts
+  let rec collect = function
+    | [] -> []
+    | Page_table_ast.Mapping
+        {target = Page_table_ast.PaName name; level = Some level; _}
+      :: stmts ->
+        (name, mapping_alignment level) :: collect stmts
+    | Page_table_ast.TableBlock {body; _} :: stmts -> collect body @ collect stmts
+    | _ :: stmts -> collect stmts
   in
+  let requests = collect stmts in
   List.fold_left
     (fun alignments (name, alignment) ->
        let previous =
@@ -247,27 +285,27 @@ let pa_alignment_requests stmts =
      )
     [] requests
 
-let eval_mapping_target ?level ?(attrs = []) builder ~va = function
+let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
   | Page_table_ast.PaName pa_name ->
       let alignment = Option.map mapping_alignment level in
       let pa = alloc_pa ?alignment ?mapping_level:level builder pa_name in
-      add_mapping ?level ~fields:attrs builder ~va ~pa Page_table_ast.Data
+      add_mapping ?level ~fields:attrs builder ~root ~va ~pa Page_table_ast.Data
   | Page_table_ast.Invalid ->
       if attrs <> [] then
         error "page_table: descriptor fields are only supported on PA mappings";
-      write_descriptor ?level builder ~va 0L
+      write_descriptor ?level builder ~root ~va 0L
   | Page_table_ast.Table addr ->
       if attrs <> [] then
         error "page_table: descriptor fields are only supported on PA mappings";
       let level = check_table_level level in
-      let table_pa = addr_of_z "table address" addr in
+      let table_pa = table_addr "table address" addr in
       let desc =
         try Desc.table_descriptor table_pa
         with Failure msg -> error "page_table: %s" msg
       in
-      write_descriptor ~level builder ~va desc
+      write_descriptor ~level builder ~root ~va desc
 
-let eval_stmt builder ~symbolic_vas = function
+let rec eval_stmt builder ~symbolic_vas ~table_block ~root = function
   | Page_table_ast.Virtual _ -> ()
   | Page_table_ast.Physical _ -> ()
   | Page_table_ast.AlignedVirtual _ -> ()
@@ -277,7 +315,7 @@ let eval_stmt builder ~symbolic_vas = function
         | Some addr -> addr
         | None -> error "page_table: undeclared VA: %s" va_name
       in
-      eval_mapping_target ?level ~attrs builder ~va target
+      eval_mapping_target ?level ~attrs builder ~root ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
@@ -289,7 +327,19 @@ let eval_stmt builder ~symbolic_vas = function
           addr
   | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data} ->
       let addr = addr_of_z "address" addr in
-      add_mapping builder ~va:addr ~pa:addr Page_table_ast.Data
+      add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
+  | Page_table_ast.TableBlock {name; base; body; _} ->
+      let base = table_addr "table base" base in
+      if List.exists (fun root -> root.name = Some name) builder.named_roots then
+        error "page_table: duplicate table root: %s" name;
+      if
+        builder.default_root.base = base
+        || List.exists (fun root -> root.base = base) builder.named_roots
+      then error "page_table: duplicate table base: 0x%x" base;
+      let root = {name = Some name; base} in
+      builder.named_roots <- root :: builder.named_roots;
+      initialise_root builder ~table_block root;
+      List.iter (eval_stmt builder ~symbolic_vas ~table_block ~root) body
 
 (** {1 Layout construction} *)
 
@@ -302,13 +352,17 @@ let to_entries builder =
 
 (** Freeze the builder state into the immutable layout used downstream. *)
 let to_layout builder =
-  let root = builder.root in
+  let root = builder.default_root.base in
   let table_entries = to_entries builder in
-  (* Generated PA alias for the root translation-table page. *)
-  let symbols_pa = ("page_table_base", root) :: builder.symbols_pa in
-  let phys_symbols_pa = List.rev builder.symbols_pa in
+  let table_symbols_pa =
+    List.filter_map
+      (fun root -> Option.map (fun name -> (name, root.base)) root.name)
+      builder.named_roots
+    |> List.rev
+  in
+  let data_symbols_pa = List.rev builder.data_symbols_pa in
   let data_inits = builder.data_inits in
-  {root; table_entries; symbols_pa; phys_symbols_pa; data_inits}
+  {root; table_entries; table_symbols_pa; data_symbols_pa; data_inits}
 
 let build
       ~arch
@@ -329,10 +383,11 @@ let build
       ~pa_alignments:(pa_alignment_requests stmts)
       ~root
   in
-  add_mapping ~level:2 builder ~va:0 ~pa:0 Page_table_ast.Code;
-  add_mapping ~level:2 builder ~va:table_block ~pa:table_block Page_table_ast.Data;
+  initialise_root builder ~table_block builder.default_root;
   (* Evaluate each statement, using symbolic VAs to resolve virtual names. *)
-  List.iter (eval_stmt builder ~symbolic_vas) stmts;
+  List.iter
+    (eval_stmt builder ~symbolic_vas ~table_block ~root:builder.default_root)
+    stmts;
   (* Put data initializers back in source order. *)
   builder.data_inits <- List.rev builder.data_inits;
   to_layout builder

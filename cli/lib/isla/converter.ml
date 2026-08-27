@@ -134,12 +134,15 @@ let thread_section_name tid = Printf.sprintf "__thread%d" tid
 
 let symbolic_names ir =
   let add names name = if List.mem name names then names else names @ [name] in
-  List.fold_left
-    (fun names -> function
-       | Page_table_ast.Virtual stmt_names -> List.fold_left add names stmt_names
-       | _ -> names
-       )
-    ir.Ir.symbolic ir.Ir.page_table_setup
+  let rec collect names = function
+    | [] -> names
+    | Page_table_ast.Virtual stmt_names :: stmts ->
+        collect (List.fold_left add names stmt_names) stmts
+    | Page_table_ast.TableBlock {body; _} :: stmts ->
+        collect (collect names body) stmts
+    | _ :: stmts -> collect names stmts
+  in
+  collect ir.Ir.symbolic ir.Ir.page_table_setup
 
 let checked_virtual_alignment alignment =
   let alignment =
@@ -160,25 +163,23 @@ let checked_mapping_alignment level =
 
 let symbolic_va_alignments ir =
   let virtual_names = symbolic_names ir in
-  let alignment_requests =
-    List.concat_map
-      (function
-        | Page_table_ast.AlignedVirtual {alignment; names} ->
-            let alignment = checked_virtual_alignment alignment in
-            List.iter
-              (fun name ->
-                 if not (List.mem name virtual_names) then
-                   eval_error Page_table_setup "page_table: undeclared VA: %s"
-                     name
-               )
-              names;
-            List.map (fun name -> (name, alignment)) names
-        | Page_table_ast.Mapping {va_name; level = Some level; _} ->
-            [(va_name, checked_mapping_alignment level)]
-        | _ -> []
-        )
-      ir.Ir.page_table_setup
+  let rec collect = function
+    | [] -> []
+    | Page_table_ast.AlignedVirtual {alignment; names} :: stmts ->
+        let alignment = checked_virtual_alignment alignment in
+        List.iter
+          (fun name ->
+             if not (List.mem name virtual_names) then
+               eval_error Page_table_setup "page_table: undeclared VA: %s" name
+           )
+          names;
+        List.map (fun name -> (name, alignment)) names @ collect stmts
+    | Page_table_ast.Mapping {va_name; level = Some level; _} :: stmts ->
+        (va_name, checked_mapping_alignment level) :: collect stmts
+    | Page_table_ast.TableBlock {body; _} :: stmts -> collect body @ collect stmts
+    | _ :: stmts -> collect stmts
   in
+  let alignment_requests = collect ir.Ir.page_table_setup in
   let alignment_for name =
     List.fold_left
       (fun best (aligned_name, alignment) ->
@@ -195,6 +196,30 @@ let make_arena ?(reserved = []) base =
 let table_base = Allocator.big_size
 
 let data_base = table_base + Allocator.big_size
+
+let checked_table_root_page value =
+  let addr =
+    try Z.to_int value
+    with Z.Overflow ->
+      eval_error Page_table_setup "page_table: table base is out of range"
+  in
+  if addr mod Allocator.page_size <> 0 then
+    eval_error Page_table_setup "page_table: table base 0x%x is not page aligned"
+      addr;
+  if addr < table_base || addr >= data_base then
+    eval_error Page_table_setup
+      "page_table: table base 0x%x is outside table storage [0x%x, 0x%x)" addr
+      table_base data_base;
+  addr
+
+(* Named roots occupy fixed pages in the shared table arena. Reserve those
+   pages before allocating the default root and child tables. *)
+let rec table_root_pages = function
+  | [] -> []
+  | Page_table_ast.TableBlock {base; body; _} :: stmts ->
+      checked_table_root_page base
+      :: (table_root_pages body @ table_root_pages stmts)
+  | _ :: stmts -> table_root_pages stmts
 
 (* Build assembly input after assigning concrete addresses to every section and
    symbolic location. *)
@@ -335,7 +360,11 @@ let build_lookup_addr asm_result page_table =
   let page_table_symbols =
     match page_table with
     | None -> []
-    | Some layout -> layout.Page_table_builder.symbols_pa
+    | Some layout ->
+        ("page_table_base", layout.Page_table_builder.root)
+        :: (layout.Page_table_builder.table_symbols_pa
+          @ layout.Page_table_builder.data_symbols_pa
+           )
   in
   let symbols_addr = asm_result.Assembler.symbols @ page_table_symbols in
   fun name ->
@@ -423,7 +452,7 @@ let build_page_table_memory ~default_mem_size ~symbol_sizes page_table =
          in
          data_memory_block ~step:mem_size ~symbol:sym pa value
        )
-      page_table.Page_table_builder.phys_symbols_pa
+      page_table.Page_table_builder.data_symbols_pa
   in
   table_memory @ phys_memory
 
@@ -470,13 +499,15 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
         let reserved_code_pages = reserved_section_addrs ir.sections in
         let code_allocator = make_arena ~reserved:(0 :: reserved_code_pages) 0 in
         let symbol_allocator = Allocator.make ~base:data_base () in
+        let table_allocator =
+          make_arena ~reserved:(table_root_pages ir.page_table_setup) table_base
+        in
         let (asm_input, asm_result) =
           assemble ~filename ~code_allocator ~symbol_allocator ir
         in
         let page_table =
-          build_page_table_setup ir ~symbol_allocator
-            ~table_allocator:(make_arena table_base) ~table_block:table_base
-            asm_result
+          build_page_table_setup ir ~symbol_allocator ~table_allocator
+            ~table_block:table_base asm_result
         in
         (asm_input, asm_result, Some page_table)
   in
