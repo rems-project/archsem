@@ -1,6 +1,6 @@
 # This Makefile is provided for people that prefer to type
 # "make" instead of "dune build"
-.PHONY : all clean doc archive headers
+.PHONY : all test clean doc doc-site serve-doc-site archive headers
 all:
 	dune build
 
@@ -14,9 +14,20 @@ GIT_ARCHIVE=git archive
 clean:
 	dune clean
 	rm -f $(TARBALL)
+	rm -rf _site
+
 
 doc:
 	dune build @doc
+
+doc-site: doc
+	./etc/mk-doc-site.sh _site
+
+DOC_SITE_PORT ?= 8000
+serve-doc-site: doc-site
+	@echo "Serving documentation on http://localhost:$(DOC_SITE_PORT)/ (Ctrl-C to stop)"
+	@python3 -m http.server $(DOC_SITE_PORT) -b 127.0.0.1 --directory _site
+
 
 DIRS=Common
 DIRS+=ArchSem
