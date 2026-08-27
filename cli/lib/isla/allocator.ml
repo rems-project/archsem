@@ -47,8 +47,6 @@ type t =
     limit : int option
   }
 
-let default_base = 0x1000
-
 let page_size = 0x1000
 
 let big_size = 1 lsl 21
@@ -60,7 +58,7 @@ let align_up addr alignment =
 
 let page_after addr = align_up (addr + 1) page_size
 
-let make ?(base = default_base) ?limit ?(reserved = []) () =
+let make ~base ?limit ?(reserved = []) () =
   let current =
     List.fold_left
       (fun current addr -> max current (page_after addr))
