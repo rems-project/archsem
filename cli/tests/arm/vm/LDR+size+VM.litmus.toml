@@ -3,10 +3,9 @@ name = "LDR+size+VM"
 
 page_table_setup = """
 virtual x y;
-aligned 2097152 virtual x;
 aligned 65536 virtual y;
-physical pa_pad pa_x;
 *pa_pad = 0;
+physical pa_x;
 x |-> pa_x at level 2;
 *pa_x = 0x000000010000000100000001;
 """
