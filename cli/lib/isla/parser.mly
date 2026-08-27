@@ -57,6 +57,8 @@
 %token SEMICOLON ";"
 %token LBRACKET "["
 %token RBRACKET "]"
+%token LBRACE "{"
+%token RBRACE "}"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
 %token ALIGNED
@@ -70,6 +72,8 @@
 %token DATA
 %token INVALID
 %token TABLE
+%token S1TABLE
+%token S2TABLE
 %token AT
 %token LEVEL
 %token TRUE
@@ -83,12 +87,14 @@
 %start <Term.t> binding
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
+  page_table_block
 %type <Page_table_ast.mapping_target * Page_table_ast.descriptor_field list * int option>
   page_table_mapping_rhs
 %type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
 %type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
 %type <int> page_table_mapping_level
+%type <Page_table_ast.table_stage> page_table_stage
 %type <string> kw_name
 
 %%
@@ -104,6 +110,7 @@ page_table_setup:
 
 page_table_stmt:
   | s = page_table_stmt_inner; ";" { s }
+  | b = page_table_block; option(";") { b }
 
 page_table_stmt_inner:
   | VIRTUAL; names = nonempty_list(IDENT)
@@ -124,6 +131,15 @@ page_table_stmt_inner:
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = NUM; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+
+page_table_block:
+  | stage = page_table_stage; name = IDENT; base = NUM; "{";
+    body = list(page_table_stmt); "}"
+    { Page_table_ast.TableBlock {stage; name; base; body} }
+
+page_table_stage:
+  | S1TABLE { Page_table_ast.S1 }
+  | S2TABLE { Page_table_ast.S2 }
 
 page_table_mapping_rhs:
   | target = page_table_mapping_target;
