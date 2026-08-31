@@ -59,14 +59,40 @@ Export (hints) Msg.
 
     Memory events use byte-granular addresses. *)
 
-Definition val_to_addr {size : N} (v : bv (8 * size)) : address := bv_extract 0 56 v.
+
+(** * Page numbers *)
+
+(** This model hard-codes a 48 bits to 48 bits translation so page numbers are
+    the same for physical addresses as for virtual addresses *)
+Definition pn := bv 36.
+#[export] Typeclasses Transparent pn.
+
+(** Page number of a virtual address *)
+Definition va_to_vpn (va : bv 64) : pn := bv_extract 12 36 va.
+
+(** Page-aligned virtual address of a page number. Since a page number does not
+    carry the VA range information, it is provided by [upper] *)
+Definition vpn_to_va (upper : bool) (vpn : pn) : bv 64 :=
+  let varange_bits : bv 16 := if upper then (-1)%bv else 0%bv in
+  bv_concat 64 varange_bits (bv_concat 48 vpn (bv_0 12)).
+
+(** Page number of a physical address *)
+Definition pa_to_pn (pa : address) : pn := bv_extract 12 36 pa.
+
+(** Page-aligned physical address of a page number. The upper physical address
+    bits are always zero in this model *)
+Definition pn_to_pa (p : pn) : address :=
+  bv_concat 56 (bv_0 8) (bv_concat 48 p (bv_0 12)).
+
+
+(** * Memory *)
 
 Module TLBI.
   Inductive t :=
   | All (tid : nat)
   | Asid (tid : nat) (asid : bv 16)
-  | Va (tid : nat) (asid : bv 16) (va : bv 36) (last : bool) (upper : bool)
-  | Vaa (tid : nat) (va : bv 36) (last : bool) (upper : bool).
+  | Va (tid : nat) (asid : bv 16) (upper : bool) (vpn : pn) (last : bool)
+  | Vaa (tid : nat) (upper : bool) (vpn : pn) (last : bool).
 
   #[global] Instance dec : EqDecision t.
   solve_decision.
@@ -91,23 +117,22 @@ Module TLBI.
   Definition asid (tlbi : t) : bv 16 :=
     default (Z_to_bv 16 0) (asid_opt tlbi).
 
-  Definition va_opt (tlbi : t) : option (bv 36) :=
+  Definition vpn_opt (tlbi : t) : option pn :=
     match tlbi with
     | All _ => None
     | Asid _ _ => None
-    | Va _ _ va _ _ => Some va
-    | Vaa _ va _ _ => Some va
+    | Va _ _ _ vpn _ => Some vpn
+    | Vaa _ _ vpn _ => Some vpn
     end.
 
-  Definition va (tlbi : t) : bv 36 :=
-    default (Z_to_bv 36 0) (va_opt tlbi).
+  Definition vpn (tlbi : t) : pn := default 0%bv (vpn_opt tlbi).
 
   Definition last_opt (tlbi : t) : option bool :=
     match tlbi with
     | All _ => None
     | Asid _ _ => None
-    | Va _ _ _ last _ => Some last
-    | Vaa _ _ last _ => Some last
+    | Va _ _ _ _ last => Some last
+    | Vaa _ _ _ last => Some last
     end.
 
   Definition last (tlbi : t) : bool :=
@@ -117,8 +142,8 @@ Module TLBI.
     match tlbi with
     | All _ => None
     | Asid _ _ => None
-    | Va _ _ _ _ upper => Some upper
-    | Vaa _ _ _ upper => Some upper
+    | Va _ _ upper _ _ => Some upper
+    | Vaa _ upper _ _ => Some upper
     end.
 End TLBI.
 
@@ -755,12 +780,9 @@ Definition level_length (lvl : Level) : N := 9 * (lvl + 1).
 Definition prefix (lvl : Level) := bv (level_length lvl).
 #[export] Typeclasses Transparent prefix.
 
-Definition va_to_vpn {n : N} (va : bv 64) : bv n :=
-  bv_extract 12 n va.
-
-Definition prefix_to_va {n : N} (upper : bool) (p : bv n) : bv 64 :=
+Definition prefix_to_va (lvl : Level) (upper : bool) (p : prefix lvl) : bv 64 :=
   let varange_bits : bv 16 := if upper then (-1)%bv else 0%bv in
-  let padding := bv_0 (48 - n) in
+  let padding := bv_0 (48 - level_length lvl) in
   bv_concat 64 varange_bits (bv_concat 48 p padding).
 
 Definition is_upper_va (va : bv 64) : option bool :=
@@ -769,27 +791,29 @@ Definition is_upper_va (va : bv 64) : option bool :=
   else if top_bits =? 0%bv then Some false
   else None.
 
-Definition level_prefix {n : N} (va : bv n) (lvl : Level) : prefix lvl :=
-  bv_extract (12 + 9 * (3 - lvl)) (9 * (lvl + 1)) va.
+Definition va_level_prefix (va : bv 64) (lvl : Level) : prefix lvl :=
+  bv_extract (48 - level_length lvl) (level_length lvl) va.
 
-Definition match_prefix_at (lvl : Level) (te_va : prefix lvl) (va : bv 36) : Prop :=
-  te_va = bv_extract (9 * (3 - lvl)) (level_length lvl) va.
-Instance Decision_match_prefix_at (lvl : Level) (te_va : prefix lvl) (va : bv 36) :
-  Decision (match_prefix_at lvl te_va va).
+Definition vpn_level_prefix (vpn : pn) (lvl : Level) : prefix lvl :=
+  bv_extract (36 - level_length lvl) (level_length lvl) vpn.
+
+Definition match_prefix_at (lvl : Level) (te_va : prefix lvl) (vpn : pn) : Prop :=
+  te_va = vpn_level_prefix vpn lvl.
+Instance Decision_match_prefix_at (lvl : Level) (te_va : prefix lvl) (vpn : pn) :
+  Decision (match_prefix_at lvl te_va vpn).
 Proof. unfold_decide. Defined.
 
-Definition level_index {n : N} (va : bv n) (lvl : Level) : bv 9 :=
-  bv_extract 0 9 (level_prefix va lvl).
+(** Get the index at a given level for a VA *)
+Definition va_level_index (va : bv 64) (lvl : Level) : bv 9 :=
+  bv_extract 0 9 (va_level_prefix va lvl).
 
-Definition index_to_offset (idx : bv 9) : bv 12 :=
-  bv_concat 12 idx (bv_0 3).
+(** Get the index at a given level for a VPN (Virtual page number) *)
+Definition vpn_level_index (vpn : pn) (lvl : Level) : bv 9 :=
+  bv_extract 0 9 (vpn_level_prefix vpn lvl).
 
-Definition higher_level {n : N} (va : bv n) : bv (n - 9) :=
-  bv_extract 9 (n - 9) va.
-
-Definition next_entry_addr {n : N} (addr : bv n) (index : bv 9) : address :=
-  bv_concat 56 (bv_0 8) (bv_concat 48 (bv_extract 12 36 addr) (index_to_offset index)).
-
+(** Get the address of an entry in a given table *)
+Definition index_table (table : pn) (index : bv 9) : address :=
+  bv_concat 56 (bv_0 8) (bv_concat 48 table (bv_concat 12 index (bv_0 3))).
 
 (** ** PTE helpers *)
 
@@ -886,6 +910,10 @@ Definition output_addr_size (lvl : Level) : N := 48 - (offset_size lvl).
 Definition output_addr (lvl : Level) (e : bv 64) : bv (output_addr_size lvl) :=
   bv_extract (offset_size lvl) (output_addr_size lvl) e.
 
+(** If the pte is a table entry (check with is_table), then give the page number
+    of the next table *)
+Definition next_table (pte : bv 64) : pn := bv_extract 12 36 pte.
+
 
 (** ** Translation register root helpers *)
 
@@ -911,6 +939,11 @@ Definition asid_ttbr (ts : TState.t) (regime : Regime) : result string reg :=
       mret (TTBR0_EL1 : reg)
   | _ => mthrow "The model does not support regimes other than EL10"
   end.
+
+(** Give the page number of the root level 0 table from the TTBR value *)
+Definition ttbr_root_table (val_ttbr : bv 64) : pn := bv_extract 12 36 val_ttbr.
+
+
 
 (** * TLB ***)
 
@@ -974,6 +1007,11 @@ Module TLB.
     Defined.
 
     Definition pte {lvl} (tlbe : t lvl) := Vector.last tlbe.(ptes).
+
+    Definition is_table {lvl} (tlbe : t lvl) := is_table lvl (pte tlbe).
+    #[export] Typeclasses Transparent is_table.
+
+    Definition next_table {lvl} (tlbe : t lvl) : pn := next_table (pte tlbe).
 
     Program Definition append {lvl clvl : Level}
         (tlbe : t lvl)
@@ -1128,7 +1166,7 @@ Module TLB.
       (asid_roots : list (bv 16 * bv 64))
       (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb, is_changed) '(asid, val_ttbr),
-      let entry_addr := next_entry_addr val_ttbr va in
+      let entry_addr := index_table (ttbr_root_table val_ttbr) va in
       if Memory.read_word entry_addr init mem time is Some memval then
         if decide (is_table root_lvl memval) then
           let ndctxt := NDCtxt.make upper va (Some asid) in
@@ -1168,10 +1206,9 @@ Module TLB.
       (te : Entry.t (Ctxt.lvl ctxt))
       (index : bv 9)
       (mem_strict : bool) : result string (VATLB.t * bool) :=
-    let plvl := Ctxt.lvl ctxt in
-    if decide (¬is_table plvl (Entry.pte te)) then Ok (vatlb, false)
+    if decide (¬ Entry.is_table te) then Ok (vatlb, false)
     else
-      let entry_addr := next_entry_addr (Entry.pte te) index in
+      let entry_addr := index_table (Entry.next_table te) index in
       if Memory.read_word entry_addr init mem time is Some next_pte then
         match inspect $ child_lvl (Ctxt.lvl ctxt) with
         | Some clvl eq:e =>
@@ -1216,13 +1253,13 @@ Module TLB.
     '(vatlb_new, is_changed) ←
       match parent_lvl lvl with
       | None =>
-        va_fill_root tlb.(vatlb) ts init mem time (level_index va root_lvl)
+        va_fill_root tlb.(vatlb) ts init mem time (va_level_index va root_lvl)
                      upper asid_roots mem_strict
       | Some plvl =>
-        let pva := level_prefix va plvl in
-        let index := level_index va lvl in
+        let va_prefix := va_level_prefix va plvl in
+        let index := va_level_index va lvl in
         foldlM (λ prev '(asid, _),
-          let ndctxt := NDCtxt.make upper pva (Some asid) in
+          let ndctxt := NDCtxt.make upper va_prefix (Some asid) in
           let ctxt := existT plvl ndctxt in
           (* parent entries should be from the original TLB (in the parent level) *)
           let tes := elements (VATLB.get ctxt tlb.(vatlb)) in
@@ -1384,16 +1421,16 @@ Module TLB.
   Proof. unfold_decide. Defined.
 
   (** Decide if a TLB entry is affected by an invalidation by va at this asid *)
-  Definition affects_va (va : bv 36) (last : bool) (upper : bool)
+  Definition affects_va (upper : bool) (vpn : pn) (last : bool)
                          (ctxt : Ctxt.t)
                          (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
-    (match_prefix_at (Ctxt.lvl ctxt) (Ctxt.va ctxt) va)
+    (match_prefix_at (Ctxt.lvl ctxt) (Ctxt.va ctxt) vpn)
     ∧ (if last then is_final (Ctxt.lvl ctxt) (Entry.pte te) else True)
     ∧ (upper = Ctxt.upper ctxt).
-  Instance Decision_affects_va (va : bv 36) (last : bool) (upper : bool)
+  Instance Decision_affects_va (upper : bool) (vpn : pn) (last : bool)
                                 (ctxt : Ctxt.t)
                                 (te : Entry.t (Ctxt.lvl ctxt)) :
-    Decision (affects_va va last upper ctxt te).
+    Decision (affects_va upper vpn last ctxt te).
   Proof. unfold_decide. Defined.
 
   (** Decide a TLBI instruction affects a given TLB entry *)
@@ -1401,10 +1438,10 @@ Module TLB.
                      (te : Entry.t (Ctxt.lvl ctxt)) : Prop :=
     match tlbi with
     | TLBI.All tid => True
-    | TLBI.Va tid asid va last upper =>
-      affects_asid asid ctxt ∧ affects_va va last upper ctxt te
+    | TLBI.Va tid asid upper vpn last =>
+      affects_asid asid ctxt ∧ affects_va upper vpn last ctxt te
     | TLBI.Asid tid asid => affects_asid asid ctxt
-    | TLBI.Vaa tid va last upper => affects_va va last upper ctxt te
+    | TLBI.Vaa tid upper vpn last => affects_va upper vpn last ctxt te
     end.
   Instance Decision_affects (tlbi : TLBI.t) (ctxt : Ctxt.t)
                      (te : Entry.t (Ctxt.lvl ctxt)) :
@@ -1679,8 +1716,8 @@ Module TLB.
             result string (list (bv 64 * list (bv 64) * (option nat))) :=
     upper ← othrow ("VA is not in the 48 bits range: " ++ (pretty va))%string
                 (is_upper_va va);
-    let ndctxt_asid := NDCtxt.make upper (level_prefix va lvl) (Some asid) in
-    let ndctxt_global := NDCtxt.make upper (level_prefix va lvl) None in
+    let ndctxt_asid := NDCtxt.make upper (va_level_prefix va lvl) (Some asid) in
+    let ndctxt_global := NDCtxt.make upper (va_level_prefix va lvl) None in
     candidates_asid ←
       get_leaf_ptes_with_inv_time_by_ctxt mem tid tlb trans_time lvl ndctxt_asid;
     candidates_global ←
@@ -1716,17 +1753,17 @@ Module TLB.
                 (asid : option (bv 16))
                 (ttbr : reg) :
         result string (list (bv 64 * list (bv 64) * (option nat))) :=
+    let index := va_level_index va lvl in
     if parent_lvl lvl is Some parent_lvl then
       upper ← othrow ("VA is not in the range: " ++ (pretty va))%string
         (is_upper_va va);
-      let ndctxt := NDCtxt.make upper (level_prefix va parent_lvl) asid in
+      let ndctxt := NDCtxt.make upper (va_level_prefix va parent_lvl) asid in
       let ctxt := existT parent_lvl ndctxt in
       let tes := VATLB.get ctxt tlb.(TLB.vatlb) in
-      let tes := filter (λ te, is_table parent_lvl (TLB.Entry.pte te)) tes in
+      let tes := filter TLB.Entry.is_table tes in
       invalid_ptes ←
         for te in (elements tes) do
-          let entry_addr :=
-            next_entry_addr (Entry.pte te) (level_index va lvl) in
+          let entry_addr := index_table (Entry.next_table te) index in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
             if decide (¬ is_tlb_fillable lvl memval) then
               ti ← invalidation_time mem tid trans_time ctxt te;
@@ -1745,7 +1782,7 @@ Module TLB.
           val_ttbr ← othrow "TTBR should be a 64 bit value"
             $ regval_to_val ttbr sreg.1;
           let entry_addr :=
-              next_entry_addr (val_to_addr (size:= 8) val_ttbr) (level_index va lvl) in
+            index_table (ttbr_root_table val_ttbr) index in
           if Memory.read_word entry_addr init mem trans_time is Some memval then
             if decide (¬ is_tlb_fillable lvl memval) then
               mret $ Some ((val_ttbr : bv 64), [memval], None)
@@ -1876,7 +1913,7 @@ Module IIS.
   Module TransRes.
     Record t :=
       make {
-          va : bv 36;
+          vpn : pn;
           trans_start : nat;
           trans_end : nat;
           root : option {ttbr : reg & reg_type ttbr};
@@ -2330,7 +2367,7 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
   let va := tlbi.(TLBIInfo_rec).(TLBIRecord_address) in
   let last := tlbi.(TLBIInfo_rec).(TLBIRecord_level) =? TLBILevel_Last in
   let upper := bv_extract 55 1 va =? 1%bv in
-  let va_extracted := bv_extract 12 36 va in
+  let vpn := va_to_vpn va in
   ts ← mget PPState.state;
   iis ← mget PPState.iis;
   let vpre := ts.(TState.vcse) ⊔ ts.(TState.vdsb) ⊔ ((*iio*) IIS.strict iis)
@@ -2340,8 +2377,8 @@ Definition run_tlbi (n_threads tid : nat) (viio : view) (tlbi : TLBIInfo) :
     | TLBIOp_ALL => mret $ TLBI.All tid
     | TLBIOp_VMALL => mret $ TLBI.All tid
     | TLBIOp_ASID => mret $ TLBI.Asid tid asid
-    | TLBIOp_VAA => mret $ TLBI.Vaa tid va_extracted last upper
-    | TLBIOp_VA => mret $ TLBI.Va tid asid va_extracted last upper
+    | TLBIOp_VAA => mret $ TLBI.Vaa tid upper vpn last
+    | TLBIOp_VA => mret $ TLBI.Va tid asid upper vpn last
     | _ => mthrow "Unsupported kind of TLBI"
     end;
   let recipients :=
