@@ -41,7 +41,8 @@
 (** Page-table setup AST.
 
     VA-side names may be declared with [virtual] or the TOML [symbolic] list.
-    PA-side names may be declared with [physical], or allocated on first use by
+    [aligned ... virtual ...] statements constrain those VA-side names. PA-side
+    names may be declared with [physical], or allocated on first use by
     mapping/data-init statements. *)
 type attr =
   | Code
@@ -62,6 +63,11 @@ type stmt =
   | Virtual of string list
   (* [physical pa_x pa_y;] predeclares PA-side names. *)
   | Physical of string list
+  (* [aligned 2097152 virtual x y;] constrains VA-side names. *)
+  | AlignedVirtual of
+      { alignment : Z.t;
+        names : string list
+      }
   (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side target.
      Optional [with ... and default] clauses override descriptor fields. *)
   | Mapping of
