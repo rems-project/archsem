@@ -199,12 +199,15 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
                   ∀ out : outcome,
                   Exec.t (PPState.t tState mEvent iis) string
                          (eff_ret out * option nat);
-      (** Update the thread state after emission of a promise. The new promise
-          has already been added to the memory when calling that function. I'm
-          not considering that emit_promise can fail or have a non-deterministic
-          behaviour. TODO: Add support for failure *)
-      emit_promise : (* tid *) nat → memoryMap → PromMemory.t mEvent →
-                     mEvent → tState → tState;
+      (** Update a thread state after emission of a promise. This is called
+          once for every thread of the machine, with [tid] being the tid of the
+          thread being updated; the thread that made the promise is
+          [mEvent_tid] of the event. The new promise has already been added to
+          the memory when calling that function. I'm not considering that
+          emit_promise can fail or have a non-deterministic behaviour.
+          TODO: Add support for failure *)
+      emit_promise : (* updated thread tid *) nat → memoryMap →
+                     PromMemory.t mEvent → mEvent → tState → tState;
       (** Hook for extra UB checks to be done before returning a final state,
           e.g. BBM checks. Any returned string is an error, [[]] is success. *)
       check_valid_end : (* tid *) nat → memoryMap → tState →
@@ -288,11 +291,13 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Definition seq_step (tid : fin n) : relation t :=
         λ st1 st2, st2 ∈ Exec.success_state_list $ run_tid tid st1.
 
-      (** Emit a promise from a thread by tid *)
-      Definition promise_tid (tid : fin n) (event : mEvent) (st : t) :=
+      (** Emit a promise, updating every thread state. The thread that made
+          the promise is [prom.(mEvent_tid) event] *)
+      Definition promise (event : mEvent) (st : t) :=
         let st := set events (event ::.) st in
-        set (tstate tid)
-          (prom.(emit_promise) tid st.(initmem) st.(events) event)
+        set tstates
+          (vimap
+             (λ tid, prom.(emit_promise) tid st.(initmem) st.(events) event))
           st.
 
       (** Compute the set of allowed promises by a thread indexed by tid *)
@@ -301,7 +306,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           Prop :=
         if certified then
           prom.(mEvent_tid) ev = tid ∧
-          ∃ st', rtc (seq_step tid) (promise_tid tid ev st) st' ∧
+          ∃ st', rtc (seq_step tid) (promise ev st) st' ∧
                    nopromises_tid st' tid
         else prom.(mEvent_tid) ev = tid.
 
@@ -311,11 +316,11 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         (ps', ()) ∈ (run_tid tid ps) → step certified ps ps'
       | SPromise (tid : fin n) (event : mEvent) :
         allowed_promises_tid certified ps tid event →
-        step certified ps (promise_tid tid event ps).
+        step certified ps (promise event ps).
 
       Lemma step_promise certified (ps ps' : t) (tid : fin n) (event : mEvent) :
         allowed_promises_tid certified ps tid event →
-        ps' = promise_tid tid event ps →
+        ps' = promise event ps →
         step certified ps ps'.
       Proof using. sauto l:on. Qed.
 
@@ -497,7 +502,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     Definition cpromise_tid (fuel : nat) (tid : fin n) : Exec.t t string () :=
       st ← mGet;
       ev ← mlift (promise_select_tid fuel st tid);
-      mSetv (promise_tid prom tid ev st).
+      mSetv (promise prom ev st).
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
@@ -551,7 +556,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       | 0 =>
         tid ← mchoosef (fin n);
         next_ev ← mchoosel (execution_results !!! tid).(promises);
-        mSet (promise_tid prom tid next_ev);;
+        mSet (promise prom next_ev);;
         mret None
       | 1 =>
         (* Compute cartesian products of the possible thread states *)
