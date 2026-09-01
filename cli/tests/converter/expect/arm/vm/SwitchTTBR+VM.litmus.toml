@@ -99,9 +99,9 @@ name = "SwitchTTBR+VM"
 
 [thread."0".regs]
   _PC = 0x1000
-  "R0" = 0x300000
+  "R0" = 0x2000000300000
   "R2" = 0x400000
-  "TTBR0_EL1" = 0x2c0000
+  "TTBR0_EL1" = 0x10000002c0000
   "SCTLR_EL1" = 1
   CurrentEL = 1
   "R1" = 0
@@ -140,4 +140,4 @@ name = "SwitchTTBR+VM"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:X1" = 1}, {"0:X3" = 0x300000}]}
+  assertion = {and = [{"0:X1" = 1}, {"0:X3" = 0x2000000300000}]}
