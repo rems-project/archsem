@@ -3,6 +3,7 @@ name = "SwitchTTBR+VM"
 symbolic = ["x"]
 
 page_table_setup = """
+option default_tables = false;
 physical pa0 pa1;
 *pa0 = 0;
 *pa1 = 1;

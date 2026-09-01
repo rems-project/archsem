@@ -12,13 +12,13 @@ name = "SwitchTTBR+VM"
   kind = "pagetable"
   addr = 0x2c0000
   step = 8
-  data = 0x304003
+  data = 0x301003
 
 [[memory]]
   kind = "pagetable"
   addr = 0x300000
   step = 8
-  data = 0x307003
+  data = 0x304003
 
 [[memory]]
   kind = "pagetable"
@@ -30,19 +30,25 @@ name = "SwitchTTBR+VM"
   kind = "pagetable"
   addr = 0x302000
   step = 8
+  data = 0x4c1
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x302008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x302010
+  step = 8
   data = 0x303003
 
 [[memory]]
   kind = "pagetable"
   addr = 0x303000
   step = 8
-  data = 0x4c1
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x303008
-  step = 8
-  data = 0x200441
+  data = 0x401443
 
 [[memory]]
   kind = "pagetable"
@@ -71,36 +77,6 @@ name = "SwitchTTBR+VM"
 [[memory]]
   kind = "pagetable"
   addr = 0x306000
-  step = 8
-  data = 0x401443
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x307000
-  step = 8
-  data = 0x308003
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x308000
-  step = 8
-  data = 0x4c1
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x308008
-  step = 8
-  data = 0x200441
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x308010
-  step = 8
-  data = 0x309003
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x309000
   step = 8
   data = 0x402443
 

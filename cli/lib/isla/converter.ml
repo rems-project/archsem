@@ -361,10 +361,14 @@ let build_lookup_addr asm_result page_table =
     match page_table with
     | None -> []
     | Some layout ->
-        ("page_table_base", layout.Page_table_builder.root)
-        :: (layout.Page_table_builder.table_symbols_pa
-          @ layout.Page_table_builder.data_symbols_pa
-           )
+        let default_root =
+          Option.map
+            (fun root -> ("page_table_base", root))
+            layout.Page_table_builder.default_root
+          |> Option.to_list
+        in
+        default_root @ layout.Page_table_builder.table_symbols_pa
+        @ layout.Page_table_builder.data_symbols_pa
   in
   let symbols_addr = asm_result.Assembler.symbols @ page_table_symbols in
   fun name ->
@@ -516,7 +520,7 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   in
   let lookup_addr = build_lookup_addr asm_result page_table in
   let page_table_root =
-    Option.map (fun layout -> layout.Page_table_builder.root) page_table
+    Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
   in
   let threads =
     build_threads ~arch:ir.arch ?page_table_entries ?page_table_root ~lookup_addr

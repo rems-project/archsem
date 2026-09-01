@@ -61,6 +61,7 @@
 %token RBRACE "}"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
+%token OPTION
 %token ALIGNED
 %token VIRTUAL
 %token PHYSICAL
@@ -93,6 +94,7 @@
 %type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
 %type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
+%type <bool> page_table_bool
 %type <int> page_table_mapping_level
 %type <Page_table_ast.table_stage> page_table_stage
 %type <string> kw_name
@@ -113,6 +115,11 @@ page_table_stmt:
   | b = page_table_block; option(";") { b }
 
 page_table_stmt_inner:
+  | OPTION; name = IDENT; "="; value = page_table_bool
+    { if name <> "default_tables" then
+        failwith ("unsupported page-table option: " ^ name);
+      Page_table_ast.OptionDefaultTables value
+    }
   | VIRTUAL; names = nonempty_list(IDENT)
     { Page_table_ast.Virtual names }
   | PHYSICAL; names = nonempty_list(IDENT)
@@ -172,6 +179,10 @@ page_table_mapping_level:
     { try Z.to_int level
       with Z.Overflow -> failwith "page-table level is out of range"
     }
+
+page_table_bool:
+  | TRUE { true }
+  | FALSE { false }
 
 prop:
   | e1 = prop; "|"; e2 = prop { Or [e1; e2] }

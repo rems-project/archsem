@@ -38,63 +38,26 @@
 (*                                                                            *)
 (******************************************************************************)
 
-{
-  open Parser
+open OUnit2
 
-  exception Error of string
-}
+let parse input =
+  let lexbuf = Lexing.from_string input in
+  Isla.Parser.page_table_setup Isla.Lexer.token lexbuf
 
-let digit = ['0'-'9']
-let hex = ['0'-'9' 'a'-'f' 'A'-'F']
-let ident_start = ['a'-'z' 'A'-'Z' '_']
-let ident_char = ident_start | digit
+let test_default_tables_true _ =
+  assert_equal
+    [Isla.Page_table_ast.OptionDefaultTables true]
+    (parse "option default_tables = true;")
 
-rule token = parse
-  | [' ' '\t']+ { token lexbuf }
-  | "\r\n" { Lexing.new_line lexbuf; token lexbuf }
-  | ['\n' '\r'] { Lexing.new_line lexbuf; token lexbuf }
-  | '(' { LPAREN }
-  | ')' { RPAREN }
-  | '&' { AND }
-  | "|->" { MAPS_TO }
-  | "?->" { MAYBE_MAPS_TO }
-  | '|' { OR }
-  | '~' { NOT }
-  | '=' { EQ }
-  | '*' { STAR }
-  | ':' { COLON }
-  | ';' { SEMICOLON }
-  | '[' { LBRACKET }
-  | ']' { RBRACKET }
-  | '{' { LBRACE }
-  | '}' { RBRACE }
-  | ',' { COMMA }
-  | '-' { MINUS }
-  | "aligned" { ALIGNED }
-  | "option" { OPTION }
-  | "virtual" { VIRTUAL }
-  | "physical" { PHYSICAL }
-  | "identity" { IDENTITY }
-  | "with" { WITH }
-  | "and" { AND_KW }
-  | "default" { DEFAULT }
-  | "code" { CODE }
-  | "data" { DATA }
-  | "invalid" { INVALID }
-  | "table" { TABLE }
-  | "s1table" { S1TABLE }
-  | "s2table" { S2TABLE }
-  | "at" { AT }
-  | "level" { LEVEL }
-  | "true" { TRUE }
-  | "false" { FALSE }
-  | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
-  | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
-  | digit+ as s { NUM (Z.of_string s) }
-  | ident_start ident_char* as s { IDENT s }
-  | eof { EOF }
-  | _ as c {
-      raise (Error (Printf.sprintf
-        "assertion lexer: unexpected character '%c' at position %d"
-        c (Lexing.lexeme_start lexbuf)))
-    }
+let test_default_tables_false _ =
+  assert_equal
+    [Isla.Page_table_ast.OptionDefaultTables false]
+    (parse "option default_tables = false;")
+
+let tests =
+  "Isla.Page_table"
+  >::: [ "accept default_tables = true" >:: test_default_tables_true;
+         "accept default_tables = false" >:: test_default_tables_false
+       ]
+
+let () = run_test_tt_main tests
