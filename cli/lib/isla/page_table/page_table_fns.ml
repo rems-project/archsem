@@ -48,11 +48,13 @@ let page_function =
     | args -> Fn_registry.arity_error "page" 1 (List.length args)
   )
 
+let shift_ttbr_id id = Z.shift_left id 48
+
 (** [asid(v)] shifts an ASID value into bits [63:48]. *)
 let asid_function =
   ( "asid",
     function
-    | [v] -> Z.shift_left v 48
+    | [v] -> shift_ttbr_id v
     | args -> Fn_registry.arity_error "asid" 1 (List.length args)
   )
 
@@ -158,6 +160,31 @@ let mkdesc_function level =
   in
   (name, eval)
 
+let check_unsigned name arg bits value =
+  if Z.sign value < 0 || Z.geq value Z.(one lsl bits) then
+    Fn_registry.error "%s: argument %s does not fit in %d bits" name arg bits
+
+(** [ttbr(asid=..., base=...)] and [ttbr(vmid=..., base=...)] combine a
+    concrete translation-table root PA with its 16-bit address-space ID. *)
+let ttbr_function =
+  let name = "ttbr" in
+  let eval kwargs =
+    Fn_registry.check_kwargs name ["asid"; "vmid"; "base"] kwargs;
+    let base = Fn_registry.required_kwarg name "base" kwargs in
+    let (id_name, id) =
+      match (List.assoc_opt "asid" kwargs, List.assoc_opt "vmid" kwargs) with
+      | (Some id, None) -> ("asid", id)
+      | (None, Some id) -> ("vmid", id)
+      | _ -> Fn_registry.error "%s: expected exactly one of asid or vmid" name
+    in
+    check_unsigned name id_name 16 id;
+    check_unsigned name "base" 48 base;
+    if not (Z.equal (Z.erem base (Z.of_int Allocator.page_size)) Z.zero) then
+      Fn_registry.error "%s: argument base must be 4KB aligned" name;
+    Z.logor base (shift_ttbr_id id)
+  in
+  (name, eval)
+
 let positional_functions ?page_table_entries () =
   let functions = [page_function; asid_function] in
   match page_table_entries with
@@ -170,4 +197,4 @@ let positional_functions ?page_table_entries () =
 
 let keyword_functions : Fn_registry.keyword_fn list =
   let levels = [0; 1; 2; 3] in
-  List.map mkdesc_function levels
+  ttbr_function :: List.map mkdesc_function levels
