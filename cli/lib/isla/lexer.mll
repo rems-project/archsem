@@ -71,6 +71,7 @@ rule token = parse
   | ',' { COMMA }
   | '-' { MINUS }
   | "aligned" { ALIGNED }
+  | "option" { OPTION }
   | "virtual" { VIRTUAL }
   | "physical" { PHYSICAL }
   | "identity" { IDENTITY }
