@@ -60,6 +60,7 @@ Extract Inlined Constant SailStdpp.TypeCasts.cast_N => "Fun.id".
 Extraction Implicit SailStdpp.TypeCasts.cast_Z [m n].
 Extract Inlined Constant SailStdpp.TypeCasts.cast_Z => "Fun.id".
 
+Extract Inductive SailStdpp.Values.result => "result" [ "Ok" "Error" ].
 
 (** * Actual extraction *)
 (* DO NOT run this file in your editor. This will extract in the correct folder

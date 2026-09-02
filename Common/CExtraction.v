@@ -401,7 +401,7 @@ Extraction Implicit hset [n].
 
 (** * Result *)
 
-(* Extract Inductive result => result [ "Ok" "Error"]. *)
+Extract Inductive result => "Support.cresult" [ "Ok" "Error"].
 
 (** * CTrans
 

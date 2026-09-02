@@ -38,6 +38,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
+(* Supporting types *)
+
+(* Rocq Extraction command can't re-order type parameters *)
+type ('e, 'a) cresult = ('a, 'e) result
+
 (* Supporting functions *)
 
 let list_get i l = List.nth l (Z.to_int i)
