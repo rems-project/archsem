@@ -185,6 +185,12 @@ Module TState.
       Some $ set regs (dmap_insert reg rv) ts
     else None.
 
+  (** Returns the minimum coherence flag for a range of addresses. *)
+  Definition min_cohs (addrs : list address) (ts : t) : nat :=
+    if addrs is addr :: tl then
+      foldl (λ res addr, min res $ ts.(coh) !!! addr) (ts.(coh) !!! addr) tl
+    else 0%nat.
+
   (** Sets the coherence view of an address *)
   Definition set_coh (addr : address) (v : view) : t → t :=
     set coh (insert addr v).
@@ -285,7 +291,7 @@ Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc)
     (tread : nat) (addr : address) :
     option (bv 8 * view * nat) :=
   if fwdb !! addr is Some fwd then
-    if (tread <? fwd.(FwdItem.time))%nat then
+    if (tread <=? fwd.(FwdItem.time))%nat then
       Some (fwd.(FwdItem.byte), FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time))
     else None
   else None.
@@ -307,9 +313,10 @@ Definition read_mem (addr : address) (size : N) (macc : mem_acc) (imem : memoryM
   let vbob := ts.(TState.vdmb) ⊔ ts.(TState.visb) ⊔ ts.(TState.vacq)
                 (* SC Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
+  let vcoh := TState.min_cohs addrs ts in
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
-  candidates ← mlift $ Memory.read_all addr size imem mem vpre;
+  candidates ← mlift $ Memory.read_all addr size imem mem (vpre ⊔ vcoh);
   candidate ← mchoosel candidates;
   let tread := max_list_with snd candidate in
   (* Record every atomic RMW read so the later write can check atomicity and
