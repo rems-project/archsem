@@ -601,7 +601,7 @@ Import Promising.
 
 Definition UMPromising : Promising.Model :=
   {|tState := TState.t;
-    tState_init := λ tid, TState.init;
+    tState_init := λ tid mem regs, mret (TState.init mem regs);
     tState_regs := TState.reg_map;
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
@@ -612,8 +612,9 @@ Definition UMPromising : Promising.Model :=
     filter_promises := λ _ _ _ promises, promises;
     handle_outcome := λ _ tid initmem, run_outcome tid initmem;
     emit_promise := λ tid initmem mem msg ts,
-      if bool_decide (Msg.tid msg = tid) then TState.promise (length mem) ts
-      else ts;
+      mret $
+        if bool_decide (Msg.tid msg = tid) then TState.promise (length mem) ts
+        else ts;
     check_valid_end := λ _ _ _ _, [];
     memory_snapshot := Memory.to_memMap;
   |}.

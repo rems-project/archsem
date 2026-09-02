@@ -218,7 +218,7 @@ module Build (ArchReq : ArchRequired) = struct
 
       type state
 
-      val init : t -> termCond -> ArchState.t -> state
+      val init : t -> termCond -> ArchState.t -> (state, string) result
 
       val step :
          t ->
