@@ -450,20 +450,21 @@ Section Model.
       transitions. Need [fuel] for all instruction + all flushed writes + 1 for the
       terminating step *)
   Definition x86_tso_opmodel : opModel threads :=
+    let init term initSt := mret (from_archState term initSt) in
     let opstep term _ _ :=
       fstate ← mget (to_terminated_archState term);
       if fstate is Some fs then mret (Some fs) else
         step term;;
         mret None
     in
-    opModel.Make threads mstate from_archState opstep.
+    opModel.Make threads mstate init opstep.
 
 
   (** The X86-TSO model with eager steps. The fuel of of the previous model plus
       one is guaranteed to be sufficient but some lower fuel might work
       depending on the interleaving of eager and non-eager steps. *)
   Definition x86_tso_opmodel_eager : opModel threads :=
-    let init term initSt := (from_archState term initSt, true) in
+    let init term initSt := mret (from_archState term initSt, true) in
     let step term _ fuel :=
       fstate ← mget (to_terminated_archState term ∘ fst);
       if fstate is Some fs then mret (Some fs)

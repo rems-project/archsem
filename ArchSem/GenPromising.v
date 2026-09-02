@@ -168,7 +168,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       (** The thread state of the model *)
       tState : Type;
       (** Initialize the model thread state from architectural state *)
-      tState_init : (* tid *) nat → memoryMap → registerMap → tState;
+      tState_init : (* tid *) nat → memoryMap → registerMap →
+                    result string tState;
       (** Get a register map out of a thread state to test the termination
           condition and compute a final state *)
       tState_regs : tState → registerMap;
@@ -199,15 +200,14 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
                   ∀ out : outcome,
                   Exec.t (PPState.t tState mEvent iis) string
                          (eff_ret out * option nat);
-      (** Update a thread state after emission of a promise. This is called
+      (** Updates a thread state after emission of a promise. This is called
           once for every thread of the machine, with [tid] being the tid of the
-          thread being updated; the thread that made the promise is
-          [mEvent_tid] of the event. The new promise has already been added to
-          the memory when calling that function. I'm not considering that
-          emit_promise can fail or have a non-deterministic behaviour.
-          TODO: Add support for failure *)
+          thread being updated; the thread that made the promise is [mEvent_tid]
+          of the event. The new promise has already been added to the memory
+          when calling that function. *)
       emit_promise : (* updated thread tid *) nat → memoryMap →
-                     PromMemory.t mEvent → mEvent → tState → tState;
+                     PromMemory.t mEvent → mEvent → tState →
+                     result string tState;
       (** Hook for extra UB checks to be done before returning a final state,
           e.g. BBM checks. Any returned string is an error, [[]] is success. *)
       check_valid_end : (* tid *) nat → memoryMap → tState →
@@ -293,12 +293,14 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
       (** Emit a promise, updating every thread state. The thread that made
           the promise is [prom.(mEvent_tid) event] *)
-      Definition promise (event : mEvent) (st : t) :=
+      Definition promise (event : mEvent) (st : t) : result string t :=
         let st := set events (event ::.) st in
-        set tstates
-          (vimap
-             (λ tid, prom.(emit_promise) tid st.(initmem) st.(events) event))
-          st.
+        nts ←
+          vimapM
+            (λ tid ts,
+               prom.(emit_promise) tid st.(initmem) st.(events) event ts)
+            st.(tstates);
+        mret (setv tstates nts st).
 
       (** Compute the set of allowed promises by a thread indexed by tid *)
       Definition allowed_promises_tid (certified : bool) (st : t) (tid : fin n)
@@ -306,33 +308,29 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           Prop :=
         if certified then
           prom.(mEvent_tid) ev = tid ∧
-          ∃ st', rtc (seq_step tid) (promise ev st) st' ∧
-                   nopromises_tid st' tid
+          ∃ pst st', promise ev st = Ok pst ∧
+                       rtc (seq_step tid) pst st' ∧
+                       nopromises_tid st' tid
         else prom.(mEvent_tid) ev = tid.
 
       (** The inductive stepping relation of the promising model *)
       Inductive step (certified : bool) (ps : t) : (t) -> Prop :=
       | SRun (tid : fin n) (ps' : t) :
         (ps', ()) ∈ (run_tid tid ps) → step certified ps ps'
-      | SPromise (tid : fin n) (event : mEvent) :
+      | SPromise (tid : fin n) (event : mEvent) (ps' : t) :
         allowed_promises_tid certified ps tid event →
-        step certified ps (promise event ps).
-
-      Lemma step_promise certified (ps ps' : t) (tid : fin n) (event : mEvent) :
-        allowed_promises_tid certified ps tid event →
-        ps' = promise event ps →
+        promise event ps = Ok ps' →
         step certified ps ps'.
-      Proof using. sauto l:on. Qed.
 
       (** Create an initial promising state from a generic machine state *)
-      Definition from_archState (ms: archState n) : t :=
-        {|tstates :=
-            fun_to_vec
-              (λ tid,
-                 prom.(tState_init) tid ms.(archState.memory)
-                                                  $ ms.(archState.regs) !!! tid);
-          initmem := ms.(archState.memory);
-          events := []|}.
+      Definition from_archState (ms: archState n) : result string t :=
+        nts ←
+          vimapM
+            (λ tid rm, prom.(tState_init) tid ms.(archState.memory) rm)
+            ms.(archState.regs);
+        mret {|tstates := nts;
+               initmem := ms.(archState.memory);
+               events := []|}.
 
       (** Convert a promising state to a generic machine state.
           This is a lossy conversion *)
@@ -349,22 +347,30 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
        (isem : iMon ()) : archModel.nc ∅ :=
     λ n term (initMs : archState n),
       {[ mr : archModel.res ∅ n term |
-         let initPs := PState.from_archState prom initMs in
-         match mr with
-         | archModel.Res.FinalState fs _ =>
-             ∃ finPs, rtc (PState.step isem prom certified) initPs finPs ∧
-                        PState.to_archState prom finPs = fs ∧
-                        PState.nopromises prom finPs ∧
-                        PState.check_valid_end prom finPs = []
-         | archModel.Res.Error s =>
-             ∃ finPs,
-              rtc (PState.step isem prom certified) initPs finPs ∧
-                ((∃ tid, Error s ∈ PState.run_tid isem prom tid finPs)
-                  ∨
-                 (PState.terminated prom term finPs ∧
-                  PState.nopromises prom finPs ∧
-                  s ∈ PState.check_valid_end prom finPs))
-         | _ => False
+         match PState.from_archState prom initMs with
+         | Error s => mr = archModel.Res.Error s
+         | Ok initPs =>
+             match mr with
+             | archModel.Res.FinalState fs _ =>
+                 ∃ finPs, rtc (PState.step isem prom certified) initPs finPs ∧
+                            PState.to_archState prom finPs = fs ∧
+                            PState.nopromises prom finPs ∧
+                            PState.check_valid_end prom finPs = []
+             | archModel.Res.Error s =>
+                 ∃ finPs,
+                  rtc (PState.step isem prom certified) initPs finPs ∧
+                    ((∃ tid, Error s ∈ PState.run_tid isem prom tid finPs)
+                      ∨
+                     (∃ tid ev,
+                        PState.allowed_promises_tid isem prom certified finPs
+                          tid ev ∧
+                        PState.promise prom ev finPs = Error s)
+                      ∨
+                     (PState.terminated prom term finPs ∧
+                      PState.nopromises prom finPs ∧
+                      s ∈ PState.check_valid_end prom finPs))
+             | _ => False
+             end
          end]}.
 
   (** Computational promising state. Right now it the same type as PState.t but
@@ -502,7 +508,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     Definition cpromise_tid (fuel : nat) (tid : fin n) : Exec.t t string () :=
       st ← mGet;
       ev ← mlift (promise_select_tid fuel st tid);
-      mSetv (promise prom ev st).
+      nst ← mlift (promise prom ev st);
+      mSetv nst.
 
     (** Run any possible step, this is the most exhaustive and expensive kind of
         search but it is obviously correct. If a thread has reached termination
@@ -556,7 +563,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       | 0 =>
         tid ← mchoosef (fin n);
         next_ev ← mchoosel (execution_results !!! tid).(promises);
-        mSet (promise prom next_ev);;
+        nst ← mlift (promise prom next_ev st);
+        mSetv nst;;
         mret None
       | 1 =>
         (* Compute cartesian products of the possible thread states *)

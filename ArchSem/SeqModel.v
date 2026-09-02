@@ -156,7 +156,7 @@ Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
         transition per instruction, but one could easily make one that does one
         transition per outcome *)
     Definition sequential_opmodel (isem : iMon ()) : opModel 1 :=
-      let init _ initSt := {| sst := initSt; written := ∅ |} in
+      let init _ initSt := mret {| sst := initSt; written := ∅ |} in
       let step term _ _ :=
         st ← mget sst;
         if decide (archState.is_terminated term st) is left p
