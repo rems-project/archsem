@@ -292,6 +292,7 @@ Extract Inlined Constant Nat.testbit => "ZO.testbitZ".
 Extract Inlined Constant N.testbit => "ZO.testbitZ".
 Extract Inlined Constant Z.testbit => "ZO.testbitZ".
 
+Extract Inlined Constant Pos.reverse => "Pos_reverse.pos_reverse".
 
 (** * Bitvector *)
 
