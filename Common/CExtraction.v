@@ -39,6 +39,8 @@
 (******************************************************************************)
 
 From Stdlib Require Import ZArith.
+#[warnings="-deprecated-library-file-since-8.20"]
+From Stdlib Require Import Zeuclid.
 From Stdlib Require Import Extraction.
 
 Require Import Options.
@@ -56,6 +58,7 @@ Extract Inlined Constant Decision => "bool".
 Extract Inlined Constant Bool.eqb => "(=)".
 Extraction Inline decide.
 Extraction Inline decide_rel.
+
 
 (** * Integers
 
@@ -87,10 +90,13 @@ Extract Inlined Constant N.succ => "ZO.succ".
 Extract Inlined Constant Z.succ => "ZO.succ".
 
 Extract Inlined Constant Pos.pred => "ZO.pred_pos".
+Extract Inlined Constant Pos.pred_N => "ZO.pred_nat".
 Extract Inlined Constant N.pred => "ZO.pred_nat".
 Extract Inlined Constant Z.pred => "ZO.pred".
 Extract Inlined Constant Init.Nat.pred => "ZO.pred_nat".
 Extract Inlined Constant PeanoNat.Nat.pred => "ZO.pred_nat".
+
+(** ** Basic arithmetic *)
 
 Extract Inlined Constant BinPos.Pos.add => "ZO.add".
 Extract Inlined Constant PosDef.Pos.add => "ZO.add".
@@ -107,6 +113,7 @@ Extract Inlined Constant PosDef.Pos.sub => "ZO.sub_pos".
 Extract Inlined Constant BinNat.N.sub => "ZO.sub_nat".
 Extract Inlined Constant NatDef.N.sub => "ZO.sub_nat".
 Extract Inlined Constant Z.sub => "ZO.sub".
+Extract Inlined Constant Z.pos_sub => "ZO.sub".
 Extract Inlined Constant Init.Nat.sub => "ZO.sub_nat".
 Extract Inlined Constant PeanoNat.Nat.sub => "ZO.sub_nat".
 
@@ -117,6 +124,12 @@ Extract Inlined Constant BinNatDef.N.mul => "ZO.mul".
 Extract Inlined Constant Z.mul => "ZO.mul".
 Extract Inlined Constant Init.Nat.mul => "ZO.mul".
 Extract Inlined Constant PeanoNat.Nat.mul => "ZO.mul".
+
+Extract Inlined Constant PeanoNat.Nat.pow => "ZO.powZ".
+Extract Inlined Constant Z.pow_pos => "ZO.powZ".
+Extract Inlined Constant Z.pow => "ZO.powZ".
+
+(** ** Comparisons *)
 
 Extract Inlined Constant BinPos.Pos.min => "ZO.min".
 Extract Inlined Constant BinNat.N.min => "ZO.min".
@@ -164,8 +177,12 @@ Extract Inlined Constant PeanoNat.Nat.ltb => "ZO.lt".
 Extract Inlined Constant Init.Nat.ltb => "ZO.lt".
 Extract Inlined Constant Z.leb => "ZO.leq".
 Extract Inlined Constant Z.ltb => "ZO.lt".
+Extract Inlined Constant Z.geb => "ZO.geq".
+Extract Inlined Constant Z.gtb => "ZO.gt".
 Extract Inlined Constant Z.le_dec => "ZO.leq".
 Extract Inlined Constant Z.lt_dec => "ZO.lt".
+Extract Inlined Constant N.leb => "ZO.leq".
+Extract Inlined Constant N.ltb => "ZO.lt".
 Extract Inlined Constant N.le_dec => "ZO.leq".
 Extract Inlined Constant N.lt_dec => "ZO.lt".
 Extract Inlined Constant numbers.Nat.le_dec => "ZO.leq".
@@ -173,34 +190,100 @@ Extract Inlined Constant numbers.Nat.lt_dec => "ZO.lt".
 Extract Inlined Constant CArith.le_dec => "ZO.leq".
 Extract Inlined Constant CArith.lt_dec => "ZO.lt".
 
-Extract Inlined Constant PeanoNat.Nat.pow => "ZO.powZ".
-Extract Inlined Constant Z.pow_pos => "ZO.powZ".
-Extract Inlined Constant Z.pow => "ZO.powZ".
+(** ** Conversions *)
+
+Extract Inlined Constant N.of_nat => "Fun.id".
+Extract Inlined Constant N.to_nat => "Fun.id".
 
 Extract Inlined Constant Z.of_N => "Fun.id".
 Extract Inlined Constant Z.of_nat => "Fun.id".
 Extract Inlined Constant Z.to_N => "ZO.to_nat".
 Extract Inlined Constant Z.to_nat => "ZO.to_nat".
+Extract Inlined Constant Z.to_pos => "ZO.to_pos".
 
 Extract Inlined Constant Z.abs => "ZO.abs".
 Extract Inlined Constant Z.abs_nat => "ZO.abs".
 Extract Inlined Constant Z.abs_N => "ZO.abs".
 Extract Inlined Constant Z.sgn => "ZO.signZ".
 
-Extract Inlined Constant N.div => "ZO.ediv_z".
-Extract Inlined Constant N.modulo => "ZO.erem_z".
-Extract Inlined Constant N.div_eucl => "ZO.ediv_rem_z".
+(** ** Divisions *)
 
-Extract Inlined Constant Z.div => "ZO.ediv_z".
-Extract Inlined Constant Z.modulo => "ZO.erem_z".
-Extract Inlined Constant Z.div_eucl => "ZO.ediv_rem_z".
+Extract Inlined Constant N.div => "ZO.divZ".
+Extract Inlined Constant N.modulo => "ZO.remZ".
+Extract Inlined Constant N.div_eucl => "ZO.div_remZ".
+
+(** [Z.div] and [Z.modulo] are the floor division which gives a modulo of the
+   sign of the divisor *)
+Extract Inlined Constant Z.div => "ZO.fdivZ".
+Extract Inlined Constant Z.modulo => "ZO.fmodZ".
+Extract Inlined Constant Z.div_eucl => "ZO.fdiv_modZ".
+
+(** Quot and rem round the quotient toward 0 *)
+Extract Inlined Constant Z.quot => "ZO.divZ".
+Extract Inlined Constant Z.rem => "ZO.remZ".
+Extract Inlined Constant Z.quotrem => "ZO.div_remZ".
+
+(** Zeuclid implement the euclidian division that makes the modulo always
+    non-negative *)
+Extract Inlined Constant Zeuclid.ZEuclid.div => "ZO.edivZ".
+Extract Inlined Constant Zeuclid.ZEuclid.modulo => "ZO.emodZ".
+
+
+(** ** Shifts *)
 
 Extract Inlined Constant N.shiftl => "ZO.shiftl".
 Extract Inlined Constant Z.shiftl => "ZO.shiftl".
 Extract Inlined Constant N.shiftr => "ZO.shiftr".
 Extract Inlined Constant Z.shiftr => "ZO.shiftr".
-Extract Inlined Constant PeanoNat.Nat.div2 => "ZO.shiftr".
-Extract Inlined Constant Init.Nat.div2 => "ZO.shiftr".
+
+Extract Inlined Constant Nat.double => "ZO.double".
+Extract Inlined Constant N.double => "ZO.double".
+Extract Inlined Constant NatDef.N.double => "ZO.double".
+Extract Inlined Constant Z.double => "ZO.double".
+
+Extract Inlined Constant PeanoNat.Nat.div2 => "ZO.div2".
+Extract Inlined Constant Init.Nat.div2 => "ZO.div2".
+Extract Inlined Constant Z.div2 => "ZO.div2".
+Extract Inlined Constant N.div2 => "ZO.div2".
+Extract Inlined Constant Pos.div2 => "ZO.div2_pos".
+
+(** ** Bitwise operators *)
+
+Extract Inlined Constant PosDef.Pos.lor => "ZO.logor".
+Extract Inlined Constant Pos.lor => "ZO.logor".
+Extract Inlined Constant Nat.lor => "ZO.logor".
+Extract Inlined Constant N.lor => "ZO.logor".
+Extract Inlined Constant NatDef.N.lor => "ZO.logor".
+Extract Inlined Constant Z.lor => "ZO.logor".
+
+Extract Inlined Constant PosDef.Pos.land => "ZO.logand".
+Extract Inlined Constant Pos.land => "ZO.logand".
+Extract Inlined Constant Nat.land => "ZO.logand".
+Extract Inlined Constant N.land => "ZO.logand".
+Extract Inlined Constant NatDef.N.land => "ZO.logand".
+Extract Inlined Constant Z.land => "ZO.logand".
+
+Extract Inlined Constant PosDef.Pos.lxor => "ZO.logxor".
+Extract Inlined Constant Pos.lxor => "ZO.logxor".
+Extract Inlined Constant Nat.lxor => "ZO.logxor".
+Extract Inlined Constant N.lxor => "ZO.logxor".
+Extract Inlined Constant NatDef.N.lxor => "ZO.logxor".
+Extract Inlined Constant Z.lxor => "ZO.logxor".
+
+Extract Inlined Constant Z.lnot => "ZO.lognot".
+
+Extract Inlined Constant Z.odd => "ZO.is_odd".
+Extract Inlined Constant N.odd => "ZO.is_odd".
+Extract Inlined Constant Nat.odd => "ZO.is_odd".
+Extract Inlined Constant Z.even => "ZO.is_even".
+Extract Inlined Constant N.even => "ZO.is_even".
+Extract Inlined Constant Nat.even => "ZO.is_even".
+
+Extract Inlined Constant Pos.testbit => "ZO.testbitZ".
+Extract Inlined Constant Nat.testbit => "ZO.testbitZ".
+Extract Inlined Constant N.testbit => "ZO.testbitZ".
+Extract Inlined Constant Z.testbit => "ZO.testbitZ".
+
 
 (** * Strings *)
 
