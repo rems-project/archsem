@@ -44,13 +44,21 @@ From Stdlib Require Import Zeuclid.
 From Stdlib Require Import Extraction.
 
 Require Import Options.
-Require Import Common HVec Exec.
+Require Import Common Effects HVec Exec.
 
 
 (** * Base defaults *)
 
 From Stdlib Require Import ExtrOcamlBasic.
 
+
+Extraction Inline fmap.
+Extraction Inline mbind.
+Extraction Inline mcall.
+Extraction Inline mchoose.
+Extraction Inline lookup_total.
+Extraction Inline mchoosel.
+Extraction Inline mret.
 
 (** * Bools *)
 
@@ -328,7 +336,9 @@ Extract Inlined Constant HexString.of_Z => "Support.hex_str_of_Z".
 
 (** * Lists *)
 
-Extract Inlined Constant map => "Stdlib.List.map".
+Extract Inlined Constant map => "Support.list_map".
+Extract Inlined Constant list_fmap => "Support.list_map".
+(* Extract Inlined Constant map => "Stdlib.List.map". *)
 Extract Inlined Constant length => "Support.lengthZ".
 
 Extraction Blacklist List.
@@ -358,7 +368,7 @@ Extract Inductive vec => list [ "[]" "( :: )" ].
 Extraction Implicit vnil [A].
 Extraction Implicit vcons [A n].
 Extraction Implicit vmap [A B n].
-Extract Inlined Constant vmap => "List.map".
+Extract Inlined Constant vmap => "Support.list_map".
 Extract Inlined Constant list_to_vec  => "(fun x -> x)".
 
 Extraction Implicit Vector.last [A n].
