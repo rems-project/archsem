@@ -94,7 +94,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x500 3 0xc13348. (* xor EAX, ECX *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup rip rm =? Some (0x503 : bv 64)).
+  [# [(0x503 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -122,7 +122,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup rip rm =? Some (0x502 : bv 64)).
+  [# [(0x502 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -151,7 +151,7 @@ Module STRLDR. (* MOV [EAX + 0x100], ECX; MOV EAX, [EAX + 0x100] at 0x500, using
     |> mem_insert 0x1100 8 0x0. (* Memory need to exist to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup rip rm =? Some (0x50c : bv 64)).
+    [# [(0x50c : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -198,7 +198,7 @@ Module Factorial. (* https://godbolt.org/z/GWcWjTrWc, but with shifted instructi
     |> mem_insert 0x1235 256 0. (* Memory need to exist to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup rip rm =? Some (0x1234 : bv 64)).
+    [# [(0x1234 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
