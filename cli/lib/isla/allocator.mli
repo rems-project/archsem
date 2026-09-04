@@ -48,9 +48,12 @@ val page_size : int
 (** Size of one block (2MB) allocated by [alloc_big]. *)
 val big_size : int
 
-(** Make an allocator, optionally with reserved addresses. Each reserved
-    address blocks the page containing it. *)
-val make : ?base:int -> ?reserved:int list -> unit -> t
+(** Make an allocator, optionally with an exclusive upper limit and reserved
+    addresses. Each reserved address blocks the page containing it. *)
+val make : ?base:int -> ?limit:int -> ?reserved:int list -> unit -> t
+
+(** Allocate [size] bytes at an address aligned to [alignment]. *)
+val alloc_aligned : t -> size:int -> alignment:int -> int
 
 (** Allocate [size] bytes at an address aligned to [alignment]. *)
 val alloc_aligned : t -> size:int -> alignment:int -> int
