@@ -63,28 +63,29 @@ exception Error of string
 let error fmt = Printf.ksprintf (fun msg -> raise (Error msg)) fmt
 
 type t =
-  { allocator : Allocator.t;
+  { (* Allocates physical addresses for data symbols. *)
+    symbol_allocator : Allocator.t;
+    (* Allocates root and child translation-table pages. *)
+    table_allocator : Allocator.t;
     (* Root translation-table address. *)
     root : pa;
-    (* Next free page in the translation-table pool. *)
-    mutable next_table_pa : pa;
     (* Page-table descriptors, keyed by their physical addresses. *)
     entries : (pa, descriptor) Hashtbl.t;
-    (* PA names declared by [physical]. *)
-    mutable declared_pas : string list;
+    (* Required alignment for each physical-address symbol. *)
+    pa_alignments : (string * int) list;
     (* PA names and their allocated physical addresses. *)
     mutable symbols_pa : (string * pa) list;
     (* Initial data values, keyed by their allocated PAs. *)
     mutable data_inits : (pa * data_value) list
   }
 
-let make allocator ~root =
+let make ~symbol_allocator ~table_allocator ~pa_alignments ~root =
   let entries = Hashtbl.create 256 in
-  { allocator;
+  { symbol_allocator;
+    table_allocator;
     entries;
     root;
-    next_table_pa = root + Allocator.page_size;
-    declared_pas = [];
+    pa_alignments;
     symbols_pa = [];
     data_inits = []
   }
@@ -96,8 +97,12 @@ let check_arch = function
         (Litmus.Arch_id.to_string arch)
 
 let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
-  if not (List.mem name builder.declared_pas) then
-    error "page_table: undeclared PA: %s" name;
+  let alignment =
+    max alignment
+      (List.assoc_opt name builder.pa_alignments
+      |> Option.value ~default:Allocator.page_size
+      )
+  in
   match List.assoc_opt name builder.symbols_pa with
   | Some addr -> (
       if addr mod alignment = 0 then addr
@@ -114,7 +119,7 @@ let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
     )
   | None ->
       let addr =
-        Allocator.alloc_aligned builder.allocator ~size:Allocator.page_size
+        Allocator.alloc_aligned builder.symbol_allocator ~size:alignment
           ~alignment
       in
       builder.symbols_pa <- (name, addr) :: builder.symbols_pa;
@@ -124,10 +129,10 @@ let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
 
 (** Allocate a fresh table page. *)
 let create_table_page builder =
-  if builder.next_table_pa >= builder.root + Allocator.big_size then
-    error "page_table: 2MB page-table pool exhausted";
-  let addr = builder.next_table_pa in
-  builder.next_table_pa <- addr + Allocator.page_size;
+  let addr =
+    try Allocator.alloc_page builder.table_allocator
+    with Failure msg -> error "page_table: %s" msg
+  in
   addr
 
 let entry_addr table_addr idx = table_addr + (idx * Desc.entry_size)
@@ -203,11 +208,6 @@ let add_mapping ?(fields = []) ?(level = Desc.last_level) builder ~va ~pa kind =
   in
   write_descriptor ~level builder ~va desc
 
-let add_code_mappings builder code_pages =
-  List.iter
-    (fun addr -> add_mapping builder ~va:addr ~pa:addr Page_table_ast.Code)
-    code_pages
-
 (** {1 Statement evaluation} *)
 
 let check_table_level = function
@@ -225,6 +225,27 @@ let addr_of_z name addr =
 let mapping_alignment level =
   try Desc.level_size level
   with Invalid_argument _ -> error "page_table: invalid mapping level: %d" level
+
+let pa_alignment_requests stmts =
+  let requests =
+    List.filter_map
+      (function
+        | Page_table_ast.Mapping
+            {target = Page_table_ast.PaName name; level = Some level; _} ->
+            Some (name, mapping_alignment level)
+        | _ -> None
+        )
+      stmts
+  in
+  List.fold_left
+    (fun alignments (name, alignment) ->
+       let previous =
+         List.assoc_opt name alignments
+         |> Option.value ~default:Allocator.page_size
+       in
+       (name, max previous alignment) :: List.remove_assoc name alignments
+     )
+    [] requests
 
 let eval_mapping_target ?level ?(attrs = []) builder ~va = function
   | Page_table_ast.PaName pa_name ->
@@ -248,8 +269,7 @@ let eval_mapping_target ?level ?(attrs = []) builder ~va = function
 
 let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.Virtual _ -> ()
-  | Page_table_ast.Physical names ->
-      builder.declared_pas <- builder.declared_pas @ names
+  | Page_table_ast.Physical _ -> ()
   | Page_table_ast.AlignedVirtual _ -> ()
   | Page_table_ast.Mapping {va_name; target; attrs; level} ->
       let va =
@@ -262,9 +282,14 @@ let eval_stmt builder ~symbolic_vas = function
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
       builder.data_inits <- (pa, value) :: builder.data_inits
-  | Page_table_ast.IdentityMapping {addr; attr} ->
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code} ->
       let addr = addr_of_z "address" addr in
-      add_mapping builder ~va:addr ~pa:addr attr
+      if addr < Allocator.page_size || addr >= Allocator.big_size then
+        error "page_table: identity code address 0x%x is outside the code arena"
+          addr
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data} ->
+      let addr = addr_of_z "address" addr in
+      add_mapping builder ~va:addr ~pa:addr Page_table_ast.Data
 
 (** {1 Layout construction} *)
 
@@ -285,18 +310,29 @@ let to_layout builder =
   let data_inits = builder.data_inits in
   {root; table_entries; symbols_pa; phys_symbols_pa; data_inits}
 
-let build ~arch ~allocator ~symbolic_vas ~code_pages stmts =
+let build
+      ~arch
+      ~symbol_allocator
+      ~table_allocator
+      ~table_block
+      ~symbolic_vas
+      stmts
+  =
   check_arch arch;
   if stmts = [] then error "page_table: empty page_table_setup";
-  (* [root] is the TTBR0 value and the base of the 2MB page-table pool. *)
-  let root = Allocator.alloc_big allocator in
-  let builder = make allocator ~root in
-  (* Page tables are identity-mapped so generated PTE VAs can access them. *)
-  add_mapping ~level:2 builder ~va:root ~pa:root Page_table_ast.Data;
+  let root =
+    try Allocator.alloc_page table_allocator
+    with Failure msg -> error "page_table: %s" msg
+  in
+  let builder =
+    make ~symbol_allocator ~table_allocator
+      ~pa_alignments:(pa_alignment_requests stmts)
+      ~root
+  in
+  add_mapping ~level:2 builder ~va:0 ~pa:0 Page_table_ast.Code;
+  add_mapping ~level:2 builder ~va:table_block ~pa:table_block Page_table_ast.Data;
   (* Evaluate each statement, using symbolic VAs to resolve virtual names. *)
   List.iter (eval_stmt builder ~symbolic_vas) stmts;
-  (* Add code identity mappings after explicit page-table statements. *)
-  add_code_mappings builder code_pages;
   (* Put data initializers back in source order. *)
   builder.data_inits <- List.rev builder.data_inits;
   to_layout builder
