@@ -176,7 +176,9 @@ module type Arch = sig
       (** The internal state of the model *)
       type state
 
-      val init : t -> termCond -> ArchState.t -> state
+      (** Build the initial model state, or return the error message with
+          which the model rejected the initial architectural state *)
+      val init : t -> termCond -> ArchState.t -> (state, string) result
 
       (** [step model term initSt ~fuel st] takes one transition from [st].
           [initSt] is the initial architectural state and [fuel] the amount of

@@ -218,7 +218,7 @@ module Build (ArchReq : ArchRequired) = struct
 
       type state
 
-      val init : t -> termCond -> ArchState.t -> state
+      val init : t -> termCond -> ArchState.t -> (state, string) result
 
       val step :
          t ->
@@ -254,7 +254,9 @@ module Build (ArchReq : ArchRequired) = struct
         tc rm
 
       let init (opmod : t) term initSt =
-        opmod.TM.Coq_opModel.init (termCond_to_coq term) initSt
+        match opmod.TM.Coq_opModel.init (termCond_to_coq term) initSt with
+        | CResult.Ok st -> Ok st
+        | CResult.Error e -> Error e
 
       let step (opmod : t) term initSt ~fuel state =
         let res =

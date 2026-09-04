@@ -399,7 +399,10 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
     Record t {nth : nat} :=
       Make {
           state : Type;
-          init : terminationCondition nth → archState nth → state;
+          (** Build the initial model state. Returning an [Error] aborts the
+              run with that message *)
+          init : terminationCondition nth → archState nth →
+                 result string state;
           step : ∀ term : terminationCondition nth,
             (* Initial state again *) archState nth → (* fuel *) nat →
             (* Returning None means this is not a final transition *)
@@ -421,17 +424,20 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
     Definition to_archModel (opmod : ∀ nth, t nth) (fuel : nat) : archModel.c ∅ :=
       λ nth term (initSt : archState nth),
         let opmod := opmod nth in
-        opmod.(init) term initSt |>
-          archModel.Res.from_exec
-            $ run opmod fuel term initSt.
+        match opmod.(init) term initSt with
+        | Error s => mret (archModel.Res.Error s)
+        | Ok st => archModel.Res.from_exec (run opmod fuel term initSt) st
+        end.
 
     (** Convert a single-core operational model to a architectural model *)
     Definition to_archModel1 (opmod : t 1) (fuel : nat) : archModel.c ∅ :=
       λ nth,
         match nth with
         | 1 => λ term initSt,
-            opmod.(init) term initSt
-            |> archModel.Res.from_exec (run opmod fuel term initSt)
+            match opmod.(init) term initSt with
+            | Error s => mret (archModel.Res.Error s)
+            | Ok st => archModel.Res.from_exec (run opmod fuel term initSt) st
+            end
         | _ => λ _ _, mret (archModel.Res.Error "Expected one thread")
         end.
 
