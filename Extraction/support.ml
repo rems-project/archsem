@@ -72,3 +72,22 @@ let hex_str_to_N s z =
   Z.((z lsl Stdlib.(4 * String.length s)) lor of_string_base 16 s)
 
 let hex_str_of_Z z = Z.format "#x" z
+
+let bv_modulus n = Z.shift_left Z.one (Z.to_int n)
+
+let bv_half_modulus n = Z.shift_left Z.one (Z.to_int n - 1)
+
+let bv_wrap n z =
+  let n = Z.to_int n in
+  if n == 0 then Z.zero else Z.extract z 0 n
+
+let bv_swrap n z =
+  let n = Z.to_int n in
+  if n == 0 then Z.zero else Z.signed_extract z 0 n
+
+let bv_extract o l z =
+  let l = Z.to_int l in
+  if l == 0 then Z.zero
+  else
+    let o = Z.to_int o in
+    Z.extract z o l
