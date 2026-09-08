@@ -48,6 +48,20 @@ Extract Inductive ArchSem.Interface.reg_gen_val =>
   "RegValGen.t"
   ["RegValGen.Number" "RegValGen.String" "RegValGen.Array" "RegValGen.Struct"].
 
+
+(** * Coq-sail *)
+
+Extraction Implicit SailStdpp.TypeCasts.cast_positive [p q].
+Extract Inlined Constant SailStdpp.TypeCasts.cast_positive => "Fun.id".
+
+Extraction Implicit SailStdpp.TypeCasts.cast_N [m n].
+Extract Inlined Constant SailStdpp.TypeCasts.cast_N => "Fun.id".
+
+Extraction Implicit SailStdpp.TypeCasts.cast_Z [m n].
+Extract Inlined Constant SailStdpp.TypeCasts.cast_Z => "Fun.id".
+
+
+(** * Actual extraction *)
 (* DO NOT run this file in your editor. This will extract in the correct folder
    when dune does the extraction *)
 Set Extraction Output Directory ".".
