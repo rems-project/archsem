@@ -77,13 +77,31 @@ let powZ n m =
 
 let to_nat n = if sign n == -1 then zero else n
 
+let to_pos n = if sign n == 1 then n else one
+
 let signZ z = z |> sign |> of_int
 
-let ediv_rem_z a b = if b == zero then (zero, a) else ediv_rem a b
+let divZ a b = if b == zero then zero else div a b
 
-let ediv_z a b = if b == zero then zero else ediv a b
+let remZ a b = if b == zero then a else rem a b
 
-let erem_z a b = if b == zero then a else erem a b
+let div_remZ a b = if b == zero then (zero, a) else div_rem a b
+
+let fdivZ a b = if b == zero then zero else fdiv a b
+
+let fmodZ a b =
+  if b == zero then a else if sign b < 0 then -(erem (-a) (-b)) else erem a b
+
+let fdiv_modZ a b =
+  if b == zero then (zero, a)
+  else if sign b < 0 then
+    let (q, r) = ediv_rem (-a) (-b) in
+    (q, -r)
+  else ediv_rem a b
+
+let edivZ a b = if b == zero then zero else ediv a b
+
+let emodZ a b = if b == zero then a else erem a b
 
 let shiftl a b =
   let b = to_int b in
@@ -92,3 +110,13 @@ let shiftl a b =
 let shiftr a b =
   let b = to_int b in
   if b < 0 then a lsl Stdlib.(-b) else a asr b
+
+let double z = z lsl 1
+
+let div2 z = z asr 1
+
+let div2_pos z = if z == one then one else div2 z
+
+let testbitZ a n =
+  let n = to_int n in
+  if n < 0 then false else testbit a n
