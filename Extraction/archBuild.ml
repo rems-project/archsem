@@ -184,7 +184,10 @@ module Build (ArchReq : ArchRequired) = struct
     let mem (st : t) = st.memory
   end
 
-  type termCond = (RegMap.t -> bool) list
+  type termCond = TM.terminationCondition
+
+  let termCond_of_pcs (pcs : Z.t list list) : termCond =
+    List.map (List.map (fun z -> RegVal.of_gen Reg.pc (Number z) |> snd)) pcs
 
   type iSem = unit Interface.iMon
 
@@ -214,19 +217,13 @@ module Build (ArchReq : ArchRequired) = struct
 
       type t
 
-      val make : config -> iSem -> nth:int -> t
+      val make : config -> iSem -> nth:int -> termCond -> ArchState.t -> t
 
       type state
 
-      val init : t -> termCond -> ArchState.t -> state
+      val init : t -> state
 
-      val step :
-         t ->
-        termCond ->
-        ArchState.t ->
-        fuel:int ->
-        state ->
-        state step_result
+      val step : t -> fuel:int -> state -> state step_result
     end
 
     (** Wrap an extracted [TermModels.opModel] into an [S] module. The model is
@@ -243,24 +240,25 @@ module Build (ArchReq : ArchRequired) = struct
 
       let default_config = P.default_config
 
-      type t = TM.Coq_opModel.t
+      type t = TM.Coq_opModel.t * termCond * ArchState.t
 
-      let make config isem ~nth = P.opmodel config isem ~nth
+      let make config isem ~nth term initSt =
+        if List.length term <> nth then
+          Printf.ksprintf failwith
+            "Expected a termination condition for %d threads, got %d" nth
+            (List.length term);
+        if ArchState.num_thread initSt <> nth then
+          Printf.ksprintf failwith
+            "Expected an initial state for %d threads, got %d" nth
+            (ArchState.num_thread initSt);
+        (P.opmodel config isem ~nth, term, initSt)
 
       type state = TM.Coq_opModel.state
 
-      let termCond_to_coq (term : termCond) tid rm =
-        let tc = List.nth term (Z.to_int tid) in
-        tc rm
+      let init ((opmod, term, initSt) : t) = opmod.TM.Coq_opModel.init term initSt
 
-      let init (opmod : t) term initSt =
-        opmod.TM.Coq_opModel.init (termCond_to_coq term) initSt
-
-      let step (opmod : t) term initSt ~fuel state =
-        let res =
-          opmod.TM.Coq_opModel.step (termCond_to_coq term) initSt (Z.of_int fuel)
-            state
-        in
+      let step ((opmod, term, initSt) : t) ~fuel state =
+        let res = opmod.TM.Coq_opModel.step term initSt (Z.of_int fuel) state in
         let (next, finals) =
           List.partition_map
             (function

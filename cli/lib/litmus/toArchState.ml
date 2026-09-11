@@ -62,16 +62,10 @@ module Make (Arch : Archsem.Arch) = struct
   let memory_of_testrepr memory =
     List.fold_left insert_memory_block MemMap.empty memory
 
-  let term_cond_of_breakpoints breakpoints rm =
-    let pc = RegMap.getZ Reg.pc rm in
-    List.mem pc breakpoints
-
   let term_conds_of_threads (threads : Testrepr.thread list) =
-    List.map
-      (fun (thread : Testrepr.thread) ->
-         term_cond_of_breakpoints thread.breakpoints
-       )
-      threads
+    threads
+    |> List.map (fun (thread : Testrepr.thread) -> thread.breakpoints)
+    |> termCond_of_pcs
 
   (** Convert Testrepr.t into ArchState.t and termination conditions. *)
   let testrepr_to_archstate (test : Testrepr.t) =

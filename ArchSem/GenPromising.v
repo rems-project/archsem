@@ -169,9 +169,15 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       tState : Type;
       (** Initialize the model thread state from architectural state *)
       tState_init : (* tid *) nat → memoryMap → registerMap → tState;
-      (** Get a register map out of a thread state to test the termination
-          condition and compute a final state *)
+      (** Get a register map out of a thread state to compute a final state.
+          This is only used once per execution *)
       tState_regs : tState → registerMap;
+      (** Get the PC out of a thread state. This is on the hot path: it is
+          called at every step to test the termination condition *)
+      tState_pc : tState → option (reg_type pc_reg);
+      (** [tState_pc] must agree with [tState_regs] *)
+      tState_pc_spec :
+        ∀ ts, tState_pc ts = reg_lookup pc_reg (tState_regs ts);
       (** Check if a thread state has no pending promises, which means that it
           can be explained with the current memory state *)
       tState_nopromises : tState → bool;
@@ -244,9 +250,13 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Local Notation mEvent := prom.(mEvent).
       Local Notation t := (t tState mEvent n).
 
+      (** Check if a thread state has reached one of its breakpoints *)
+      Definition terminated_ts (bps : list (reg_type pc_reg)) (ts : tState) :=
+        pc_terminated bps (prom.(tState_pc) ts).
+
       (** Check if a thread has finished according to term *)
       Definition terminated_tid (term : terminationCondition n) (ps : t)
-        (tid : fin n) := ps |> tstate tid |> prom.(tState_regs) |> term tid.
+        (tid : fin n) := ps |> tstate tid |> terminated_ts (term !!! tid).
 
       (** Check if all thread have finished according to term *)
       Definition terminated (term : terminationCondition n) (ps : t) :=
@@ -335,6 +345,33 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         {|archState.regs := vmap (prom.(tState_regs)) ps.(tstates);
           archState.memory := prom.(memory_snapshot) ps.(initmem) ps.(events);
           archState.address_space := prom.(address_space) |}.
+
+      Lemma terminated_ts_regs (bps : list (reg_type pc_reg)) (ts : tState) :
+        terminated_ts bps ts = regs_terminated bps (prom.(tState_regs) ts).
+      Proof using.
+        unfold terminated_ts, regs_terminated.
+        by rewrite prom.(tState_pc_spec).
+      Qed.
+
+      Lemma terminated_tid_archState (term : terminationCondition n) (ps : t)
+          (tid : fin n) :
+        terminated_tid term ps tid =
+          regs_terminated (term !!! tid)
+            ((to_archState ps).(archState.regs) !!! tid).
+      Proof using.
+        unfold terminated_tid, to_archState.
+        cbn.
+        rewrite vlookup_map.
+        apply terminated_ts_regs.
+      Qed.
+
+      Lemma terminated_to_archState (term : terminationCondition n) (ps : t) :
+        terminated term ps → archState.is_terminated term (to_archState ps).
+      Proof using.
+        unfold terminated, archState.is_terminated.
+        setoid_rewrite <- terminated_tid_archState.
+        by bool_unfold.
+      Qed.
     End PSProm.
 
   End PState.
@@ -397,11 +434,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         mthrow err.
 
     (** Convert a final promising state to a generic final state *)
-    Program Definition to_final_archState (f : final) :
+    Definition to_final_archState (f : final) :
         {s & archState.is_terminated term s} :=
-      existT (to_archState prom f) _.
-    Solve All Obligations with
-      hauto unfold:terminated unfold:archState.is_terminated l:on db:vec, brefl.
+      existT (to_archState prom (proj1_sig f))
+        (terminated_to_archState prom term (proj1_sig f) (proj2_sig f)).
 
 
     Section EnumerateResult.
@@ -429,7 +465,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Fixpoint run_to_termination (fuel : nat) (base : nat) :
           Exec.t (list mEvent * PPState.t tState mEvent iis) string bool :=
         ts ← mget (PPState.state ∘ snd);
-        if term tid (prom.(tState_regs) ts) then
+        if terminated_ts prom (term !!! tid) ts then
           mret true
         else
           match fuel with

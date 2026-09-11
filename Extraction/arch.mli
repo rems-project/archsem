@@ -135,7 +135,14 @@ module type Arch = sig
     val mem : t -> MemMap.t
   end
 
-  type termCond = (RegMap.t -> bool) list
+  (** Termination condition representing in Rocq format which breakpoints a
+      thread is supposed to stop at*)
+  type termCond
+
+  (** Build a termination condition from per-thread lists of PC values. This
+      will wrap the Z.t to fit in the PC bitvector size, so negative breakpoints
+      are accepted for example. *)
+  val termCond_of_pcs : Z.t list list -> termCond
 
   (** Instruction semantics, opaque for now *)
   type iSem
@@ -171,23 +178,21 @@ module type Arch = sig
       (** A model instantiated for a fixed number of threads *)
       type t
 
-      val make : config -> iSem -> nth:int -> t
+      (** Initialize a model with a configuration, and ISA semantic,
+          a termination condition and an initial state.
+
+          Raises [Failure] if [nth] is not supported by the model, or if [term]
+          or [initSt] do not describe exactly [nth] threads *)
+      val make : config -> iSem -> nth:int -> termCond -> ArchState.t -> t
 
       (** The internal state of the model *)
       type state
 
-      val init : t -> termCond -> ArchState.t -> state
+      val init : t -> state
 
-      (** [step model term initSt ~fuel st] takes one transition from [st].
-          [initSt] is the initial architectural state and [fuel] the amount of
-          fuel left, both of which some models use internally *)
-      val step :
-         t ->
-        termCond ->
-        ArchState.t ->
-        fuel:int ->
-        state ->
-        state step_result
+      (** [step model ~fuel st] takes one transition from [st].
+          Some models need a [fuel] even for a single transition *)
+      val step : t -> fuel:int -> state -> state step_result
     end
   end
 
