@@ -288,9 +288,6 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           prom.(handle_outcome) n tid (st.(initmem)) out |$> fst in
         Exec.liftSt (PState_PPState tid) (cinterp handler isem).
 
-      Definition seq_step (tid : fin n) : relation t :=
-        λ st1 st2, st2 ∈ Exec.success_state_list $ run_tid tid st1.
-
       (** Emit a promise, updating every thread state. The thread that made
           the promise is [prom.(mEvent_tid) event] *)
       Definition promise (event : mEvent) (st : t) :=
@@ -300,28 +297,19 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
              (λ tid, prom.(emit_promise) tid st.(initmem) st.(events) event))
           st.
 
-      (** Compute the set of allowed promises by a thread indexed by tid *)
-      Definition allowed_promises_tid (certified : bool) (st : t) (tid : fin n)
-        (ev : mEvent) :
-          Prop :=
-        if certified then
-          prom.(mEvent_tid) ev = tid ∧
-          ∃ st', rtc (seq_step tid) (promise ev st) st' ∧
-                   nopromises_tid st' tid
-        else prom.(mEvent_tid) ev = tid.
-
-      (** The inductive stepping relation of the promising model *)
-      Inductive step (certified : bool) (ps : t) : (t) -> Prop :=
+      (** The inductive stepping relation of the non-certified promising model
+          (non_executable) *)
+      Inductive non_cert_step (ps : t) : (t) -> Prop :=
       | SRun (tid : fin n) (ps' : t) :
-        (ps', ()) ∈ (run_tid tid ps) → step certified ps ps'
-      | SPromise (tid : fin n) (event : mEvent) :
-        allowed_promises_tid certified ps tid event →
-        step certified ps (promise event ps).
+        (ps', ()) ∈ (run_tid tid ps) → non_cert_step ps ps'
+      | SPromise (event : mEvent) :
+        prom.(mEvent_tid) event < n →
+        non_cert_step ps (promise event ps).
 
-      Lemma step_promise certified (ps ps' : t) (tid : fin n) (event : mEvent) :
-        allowed_promises_tid certified ps tid event →
+      Lemma non_cert_step_promise  (ps ps' : t) (event : mEvent) :
+        prom.(mEvent_tid) event < n →
         ps' = promise event ps →
-        step certified ps ps'.
+        non_cert_step ps ps'.
       Proof using. sauto l:on. Qed.
 
       (** Create an initial promising state from a generic machine state *)
@@ -342,23 +330,24 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           archState.address_space := prom.(address_space) |}.
     End PSProm.
 
+
   End PState.
 
   (** Create a non-computational model from an ISA model and promising model *)
-  Definition Promising_to_Modelnc (certified : bool) (prom : Promising.Model)
-       (isem : iMon ()) : archModel.nc ∅ :=
+  Definition Promising_to_Modelnc (prom : Promising.Model) (isem : iMon ()) :
+      archModel.nc ∅ :=
     λ n term (initMs : archState n),
       {[ mr : archModel.res ∅ n term |
          let initPs := PState.from_archState prom initMs in
          match mr with
          | archModel.Res.FinalState fs _ =>
-             ∃ finPs, rtc (PState.step isem prom certified) initPs finPs ∧
+             ∃ finPs, rtc (PState.non_cert_step isem prom) initPs finPs ∧
                         PState.to_archState prom finPs = fs ∧
                         PState.nopromises prom finPs ∧
                         PState.check_valid_end prom finPs = []
          | archModel.Res.Error s =>
              ∃ finPs,
-              rtc (PState.step isem prom certified) initPs finPs ∧
+              rtc (PState.non_cert_step isem prom) initPs finPs ∧
                 ((∃ tid, Error s ∈ PState.run_tid isem prom tid finPs)
                   ∨
                  (PState.terminated prom term finPs ∧
