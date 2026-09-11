@@ -141,6 +141,46 @@ let symbolic_names ir =
        )
     ir.Ir.symbolic ir.Ir.page_table_setup
 
+let checked_virtual_alignment alignment =
+  let alignment =
+    try Z.to_int alignment
+    with Z.Overflow ->
+      eval_error Page_table_setup "page_table: virtual alignment is out of range"
+  in
+  if alignment <= 0 || alignment mod Allocator.page_size <> 0 then
+    eval_error Page_table_setup
+      "page_table: virtual alignment must be a positive multiple of page size: %d"
+      alignment;
+  alignment
+
+let symbolic_va_alignments ir =
+  let virtual_names = symbolic_names ir in
+  let alignment_requests =
+    List.concat_map
+      (function
+        | Page_table_ast.AlignedVirtual {alignment; names} ->
+            let alignment = checked_virtual_alignment alignment in
+            List.iter
+              (fun name ->
+                 if not (List.mem name virtual_names) then
+                   eval_error Page_table_setup "page_table: undeclared VA: %s"
+                     name
+               )
+              names;
+            List.map (fun name -> (name, alignment)) names
+        | _ -> []
+        )
+      ir.Ir.page_table_setup
+  in
+  let alignment_for name =
+    List.fold_left
+      (fun best (aligned_name, alignment) ->
+         if aligned_name = name then max best alignment else best
+       )
+      Allocator.page_size alignment_requests
+  in
+  List.map (fun name -> (name, alignment_for name)) virtual_names
+
 (* Build assembly input after assigning concrete addresses to every section and
    symbolic location. *)
 let to_assembly_input allocator (ir : Ir.t) : Assembler.assembly_input =
@@ -168,11 +208,13 @@ let to_assembly_input allocator (ir : Ir.t) : Assembler.assembly_input =
   in
   let symbols =
     List.map
-      (fun sym ->
-         let addr = Allocator.alloc_page allocator in
-         {Assembler.name = sym; addr}
+      (fun (name, alignment) ->
+         let addr =
+           Allocator.alloc_aligned allocator ~size:Allocator.page_size ~alignment
+         in
+         {Assembler.name; addr}
        )
-      (symbolic_names ir)
+      (symbolic_va_alignments ir)
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 

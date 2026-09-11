@@ -1,5 +1,5 @@
 arch = "Arm"
-name = "STR+32"
+name = "LDR+size+VM"
 
 [[memory]]
   sym = "__thread0"
@@ -10,43 +10,49 @@ name = "STR+32"
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x200000
+  addr = 0x400000
   step = 8
-  data = 0x201003
+  data = 0x401003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x201000
+  addr = 0x401000
   step = 8
-  data = 0x202003
+  data = 0x402003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x202000
+  addr = 0x402000
   step = 8
-  data = 0x203003
+  data = 0x403003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x202008
+  addr = 0x402008
   step = 8
-  data = 0x200441
+  data = 0x800441
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x203008
+  addr = 0x402010
+  step = 8
+  data = 0x400441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x403008
   step = 8
   data = 0x14c3
 
 [[memory]]
-  kind = "pagetable"
-  addr = 0x203010
+  sym = "pa_pad"
+  addr = 0x600000
   step = 8
-  data = 0x400443
+  data = 0
 
 [[memory]]
   sym = "pa_x"
-  addr = 0x400000
+  addr = 0x800000
   step = 12
   data = 0x10000000100000001
 
@@ -57,12 +63,12 @@ name = "STR+32"
 
 [thread."0".regs]
   _PC = 0x1000
-  "R1" = 0x2000
+  "R1" = 0x200000
+  "R2" = 0x210000
   "SCTLR_EL1" = 1
   CurrentEL = 1
-  "TTBR0_EL1" = 0x200000
+  "TTBR0_EL1" = 0x400000
   "R0" = 0
-  "R2" = 0
   "R3" = 0
   "R4" = 0
   "R5" = 0
@@ -98,4 +104,4 @@ name = "STR+32"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:X0" = 1}, {pa_x = 0x10000000100000001}]}
+  assertion = {and = [{"0:X0" = 1}, {"0:X2" = 0x210000}, {pa_x = 0x10000000100000001}]}
