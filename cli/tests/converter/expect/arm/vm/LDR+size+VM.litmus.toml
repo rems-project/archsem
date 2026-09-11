@@ -10,43 +10,37 @@ name = "LDR+size+VM"
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x400000
+  addr = 0x200000
   step = 8
-  data = 0x401003
+  data = 0x201003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x401000
+  addr = 0x201000
   step = 8
-  data = 0x402003
+  data = 0x202003
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x402000
+  addr = 0x202000
   step = 8
-  data = 0x403003
+  data = 0x4c1
 
 [[memory]]
   kind = "pagetable"
-  addr = 0x402008
+  addr = 0x202008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x202010
   step = 8
   data = 0x800441
 
 [[memory]]
-  kind = "pagetable"
-  addr = 0x402010
-  step = 8
-  data = 0x400441
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x403008
-  step = 8
-  data = 0x14c3
-
-[[memory]]
   sym = "pa_pad"
-  addr = 0x600000
+  addr = 0x610000
   step = 8
   data = 0
 
@@ -63,11 +57,11 @@ name = "LDR+size+VM"
 
 [thread."0".regs]
   _PC = 0x1000
-  "R1" = 0x200000
-  "R2" = 0x210000
+  "R1" = 0x400000
+  "R2" = 0x600000
   "SCTLR_EL1" = 1
   CurrentEL = 1
-  "TTBR0_EL1" = 0x400000
+  "TTBR0_EL1" = 0x200000
   "R0" = 0
   "R3" = 0
   "R4" = 0
@@ -104,4 +98,4 @@ name = "LDR+size+VM"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:X0" = 1}, {"0:X2" = 0x210000}, {pa_x = 0x10000000100000001}]}
+  assertion = {and = [{"0:X0" = 1}, {"0:X2" = 0x600000}, {pa_x = 0x10000000100000001}]}

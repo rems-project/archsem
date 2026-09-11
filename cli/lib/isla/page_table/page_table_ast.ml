@@ -40,10 +40,10 @@
 
 (** Page-table setup AST.
 
-    VA-side names may be declared with [virtual] or the TOML [symbolic] list.
-    [aligned ... virtual ...] statements constrain those VA-side names. PA-side
-    names may be declared with [physical], or allocated on first use by
-    mapping/data-init statements. *)
+    Virtual-address names may be declared with [virtual] or the TOML [symbolic]
+    list. [aligned ... virtual ...] statements constrain those names. Names for
+    physical addresses may be declared with [physical], or allocated on first
+    use by mapping/data-init statements. *)
 type attr =
   | Code
   | Data
@@ -59,16 +59,16 @@ type mapping_target =
   | Table of Z.t
 
 type stmt =
-  (* [virtual x y;] predeclares VA-side names. *)
+  (* [virtual x y;] predeclares virtual-address names. *)
   | Virtual of string list
-  (* [physical pa_x pa_y;] predeclares PA-side names. *)
+  (* [physical pa_x pa_y;] predeclares physical-address names. *)
   | Physical of string list
-  (* [aligned 2097152 virtual x y;] constrains VA-side names. *)
+  (* [aligned 2097152 virtual x y;] constrains virtual-address names. *)
   | AlignedVirtual of
       { alignment : Z.t;
         names : string list
       }
-  (* [x |-> pa_x;] maps an existing symbolic VA to a PA-side target.
+  (* [x |-> pa_x;] maps a symbolic virtual address to a physical-address target.
      Optional [with ... and default] clauses override descriptor fields. *)
   | Mapping of
       { va_name : string;
@@ -83,7 +83,7 @@ type stmt =
         attrs : descriptor_field list;
         level : int option
       }
-  (* [*pa_x = value;] initialises data at a PA-side name. *)
+  (* [*pa_x = value;] initialises data at a named physical address. *)
   | DataInit of
       { pa_name : string;
         value : Z.t
