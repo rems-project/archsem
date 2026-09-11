@@ -63,6 +63,8 @@ type mapping_target =
   | Table of Z.t
 
 type stmt =
+  (* Controls whether an implicit unnamed Stage-1 root is built. *)
+  | OptionDefaultTables of bool
   (* [virtual x y;] predeclares virtual-address names. *)
   | Virtual of string list
   (* [physical pa_x pa_y;] predeclares physical-address names. *)
