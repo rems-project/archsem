@@ -292,7 +292,20 @@ Extract Inlined Constant Nat.testbit => "ZO.testbitZ".
 Extract Inlined Constant N.testbit => "ZO.testbitZ".
 Extract Inlined Constant Z.testbit => "ZO.testbitZ".
 
+(** ** Bit twiddling *)
+
 Extract Inlined Constant Pos.reverse => "Pos_reverse.pos_reverse".
+
+Extraction Implicit prod_countable [EqDecision0 EqDecision1].
+Extract Constant prod_countable => "fun h h0 ->
+  { encode = (fun xy ->
+    Bit_interleaving.encode (h.encode (fst xy)) (h0.encode (snd xy)));
+    decode = (fun c ->
+      let (p, q) = Bit_interleaving.decode c in
+      if p == ZO.zero || q == ZO.zero then None
+      else
+        Stdlib.Option.bind (h.decode p) (fun np ->
+        Stdlib.Option.bind (h0.decode q) (fun nq -> Some (np, nq)))) }".
 
 (** * Bitvector *)
 
