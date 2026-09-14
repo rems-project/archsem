@@ -54,9 +54,9 @@ type data_value = Z.t
 type layout =
   { root : pa;
     table_entries : (pa * descriptor) list;
-    (* Mapping from PA-side symbols to concrete PAs: pa_x -> PA. *)
+    (* Symbol names and their concrete physical addresses. *)
     symbols_pa : (string * pa) list;
-    (* PA-side data symbols, excluding generated root aliases. *)
+    (* Data symbols and their allocated physical addresses. *)
     phys_symbols_pa : (string * pa) list;
     (* [*pa = value] initialisers resolved to concrete PAs. *)
     data_inits : (pa * data_value) list
@@ -67,11 +67,14 @@ exception Error of string
 (** Build a concrete page-table layout from parsed setup. *)
 val build :
    arch:Litmus.Arch_id.t ->
-  allocator:Allocator.t ->
-  (* Maps VA-side symbol names to concrete VAs for explicit mappings *)
+  (* Allocate physical addresses for data symbols. *)
+  symbol_allocator:Allocator.t ->
+  (* Allocate root and child translation-table pages. *)
+  table_allocator:Allocator.t ->
+  (* Base address of the 2 MiB translation-table storage region. *)
+  table_block:pa ->
+  (* Maps virtual-address symbol names to concrete addresses. *)
   symbolic_vas:(string * va) list ->
-  (* Lists built-in thread code pages that should get identity mappings *)
-  code_pages:va list ->
   (* Parsed [page_table_setup] statement list *)
   Page_table_ast.stmt list ->
   layout

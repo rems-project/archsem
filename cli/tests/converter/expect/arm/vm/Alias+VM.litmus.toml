@@ -24,7 +24,7 @@ name = "Alias+VM"
   kind = "pagetable"
   addr = 0x202000
   step = 8
-  data = 0x203003
+  data = 0x4c1
 
 [[memory]]
   kind = "pagetable"
@@ -34,25 +34,25 @@ name = "Alias+VM"
 
 [[memory]]
   kind = "pagetable"
+  addr = 0x202010
+  step = 8
+  data = 0x203003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x203000
+  step = 8
+  data = 0x403443
+
+[[memory]]
+  kind = "pagetable"
   addr = 0x203008
   step = 8
-  data = 0x14c3
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x203010
-  step = 8
-  data = 0x400443
-
-[[memory]]
-  kind = "pagetable"
-  addr = 0x203018
-  step = 8
-  data = 0x400443
+  data = 0x403443
 
 [[memory]]
   sym = "pa_x"
-  addr = 0x400000
+  addr = 0x403000
   step = 8
   data = 0
 
@@ -64,8 +64,8 @@ name = "Alias+VM"
 [thread."0".regs]
   _PC = 0x1000
   "R0" = 1
-  "R1" = 0x2000
-  "R2" = 0x3000
+  "R1" = 0x400000
+  "R2" = 0x401000
   "TTBR0_EL1" = 0x200000
   "SCTLR_EL1" = 1
   CurrentEL = 1

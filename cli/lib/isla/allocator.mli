@@ -50,7 +50,7 @@ val big_size : int
 
 (** Make an allocator, optionally with an exclusive upper limit and reserved
     addresses. Each reserved address blocks the page containing it. *)
-val make : ?base:int -> ?limit:int -> ?reserved:int list -> unit -> t
+val make : base:int -> ?limit:int -> ?reserved:int list -> unit -> t
 
 (** Allocate [size] bytes at an address aligned to [alignment]. *)
 val alloc_aligned : t -> size:int -> alignment:int -> int
