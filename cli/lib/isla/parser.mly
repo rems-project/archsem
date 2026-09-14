@@ -59,6 +59,7 @@
 %token RBRACKET "]"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
+%token ALIGNED
 %token VIRTUAL
 %token PHYSICAL
 %token IDENTITY
@@ -109,6 +110,8 @@ page_table_stmt_inner:
     { Page_table_ast.Virtual names }
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
+  | ALIGNED; alignment = NUM; VIRTUAL; names = nonempty_list(IDENT)
+    { Page_table_ast.AlignedVirtual {alignment; names} }
   | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs
     { let (target, attrs, level) = rhs in
       Page_table_ast.Mapping {va_name; target; attrs; level}
