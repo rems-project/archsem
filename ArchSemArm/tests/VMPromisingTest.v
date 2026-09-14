@@ -685,3 +685,53 @@ Module BBMSuccess.
     apply NoDup_Permutation; try solve_NoDup; set_solver.
   Qed.
 End BBMSuccess.
+
+(* System register write and read-back, with the MMU off.
+   Check that both an MRS and the final condition can see the result of an MSR *)
+Module MSR.
+  Definition init_reg : registerMap :=
+    ∅
+    |> reg_insert _PC 0x500
+    |> reg_insert R1 0x1234000
+    |> reg_insert R2 0x0
+    |> reg_insert SCTLR_EL1 0x0
+    |> reg_insert TTBR0_EL1 0x0
+    |> reg_insert CurrentEL 0x1.
+
+  Definition init_mem : memoryMap :=
+    ∅
+    |> mem_insert 0x500 4 0xd5182001  (* MSR TTBR0_EL1, X1 *)
+    |> mem_insert 0x504 4 0xd5382002. (* MRS X2, TTBR0_EL1 *)
+
+  Definition n_threads := 1%nat.
+
+  Definition termCond : terminationCondition n_threads :=
+    (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
+
+  Definition initState :=
+    {|archState.memory := init_mem;
+      archState.regs := [# init_reg];
+      archState.address_space := PAS_NonSecure |}.
+
+  Definition fuel := 6%nat.
+
+  Definition test_results :=
+    VMPromising_exe BBM.Off arm_sem fuel n_threads termCond initState.
+
+  Goal regs_extract [(0%fin, TTBR0_EL1); (0%fin, R2)] <$> test_results =
+      Listset [Ok [0x1234000%Z; 0x1234000%Z]].
+  Proof.
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
+
+  Definition test_results_pf :=
+    VMPromising_pf BBM.Off arm_sem fuel n_threads termCond initState.
+
+  Goal regs_extract [(0%fin, TTBR0_EL1); (0%fin, R2)] <$> test_results_pf =
+      Listset [Ok [0x1234000%Z; 0x1234000%Z]].
+  Proof.
+    vm_compute (_ <$> _).
+    reflexivity.
+  Qed.
+End MSR.

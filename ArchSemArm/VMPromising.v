@@ -600,7 +600,12 @@ Module TState.
       This is used to decide if a thread has terminated, and to observe the
       results of the model *)
   Definition reg_map (ts : t) : registerMap :=
-    dmap_map (λ _, fst) ts.(regs).
+    dmap_map
+      (λ r rv,
+        if bool_decide (r ∈ relaxed_regs)
+        then from_option fst rv.1 (read_sreg_direct ts r)
+        else rv.1)
+      ts.(regs).
 
   (** Sets the value of a register *)
   Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
