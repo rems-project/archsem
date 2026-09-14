@@ -66,6 +66,8 @@ rule token = parse
   | ';' { SEMICOLON }
   | '[' { LBRACKET }
   | ']' { RBRACKET }
+  | '{' { LBRACE }
+  | '}' { RBRACE }
   | ',' { COMMA }
   | '-' { MINUS }
   | "aligned" { ALIGNED }
@@ -79,6 +81,8 @@ rule token = parse
   | "data" { DATA }
   | "invalid" { INVALID }
   | "table" { TABLE }
+  | "s1table" { S1TABLE }
+  | "s2table" { S2TABLE }
   | "at" { AT }
   | "level" { LEVEL }
   | "true" { TRUE }

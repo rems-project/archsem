@@ -54,10 +54,10 @@ type data_value = Z.t
 type layout =
   { root : pa;
     table_entries : (pa * descriptor) list;
-    (* Symbol names and their concrete physical addresses. *)
-    symbols_pa : (string * pa) list;
+    (* Named table roots and their physical addresses. *)
+    table_symbols_pa : (string * pa) list;
     (* Data symbols and their allocated physical addresses. *)
-    phys_symbols_pa : (string * pa) list;
+    data_symbols_pa : (string * pa) list;
     (* [*pa = value] initialisers resolved to concrete PAs. *)
     data_inits : (pa * data_value) list
   }
@@ -78,7 +78,3 @@ val build :
   (* Parsed [page_table_setup] statement list *)
   Page_table_ast.stmt list ->
   layout
-
-(** Translate [va] through a layout, returning [None] when no mapping exists.
-    Raises [Error msg] when a present descriptor is invalid. *)
-val translate_va_to_pa : layout -> va -> pa option
