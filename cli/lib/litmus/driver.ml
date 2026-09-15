@@ -69,7 +69,10 @@ module Make (A : Archsem.Arch) (M : A.OpModel.S) = struct
           in
           loop finals errors rest
     in
-    let (finals, errors) = loop [] [] [(M.init m term initSt, fuel)] in
-    List.rev_map (fun fs -> A.ArchModel.Res.FinalState fs) finals
-    @ List.rev_map (fun e -> A.ArchModel.Res.Error e) errors
+    match M.init m term initSt with
+    | Error e -> [A.ArchModel.Res.Error e]
+    | Ok st ->
+        let (finals, errors) = loop [] [] [(st, fuel)] in
+        List.rev_map (fun fs -> A.ArchModel.Res.FinalState fs) finals
+        @ List.rev_map (fun e -> A.ArchModel.Res.Error e) errors
 end
