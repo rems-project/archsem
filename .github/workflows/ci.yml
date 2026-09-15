@@ -15,11 +15,11 @@ jobs:
     permissions:
       contents: read
 
-    # Cancels in-progress job when a new push is performed (except on main)
+    # Cancels in-progress job when a new push on the same PR, all other
+    # workflows should be unaffected
     concurrency:
-      group: build-${{ github.ref }}
-      cancel-in-progress: ${{ !contains(github.ref, 'main')}}
-
+      group: build-${{ github.head_ref || github.run_id }}
+      cancel-in-progress: true
 
     steps:
 
