@@ -245,6 +245,13 @@ Module TState.
       xclb := None
     |})%nat.
 
+  (** Lower bound on the view of any new write this thread can make: the max
+      of all views that order writes *)
+  Definition min_new_prom_view (ts : t) : view :=
+    ts.(vcap) ⊔ ts.(vdmb) ⊔ ts.(vdmbst) ⊔ ts.(visb) ⊔ ts.(vacq).
+
+
+
   (** Extracts a plain register map from the thread state without views. *)
   Definition reg_map (ts : t) : registerMap :=
     dmap_map (λ _, fst) ts.(regs).
@@ -612,6 +619,7 @@ Definition UMPromising : Promising.Model :=
     tState_pc := TState.pc;
     tState_pc_spec := TState.pc_reg_map;
     tState_nopromises := is_emptyb ∘ TState.prom;
+    tState_min_new_prom_view := TState.min_new_prom_view;
     iis := IIS.t;
     iis_init := IIS.init;
     address_space := PAS_NonSecure;

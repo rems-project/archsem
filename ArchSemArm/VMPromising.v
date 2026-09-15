@@ -522,6 +522,11 @@ Module TState.
 
   Definition lev_cur (ts : t) := length ts.(levs).
 
+  (** Lower bound on the view of any new write or TLBI this thread can make:
+      the max of all views that order both writes and TLBIs *)
+  Definition min_new_prom_view (ts : t) : view :=
+    ts.(vdsb) ⊔ ts.(vspec) ⊔ ts.(vcse).
+
   Definition filter_wsreg : list LEv.t → list WSReg.t := omap LEv.get_wsreg.
 
   Definition filter_cse : list LEv.t → list view := omap LEv.get_cse.
@@ -2892,6 +2897,7 @@ Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
     tState_pc := TState.pc;
     tState_pc_spec := TState.pc_reg_map;
     tState_nopromises := (λ ts, is_emptyb (TState.prom_wr ts ++ TState.prom_tlbi ts));
+    tState_min_new_prom_view := TState.min_new_prom_view;
     iis := IIS.t;
     iis_init := IIS.init;
     address_space := PAS_NonSecure;
