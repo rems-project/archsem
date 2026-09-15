@@ -131,11 +131,6 @@ let parse_test_memory toml : Testrepr.memory_block list =
     let kind =
       Toml.find_or ~default:Testrepr.Data table get_memory_kind ["kind"]
     in
-    ( if kind = Code then
-        match sym with
-        | Some s -> Toml.error "memory code blocks must not have sym but got %s" s
-        | None -> ()
-    );
     {addr; step; data; sym; kind}
   in
   Toml.find toml (Toml.get_array parse_memory_block) ["memory"]
