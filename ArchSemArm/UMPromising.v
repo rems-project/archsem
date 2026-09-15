@@ -245,11 +245,17 @@ Module TState.
       xclb := None
     |})%nat.
 
-  (** Extracts a plain register map from the thread state without views.
-      This is used to decide if a thread has terminated, and to observe the
-      results of the model *)
+  (** Extracts a plain register map from the thread state without views. *)
   Definition reg_map (ts : t) : registerMap :=
     dmap_map (λ _, fst) ts.(regs).
+
+  (** Extract the PC from the thread state, without rebuilding a full register
+      map. This is used to decide if a thread has terminated on every step *)
+  Definition pc (ts : t) : option (reg_type pc_reg) :=
+    fst <$> dmap_lookup pc_reg ts.(regs).
+
+  Lemma pc_reg_map (ts : t) : pc ts = reg_lookup pc_reg (reg_map ts).
+  Proof. unfold pc, reg_map, reg_lookup. by rewrite dmap_lookup_map. Qed.
 
   (** Sets the value of a register *)
   Definition set_reg (reg : reg) (rv : reg_type reg * view) (ts : t) : option t :=
@@ -603,6 +609,8 @@ Definition UMPromising : Promising.Model :=
   {|tState := TState.t;
     tState_init := λ tid, TState.init;
     tState_regs := TState.reg_map;
+    tState_pc := TState.pc;
+    tState_pc_spec := TState.pc_reg_map;
     tState_nopromises := is_emptyb ∘ TState.prom;
     iis := IIS.t;
     iis_init := IIS.init;

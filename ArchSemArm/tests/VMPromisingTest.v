@@ -107,7 +107,7 @@ Module EORMMUOFF.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+    [# [(0x504 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -181,7 +181,7 @@ Module EOR.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x8000000504 : bv 64)).
+    [# [(0x8000000504 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -242,7 +242,7 @@ Module LDR.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x8000000504 : bv 64)).
+    [# [(0x8000000504 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -302,7 +302,7 @@ Module STRLDR.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x8000000508 : bv 64)).
+    [# [(0x8000000508 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -379,7 +379,7 @@ Module LDRPT.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x800000050c : bv 64)).
+    [# [(0x800000050c : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -477,12 +477,10 @@ Module MP.
 
   Definition n_threads := 2%nat.
 
-  Definition terminate_at :=
-    [#Some (0x8000000508 : bv 64); Some (0x8000000608 : bv 64)].
 
   (* Each thread's PC must reach the end of its two instructions *)
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+    [# [(0x8000000508 : bv 64)]; [(0x8000000608 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -570,11 +568,10 @@ Module MPDMBS.
 
   Definition n_threads := 2%nat.
 
-  Definition terminate_at := [# Some (0x800000050c : bv 64); Some (0x800000060c : bv 64)].
 
   (* Each thread's PC must reach the end of its three instructions *)
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? terminate_at !!! tid).
+    [# [(0x800000050c : bv 64)]; [(0x800000060c : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -665,7 +662,7 @@ Module BBMSuccess.
   Definition n_threads := 1%nat.
 
   Definition termCond : terminationCondition n_threads :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x800000052C : bv 64)).
+    [# [(0x800000052C : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;

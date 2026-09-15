@@ -342,7 +342,7 @@ Section Model.
     cinterp (run_outcome tid eager) isem;;
     (* Check if the thread is actually terminated and mark it if so *)
     'regs ← mget ((.!!! tid) ∘ regs);
-    if term tid regs then
+    if regs_terminated (term !!! tid) regs then
       (* Mark it as terminated *)
       msetv ((.!!! tid) ∘ termThreads) true
     else
@@ -425,7 +425,8 @@ Section Model.
       buf := Vector.const [] threads;
       lock := None;
       memWritten := ∅;
-      termThreads := vimap term astate.(archState.regs);
+      termThreads :=
+        vimap (λ tid, regs_terminated (term !!! tid)) astate.(archState.regs);
     |}.
 
   Definition to_archState (mstate : mstate) : option (archState threads) :=

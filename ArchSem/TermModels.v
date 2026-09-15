@@ -136,10 +136,23 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
   Definition reg_delete (r : reg) : registerMap → registerMap := dmap_delete r.
 
   (** A termination condition that define when each thread should stop.
+      Each has a list of breakpoint at which it stops.
+      This is deliberately restricted to support Flat-like models.
+      This may later be extended with the privilege level. *)
+  Definition terminationCondition (n : nat) := vec (list (reg_type pc_reg)) n.
+  #[global] Typeclasses Transparent terminationCondition.
 
-      We expect this will be restricted to only being about the PC (RIP on x86)
-      soon (maybe also the privilege level) *)
-  Definition terminationCondition (n : nat) := fin n → registerMap → bool.
+  (** Test a thread's breakpoint list against a PC value from a register map. To
+      avoid complexifing the error path, a thread whose PC is unset is never
+      terminated. Such a thing should never happen in practice. *)
+  Definition pc_terminated (bps : list (reg_type pc_reg))
+      (pc : option (reg_type pc_reg)) : bool :=
+    if pc is Some pc then bool_decide (pc ∈ bps) else false.
+
+  (** Test a thread's breakpoint list against a full register map *)
+  Definition regs_terminated (bps : list (reg_type pc_reg))
+      (rm : registerMap) : bool :=
+    pc_terminated bps (reg_lookup pc_reg rm).
 
   (** ** Architectural state
 
@@ -168,7 +181,7 @@ Module TermModels (Arch : Arch) (Inter : InterfaceT Arch). (* to be imported *)
     Arguments t : clear implicits.
 
     Definition is_terminated `(termCond : terminationCondition n) (s : t n) :=
-      ∀ tid, termCond tid (s.(regs) !!! tid).
+      ∀ tid, regs_terminated (termCond !!! tid) (s.(regs) !!! tid).
 
     #[export] Instance is_terminated_dec n term s :
       Decision (@is_terminated n term s).

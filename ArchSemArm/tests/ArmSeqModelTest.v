@@ -80,7 +80,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x500 4 0xca020020. (* EOR X0, X1, X2 *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+  [# [(0x504 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -111,7 +111,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup _PC rm =? Some (0x504 : bv 64)).
+  [# [(0x504 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -143,7 +143,7 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
     |> mem_insert 0x1100 8 0x0. (* Memory need to exists to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup _PC rm =? Some (0x508 : bv 64)).
+    [# [(0x508 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;

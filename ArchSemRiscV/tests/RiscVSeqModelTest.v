@@ -148,7 +148,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x500 4 0x003140b3. (* xor x1, x2, x3 *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup PC rm =? Some (0x504 : bv 64)).
+  [# [(0x504 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -176,7 +176,7 @@ Definition init_mem : memoryMap:=
   |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
 Definition termCond : terminationCondition 1 :=
-  (λ tid rm, reg_lookup PC rm =? Some (0x502 : bv 64)).
+  [# [(0x502 : bv 64)]].
 
 Definition initState :=
   {|archState.memory := init_mem;
@@ -205,7 +205,7 @@ Module STRLDR. (* sd x2, 0x100(x1); ld x1, 0x100(x1) at 0x500, using address 0x1
     |> mem_insert 0x1100 8 0x0. (* Memory need to exists to be written to *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup PC rm =? Some (0x508 : bv 64)).
+    [# [(0x508 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
@@ -239,7 +239,7 @@ Module Factorial. (* https://godbolt.org/z/fzzajP9nq *)
     |> mem_insert 0x50e 2 0x8082.     (* ret *)
 
   Definition termCond : terminationCondition 1 :=
-    (λ tid rm, reg_lookup PC rm =? Some (0x1234 : bv 64)).
+    [# [(0x1234 : bv 64)]].
 
   Definition initState :=
     {|archState.memory := init_mem;
