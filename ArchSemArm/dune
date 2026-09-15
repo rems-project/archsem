@@ -7,6 +7,7 @@
   VMPromising
   GenAxiomaticArm
   UMArm
+  ob_subsumption_archsem
   UMSeqArm
   VMSA22Arm
   VMUMEquivThm)
