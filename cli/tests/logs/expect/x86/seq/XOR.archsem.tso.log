@@ -1,0 +1,8 @@
+Test XOR Forall
+States 1
+0:rax=0x110; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition XOR forall 0:rax=0x110
+Observation XOR Always 1 0

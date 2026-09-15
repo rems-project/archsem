@@ -1,0 +1,8 @@
+Test NOP+mem Forall
+States 1
+0:R0=0; [x]=0x2a; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition NOP+mem forall (0:R0=0 /\ [x]=0x2a)
+Observation NOP+mem Always 1 0

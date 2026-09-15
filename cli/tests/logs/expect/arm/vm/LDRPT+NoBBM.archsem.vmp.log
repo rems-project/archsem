@@ -1,0 +1,9 @@
+Test LDRPT+NoBBM Forall
+States 2
+0:R0=0x2a; 0:R4=0x2a; 
+0:R0=0x2a; 0:R4=0x42; 
+Ok
+Witnesses
+Positive: 3 Negative: 0
+Condition LDRPT+NoBBM forall (0:R0=0x2a /\ (0:R4=0x2a \/ 0:R4=0x42))
+Observation LDRPT+NoBBM Always 3 0

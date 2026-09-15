@@ -1,0 +1,10 @@
+Test MP Allowed
+States 3
+1:rax=0; 1:rbx=0; 
+1:rax=0; 1:rbx=1; 
+1:rax=1; 1:rbx=1; 
+No
+Witnesses
+Positive: 0 Negative: 6
+Condition MP exists (1:rax=1 /\ 1:rbx=0)
+Observation MP Never 0 6

@@ -1,0 +1,10 @@
+Test R_PO_MFENCE Forbidden
+States 3
+1:rax=0; [y]=1; 
+1:rax=1; [y]=1; 
+1:rax=1; [y]=2; 
+Ok
+Witnesses
+Positive: 0 Negative: 10
+Condition R_PO_MFENCE notexists (1:rax=0 /\ [y]=2)
+Observation R_PO_MFENCE Never 0 10

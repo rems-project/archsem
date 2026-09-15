@@ -1,0 +1,8 @@
+Test LDR+negative-location Allowed
+States 1
+0:X0=0xffffffffffffffff; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition LDR+negative-location exists 0:X0=0xffffffffffffffff
+Observation LDR+negative-location Always 1 0

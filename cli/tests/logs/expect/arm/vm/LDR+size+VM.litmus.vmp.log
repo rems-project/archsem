@@ -1,0 +1,8 @@
+Test LDR+size+VM Allowed
+States 1
+0:X0=1; 0:X2=0x600000; [pa_x]=0x10000000100000001; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition LDR+size+VM exists (0:X0=1 /\ 0:X2=0x600000 /\ [pa_x]=0x10000000100000001)
+Observation LDR+size+VM Always 1 0

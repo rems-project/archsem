@@ -1,0 +1,8 @@
+Test LDR+size Allowed
+States 1
+0:X0=1; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition LDR+size exists 0:X0=1
+Observation LDR+size Always 1 0
