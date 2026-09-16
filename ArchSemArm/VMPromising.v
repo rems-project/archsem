@@ -2896,10 +2896,7 @@ Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
   |}.
 
 Definition VMPromising_nocert (bbm_param : BBM.param) :=
-  Promising_to_Modelnc (*certified=*)false (VMPromising bbm_param).
-
-Definition VMPromising_cert (bbm_param : BBM.param) :=
-  Promising_to_Modelnc (*certified=*)true (VMPromising bbm_param).
+  Promising_to_Modelnc (VMPromising bbm_param).
 
 Definition VMPromising_exe (bbm_param : BBM.param) :=
   Promising_to_Modelc (VMPromising bbm_param).
