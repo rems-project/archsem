@@ -53,15 +53,13 @@ module Make (A : Archsem.Arch) (M : A.OpModel.S) = struct
       all the calls to [M.step] happen at the same native stack depth, which
       merges the exploration paths when profiling. *)
   let model ?(config = M.default_config) isem fuel term initSt =
-    let m = M.make config isem ~nth:(A.ArchState.num_thread initSt) in
+    let m = M.make config isem ~nth:(A.ArchState.num_thread initSt) term initSt in
     (* [finals] and [errors] are accumulated in reverse order *)
     let rec loop finals errors = function
       | [] -> (finals, errors)
       | (_, 0) :: rest -> loop finals ("Out of fuel" :: errors) rest
       | (st, fuel) :: rest ->
-          let {A.OpModel.next; finals = fs; errors = errs} =
-            M.step m term initSt ~fuel st
-          in
+          let {A.OpModel.next; finals = fs; errors = errs} = M.step m ~fuel st in
           let finals = List.fold_left (fun acc (_, f) -> f :: acc) finals fs in
           let errors = List.fold_left (fun acc (_, e) -> e :: acc) errors errs in
           let rest =
@@ -69,7 +67,7 @@ module Make (A : Archsem.Arch) (M : A.OpModel.S) = struct
           in
           loop finals errors rest
     in
-    match M.init m term initSt with
+    match M.init m with
     | Error e -> [A.ArchModel.Res.Error e]
     | Ok st ->
         let (finals, errors) = loop [] [] [(st, fuel)] in
