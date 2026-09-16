@@ -3,9 +3,10 @@
 
 # ArchSem
 
-ArchSem is a Rocq framework to define the semantics of CPU architectures
-such as Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set semantics.
-The framework is designed to be generic, but so far is only instantiated for Arm-A, RISC-V and x86.
+ArchSem is a Rocq framework to define the semantics of CPU architectures such as
+Arm-A, RISC-V, and x86, integrating their concurrency and instruction-set
+semantics. The framework is designed to be generic but is currently only
+instantiated for Arm-A, RISC-V and x86.
 
 ## Paper
 
@@ -83,6 +84,18 @@ the interface between ISA and concurrency models:
 See [INSTALL.md](INSTALL.md) for dependencies, installation, and build
 instructions.
 
+## Running
+
+The Ocaml CLI is accessible from `archsem` (or `dune exec -- archsem` if not
+installed). For example `archsem ump testname.litmus.toml` runs a litmus test
+and prints the results. Currently only
+[Isla](https://github.com/rems-project/isla)-style tests (`.litmus.toml`) are
+supported , but we do hope to support
+[Herd](https://github.com/herd/herdtools7)-style tests (`.litmus`) later.
+
+We do not currently have a candidate execution generator so all our axiomatic
+model are non-executable at the moment. They can still be used for proofs.
+
 ## Rocq automation
 
 There are some powerful custom tactics in `Common`, as well as useful but
@@ -101,21 +114,31 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
     concurency models
   - `CandidateExecution.v` The definition of candidate executions for weak
     memory model
+  - `GenPromising.v` Common infratructure for promising models
 - `ArchSemArm` The Armv9-A instantiation of the library. This includes;
   - A sequential operational model (`ArmSeqModel.v`)
   - A User-mode promising model (`UMPromising.v`), similar to
     [the PLDI19 paper](https://sf.snu.ac.kr/publications/promising-arm-riscv.pdf)
-  - A very WIP VMSA promising model (`VMPromising.v`)
+    but supporting mixed-size accesses.
+  - A still-bleeding-edge VMSA promising model (`VMPromising.v`)
   - A User-mode axiomatic model (`UMArm.v`)
   - An SC model for Arm (`UMSeqArm.v`) that is unsound for >1 thread
   - The VMSA model from [the ESOP22
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
 - `ArchSemRiscV` The RISC-V instantiation of the library. This includes:
   - A User-mode axiomatic model (`UMAxRiscV.v`)
-- `ArchSemX86` The x86 instantiation of the library.
-- `Extraction` contains machinery to extract the code to OCaml, for now it is
-  mainly use to check that the code _can_ be extracted rather than as an
-  actually usable OCaml library
+- `ArchSemX86` The x86 instantiation of the library. This includes:
+  - A operational TSO implementation (`OperationalX86TSO.v`)
+  - An equivalent axiomatic model (`AxiomaticX86TSO.v`) (equivalence not formally proven)
+- `Extraction` contains machinery to extract the code to OCaml and to bundle it
+  into a usable OCaml library
+- `cli` contains all the OCaml code to support the `cli`, such as parsing, driving the Rocq models,
+  and diplaying the results.
+  - `cli/lib/litmus` is core library for running litmus tests
+  - `cli/lib/isla` is the library to parse and process `isla`-style tests
+  - `cli/bin` is the CLI executable code
+  - `cli/tests` contain our small in-repo test-suite
+ 
 
 ## Documentation
 
@@ -133,19 +156,13 @@ Developing complete architectural models is an ambitious long-term goal. The
 curent state takes many important steps towards that, but there is still much to
 do. In the short term, this includes:
 
-### Test runner
-
-While most of the code can run in Rocq with `vm_compute` we currently do not
-have a good working extraction pipeline, or a CLI frontend to call models on
-litmus tests.
-
 ### Partiality handling
 
-In order to allow axiomatic models to define the consistency of partial
-executions that contain partially executed instructions, we need to add more
-support from the interface to bound what a partially executed instruction can do
-next. Concurrency models must therefore correctly understand this information to
-handle undefined behaviour properly.
+In order to allow axiomatic and promising models to define the consistency of
+partial executions that contain partially executed instructions, we need to add
+more support from the interface to bound what a partially executed instruction
+can do next. Concurrency models must therefore correctly understand this
+information to handle undefined behaviour properly.
 
 ### Intra-instruction parallelism
 
