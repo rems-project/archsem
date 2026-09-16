@@ -401,6 +401,7 @@ Extract Inlined Constant vec_to_list => "(fun x -> x)".
 
 Extraction Implicit cprodn [A n].
 Extraction Implicit vmapM [A B n].
+Extraction Implicit vimapM [A B n].
 
 Extraction Implicit vec_dec [A n].
 Extract Inlined Constant vec_dec => "List.equal".
