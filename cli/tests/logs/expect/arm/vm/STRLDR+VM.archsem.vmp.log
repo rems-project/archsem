@@ -1,0 +1,8 @@
+Test STRLDR+VM Forall
+States 1
+0:R0=0x2a; 
+Ok
+Witnesses
+Positive: 2 Negative: 0
+Condition STRLDR+VM forall 0:R0=0x2a
+Observation STRLDR+VM Always 2 0

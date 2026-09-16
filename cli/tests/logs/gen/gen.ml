@@ -38,43 +38,61 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** This file actually runs in the converter directory (parent) but the
-    generated rules run in the expect directory
+(** This file actually runs in the logs directory (parent) but the generated
+    rules run in the expect directory.
 
-    For each test, generate a rule that runs the converter on the test and diffs
-    the resulting pretty-printed test against the expected output in
-    [expect/<arch>/<dir>/<test>] *)
+    For each test and each model that should run it, generate a rule that runs
+    the model on the test and diffs the resulting log (minus the [Time] line)
+    against the expected log in [expect/<arch>/<dir>/<test>.<model>.log] *)
 
-(** Expects [arm/um/test.*.toml]*)
-let generate_rules file =
+(** Models to run on each test directory *)
+let models_for_dir arch dir =
+  match (arch, dir) with
+  | ("arm", ("seq" | "seq-mixed")) -> ["seq"; "ump"; "vmp"]
+  | ("arm", ("um" | "um-mixed")) -> ["ump"; "vmp"]
+  | ("arm", ("vm" | "vm-mixed")) -> ["vmp"]
+  | ("x86", "seq") -> ["seq"; "tso"]
+  | ("x86", "um") -> ["tso"]
+  | _ ->
+      Printf.eprintf "gen: unknown test directory %s/%s, add it to %s\n" arch dir
+        __FILE__;
+      exit 1
+
+(** Expects [arm/um/test.*.toml] *)
+let generate_rules model file =
+  let log = Filename.remove_extension file ^ "." ^ model ^ ".log" in
   (* Dune doesn't support generating files in subdirectory, or importing
      subdirectory stanza with dynamic_include so we have to flatten the
      directory structure*)
-  let flat = file |> String.split_on_char '/' |> String.concat "_" in
+  let flat = log |> String.split_on_char '/' |> String.concat "_" in
   Printf.printf
     {|
 (rule
  (deps (:input ../../%s) (source_tree ../../../../config))
  (targets %s)
  (action
-  (run archsem convert %%{input} -o %%{targets})))
+  (with-stdout-to %%{targets}
+   (pipe-stdout
+    (run archsem %s %%{input})
+    (run sed "/^Time /d"))))) ; Remove the time line, it would make the test flaky
 
 (rule
  (alias runtest)
  (action
   (diff %s %s)))
 |}
-     file flat file flat
+    file flat model log flat
 
 let gen_for_dir arch dir =
   let path = Filename.concat arch dir in
   (* Skip hidden directories and '.'/'..' *)
   if dir.[0] <> '.' && Sys.is_directory (Filename.concat ".." path) then
+    let models = models_for_dir arch dir in
     Sys.readdir (Filename.concat ".." path)
     |> Array.to_list |> List.sort String.compare
     |> List.filter (fun s -> Filename.check_suffix s ".toml")
     |> List.map (Filename.concat path)
-    |> List.iter generate_rules
+    |> List.iter (fun file -> List.iter (fun m -> generate_rules m file) models)
 
 let gen_for_arch arch =
   Sys.readdir (Filename.concat ".." arch)

@@ -1,0 +1,9 @@
+Test Inval+LDR Allowed
+States 2
+0:ELR_EL1=0; 0:ESR_EL1=0; 0:FAR_EL1=0; 0:PC=0x100c; 0:X3=3; 
+0:ELR_EL1=0x1008; 0:ESR_EL1=0x92000007; 0:FAR_EL1=0x400000; 0:PC=0x4242400; 0:X3=0; 
+Ok
+Witnesses
+Positive: 2 Negative: 0
+Condition Inval+LDR exists ((0:PC=0x100c /\ 0:X3=3) \/ (0:PC=0x4242400 /\ 0:ELR_EL1=0x1008 /\ 0:FAR_EL1=0x400000 /\ 0:ESR_EL1=0x92000007))
+Observation Inval+LDR Always 2 0

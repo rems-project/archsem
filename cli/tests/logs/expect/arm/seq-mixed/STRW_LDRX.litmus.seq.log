@@ -1,0 +1,8 @@
+Test STRW_LDRX Forall
+States 1
+0:X0=0x2a; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition STRW_LDRX forall 0:X0=0x2a
+Observation STRW_LDRX Always 1 0

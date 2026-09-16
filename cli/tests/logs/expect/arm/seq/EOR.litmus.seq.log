@@ -1,0 +1,8 @@
+Test EOR Forall
+States 1
+0:X0=0x110; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition EOR forall 0:X0=0x110
+Observation EOR Always 1 0
