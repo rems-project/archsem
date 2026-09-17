@@ -44,7 +44,8 @@
     The converter fixes the VA layout for code/data symbols before calling the
     assembler. The assembler only emits code bytes and applies relocations for
     those preassigned addresses. The converter then evaluates terms and builds
-    registers, memory, termination, and outcomes. *)
+    registers, memory, termination, and outcomes using one mutable evaluation
+    state for each test. *)
 
 open Litmus
 module RegValGen = Archsem.RegValGen
@@ -100,9 +101,9 @@ let eval_error context fmt =
     (fun msg -> raise (Eval_error (eval_context_path context, msg)))
     fmt
 
-let eval_term ?page_table_entries ~context ~lookup_addr term =
+let eval_term ~context ~state term =
   try
-    let value = Term.eval ?page_table_entries ~lookup_addr term in
+    let value = Term.eval ~state term in
     match context with
     (* Final constants stay raw Z.t; registers read via bv_unsigned. *)
     | Final_assertion when Z.sign value < 0 ->
@@ -163,31 +164,43 @@ let checked_mapping_alignment level =
 
 let symbolic_va_alignments ir =
   let virtual_names = symbolic_names ir in
-  let rec collect = function
-    | [] -> []
-    | Page_table_ast.AlignedVirtual {alignment; names} :: stmts ->
-        let alignment = checked_virtual_alignment alignment in
-        List.iter
-          (fun name ->
-             if not (List.mem name virtual_names) then
-               eval_error Page_table_setup "page_table: undeclared VA: %s" name
-           )
-          names;
-        List.map (fun name -> (name, alignment)) names @ collect stmts
-    | Page_table_ast.Mapping {va_name; level = Some level; _} :: stmts ->
-        (va_name, checked_mapping_alignment level) :: collect stmts
-    | Page_table_ast.TableBlock {body; _} :: stmts -> collect body @ collect stmts
-    | _ :: stmts -> collect stmts
+  let alignments = Hashtbl.create 32 in
+  let request name alignment =
+    let previous =
+      Hashtbl.find_opt alignments name
+      |> Option.value ~default:Allocator.page_size
+    in
+    Hashtbl.replace alignments name (max previous alignment)
   in
-  let alignment_requests = collect ir.Ir.page_table_setup in
-  let alignment_for name =
-    List.fold_left
-      (fun best (aligned_name, alignment) ->
-         if aligned_name = name then max best alignment else best
+  let rec collect stmts =
+    List.iter
+      (function
+        | Page_table_ast.AlignedVirtual {alignment; names} ->
+            let alignment = checked_virtual_alignment alignment in
+            List.iter
+              (fun name ->
+                 if not (List.mem name virtual_names) then
+                   eval_error Page_table_setup "page_table: undeclared VA: %s"
+                     name;
+                 request name alignment
+               )
+              names
+        | Page_table_ast.Mapping {va_name; level = Some level; _} ->
+            request va_name (checked_mapping_alignment level)
+        | Page_table_ast.TableBlock {body; _} -> collect body
+        | _ -> ()
+        )
+      stmts
+  in
+  collect ir.Ir.page_table_setup;
+  List.map
+    (fun name ->
+       ( name,
+         Hashtbl.find_opt alignments name
+         |> Option.value ~default:Allocator.page_size
        )
-      Allocator.page_size alignment_requests
-  in
-  List.map (fun name -> (name, alignment_for name)) virtual_names
+     )
+    virtual_names
 
 let make_arena ?(reserved = []) base =
   assert (base land 0x1FFFFF == 0);
@@ -249,9 +262,13 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 
-let assemble ~filename ~code_allocator ~symbol_allocator ir =
+let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
   let input = to_assembly_input ~code_allocator ~symbol_allocator ir in
-  (input, Assembler.assemble ~filename input)
+  let result = Assembler.assemble ~filename input in
+  List.iter
+    (fun (name, addr) -> Eval_state.add_virtual state name addr)
+    result.symbols;
+  (input, result)
 
 (** {2 Thread register construction} *)
 
@@ -263,9 +280,8 @@ let find_section name (asm_result : Assembler.assembly_result) =
 (* Build per-thread initial register maps: PC + user init + config defaults. *)
 let build_registers
       ~arch
-      ?page_table_entries
       ?page_table_root
-      ~lookup_addr
+      ~state
       ~pc
       (start_pc : int)
       (thread : Ir.thread)
@@ -275,10 +291,7 @@ let build_registers
     List.map
       (fun (reg, value) ->
          let context = Register_init (thread.tid, reg) in
-         let gen =
-           RegValGen.Number
-             (eval_term ?page_table_entries ~context ~lookup_addr value)
-         in
+         let gen = RegValGen.Number (eval_term ~context ~state value) in
          (reg, normalize_register_gen ~arch ~context reg gen)
        )
       thread.regs
@@ -300,9 +313,8 @@ let build_registers
 
 let build_threads
       ~arch
-      ?page_table_entries
       ?page_table_root
-      ~lookup_addr
+      ~state
       asm_result
       (threads : Ir.thread list) : Testrepr.thread list
   =
@@ -311,15 +323,12 @@ let build_threads
     (fun tid (thread : Ir.thread) ->
        let sec = find_section (thread_section_name tid) asm_result in
        let regs =
-         build_registers ~arch ?page_table_entries ?page_table_root ~lookup_addr
-           ~pc sec.addr thread
+         build_registers ~arch ?page_table_root ~state ~pc sec.addr thread
        in
        let breakpoints =
          let context = Breakpoints tid in
          Z.of_int (sec.addr + Bytes.length sec.data)
-         :: List.map
-              (eval_term ?page_table_entries ~context ~lookup_addr)
-              thread.breakpoints
+         :: List.map (eval_term ~context ~state) thread.breakpoints
        in
        {Testrepr.regs; breakpoints}
      )
@@ -333,37 +342,15 @@ let build_page_table_setup
       ~symbol_allocator
       ~table_allocator
       ~table_block
-      asm_result
+      ~state
   =
   if ir.Ir.locations <> [] then
     eval_error Page_table_setup
       "page_table: [locations] is not supported with page_table_setup";
   try
     Page_table_builder.build ~arch:ir.arch ~symbol_allocator ~table_allocator
-      ~table_block ~symbolic_vas:asm_result.Assembler.symbols ir.page_table_setup
+      ~table_block ~state ir.page_table_setup
   with Page_table_builder.Error msg -> eval_error Page_table_setup "%s" msg
-
-(* Terms may refer to assembly symbols denoting virtual addresses and to symbols
-   whose physical addresses are assigned by page_table_setup. *)
-let build_lookup_addr asm_result page_table =
-  let page_table_symbols =
-    match page_table with
-    | None -> []
-    | Some layout ->
-        let default_root =
-          Option.map
-            (fun root -> ("page_table_base", root))
-            layout.Page_table_builder.default_root
-          |> Option.to_list
-        in
-        default_root @ layout.Page_table_builder.table_symbols_pa
-        @ layout.Page_table_builder.data_symbols_pa
-  in
-  let symbols_addr = asm_result.Assembler.symbols @ page_table_symbols in
-  fun name ->
-    match List.assoc_opt name symbols_addr with
-    | Some addr -> addr
-    | None -> Printf.ksprintf failwith "Symbol %s not found" name
 
 (** {2 Memory construction} *)
 
@@ -409,7 +396,7 @@ let build_locations_memory
       ~default_mem_size
       ~symbol_sizes
       ~symbols
-      ~lookup_addr
+      ~state
       ~locations
   =
   List.map
@@ -419,33 +406,36 @@ let build_locations_memory
        in
        let value =
          List.assoc_opt sym.name locations
-         |> Option.map (eval_term ~context:(Location_init sym.name) ~lookup_addr)
+         |> Option.map (eval_term ~context:(Location_init sym.name) ~state)
          |> Option.value ~default:Z.zero
        in
        data_memory_block ~step:mem_size ~symbol:sym.name sym.addr value
      )
     symbols
 
-let build_page_table_memory ~default_mem_size ~symbol_sizes page_table =
+let build_page_table_memory ~default_mem_size ~symbol_sizes ~entries page_table =
   let table_memory =
-    List.map
-      (fun (addr, value) ->
+    Hashtbl.fold
+      (fun addr value memory ->
          data_memory_block ~step:Page_table_desc.entry_size
            ~kind:Testrepr.PageTable addr (Z.of_int64 value)
+         :: memory
        )
-      page_table.Page_table_builder.table_entries
+      entries []
+    |> List.sort (fun (a : Testrepr.memory_block) b -> Int.compare a.addr b.addr)
   in
   let phys_memory =
-    List.map
-      (fun (sym, pa) ->
+    Hashtbl.fold
+      (fun sym pa memory ->
          let mem_size = symbol_size ~default:default_mem_size symbol_sizes sym in
          let value =
-           List.assoc_opt pa page_table.Page_table_builder.data_inits
+           Hashtbl.find_opt page_table.Page_table_builder.data_inits pa
            |> Option.value ~default:Z.zero
          in
-         data_memory_block ~step:mem_size ~symbol:sym pa value
+         data_memory_block ~step:mem_size ~symbol:sym pa value :: memory
        )
-      page_table.Page_table_builder.data_symbols_pa
+      page_table.Page_table_builder.data_symbols_pa []
+    |> List.sort (fun (a : Testrepr.memory_block) b -> Int.compare a.addr b.addr)
   in
   table_memory @ phys_memory
 
@@ -455,7 +445,7 @@ let build_memory
       ~default_mem_size
       ~symbol_sizes
       ~data_symbols
-      ~lookup_addr
+      ~state
       ~locations
       asm_result
       page_table
@@ -467,15 +457,18 @@ let build_memory
     match page_table with
     | None ->
         build_locations_memory ~default_mem_size ~symbol_sizes
-          ~symbols:data_symbols ~lookup_addr ~locations
+          ~symbols:data_symbols ~state ~locations
     | Some page_table ->
-        build_page_table_memory ~default_mem_size ~symbol_sizes page_table
+        let entries = Option.get state.Eval_state.page_table in
+        build_page_table_memory ~default_mem_size ~symbol_sizes ~entries
+          page_table
   in
   code_memory @ data_memory
 
 (** {1 Public API} *)
 
 let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
+  let state = Eval_state.create () in
   let default_mem_size = default_memory_size () in
   let (asm_input, asm_result, page_table) =
     if ir.page_table_setup = [] then
@@ -485,8 +478,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
           ()
       in
       let (asm_input, asm_result) =
-        assemble ~filename ~code_allocator:allocator ~symbol_allocator:allocator
-          ir
+        assemble ~filename ~state ~code_allocator:allocator
+          ~symbol_allocator:allocator ir
       in
       (asm_input, asm_result, None)
     else
@@ -497,29 +490,24 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
         make_arena ~reserved:(table_root_pages ir.page_table_setup) table_base
       in
       let (asm_input, asm_result) =
-        assemble ~filename ~code_allocator ~symbol_allocator ir
+        assemble ~filename ~state ~code_allocator ~symbol_allocator ir
       in
       let page_table =
         build_page_table_setup ir ~symbol_allocator ~table_allocator
-          ~table_block:table_base asm_result
+          ~table_block:table_base ~state
       in
       (asm_input, asm_result, Some page_table)
   in
-  let page_table_entries =
-    Option.map (fun layout -> layout.Page_table_builder.table_entries) page_table
-  in
-  let lookup_addr = build_lookup_addr asm_result page_table in
   let page_table_root =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
   in
   let threads =
-    build_threads ~arch:ir.arch ?page_table_entries ?page_table_root ~lookup_addr
-      asm_result ir.threads
+    build_threads ~arch:ir.arch ?page_table_root ~state asm_result ir.threads
   in
   let memory =
     build_memory ~default_mem_size ~symbol_sizes:ir.sizes
-      ~data_symbols:asm_input.symbols ~lookup_addr ~locations:ir.locations
-      asm_result page_table
+      ~data_symbols:asm_input.symbols ~state ~locations:ir.locations asm_result
+      page_table
   in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
@@ -527,7 +515,5 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
     memory;
     kind = ir.kind;
     final =
-      Assertion.map_cst
-        (eval_term ?page_table_entries ~context:Final_assertion ~lookup_addr)
-        ir.assertion
+      Assertion.map_cst (eval_term ~context:Final_assertion ~state) ir.assertion
   }

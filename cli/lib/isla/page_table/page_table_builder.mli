@@ -54,18 +54,18 @@ type data_value = Z.t
 type layout =
   { (* Implicit unnamed Stage-1 root, absent when [default_tables = false]. *)
     default_root : pa option;
-    table_entries : (pa * descriptor) list;
-    (* Named table roots and their physical addresses. *)
-    table_symbols_pa : (string * pa) list;
     (* Data symbols and their allocated physical addresses. *)
-    data_symbols_pa : (string * pa) list;
-    (* [*pa = value] initialisers resolved to concrete PAs. *)
-    data_inits : (pa * data_value) list
+    data_symbols_pa : (string, pa) Hashtbl.t;
+    (* Data initialisers resolved to concrete PAs; later stores take precedence. *)
+    data_inits : (pa, data_value) Hashtbl.t
   }
 
 exception Error of string
 
-(** Build a concrete page-table layout from parsed setup. *)
+(** Build a concrete page-table layout by executing statements in source order.
+    Symbols are registered as they are allocated. Expressions query the live
+    entries built so far. After setup, [state] retains these entries for register
+    and assertion evaluation. *)
 val build :
    arch:Litmus.Arch_id.t ->
   (* Allocate physical addresses for data symbols. *)
@@ -74,8 +74,8 @@ val build :
   table_allocator:Allocator.t ->
   (* Base address of the 2 MiB translation-table storage region. *)
   table_block:pa ->
-  (* Maps virtual-address symbol names to concrete addresses. *)
-  symbolic_vas:(string * va) list ->
+  (* Shared test-local symbols and live descriptor entries. *)
+  state:Eval_state.t ->
   (* Parsed [page_table_setup] statement list *)
   Page_table_ast.stmt list ->
   layout

@@ -38,25 +38,34 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Evaluate Isla expressions against the current test state. *)
+(** Mutable evaluation state owned by one test. *)
 
-(* Keep the expression AST independent of the evaluator so page-table setup
-   can retain expressions without depending on its own builder. *)
-include Term_ast
+type page_table = (int, int64) Hashtbl.t
 
-let eval ~state term =
-  let positional_functions =
-    Bv_fns.functions @ Page_table_fns.positional_functions ~state
-  in
-  let keyword_functions = Page_table_fns.keyword_functions in
-  let rec eval_term = function
-    | Const z -> z
-    | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
-    | Fn (name, args) ->
-        let evaluated = List.map eval_term args in
-        Fn_registry.eval ~fns:positional_functions name evaluated
-    | KwFn (name, kwargs) ->
-        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
-        Fn_registry.eval ~fns:keyword_functions name evaluated
-  in
-  eval_term term
+type t =
+  { symbols : (string, int) Hashtbl.t;
+    virtual_symbols : (string, unit) Hashtbl.t;
+    mutable page_table : page_table option
+  }
+
+let create () =
+  { symbols = Hashtbl.create 32;
+    virtual_symbols = Hashtbl.create 32;
+    page_table = None
+  }
+
+let add_symbol state name addr = Hashtbl.replace state.symbols name addr
+
+let add_virtual state name addr =
+  add_symbol state name addr;
+  Hashtbl.replace state.virtual_symbols name ()
+
+let virtual_addr state name =
+  if Hashtbl.mem state.virtual_symbols name then
+    Hashtbl.find_opt state.symbols name
+  else None
+
+let lookup_addr state name =
+  match Hashtbl.find_opt state.symbols name with
+  | Some addr -> addr
+  | None -> Printf.ksprintf failwith "Symbol %s not found" name
