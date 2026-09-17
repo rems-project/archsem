@@ -38,25 +38,12 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Evaluate Isla expressions against the current test state. *)
+(** Isla expressions, retained until their execution point. *)
 
-(* Keep the expression AST independent of the evaluator so page-table setup
-   can retain expressions without depending on its own builder. *)
-include Term_ast
+type t =
+  | Const of Z.t
+  | Sym of string
+  | Fn of string * t list
+  | KwFn of string * (string * t) list
 
-let eval ~state term =
-  let positional_functions =
-    Bv_fns.functions @ Page_table_fns.positional_functions ~state
-  in
-  let keyword_functions = Page_table_fns.keyword_functions in
-  let rec eval_term = function
-    | Const z -> z
-    | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
-    | Fn (name, args) ->
-        let evaluated = List.map eval_term args in
-        Fn_registry.eval ~fns:positional_functions name evaluated
-    | KwFn (name, kwargs) ->
-        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
-        Fn_registry.eval ~fns:keyword_functions name evaluated
-  in
-  eval_term term
+let zero = Const Z.zero

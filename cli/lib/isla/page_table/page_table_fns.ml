@@ -68,7 +68,7 @@ let pte_addr name entries ~base ~va ~level =
     let addr = table + (index * Page_table_desc.entry_size) in
     if current_level = level then addr
     else
-      let desc = List.assoc_opt addr entries |> Option.value ~default:0L in
+      let desc = Hashtbl.find_opt entries addr |> Option.value ~default:0L in
       match Page_table_desc.table_addr_of_descriptor desc with
       | Some next_table -> walk next_table (current_level + 1)
       | None ->
@@ -89,11 +89,10 @@ let pte_function entries level =
         let va = Fn_registry.int_arg name "va" va in
         let base = Fn_registry.int_arg name "base" base in
         let pte_pa = pte_addr name entries ~base ~va ~level in
-        let offset = pte_pa - base in
-        if offset < 0 || offset >= Allocator.big_size then
+        if pte_pa < Allocator.big_size || pte_pa >= 2 * Allocator.big_size then
           Fn_registry.error
             "%s: PTE level %d for VA 0x%x was resolved at PA 0x%x which is \
-             outside page-table pool rooted at 0x%x"
+             outside page-table storage for root 0x%x"
              name level va pte_pa base;
         Z.of_int pte_pa
     | args -> Fn_registry.arity_error name 2 (List.length args)
@@ -109,7 +108,7 @@ let desc_function entries level =
         let va = Fn_registry.int_arg name "va" va in
         let base = Fn_registry.int_arg name "base" base in
         let pte_pa = pte_addr name entries ~base ~va ~level in
-        match List.assoc_opt pte_pa entries with
+        match Hashtbl.find_opt entries pte_pa with
         | Some desc -> Z.of_int64 desc
         | None ->
             Fn_registry.error
@@ -117,6 +116,19 @@ let desc_function entries level =
                0x%x not found at resolved PA 0x%x"
                name level va base pte_pa
       )
+    | args -> Fn_registry.arity_error name 2 (List.length args)
+  )
+
+(** [tableN(va, base)] returns the page containing the level-[N] PTE. *)
+let table_function entries level =
+  let name = Printf.sprintf "table%d" level in
+  ( name,
+    function
+    | [va; base] ->
+        let va = Fn_registry.int_arg name "va" va in
+        let base = Fn_registry.int_arg name "base" base in
+        let addr = pte_addr name entries ~base ~va ~level in
+        Z.of_int (Page_table_desc.align_page_addr addr)
     | args -> Fn_registry.arity_error name 2 (List.length args)
   )
 
@@ -183,15 +195,16 @@ let ttbr_function =
   in
   (name, eval)
 
-let positional_functions ?page_table_entries () =
+let positional_functions ~state =
   let functions = [page_function; asid_function] in
-  match page_table_entries with
+  match state.Eval_state.page_table with
   | None -> functions
-  | Some page_table_entries ->
+  | Some entries ->
       let levels = [0; 1; 2; 3] in
       functions
-      @ List.map (pte_function page_table_entries) levels
-      @ List.map (desc_function page_table_entries) levels
+      @ List.map (pte_function entries) levels
+      @ List.map (desc_function entries) levels
+      @ List.map (table_function entries) levels
 
 let keyword_functions : Fn_registry.keyword_fn list =
   let levels = [0; 1; 2; 3] in

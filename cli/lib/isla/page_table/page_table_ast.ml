@@ -52,22 +52,27 @@ type table_stage =
   | S1
   | S2
 
-type descriptor_field =
+type 'a field =
   { name : string;
-    value : Z.t
+    value : 'a
   }
+
+type descriptor_field = Z.t field
+
+type descriptor_expr_field = Term_ast.t field
 
 type mapping_target =
   | PaName of string
   | Invalid
-  | Table of Z.t
+  | Address of Term_ast.t
+  | Table of Term_ast.t
 
 type stmt =
   (* Controls whether an implicit unnamed Stage-1 root is built. *)
   | OptionDefaultTables of bool
   (* [virtual x y;] predeclares virtual-address names. *)
   | Virtual of string list
-  (* [physical pa_x pa_y;] predeclares physical-address names. *)
+  (* [physical pa_x pa_y;] allocates and registers physical-address names. *)
   | Physical of string list
   (* [aligned 2097152 virtual x y;] constrains virtual-address names. *)
   | AlignedVirtual of
@@ -79,27 +84,28 @@ type stmt =
   | Mapping of
       { va_name : string;
         target : mapping_target;
-        attrs : descriptor_field list;
+        attrs : descriptor_expr_field list;
         level : int option
       }
   (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
   | MaybeMapping of
       { va_name : string;
         target : mapping_target;
-        attrs : descriptor_field list;
+        attrs : descriptor_expr_field list;
         level : int option
       }
-  (* [*pa_x = value;] initialises data at a named physical address. *)
+  (* [*pa_name = value;] allocates the PA on first use and evaluates the value. *)
   | DataInit of
       { pa_name : string;
-        value : Z.t
+        value : Term_ast.t
       }
   (* [identity addr with attr;] maps one page to itself. *)
   | IdentityMapping of
-      { addr : Z.t;
+      { addr : Term_ast.t;
         attr : attr
       }
-  (* [s1table name 0x280000 { ... }] defines a root at that actual PA. *)
+  (* [s1table name 0x280000 { ... }] immediately binds the name to its fixed
+     root PA before executing the body. *)
   | TableBlock of
       { stage : table_stage;
         name : string;
