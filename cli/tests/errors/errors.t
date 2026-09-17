@@ -171,6 +171,11 @@ Negative zero extension in Isla function
   function: extz: argument bits must be non-negative
   [1]
 
+ELF symbols must agree with preassigned data addresses
+  $ archsem seq conflicting-elf-symbol.litmus.toml
+  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x2000, ELF 0x10000
+  [1]
+
 Page table DSL on unsupported architecture
   $ archsem seq x86-page-table.litmus.toml
   archsem: eval error:
@@ -178,11 +183,32 @@ Page table DSL on unsupported architecture
   page_table: only AArch64 is supported, got X86
   [1]
 
-Page table DSL mapping source must be a known VA
-  $ archsem seq page-table-pa-as-va.litmus.toml
+Page table DSL rejects redefining a virtual symbol as a physical symbol
+  $ archsem seq duplicate-page-table-symbol.litmus.toml
   archsem: eval error:
-  File "page-table-pa-as-va.litmus.toml", path "page_table_setup":
-  page_table: undeclared VA: pa_x
+  File "duplicate-page-table-symbol.litmus.toml", path "page_table_setup":
+  Symbol x is already defined
+  [1]
+
+Page table DSL rejects repeated physical declarations
+  $ archsem seq duplicate-page-table-physical.litmus.toml
+  archsem: eval error:
+  File "duplicate-page-table-physical.litmus.toml", path "page_table_setup":
+  Symbol pa_x is already defined
+  [1]
+
+Page table DSL rejects repeated virtual declarations
+  $ archsem seq duplicate-page-table-virtual.litmus.toml
+  archsem: eval error:
+  File "duplicate-page-table-virtual.litmus.toml", path "page_table_setup":
+  Symbol x is already defined
+  [1]
+
+Page table DSL rejects a symbol that shadows the default table root
+  $ archsem seq duplicate-page-table-root.litmus.toml
+  archsem: eval error:
+  File "duplicate-page-table-root.litmus.toml", path "page_table_setup":
+  Symbol page_table_base is already defined
   [1]
 
 Page table DSL rejects duplicate VA mappings

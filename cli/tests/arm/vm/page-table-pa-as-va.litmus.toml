@@ -1,0 +1,19 @@
+arch = "AArch64"
+name = "page-table-pa-as-va"
+
+page_table_setup = """
+physical pa_x;
+physical pa_y;
+pa_x |-> pa_y;
+*pa_y = 42;
+"""
+
+[thread.0]
+init = { X1 = "pa_x", TTBR0_EL1 = "page_table_base", SCTLR_EL1 = 1, CurrentEL = 1 }
+code = """
+LDR X0,[X1]
+"""
+
+[final]
+expect = "sat"
+assertion = "0:X0 = 42"

@@ -1,0 +1,15 @@
+arch = "AArch64"
+name = "conflicting-elf-symbol"
+symbolic = ["x"]
+
+[thread.0]
+code = """
+.section .data.x, "aw"
+.balign 65536
+.section .__thread0, "ax"
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"
