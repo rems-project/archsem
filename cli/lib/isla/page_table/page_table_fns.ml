@@ -122,13 +122,14 @@ let desc_function entries level =
 
 (** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
 let eval_desc name level kwargs =
-  Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"] kwargs;
+  Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"; "nG"] kwargs;
   let oa = Fn_registry.required_kwarg name "oa" kwargs in
   let fields =
     [ descriptor_field_arg kwargs "Valid" Z.one;
       descriptor_field_arg kwargs "AF" Z.one;
       descriptor_field_arg kwargs "AP" Z.one;
-      descriptor_field_arg kwargs "DBM" Z.zero
+      descriptor_field_arg kwargs "DBM" Z.zero;
+      descriptor_field_arg kwargs "nG" Z.zero
     ]
   in
   Z.of_int64
