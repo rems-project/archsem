@@ -180,7 +180,7 @@ let table_descriptor next_table_pa =
 
 let attrs_of_kind = function
   | Ast.Code -> aarch64_code_attrs
-  | Ast.Data -> aarch64_data_attrs
+  | Ast.Data | Ast.Default -> aarch64_data_attrs
 
 (** Encode a level-3 page descriptor. *)
 let page_descriptor pa kind fields =
