@@ -304,15 +304,13 @@ let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
       let pa = alloc_pa ?alignment ?mapping_level:level builder pa_name in
       add_mapping ?level ~fields:attrs builder ~root ~va ~pa Page_table_ast.Data
   | Page_table_ast.Invalid ->
-      let desc = Desc.apply_descriptor_fields 0L attrs in
+      let desc = Desc.apply_page_block_fields 0L attrs in
       write_descriptor ?level builder ~root ~va desc
   | Page_table_ast.Table addr ->
-      if attrs <> [] then
-        error "page_table: descriptor fields are only supported on PA mappings";
       let level = check_table_level level in
       let table_pa = table_addr "table address" addr in
       let desc =
-        try Desc.table_descriptor table_pa
+        try Desc.table_descriptor ~fields:attrs table_pa
         with Failure msg -> error "page_table: %s" msg
       in
       write_descriptor ~level builder ~root ~va desc

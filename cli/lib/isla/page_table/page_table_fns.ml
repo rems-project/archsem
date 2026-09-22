@@ -140,10 +140,11 @@ let eval_desc name level kwargs =
 
 (** [mkdescN(table=...)] encodes a next-level table descriptor. *)
 let eval_table_desc name kwargs =
-  Fn_registry.check_kwargs name ["table"] kwargs;
+  Fn_registry.check_kwargs name ["table"; "APTable"] kwargs;
   let table_addr = Fn_registry.required_kwarg name "table" kwargs in
+  let fields = [descriptor_field_arg kwargs "APTable" Z.zero] in
   Z.of_int64
-    (Page_table_desc.table_descriptor
+    (Page_table_desc.table_descriptor ~fields
        (Fn_registry.int_arg name "table" table_addr)
     )
 
