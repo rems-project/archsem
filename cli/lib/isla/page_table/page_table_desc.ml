@@ -81,52 +81,57 @@ let va_index va level = (va lsr level_shift level) land 0x1FF
 
 (** {2 Descriptor fields} *)
 
-type descriptor_field =
-  { name : string;
-    lsb : int;
-    width : int
-  }
+(** Shared validation and encoding of descriptor field overrides. *)
+module Fields = struct
+  type t =
+    { name : string;
+      lsb : int;
+      width : int
+    }
 
-let descriptor_fields =
-  [ {name = "Valid"; lsb = 0; width = 1};
-    {name = "AF"; lsb = 10; width = 1};
-    {name = "AP"; lsb = 6; width = 2};
-    {name = "DBM"; lsb = 51; width = 1};
-    {name = "nG"; lsb = 11; width = 1}
-  ]
+  let page_supported_fields =
+    [ {name = "Valid"; lsb = 0; width = 1};
+      {name = "AF"; lsb = 10; width = 1};
+      {name = "AP"; lsb = 6; width = 2};
+      {name = "DBM"; lsb = 51; width = 1};
+      {name = "nG"; lsb = 11; width = 1}
+    ]
 
-(** Replace the bits selected by [mask] with [bits], preserving all other bits. *)
-let update_bits desc mask bits =
-  Int64.logor (Int64.logand desc (Int64.lognot mask)) bits
+  let table_supported_fields = [{name = "APTable"; lsb = 61; width = 2}]
 
-(** Build a mask for a descriptor field of [width] bits starting at [lsb]. *)
-let descriptor_field_mask lsb width =
-  Int64.shift_left (Int64.pred (Int64.shift_left 1L width)) lsb
+  (** Replace the selected bits, preserving all other bits. *)
+  let update desc mask bits =
+    Int64.logor (Int64.logand desc (Int64.lognot mask)) bits
 
-(** Check a field value and shift it into its descriptor bit position. *)
-let descriptor_field_bits name value lsb width =
-  let max_value = Z.(~$1 lsl width) in
-  if Z.lt value Z.zero || Z.geq value max_value then
-    Litmus.Error.failwith "descriptor field %s value %s is out of range" name
-      (Z.to_string value)
-  else Int64.shift_left (Int64.of_int (Z.to_int value)) lsb
+  let mask lsb width =
+    Int64.shift_left (Int64.pred (Int64.shift_left 1L width)) lsb
 
-(** Convert a descriptor field to the mask and bits used to update a descriptor. *)
-let make_descriptor_field Ast.{name; value} =
-  match List.find_opt (fun field -> field.name = name) descriptor_fields with
-  | None -> Litmus.Error.failwith "unsupported descriptor field: %s" name
-  | Some field ->
-      let bits = descriptor_field_bits name value field.lsb field.width in
-      (descriptor_field_mask field.lsb field.width, bits)
+  (** Check a field value and shift it into its descriptor bit position. *)
+  let bits name value lsb width =
+    let max_value = Z.(~$1 lsl width) in
+    if Z.lt value Z.zero || Z.geq value max_value then
+      Litmus.Error.failwith "descriptor field %s value %s is out of range" name
+        (Z.to_string value)
+    else Int64.shift_left (Int64.of_int (Z.to_int value)) lsb
 
-(** Apply fields after descriptor construction so they may clear bits. *)
-let apply_descriptor_fields desc fields =
-  List.fold_left
-    (fun desc field ->
-       let (mask, bits) = make_descriptor_field field in
-       update_bits desc mask bits
-     )
-    desc fields
+  (** Apply fields after descriptor construction so they may clear bits. *)
+  let apply supported desc fields =
+    List.fold_left
+      (fun desc Ast.{name; value} ->
+         match List.find_opt (fun field -> field.name = name) supported with
+         | None -> Litmus.Error.failwith "unsupported descriptor field: %s" name
+         | Some field ->
+             let bits = bits name value field.lsb field.width in
+             update desc (mask field.lsb field.width) bits
+       )
+      desc fields
+end
+
+(** Overrides supported by page and block descriptors, including invalid entries. *)
+let apply_page_block_fields = Fields.apply Fields.page_supported_fields
+
+(** Overrides supported by next-level table descriptors. *)
+let apply_table_fields = Fields.apply Fields.table_supported_fields
 
 (** {2 Descriptor masks} *)
 
@@ -175,9 +180,9 @@ let require_addr_in_mask name addr =
   addr
 
 (** Encode a descriptor that points to the next-level table page. *)
-let table_descriptor next_table_pa =
+let table_descriptor ?(fields = []) next_table_pa =
   let next_table_pa = require_addr_in_mask "next_table_pa" next_table_pa in
-  Int64.logor next_table_pa 0x3L
+  apply_table_fields (Int64.logor next_table_pa 0x3L) fields
 
 let attrs_of_kind = function
   | Ast.Code -> aarch64_code_attrs
@@ -190,7 +195,7 @@ let page_descriptor pa kind fields =
   require_in_mask "attrs" attr_mask base_attrs;
   (* Build the full descriptor first; overrides may intentionally clear Valid. *)
   let desc = Int64.logor (Int64.logor pa base_attrs) 0x3L in
-  apply_descriptor_fields desc fields
+  apply_page_block_fields desc fields
 
 (** Encode a block descriptor for a non-leaf page-table level. *)
 let block_descriptor pa level kind fields =
@@ -201,7 +206,7 @@ let block_descriptor pa level kind fields =
   let base_attrs = attrs_of_kind kind in
   require_in_mask "attrs" attr_mask base_attrs;
   let desc = Int64.logor (Int64.logor pa base_attrs) 0x1L in
-  apply_descriptor_fields desc fields
+  apply_page_block_fields desc fields
 
 let make_descriptor ?(fields = []) ~level ~oa ~kind () =
   if level = last_level then page_descriptor oa kind fields
