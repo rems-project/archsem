@@ -1,0 +1,8 @@
+Test Alias+VM Allowed
+States 1
+0:X3=1; 
+Ok
+Witnesses
+Positive: 2 Negative: 0
+Condition Alias+VM exists 0:X3=1
+Observation Alias+VM Always 2 0

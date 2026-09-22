@@ -1,0 +1,8 @@
+Test LDR+fn Allowed
+States 1
+0:X0=0x2a; 0:X1=0x2000; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition LDR+fn exists (0:X0=0x2a /\ 0:X1=0x2000)
+Observation LDR+fn Always 1 0

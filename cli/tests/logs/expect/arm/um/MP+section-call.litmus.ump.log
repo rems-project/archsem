@@ -1,0 +1,11 @@
+Test MP+section-call Allowed
+States 4
+1:X0=0; 1:X2=0; 
+1:X0=0; 1:X2=1; 
+1:X0=1; 1:X2=0; 
+1:X0=1; 1:X2=1; 
+Ok
+Witnesses
+Positive: 1 Negative: 3
+Condition MP+section-call exists (1:X0=1 /\ 1:X2=0)
+Observation MP+section-call Sometimes 1 3

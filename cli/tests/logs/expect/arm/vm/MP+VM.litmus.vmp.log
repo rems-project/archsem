@@ -1,0 +1,11 @@
+Test MP+VM Allowed
+States 4
+1:X0=0; 1:X2=0; 
+1:X0=0; 1:X2=1; 
+1:X0=1; 1:X2=0; 
+1:X0=1; 1:X2=1; 
+Ok
+Witnesses
+Positive: 2 Negative: 6
+Condition MP+VM exists (1:X0=1 /\ 1:X2=0)
+Observation MP+VM Sometimes 2 6

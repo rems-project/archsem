@@ -1,0 +1,11 @@
+Test SB Allowed
+States 4
+0:rax=0; 1:rax=0; 
+0:rax=0; 1:rax=1; 
+0:rax=1; 1:rax=0; 
+0:rax=1; 1:rax=1; 
+Ok
+Witnesses
+Positive: 6 Negative: 18
+Condition SB exists (0:rax=0 /\ 1:rax=0)
+Observation SB Sometimes 6 18
