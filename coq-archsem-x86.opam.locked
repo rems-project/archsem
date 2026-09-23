@@ -129,10 +129,6 @@ build: [
 dev-repo: "git+https://github.com/rems-project/archsem.git"
 pin-depends: [
   [
-    "coq-record-update.0.3.6"
-    "https://github.com/tchajed/coq-record-update/archive/v0.3.6.tar.gz"
-  ]
-  [
     "coq-sail-stdpp.0.20"
     "git+https://github.com/rems-project/coq-sail.git#6136421"
   ]
@@ -140,23 +136,7 @@ pin-depends: [
     "coq-sail-tiny-x86.dev"
     "git+https://github.com/rems-project/sail-tiny-x86.git#a37d128"
   ]
-  [
-    "coq-stdpp.1.12.0"
-    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
-  ]
-  [
-    "coq-stdpp-bitvector.1.12.0"
-    "git+https://gitlab.mpi-sws.org/iris/stdpp.git#coq-stdpp-1.12.0"
-  ]
   ["libsail.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"]
-  [
-    "menhir.20250912"
-    "https://gitlab.inria.fr/fpottier/menhir/-/archive/20250912/archive.tar.gz"
-  ]
-  [
-    "ocaml-variants.4.14.2+options"
-    "https://github.com/ocaml/ocaml/archive/4.14.2.tar.gz"
-  ]
   ["sail.0.20" "git+https://github.com/rems-project/sail.git#89f1a2f4"]
   [
     "sail_c_backend.0.20"
