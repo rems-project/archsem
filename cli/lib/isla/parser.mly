@@ -173,6 +173,7 @@ page_table_descriptor_attrs:
 page_table_attr:
   | CODE { Page_table_ast.Code }
   | DATA { Page_table_ast.Data }
+  | DEFAULT { Page_table_ast.Default }
 
 page_table_mapping_level:
   | AT; LEVEL; level = NUM

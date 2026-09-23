@@ -47,6 +47,7 @@
 type attr =
   | Code
   | Data
+  | Default
 
 type table_stage =
   | S1

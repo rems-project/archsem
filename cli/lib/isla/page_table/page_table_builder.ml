@@ -154,6 +154,8 @@ let check_table_addr name addr =
     error "page_table: %s 0x%x is outside table storage [0x%x, 0x%x)" name addr
       table_storage_base table_storage_limit
 
+let is_table_addr addr = addr >= table_storage_base && addr < table_storage_limit
+
 let table_addr name value =
   let addr = addr_of_z name value in
   if addr mod Allocator.page_size <> 0 then
@@ -346,10 +348,12 @@ let rec eval_stmt builder ~symbolic_vas ~table_block ~root = function
       if addr < Allocator.page_size || addr >= Allocator.big_size then
         error "page_table: identity code address 0x%x is outside the code arena"
           addr
-  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data} ->
+  | Page_table_ast.IdentityMapping
+      {addr; attr = (Page_table_ast.Data | Page_table_ast.Default) as attr} ->
       let root = require_root root in
       let addr = addr_of_z "address" addr in
-      add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
+      if attr <> Page_table_ast.Default || not (is_table_addr addr) then
+        add_mapping builder ~root ~va:addr ~pa:addr attr
   | Page_table_ast.TableBlock {name; base; body; _} ->
       let base = table_addr "table base" base in
       if List.exists (fun root -> root.name = Some name) builder.named_roots then
