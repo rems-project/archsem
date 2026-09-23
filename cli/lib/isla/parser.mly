@@ -89,11 +89,11 @@
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
   page_table_block
-%type <Page_table_ast.mapping_target * Page_table_ast.descriptor_field list * int option>
+%type <Page_table_ast.mapping_target * Page_table_ast.descriptor_expr_field list * int option>
   page_table_mapping_rhs
 %type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
-%type <Page_table_ast.descriptor_field list> page_table_descriptor_attrs
+%type <Page_table_ast.descriptor_expr_field list> page_table_descriptor_attrs
 %type <bool> page_table_bool
 %type <int> page_table_mapping_level
 %type <Page_table_ast.table_stage> page_table_stage
@@ -134,9 +134,9 @@ page_table_stmt_inner:
     { let (target, attrs, level) = rhs in
       Page_table_ast.MaybeMapping {va_name; target; attrs; level}
     }
-  | "*"; pa_name = IDENT; "="; value = NUM
+  | "*"; pa_name = IDENT; "="; value = term
     { Page_table_ast.DataInit {pa_name; value} }
-  | IDENTITY; addr = NUM; WITH; attr = page_table_attr
+  | IDENTITY; addr = term; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
 
 page_table_block:
@@ -153,11 +153,13 @@ page_table_mapping_rhs:
     attrs = option(page_table_descriptor_attrs);
     level = option(page_table_mapping_level)
     { (target, Option.value ~default:[] attrs, level) }
-  | TABLE; "("; addr = NUM; ")"; level = page_table_mapping_level
+  | TABLE; "("; addr = term; ")"; level = page_table_mapping_level
     { (Page_table_ast.Table addr, [], Some level) }
 
 page_table_mapping_target:
   | name = IDENT { Page_table_ast.PaName name }
+  | value = NUM { Page_table_ast.Address (Term.Const value) }
+  | value = fn_term { Page_table_ast.Address value }
   | INVALID { Page_table_ast.Invalid }
 
 page_table_descriptor_attrs:
@@ -167,7 +169,7 @@ page_table_descriptor_attrs:
     { attrs }
 
 %inline page_table_descriptor_attr:
-  | name = IDENT; "="; value = NUM
+  | name = IDENT; "="; value = term
     { Page_table_ast.{name; value} }
 
 page_table_attr:
