@@ -15,6 +15,12 @@ jobs:
     permissions:
       contents: read
 
+    # Changing the base branch of a PR fires a `synchronize` event without
+    # changing the head commit: skip the build in that case.
+    if: >-
+      ${{ github.event.action != 'synchronize'
+          || github.event.before != github.event.after }}
+
     # Cancels in-progress job when a new push on the same PR, all other
     # workflows should be unaffected
     concurrency:
