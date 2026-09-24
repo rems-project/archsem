@@ -2875,15 +2875,12 @@ Definition filter_tlbi_promises
     list Ev.t :=
   let run_recipient :=
     if mem is ev :: _ then Ev.get_tlbi_recipient ev else None in
-  filter (λ ev,
-    match Ev.get_tlbi_recipient ev with
-    | Some recipient =>
-      match run_recipient with
-      | Some prev_recipient => prev_recipient <=? recipient
-      | None => true
-      end
-    | None => true
-    end) candidates.
+  if run_recipient is Some prev_recipient then
+    filter (λ ev,
+      if Ev.get_tlbi_recipient ev is Some recipient
+      then prev_recipient ≤ recipient
+      else True) candidates
+  else candidates.
 
 Definition VMPromising (bbm_param : BBM.param) : Promising.Model :=
   {|tState := TState.t;
