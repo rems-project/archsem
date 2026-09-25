@@ -723,6 +723,9 @@ Proof. unfold_decide. Defined.
    propositional *)
 Definition level_length (lvl : Level) : N := 9 * (lvl + 1).
 
+Lemma level_length_36 lvl : (level_length lvl ≤ 36)%N.
+Proof. unfold level_length. use (fin_to_N_lt lvl). lia. Qed.
+
 Definition prefix (lvl : Level) := bv (level_length lvl).
 #[export] Typeclasses Transparent prefix.
 
@@ -913,13 +916,33 @@ Module TLB.
     #[global] Instance eqdep_dec : EqDepDecision t.
     Proof. intros ? ? ? [] []. decide_jmeq. Defined.
 
-    #[global] Instance count lvl : Countable (t lvl).
+    #[export] Instance count lvl : Countable (t lvl).
     Proof.
-      eapply (inj_countable' (fun ndc => (upper ndc, va ndc, asid ndc))
-                        (fun x => make x.1.1 x.1.2 x.2)).
-      abstract sauto.
+      eapply (inj_countable'
+                (fun ndctxt =>
+                   let upper : bv 1 := bool_to_bv 1 ndctxt.(upper) in
+                   let va := bv_zero_extend 36 ndctxt.(va) in
+                   let asid : bv 17 :=
+                     if ndctxt.(asid) is Some asid
+                     then bv_concat 17 asid (1%bv : bv 1)
+                     else 0%bv
+                   in bv_concat 54 (bv_concat 53 asid va) upper)
+                (fun x =>
+                   let upper : bool := bv_extract 0 1 x =? 1%bv in
+                   let va := bv_extract 0 _ (bv_extract 1 36 x) in
+                   let asid :=
+                     if bv_extract 37 1 x =? 1%bv
+                     then Some (bv_extract 38 16 x)
+                     else None
+                   in make upper va asid
+                )).
+      abstract (
+        intros [upper va asid];
+        use (level_length_36 lvl);
+        cdestruct |- *** #CDestrMatch #CDestrSplitGoal; bv_solve').
     Defined.
   End NDCtxt.
+  Export (hints) NDCtxt.
 
   Module Ctxt.
     Definition t := {lvl : Level & NDCtxt.t lvl}.
