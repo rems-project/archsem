@@ -41,14 +41,10 @@
 From ASCommon Require Import Options.
 From ASCommon Require Import Common GRel Exec FMon StateT HVec.
 
-From ArchSem Require Import GenPromising.
 Require Import ArmInst.
 
 Require UMPromising.
 Import (hints) UMPromising.
-
-Module Msg := UMPromising.Msg.
-Export (hints) Msg.
 
 #[local] Open Scope list.
 #[local] Open Scope nat.
@@ -153,9 +149,8 @@ Module Ev.
   | Msg (msg : Msg.t)
   | Tlbi (tlbi : TLBI.t) (recipient : nat).
 
-  #[global] Instance dec : EqDecision t.
-  solve_decision.
-  Defined.
+  #[export] Instance dec : EqDecision t.
+  Proof. solve_decision. Defined.
 
   Definition tid (ev : t) :=
     match ev with
@@ -182,15 +177,16 @@ Module Ev.
     end.
 
   (** Checks whether an write event overlaps an address range *)
-  Definition addr_overlap (a : address) (sz : N) (ev : t) : Prop :=
+  Definition overlap (a : address) (sz : N) (ev : t) : Prop :=
     match ev with
-    | Msg msg => (addr_overlap a sz (Msg.addr msg) (Msg.size msg))
+    | Msg msg => Msg.overlap a sz msg
     | _ => False
     end.
-  #[global] Instance Decision_addr_overlap (a : address) (sz : N) (ev : t) :
-      Decision (addr_overlap a sz ev).
+  #[export] Instance Decision_overlap (a : address) (sz : N) (ev : t) :
+      Decision (overlap a sz ev).
   Proof. unfold_decide. Defined.
 End Ev.
+Export (hints) Ev.
 
 Coercion Ev.Msg : Msg.t >-> Ev.t.
 
@@ -203,95 +199,26 @@ Global Hint Unfold view : core.
 
 Module Memory.
   Import PromMemory.
+  Export (hints) PromMemory.
 
   (** The promising memory: a list of events *)
   Definition t : Type := t Ev.t.
   #[export] Typeclasses Transparent t.
 
-  Definition cut_after : nat → t → t := @cut_after Ev.t.
-  Definition cut_before : nat → t → t := @cut_before Ev.t.
-
-  (** Reads the last byte written at an address.
-      Returns the byte value and the timestamp of the write.
-      Timestamp is 0 if reading from initial memory.
-      Returns [None] if the address isn't present in initial memory. *)
-  Fixpoint read_last (addr : address) (init : memoryMap)
-      (mem : t) : option (bv 8 * nat) :=
-    match mem with
-    | [] => init !! addr |$> (., 0%nat)
-    | (Ev.Msg msg) :: mem' =>
-        if Msg.read_byte addr msg is Some byte then
-          Some (byte, List.length mem)
-        else read_last addr init mem'
-    | Ev.Tlbi _ _ :: mem' => read_last addr init mem'
-    end.
-
-  (** Reads from initial memory and fails if the memory has been overwritten.
-
-      This is mainly for instruction fetching in this model. *)
-  Definition read_initial (addr : address) (init : memoryMap)
-      (mem : t) : option (bv 8) :=
-    match read_last addr init mem with
-    | Some (v, 0%nat) => Some v
-    | _ => None
-    end.
-
-  (** Reads [size] bytes starting at [addr] from the memory state at
-      timestamp [tread]. Returns each byte paired with the timestamp of the
-      write it comes from, or [None] if any byte is unmapped. *)
-  Definition read_from (addr : address) (size : N) (tread : nat)
-      (init : memoryMap) (mem : t) : option (list (bv 8 * nat)) :=
-    let snap := cut_before tread mem in
-    for a in addr_range addr size do
-      read_last a init snap
-    end.
-
-  (** Reads a byte at timestamp [time]. *)
-  Definition read_byte (addr : address) (init : memoryMap)
-      (mem : t) (time : nat) : option (bv 8) :=
-    bytes ← read_from addr 1 time init mem;
-    List.head (bytes.*1).
-
-  (** Reads an 8-byte memory word at timestamp [time]. *)
-  Definition read_word (addr : address) (init : memoryMap)
-      (mem : t) (time : nat) : option (bv 64) :=
-    bytes ← read_from addr 8 time init mem;
-    Some (bv_of_bytes 64 bytes.*1).
-
-  (** Transforms an initial [memoryMap] and a promising memory history back to
-      a [memoryMap] *)
-  Definition to_memMap (init : memoryMap) (mem : t) : memoryMap :=
-    foldr (λ ev mm,
-        if Ev.get_msg ev is Some msg
-        then mem_insert_bv (Msg.addr msg) (Msg.val msg) mm
-        else mm) init mem.
-
-  (** Promises an event and adds it at the end of memory. *)
-  Definition promise (ev : Ev.t) : Exec.t t string view :=
-    mSet (cons ev);;
-    mem ← mGet;
-    mret (List.length mem).
-
-  (** Returns the oldest unfulfilled promise timestamp that corresponds to an
-      event.
-
-      Choosing the oldest matching promise avoids fulfilling a later duplicate
-      before an earlier one, which would make the earlier promise impossible to
-      fulfill later. *)
-  Definition fulfill (ev : Ev.t) (prom : list view) (mem : t) : option view :=
-    prom |> filter (λ t, mem !! t = Some ev)
-         |> reverse
-         |> head.
-
- (** Checks that no write overlapping [addr, addr+size) has been made by any
-      thread other than [tid] in between [tread] and [twrite] *)
-  Definition exclusive (tid : nat) (addr : address) (size : N)
-      (tread : nat) (twrite : nat) (mem : t) : Prop :=
-    ∀ ev ∈ (cut_after tread (cut_before (twrite - 1)%nat mem)),
-      Ev.addr_overlap addr size ev → Ev.tid ev = tid.
-  #[global] Instance exclusive_dec tid addr size tread twrite mem :
-      Decision (exclusive tid addr size tread twrite mem).
-  Proof. unfold exclusive. apply _. Defined.
+  Definition promise : Ev.t → Exec.t t string nat := promise.
+  Definition fulfill : Ev.t → list nat → t → option nat := fulfill.
+  Definition read_from : address → N → memoryMap → t → _ := read_from Ev.get_msg.
+  Definition read_all : address → N → memoryMap → t → _ := read_all Ev.get_msg.
+  Definition read_initial : address → N → memoryMap → t → _ :=
+    read_initial Ev.get_msg.
+  Definition read_byte : address → memoryMap → t → _ :=
+    read_byte Ev.get_msg.
+  Definition read_word : address → memoryMap → t → _ :=
+    read_word Ev.get_msg.
+  Definition to_memMap : memoryMap → t → memoryMap := to_memMap Ev.get_msg.
+  Definition exclusive : nat → address → N → nat → nat → t → Prop :=
+    exclusive Ev.get_msg.
+  #[export] Typeclasses Transparent exclusive.
 
 End Memory.
 Import (hints) Memory.
@@ -483,7 +410,7 @@ Module TState.
         vacq : view; (* The maximum output view of an acquire access *)
         vrel : view; (* The maximum output view of an release access *)
 
-        (* Per-byte forwarding database *)
+        (* Per-byte forwarding bank *)
         fwdb : gmap address FwdItem.t;
 
         (* The latest load-exclusive, if its matching store-exclusive has not
@@ -664,23 +591,24 @@ Module TState.
     Decision (tcohs_before_inv_time asid page_offsets inv_time ts).
   Proof. unfold_decide. Defined.
 
-  (** Sets the forwarding database for an address *)
+  (** Updates the forwarding bank for an address. *)
   Definition set_fwdb (addr : address) (fi : FwdItem.t) : t → t :=
     set fwdb (insert addr fi).
 
-  (** Set forwarding entries for all bytes in a range *)
-  Definition set_fwdbs (addrs : list address)
+  (** Sets the forwarding bank for every byte address in a write range. The size
+      of [data] should be [8 * (length addrs)] *)
+  Definition set_fwdbs (addrs : list address) `(data : bv n)
       (time : nat) (vdata : view) (xcl_view : option view) (ts : t) : t :=
-    let fi := FwdItem.make time vdata xcl_view in
-    foldr (λ a, set_fwdb a fi) ts addrs.
+    let bytes := data |> bv_to_bytes 8 in
+    foldl (λ ts '(a, byte), set_fwdb a (FwdItem.make time vdata byte xcl_view) ts)
+      ts (zip addrs bytes).
 
-  (** Set the exclusive database to the footprint of the latest load
-      exclusive. *)
+  (** Set the exclusive bank to the footprint of the latest load exclusive. *)
   Definition set_xclb (time : nat) (addr : address) (size : N)
       (vpost : view) : t → t :=
     setv xclb (Some (XclItem.make time addr size vpost)).
 
-  (** Clears the exclusive database, to mark a store exclusive *)
+  (** Clears the exclusive bank, to mark a store exclusive *)
   Definition clear_xclb : t → t := setv xclb None.
 
   (** Updates a view that from the state, by taking the max of new value and
@@ -1178,7 +1106,7 @@ Module TLB.
       (mem_strict : bool) : result string (VATLB.t * bool) :=
     foldlM (λ '(vatlb, is_changed) '(asid, val_ttbr),
       let entry_addr := index_table (ttbr_root_table val_ttbr) va in
-      if Memory.read_word entry_addr init mem time is Some memval then
+      if Memory.read_word entry_addr init mem time is Ok memval then
         if decide (is_table root_lvl memval) then
           let ndctxt := NDCtxt.make upper va (Some asid) in
           let ctxt := existT root_lvl ndctxt in
@@ -1220,7 +1148,7 @@ Module TLB.
     if decide (¬ Entry.is_table te) then Ok (vatlb, false)
     else
       let entry_addr := index_table (Entry.next_table te) index in
-      if Memory.read_word entry_addr init mem time is Some next_pte then
+      if Memory.read_word entry_addr init mem time is Ok next_pte then
         match inspect $ child_lvl (Ctxt.lvl ctxt) with
         | Some clvl eq:e =>
           if decide (is_tlb_fillable clvl next_pte) then
@@ -1775,7 +1703,7 @@ Module TLB.
       invalid_ptes ←
         for te in (elements tes) do
           let entry_addr := index_table (Entry.next_table te) index in
-          if Memory.read_word entry_addr init mem trans_time is Some memval then
+          if Memory.read_word entry_addr init mem trans_time is Ok memval then
             if decide (¬ is_tlb_fillable lvl memval) then
               ti ← invalidation_time mem tid trans_time ctxt te;
               let vals := (vec_to_list (Entry.ptes te)) ++ [memval] in
@@ -1794,7 +1722,7 @@ Module TLB.
             $ regval_to_val ttbr sreg.1;
           let entry_addr :=
             index_table (ttbr_root_table val_ttbr) index in
-          if Memory.read_word entry_addr init mem trans_time is Some memval then
+          if Memory.read_word entry_addr init mem trans_time is Ok memval then
             if decide (¬ is_tlb_fillable lvl memval) then
               mret $ Some ((val_ttbr : bv 64), [memval], None)
             else mret None
@@ -2074,56 +2002,17 @@ Definition run_reg_write (reg : reg) (racc : reg_acc) (val : reg_type reg) :
     if any byte in the range has been overwritten by a later write. *)
 Definition read_imem (addr : address) (init : memoryMap)
     (mem : Memory.t) : Exec.res string (bv 32) :=
-  bytes ← othrow "Modified instruction memory" $
-    for a in addr_range addr 4 do
-      Memory.read_initial a init mem
-    end;
+  bytes ← mlift $ Memory.read_initial addr 4 init mem;
   mret (bv_of_bytes 32 bytes).
-
-(** Returns all interesting timestamp when reading range [addr, addr+size) with
-    minimum view [vpre]. Those are [vpre] itself and any later timestamp that
-    contain an overlapping write event *)
-Definition read_candidates (addr : address) (size : N) (vpre : view)
-    (mem : Memory.t) : list nat :=
-  PromMemory.cut_after_with_timestamps vpre mem
-    |> omap (λ '(ev, t),
-              match Ev.get_msg ev with
-              | Some msg =>
-                  if decide (addr_overlap addr size (Msg.addr msg) (Msg.size msg))
-                  then Some t else None
-              | None => None
-              end)
-    |> cons vpre.
-
-(** Per-byte forwarding. Forwarding fires when [fwdb !! addr] has an entry [fwd]
-    with [fwd.time > tread], which means there is a more recent po-previous
-    write that hasn't been propagated yet. In that case we replace the
-    byte/view/timestamp with the ones of the forwarded write. The timestamp
-    returned (last value) is for coherence checking purposes). Returns [None] if
-    no forwarding occurs *)
-Definition read_fwd (fwdb : gmap address FwdItem.t) (macc : mem_acc) (mem : Memory.t)
-    (tread : nat) (addr : address) :
-    Exec.res string (option (bv 8 * view * nat)) :=
-  match fwdb !! addr with
-  | Some fwd =>
-    if (tread <? fwd.(FwdItem.time))%nat then
-      ev ← othrow "Failed to retrieve forwarded event" (mem !! fwd.(FwdItem.time));
-      msg ← othrow "Forwarded event is not a memory write" (Ev.get_msg ev);
-      byte' ← othrow "Failed to read a byte from the message" (Msg.read_byte addr msg);
-      mret (Some (byte', FwdItem.read_fwd_view macc fwd, fwd.(FwdItem.time)))
-    else mret None
-  | None => mret None
-  end.
 
 (** Performs a multi-byte explicit memory read. This involves multiple steps:
     - Computing the minimum view
-    - Picking an interesting timestamp [tread]with [read_candidates]
-    - Reading main memory at [tread] with [Memory.read_from]
+    - Reading main memory at all interesting timestamps with [Memory.read_all]
     - Applying forwarding ([read_fwd])
     - Do a coherence check
     - Do an translation invalidation check (about [invalidation_time])
     - Update all the views that should be updated
-    - If exclusive, set the exclusive database
+    - If exclusive, set the exclusive bank
     - If atomic RMW, remember this read for the matching write *)
 Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
     (init : memoryMap) :
@@ -2138,20 +2027,20 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
-  tread ← mchoosel (read_candidates addr size vpre mem);
+  candidates ← mlift $ Memory.read_all addr size init mem vpre;
+  candidate ← mchoosel candidates;
+  let tread := max_list_with snd candidate in
   (* Record every atomic RMW read so the later write can check atomicity and
      apply acquire ordering. *)
   ( if is_atomic_rmw macc
     then msetv (IIS.rmw_read ∘ PPState.iis) (Some (tread, is_rel_acq macc))
     else mret ());;
-  raw_bytes ← othrow ("Memory read of unmapped bytes at " ++ (pretty addr))%string $
-    Memory.read_from addr size tread init mem;
   (* per-byte (value, view, write-timestamp) after forwarding *)
-  fwd_bytes ← mlift $
-    for (addr, (byte, twrite)) in zip addrs raw_bytes do
-      read_fwd ts.(TState.fwdb) macc mem tread addr
-        |$> default (byte, tread, twrite)
-    end;
+  let fwd_bytes :=
+    map (λ '(addr, (byte, twrite)),
+        UMPromising.read_fwd ts.(TState.fwdb) macc tread addr
+        |> default (byte, tread, twrite)) $
+      zip addrs candidate in
 
   let bytes := fwd_bytes.*1.*1 in
   let read_views := fwd_bytes.*1.*2 in
@@ -2196,12 +2085,12 @@ Definition read_pte :
     - Discard if the write is not compatible with that view or coherence checks
     - Discard if the write is supposed to be atomic, but other writes intervened
     - Update all the views that should be updated
-    - Set the forwarding database
+    - Set the forwarding bank
     - If a new promise was added, return its minimum view, otherwise [None] *)
 Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
     (data : bv (8 * size)) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (option view) :=
-  let msg := Msg.make size tid addr data in
+  let msg := Msg.make tid addr size data in
   let is_release := is_rel_acq macc in
   let addrs := addr_range addr size in
   ts ← mget PPState.state;
@@ -2255,7 +2144,7 @@ Definition write_mem (tid : nat) (addr : address) (size : N) (macc : mem_acc)
       end
     else mret None;
 
-  mset PPState.state $ TState.set_fwdbs addrs time vdata fwd_xcl_view;;
+  mset PPState.state $ TState.set_fwdbs addrs data time vdata fwd_xcl_view;;
   mret (if (new_promise : bool) then Some vpre else None).
 
 
@@ -2709,10 +2598,10 @@ Section BBM.
       let byte1 := Memory.read_byte addr1 init mem time in
       let byte2 := Memory.read_byte addr2 init mem time in
       match byte1, byte2 with
-      | Some byte1, Some byte2 => byte1 = byte2
-      | Some byte1, None => byte1 = 0%bv
-      | None, Some byte2 => 0%bv = byte2
-      | None, None => True
+      | Ok byte1, Ok byte2 => byte1 = byte2
+      | Ok byte1, Error _ => byte1 = 0%bv
+      | Error _, Ok byte2 => 0%bv = byte2
+      | Error _, Error _ => True
       end.
 
   Instance Decision_mem_contents_eq mem init time lvl oa1 oa2
