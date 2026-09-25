@@ -3,6 +3,6 @@ States 1
 0:R5=0x2a; 0:R6=0x42; 
 Ok
 Witnesses
-Positive: 4 Negative: 0
+Positive: 1 Negative: 0
 Condition BBMSuccess forall (0:R5=0x2a /\ 0:R6=0x42)
-Observation BBMSuccess Always 4 0
+Observation BBMSuccess Always 1 0

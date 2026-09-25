@@ -54,7 +54,6 @@ From stdpp Require Export listset.
 From stdpp.bitvector Require Export bitvector tactics.
 
 Require Import Options.
-Require Export CBase.
 Require Export CDestruct.
 Require Export CMonads.
 Require Export CArith.
@@ -67,6 +66,7 @@ Require Export CBitvector.
 Require Export CSets.
 Require Export CMaps.
 Require Export CInduction.
+Require Export CBase.
 
 (** * Utility functions ***)
 

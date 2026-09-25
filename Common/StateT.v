@@ -52,7 +52,7 @@ Section ST.
 
   Definition stateT (A : Type):= St → M (St * A).
 
-  Definition st_lift {A : Type} (m : M A) : stateT A := λ s, fmap (s,.) m.
+  #[global] Instance st_lift : MLift M stateT := λ _ m s, fmap (s,.) m.
 
   #[global] Instance st_ret : MRet stateT := λ _ a s, mret (s, a).
   #[global] Instance st_bind : MBind stateT := λ _ _ f ma s,
@@ -68,12 +68,12 @@ Section ST.
       end.
 
   #[global] Instance st_throw `{MThrow E M}: MThrow E stateT :=
-    λ _ x, st_lift (mthrow x).
+    λ _ x, mlift (mthrow x : M _).
 
   (* Specific instances can override this if they want a state modifying effect
   different from MState. *)
   #[global] Instance st_call_inner `{MCall Eff M} : MCall Eff stateT | 100 :=
-    λ eff, st_lift (mcall eff).
+    λ eff, mlift (mcall eff : M _).
 
   (** * Monad laws and properties *)
 

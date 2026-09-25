@@ -4,7 +4,7 @@ arch = "Arm"
 fuel = 1000
 
 [vmp]
-bbm = "off"
+bbm = false
 
 [assembler]
 command = "clang --target=aarch64-unknown-linux-elf -march=armv8-a+lse+rcpc -fuse-ld=lld"

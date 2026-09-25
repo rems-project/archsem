@@ -45,6 +45,7 @@ Notation stdpp_imap := imap.
 Require Import Options.
 Require Import CBase CBool CMaps CArith CDestruct CMonads.
 
+#[global] Arguments List.concat {_}.
 
 Global Instance proper_list_mbind A B :
   Proper (pointwise_relation A (=) ==> (=@{list A}) ==> (=@{list B})) mbind.
@@ -691,3 +692,27 @@ Section ContigSublist.
     naive_solver.
   Qed.
 End ContigSublist.
+
+(** * Associative lists *)
+
+Fixpoint lookup_assoc {K V} `{EqDecision K} (k : K) (l : list (K * V))  : option V :=
+  if l is (k', v) :: tl then
+    if decide (k = k') then Some v else lookup_assoc k tl
+  else None.
+
+Fixpoint partial_alter_assoc {K V} `{EqDecision K}
+  (f : option V → option V) (k : K) (l : list (K * V)) : list (K * V) :=
+  if l is (k', v) :: tl then
+    if decide (k = k') then
+      if f (Some v) is Some v' then
+        (k, v') :: tl
+      else tl
+    else (k', v) :: partial_alter_assoc f k tl
+  else if f None is Some v then [(k, v)] else [].
+
+Fixpoint alter_assoc {K V} `{EqDecision K}
+  (f : V → V) (k : K) (l : list (K * V)) : list (K * V) :=
+  if l is (k', v) :: tl then
+    if decide (k = k') then (k, f v) :: tl
+    else (k', v) :: alter_assoc f k tl
+  else [].

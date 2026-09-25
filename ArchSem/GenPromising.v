@@ -186,7 +186,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
                 else
                   prev ← read_from_aux nmem ntread;
                   if decide (Msg.overlap addr size msg) then
-                    imap (λ idx byte_time,
+                    imap (M := list) (λ idx byte_time,
                         if Msg.read_byte (addr `+Z` Z.of_nat idx)%bv msg
                              is Some byte
                         then (byte, tread)
@@ -243,6 +243,18 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Definition read_all (mem : t) (tmin : nat) :
           result string (list (list (bv 8 * nat))) :=
         read_all_aux mem tmin (length mem).
+
+      (** Reads [size] bytes starting at [addr] from the memory state and
+          returns all possible values observable after [tmin] and before [tmax]
+          included. For each possible read, returns each byte paired with its
+          actual write-timestamp [twrite]. Throws if any byte is unmapped. *)
+      Definition read_all_btw (mem : t) (tmin tmax : nat) :
+          result string (list (list (bv 8 * nat))) :=
+        if decide (tmin ≤ tmax) then
+          let snap := cut_before tmax mem in
+          read_all_aux mem tmin tmax
+        else mret [].
+
 
       (** Read [size] byte from initial memory. Throws if any byte is unmapped
           or was modified *)
