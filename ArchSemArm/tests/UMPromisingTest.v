@@ -205,7 +205,8 @@ Module STRLDR. (* STR X2, [X1, X0]; LDR X0, [X1, X0] at 0x500, using address 0x1
   Definition test_results_pf :=
     UMPromising_pf arm_sem fuel n_threads termCond initState.
 
-  Goal reg_extract R0 0%fin <$> test_results_pf ≡ Listset [Ok 0x2a%Z].
+  Goal reg_extract R0 0%fin <$> test_results_pf = Listset [Ok 0x2a%Z].
+    (* [=] not [≡] because the model should not diverge on this *)
     vm_compute (_ <$> _).
     set_solver.
   Qed.

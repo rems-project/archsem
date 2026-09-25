@@ -5,6 +5,6 @@ States 3
 1:R0=0x1111111122222222; 
 Ok
 Witnesses
-Positive: 6 Negative: 0
+Positive: 3 Negative: 0
 Condition CoWWR+mixed forall (1:R0=0x1111111122222222 \/ 1:R0=0x1111111111111111 \/ 1:R0=0x22222222)
-Observation CoWWR+mixed Always 6 0
+Observation CoWWR+mixed Always 3 0

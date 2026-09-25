@@ -551,6 +551,13 @@ Module TState.
     let lev := LEv.Wsreg (WSReg.make sreg val v) in
     set levs (lev::.).
 
+  (** Returns the minimum coherence flag for a range of addresses. Returns
+      [None] if the range is empty *)
+  Definition min_cohs (addrs : list address) (ts : t) : option nat :=
+    foldl
+      (λ res addr, union_with (λ x y, Some $ min x y) res $ ts.(coh) !! addr)
+      None addrs.
+
   (** Sets the coherence view of a byte address *)
   Definition set_coh (a : address) (v : view) : t → t :=
     set coh (insert a v).
@@ -2025,9 +2032,10 @@ Definition read_mem_explicit (addr : address) (size : N) (macc : mem_acc)
               ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq)
                 (* Strong Acquire loads are ordered after Release stores *)
               ⊔ view_if (is_rel_acq_rcsc macc) ts.(TState.vrel) in
+  let vcoh := default 0%nat $ TState.min_cohs addrs ts in
   let vpre := vaddr ⊔ vbob in
   mem ← mget PPState.mem;
-  candidates ← mlift $ Memory.read_all addr size init mem vpre;
+  candidates ← mlift $ Memory.read_all addr size init mem (vpre ⊔ vcoh);
   candidate ← mchoosel candidates;
   let tread := max_list_with snd candidate in
   (* Record every atomic RMW read so the later write can check atomicity and
