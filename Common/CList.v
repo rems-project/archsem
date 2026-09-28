@@ -87,7 +87,7 @@ Instance list_iomap : IOMap nat list := λ A B,
 
 Lemma elem_of_app {A} (l l' : list A) (a : A) :
   a ∈ l ++ l' <-> a ∈ l \/ a ∈ l'.
-Proof. repeat rewrite elem_of_list_In. apply in_app_iff. Qed.
+Proof. repeat rewrite list_elem_of_In. apply in_app_iff. Qed.
 #[global] Hint Rewrite @elem_of_app : list.
 
 (** Simple type class instance should be systematically simplfied *)
@@ -97,13 +97,13 @@ Arguments list_subseteq _ _ _ /.
 
 Lemma elem_of_map {A B} (f : A → B) (l : list A) (x : A):
   x ∈ l → (f x) ∈ (map f l).
-Proof. setoid_rewrite elem_of_list_In. apply in_map. Qed.
+Proof. setoid_rewrite list_elem_of_In. apply in_map. Qed.
 #[global] Hint Resolve elem_of_map : list.
 
 Lemma elem_of_map_iff {A B} (f : A -> B) (l : list A) (x : B):
   x ∈ map f l <-> ∃ y ∈ l, x = f y.
 Proof.
-  setoid_rewrite elem_of_list_In.
+  setoid_rewrite list_elem_of_In.
   rewrite in_map_iff.
   firstorder.
 Qed.
@@ -118,7 +118,7 @@ Qed.
 #[global] Hint Rewrite @forall_elem_of_map : list.
 
 Lemma Permutation_elem_of A (l l' : list A) x: l ≡ₚ l' → x ∈ l → x ∈ l'.
-Proof. setoid_rewrite elem_of_list_In. apply Permutation_in. Qed.
+Proof. setoid_rewrite list_elem_of_In. apply Permutation_in. Qed.
 
 (* TODO add some standard proof search for NoDup *)
 Global Instance set_unfold_list_permutation A (l l' : list A) P Q:
@@ -143,7 +143,7 @@ Global Instance set_unfold_elem_of_filter_list A
   `{∀ x : A, Decision (P x)} x (a : list A) Q:
   SetUnfoldElemOf x a Q →
   SetUnfoldElemOf x (filter P a) (P x ∧ Q).
-Proof. tcclean. apply elem_of_list_filter. Qed.
+Proof. tcclean. apply list_elem_of_filter. Qed.
 
 Global Instance set_unfold_elem_of_singleton_list {A : Type} (x a : A) :
   SetUnfoldElemOf x [a] (x = a).
@@ -197,7 +197,7 @@ Proof.
   setoid_rewrite true_is_true.
   unfold is_true.
   rewrite existsb_exists.
-  setoid_rewrite elem_of_list_In.
+  setoid_rewrite list_elem_of_In.
   reflexivity.
 Qed.
 
@@ -209,7 +209,7 @@ Proof.
   setoid_rewrite true_is_true.
   unfold is_true.
   rewrite forallb_forall.
-  setoid_rewrite elem_of_list_In.
+  setoid_rewrite list_elem_of_In.
   reflexivity.
 Qed.
 
@@ -308,7 +308,7 @@ Proof. rewrite <- lookup_lt_is_Some. naive_solver. Qed.
 Ltac list_saturate :=
   match goal with
   | H : _ !! _ = Some _ |- _ => learn_hyp (lookup_length _ _ _ _ H)
-  | H : _ !! _ = Some _ |- _ => learn_hyp (elem_of_list_lookup_2 _ _ _ H)
+  | H : _ !! _ = Some _ |- _ => learn_hyp (list_elem_of_lookup_2 _ _ _ H)
   end.
 
 Global Instance set_elem_of_enumerate A (x : nat * A) l:
