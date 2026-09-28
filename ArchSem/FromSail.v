@@ -70,12 +70,6 @@ Arguments MachineWord.MachineWord.Z_idx / _.
 (* TODO remove that in coq-sail *)
 Remove Hints Decidable_eq_mword Countable_mword : typeclass_instances.
 
-#[refine] Instance bitU_finite : Finite bitU := { enum := [B0; B1; BU] }.
-Proof.
-  - abstract(unshelve (auto with nodup); set_solver).
-  - abstract(intros []; set_solver).
-Defined.
-
 (** * Missing Interface parts
 
 This section defines a module type that describes everything ArchSem need from
@@ -225,7 +219,6 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Definition Sail_choose (ct : ChooseType) : I.iMon (choose_type ct) :=
     match ct with
     | ChooseBool => mchoosef bool
-    | ChooseBit => mchoosef _
     | ChooseInt => mthrow "Can't choose infinite Int"
     | ChooseNat => mthrow "Can't choose infinite Nat"
     | ChooseReal => mthrow "Can't choose infinite Real"
@@ -239,7 +232,6 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
   Definition Sail_nochoose (ct : ChooseType) : I.iMon (choose_type ct) :=
     match ct with
     | ChooseBool => mret false
-    | ChooseBit => mret B0
     | ChooseInt => mret 0%Z
     | ChooseNat => mret 0%Z
     | ChooseReal => mthrow "Can't choose Real"
