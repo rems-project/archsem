@@ -153,18 +153,20 @@ page_table_mapping_rhs:
     attrs = option(page_table_descriptor_attrs);
     level = option(page_table_mapping_level)
     { (target, Option.value ~default:[] attrs, level) }
-  | TABLE; "("; addr = NUM; ")"; level = page_table_mapping_level
-    { (Page_table_ast.Table addr, [], Some level) }
 
 page_table_mapping_target:
   | name = IDENT { Page_table_ast.PaName name }
   | INVALID { Page_table_ast.Invalid }
+  | TABLE; "("; addr = NUM; ")" { Page_table_ast.Table addr }
 
 page_table_descriptor_attrs:
   | WITH; "[";
     attrs = separated_nonempty_list(",", page_table_descriptor_attr);
-    "]"; AND_KW; DEFAULT
+    "]"; option(page_table_descriptor_default)
     { attrs }
+
+page_table_descriptor_default:
+  | AND_KW; DEFAULT { () }
 
 %inline page_table_descriptor_attr:
   | name = IDENT; "="; value = NUM
