@@ -38,23 +38,17 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Evaluate Isla expressions against the current test state. *)
+(** Isla expressions, retained until their execution point.
 
-include Term_ast
+    [Page_table_ast] stores these expressions, while [Term] evaluates them using
+    [Page_table_fns], which depends on [Page_table_desc] and [Page_table_ast].
+    Keeping the expression type here breaks the dependency cycle
+    [Term -> Page_table_fns -> Page_table_ast -> Term]. *)
 
-let eval ~state term =
-  let positional_functions =
-    Bv_fns.functions @ Page_table_fns.positional_functions ~state
-  in
-  let keyword_functions = Page_table_fns.keyword_functions in
-  let rec eval_term = function
-    | Const z -> z
-    | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
-    | Fn (name, args) ->
-        let evaluated = List.map eval_term args in
-        Fn_registry.eval ~fns:positional_functions name evaluated
-    | KwFn (name, kwargs) ->
-        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
-        Fn_registry.eval ~fns:keyword_functions name evaluated
-  in
-  eval_term term
+type t =
+  | Const of Z.t
+  | Sym of string
+  | Fn of string * t list
+  | KwFn of string * (string * t) list
+
+let zero = Const Z.zero

@@ -1,16 +1,13 @@
 arch = "AArch64"
-name = "page-table-pa-as-va"
+name = "duplicate-page-table-symbol"
+symbolic = ["x"]
 
 page_table_setup = """
-physical pa_x;
-physical pa_y;
-pa_x |-> pa_y;
+physical x;
 """
 
 [thread.0]
-code = """
-nop
-"""
+code = "nop"
 
 [final]
 expect = "sat"

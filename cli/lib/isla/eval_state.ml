@@ -38,23 +38,26 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Evaluate Isla expressions against the current test state. *)
+(** Mutable evaluation state owned by one test. *)
 
-include Term_ast
+type page_table = (int, int64) Hashtbl.t
 
-let eval ~state term =
-  let positional_functions =
-    Bv_fns.functions @ Page_table_fns.positional_functions ~state
-  in
-  let keyword_functions = Page_table_fns.keyword_functions in
-  let rec eval_term = function
-    | Const z -> z
-    | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
-    | Fn (name, args) ->
-        let evaluated = List.map eval_term args in
-        Fn_registry.eval ~fns:positional_functions name evaluated
-    | KwFn (name, kwargs) ->
-        let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
-        Fn_registry.eval ~fns:keyword_functions name evaluated
-  in
-  eval_term term
+type t =
+  { symbols : (string, int) Hashtbl.t;
+    mutable page_table : page_table option
+  }
+
+let create () = {symbols = Hashtbl.create 32; page_table = None}
+
+let check_fresh_symbol state name =
+  if Hashtbl.mem state.symbols name then
+    Printf.ksprintf failwith "Symbol %s is already defined" name
+
+let add_symbol state name addr =
+  check_fresh_symbol state name;
+  Hashtbl.add state.symbols name addr
+
+let lookup_addr state name =
+  match Hashtbl.find_opt state.symbols name with
+  | Some addr -> addr
+  | None -> Printf.ksprintf failwith "Symbol %s not found" name

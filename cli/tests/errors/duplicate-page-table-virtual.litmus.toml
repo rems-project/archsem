@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "duplicate-page-table-virtual"
+
+page_table_setup = """
+virtual x;
+virtual x;
+"""
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"

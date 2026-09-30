@@ -270,8 +270,24 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
           symbol_map
       in
       let symbols =
-        List.map (fun (sym : data_symbol) -> (sym.name, sym.addr)) input.symbols
-        @ elf_symbols
+        let data_symbols =
+          List.map (fun (sym : data_symbol) -> (sym.name, sym.addr)) input.symbols
+        in
+        (* Check ELF copies of preassigned data symbols before removing duplicates. *)
+        data_symbols
+        @ List.filter
+            (fun (name, addr) ->
+               match List.assoc_opt name data_symbols with
+               | None -> true
+               | Some data_addr ->
+                   if addr <> data_addr then
+                     Error.fatal
+                       "assembler: symbol %S has conflicting addresses: assigned \
+                        0x%x, ELF 0x%x"
+                        name data_addr addr;
+                   false
+             )
+            elf_symbols
       in
       let sections =
         match elf_file with
