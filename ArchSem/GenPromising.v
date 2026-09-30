@@ -182,6 +182,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       (** Check if a thread state has no pending promises, which means that it
           can be explained with the current memory state *)
       tState_nopromises : tState → bool;
+      (** Lower bound on the pre-view of any new memory event this thread can
+          emit from this state. It must only grow during execution. Used to
+          stop promise enumeration once no new promise can be found *)
+      tState_min_new_prom_view : tState → nat;
       (** Intra instruction state, reset after each instruction *)
       iis : Type;
       iis_init : iis;
@@ -444,6 +448,12 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         (terminated_to_archState prom term (proj1_sig f) (proj2_sig f)).
 
 
+    (** How a sequential run of a thread in [run_to_termination] ended *)
+    Inductive RunEnd :=
+    | Terminated
+    | OutOfFuel
+    | StoppedEarly.
+
     Section EnumerateResult.
       Context (tid : fin n) (initmem : memoryMap).
 
@@ -464,16 +474,21 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           mret res.
 
       (** Runs a thread sequentially to termination, collecting all promises
-          that had to be made. Returns [false] if it ran out of fuel during
-          exploration. [fuel] is the maximum number of instructions to be run.*)
+          that had to be made. Returns [OutOfFuel] if it ran out of fuel during
+          exploration. Returns [StoppedEarly] if the thread state guarantees
+          that no new promise can be found anymore, which also means that this
+          run cannot reach a final state. [fuel] is the maximum number of
+          instructions to be run.*)
       Fixpoint run_to_termination (fuel : nat) (base : nat) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string bool :=
+          Exec.t (list mEvent * PPState.t tState mEvent iis) string RunEnd :=
         ts ← mget (PPState.state ∘ snd);
-        if terminated_ts prom (term !!! tid) ts then
-          mret true
+        if decide (base < prom.(tState_min_new_prom_view) ts)%nat then
+          mret StoppedEarly
+        else if terminated_ts prom (term !!! tid) ts then
+          mret Terminated
         else
           match fuel with
-          | 0%nat => mret false
+          | 0%nat => mret OutOfFuel
           | S fuel =>
               msetv (PPState.iis ∘ snd) prom.(iis_init);;
               let handler := run_outcome_with_promise base in
@@ -501,15 +516,19 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
             ([], PPState.Make ts mem prom.(iis_init))
         in
         let success_states := Exec.success_state_list res in
-        let out_of_fuel := bool_decide (∃ r ∈ (Exec.results res).*2, ¬ (r : bool)) in
+        let out_of_fuel :=
+          bool_decide (∃ r ∈ (Exec.results res).*2,
+                        if r is OutOfFuel then True else False) in
         let promises :=
           List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
             |> remove_dups in
         let promises := prom.(filter_promises) n tid mem promises in
         let tstates :=
-          success_states
-          |> omap (λ '(new_proms, st),
-                 if is_emptyb new_proms then Some (PPState.state st)
+          Exec.results res
+          |> omap (λ '((new_proms, st), r),
+                 if r is Terminated then
+                   if is_emptyb new_proms then Some (PPState.state st)
+                   else None
                  else None) in
         let errors :=
           res |> Exec.errors |>
