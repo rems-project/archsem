@@ -138,6 +138,20 @@ Proof. bv_solve. Qed.
 
 #[export] Hint Rewrite Z2N.id using bv_solve : bv_simplify.
 
+Lemma bv_extract_zero_extend {n m} (x : bv n) :
+  (n ≤ m)%N → bv_extract 0 n (bv_zero_extend m x) = x.
+Proof. intro. bv_solve. Qed.
+#[export] Hint Rewrite @bv_extract_zero_extend using lia : bv_simplify.
+
+
+Lemma bool_decide_bool_to_bv_1' b : ((bool_to_bv 1 b) =? 1%bv) = b.
+Proof. by destruct b. Qed.
+Lemma bool_decide_bool_to_bv_0' b : ((bool_to_bv 1 b) =? 0%bv) = negb b.
+Proof. by destruct b. Qed.
+#[export] Hint Rewrite @bool_decide_bool_to_bv_1' : bv_simplify.
+#[export] Hint Rewrite @bool_decide_bool_to_bv_0' : bv_simplify.
+
+
 (** * [bv_solve] improvements *)
 
 (** We redefine bv_solve to end with [lia || f_equal; lia]. This is because on
