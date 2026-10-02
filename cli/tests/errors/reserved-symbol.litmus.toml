@@ -1,0 +1,10 @@
+arch = "AArch64"
+name = "reserved-symbol"
+symbolic = ["$x"]
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"

@@ -135,6 +135,9 @@ let thread_section_name tid = Printf.sprintf "__thread%d" tid
 
 let symbolic_names ir =
   let add path names name =
+    ( try Eval_state.check_symbol_name name
+      with Failure msg -> raise (Eval_error (path, msg))
+    );
     if List.mem name names then
       raise (Eval_error (path, Printf.sprintf "Symbol %s is already defined" name));
     names @ [name]
