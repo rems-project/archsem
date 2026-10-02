@@ -108,6 +108,15 @@ Definition common_init_regs :=
   |> reg_insert htif_tohost_base None
   |> reg_insert menvcfg 0x0
   |> reg_insert elp 0x0
+  |> reg_insert sig_meip 0x0
+  |> reg_insert sig_seip 0x0
+  |> reg_insert mtime 0x0
+  |> reg_insert mhartid 0x0
+  |> reg_insert senvcfg 0x0
+  |> reg_insert hideleg 0x0
+  |> reg_insert hgeie 0x0
+  |> reg_insert sig_msip 0x0
+  |> reg_insert msip 0x0
 
   |> reg_insert pmpcfg_n $ Values.vec_of_list_len $ List.rev (0x0f (* unlocked, TOR, XWR *) :: replicate 63 0x00)
   |> reg_insert pmpaddr_n $ Values.vec_of_list_len $ List.rev (0x20000 :: replicate 63 0x00)
@@ -116,16 +125,26 @@ Definition common_init_regs :=
        [{|PMA_Region_base := 0x0;
           PMA_Region_size := 0x10000;
           PMA_Region_attributes :=
-            {|PMA_cacheable := true;
+            {|PMA_mem_type := MainMemory;
+              PMA_cacheable := true;
               PMA_coherent := true;
               PMA_executable := true;
               PMA_readable := true;
               PMA_writable := true;
               PMA_read_idempotent := true;
               PMA_write_idempotent := true;
-              PMA_misaligned_fault := NoFault;
+              PMA_misaligned_exceptions :=
+                {|PMAMisalignedExceptions_load_store := None;
+                  PMAMisalignedExceptions_vector := None;
+                  PMAMisalignedExceptions_amo := AlignmentException;
+                  PMAMisalignedExceptions_lrsc := AlignmentException |};
+              PMA_atomic_support := AMOArithmetic;
               PMA_reservability := RsrvEventual;
-              PMA_supports_cbo_zero := true |};
+              PMA_supports_cbo_zero := true;
+              PMA_supports_pte_read := true;
+              PMA_supports_pte_write := true;
+              PMA_misaligned_atomicity_granule_size_exp := 0%Z;
+              PMA_vector_misaligned_atomicity_granule_size_exp := 0%Z |};
           PMA_Region_include_in_device_tree := false |}]
 .
 
@@ -173,6 +192,7 @@ Definition init_reg : registerMap :=
 Definition init_mem : memoryMap:=
   ∅
   |> mem_insert 0x500 2 0x6082 (* ld x2, 0(x1) *)
+  |> mem_insert 0x502 2 0x0 (* padding: aligned fetches read 4 bytes *)
   |> mem_insert 0x1000 8 0x2a. (* data to be read *)
 
 Definition termCond : terminationCondition 1 :=

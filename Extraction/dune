@@ -122,8 +122,7 @@
   Tiny_x86
   Tiny_x86_types
   X86Inst
-  OperationalX86TSO
-  Zeuclid))
+  OperationalX86TSO))
 
 (library
  (name archsem)

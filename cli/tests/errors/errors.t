@@ -1,9 +1,12 @@
+Set the environement for consistency
+  $ export TERM=dumb
+
 Non-existing file
   $ archsem seq nonexistingfile.archsem.toml
+  Usage: archsem seq [--help] [--asm-dump=DIR] [--config=FILE] [--format=FMT]
+         [OPTION]… TESTS…
   archsem: TESTS… arguments: no 'nonexistingfile.archsem.toml' file or
            directory
-  Usage: archsem seq [--asm-dump=DIR] [--config=FILE] [--format=FMT] [OPTION]… TESTS…
-  Try 'archsem seq --help' or 'archsem --help' for more information.
   [124]
 
 Non TOML file

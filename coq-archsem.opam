@@ -20,7 +20,7 @@ bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
   "dune" {>= "3.14"}
   "coq-archsem-common"
-  "coq-sail-stdpp" {= "0.20"}
+  "rocq-sail-stdpp" {= "0.20.3"}
   "odoc" {with-doc}
 ]
 build: [

@@ -60,6 +60,10 @@ Extraction Inline lookup_total.
 Extraction Inline mchoosel.
 Extraction Inline mret.
 
+(** By default the parameters of [eff_ret] are extracted as ['eff] and
+    ['effect], but [effect] is a keyword since OCaml 5.3 *)
+Extract Constant eff_ret "'eff" "'ret" => "'ret".
+
 (** * Bools *)
 
 Extract Inlined Constant Decision => "bool".
