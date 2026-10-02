@@ -2613,6 +2613,38 @@ Section BBM.
     let va := prefix_to_va (Ctxt.lvl ctxt) (Ctxt.upper ctxt) (Ctxt.va ctxt) in
     Ctxt.make lvl (Ctxt.upper ctxt) (va_prefix lvl va) asid.
 
+  (** For each global context, the list of all global entries (and their
+      events) in strictly later level contexts below it. A context has a bucket
+      even if it doesn't have any entries itself. *)
+  Definition GDesc (lvl : Level) :=
+    gmap (NDCtxt.t lvl) (list (FE.t * Entry.events)).
+  #[local] Typeclasses Transparent GDesc.
+  Definition gdesc := hvec GDesc.
+
+  (** Get the global descendants of a context *)
+  Definition gdesc_get (ctxt : Ctxt.t) (gd : gdesc) :
+      list (FE.t * Entry.events) :=
+    (hget (Ctxt.lvl ctxt) gd) !! (Ctxt.nd ctxt) |> default [].
+
+  (** Build the global descendants map from the result of
+      [VATLB.entries_by_ctxt] *)
+  Definition global_descendants
+      (entries_by_ctxt : list { ctxt : Ctxt.t &
+                                list (Entry.t (Ctxt.lvl ctxt) * Entry.events) })
+      : gdesc :=
+    foldl (λ (gd : gdesc) '(existT ctxt entries),
+        if Ctxt.asid ctxt is Some _ then gd else
+        let fes := map (λ '(e, evs), (existT ctxt e : FE.t, evs)) entries in
+        foldl (λ (gd : gdesc) (plvl : Level),
+            if decide (plvl < Ctxt.lvl ctxt) then
+              let pnd : NDCtxt.t plvl := Ctxt.nd (ctxt_parent ctxt plvl None) in
+              hset plvl (partial_alter
+                           (λ x, Some (fes ++ default [] x))
+                           pnd (hget plvl gd)) gd
+            else gd)
+          gd (enum Level))
+      (hvec_func (λ _, ∅)) entries_by_ctxt.
+
   (** Check that [f] holds for all pairs of elements of [l] *)
   Fixpoint for_all_pairs {A} (f : A → A → result string bool) (l : list A)
       : result string bool :=
@@ -2624,11 +2656,12 @@ Section BBM.
     end.
 
   (** Check the TLB for BBM violations, returns true if there is one *)
-  (** TODO, this misses conflict between ASID block entries and page global entries *)
   Definition check_tlb (tlb : TLB.t) : result string bool :=
     let vatlb := tlb.(vatlb) in
     let tmax := length mem in
-    for existT ctxt entries in VATLB.entries_by_ctxt vatlb do
+    let ebc := VATLB.entries_by_ctxt vatlb in
+    let gdesc := global_descendants ebc in
+    for existT ctxt entries in ebc do
       let lvl := Ctxt.lvl ctxt in
       let asid := Ctxt.asid ctxt in
       if entries is [] then mret false else
@@ -2649,11 +2682,18 @@ Section BBM.
         ∃ glvl: Level, glvl ≤ lvl ∧
           ∃ '(ge, gevs) ∈ VATLB.get (ctxt_parent ctxt glvl None) vatlb,
             time_overlaps tmax evs gevs = true in
+      (* Any global entry in a later level context below this one, active at
+         the same time as [evs] *)
+      let global_child_conflict (evs : Entry.events) : Prop :=
+        is_Some asid ∧
+        ∃ '(ge, gevs) ∈ gdesc_get (ctxt_parent ctxt lvl None) gdesc,
+          time_overlaps tmax evs gevs = true in
       (* The parent and global checks are only needed for final entries *)
       let final_conflict :=
         bool_decide (∃ '(e, evs) ∈ entries,
             is_final lvl (Entry.pte e) ∧
-            (parent_block evs ∨ global_conflict evs)) in
+            (parent_block evs ∨ global_conflict evs ∨
+             global_child_conflict evs)) in
       mret (negb no_pair_violation || final_conflict)
     end |$> List.existsb id.
 
