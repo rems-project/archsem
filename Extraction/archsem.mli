@@ -53,16 +53,9 @@ module Arm : sig
   (** The user-mode promising model, with the promise-first optimisation *)
   module UMProm : OpModel.S with type config = unit
 
-  module BBM : sig
-    type param =
-      | Off
-      | Lax
-      | Strict
-  end
-
   (** The virtual-memory promising model, with the promise-first optimisation.
-      Its config is the break-before-make mode *)
-  module VMProm : OpModel.S with type config = BBM.param
+      Its config says whether break-before-make checks are enabled *)
+  module VMProm : OpModel.S with type config = bool
 end
 
 module X86 : sig

@@ -66,15 +66,13 @@ module Arm = struct
         UMPromising.coq_UMPromising_opmodel_pf isem (Z.of_int nth)
     end)
 
-  module BBM = VMPromising.BBM
-
   module VMProm = OpModel.Of_coq (struct
-      type config = BBM.param
+      type config = bool
 
-      let default_config = BBM.Off
+      let default_config = false
 
-      let opmodel bbm_param isem ~nth =
-        VMPromising.coq_VMPromising_opmodel_pf bbm_param isem (Z.of_int nth)
+      let opmodel bbm isem ~nth =
+        VMPromising.coq_VMPromising_opmodel_pf bbm isem (Z.of_int nth)
     end)
 end
 

@@ -116,7 +116,6 @@
   Vector
   UMPromising
   VMPromising
-  list_misc
   HVec
   fin_sets
   list_basics
