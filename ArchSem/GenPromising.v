@@ -52,84 +52,6 @@ Require Import TermModels.
 
 
 
-(** This module define the representation of a promising model memory as
-    a sequence of events.
-
-    The sequence is 1 indexed so that timestamp 0 represent memory as it was
-    initially.
-
-    The current implementation is a list in reverse order but that may change *)
-Module PromMemory. (* namespace *)
-Section PM.
-
-  Context {ev :Type}.
-
-  (* I'm using a simple list representation. The most recent write is the head
-     of the list. *)
-  Definition t := list ev.
-
-  (** Definition of the memory numbering. So it can be used with the !! operator
-  *)
-  Global Instance lookup_inst : Lookup nat ev t := {
-      lookup k mem :=
-        if k =? 0%nat then None
-        else
-          let len := List.length mem in
-          if (k <=? len)%nat then List.nth_error mem (len - k)%nat else None
-    }.
-
-  (** Cuts the memory to only what exists before the timestamp, included.
-      The timestamp can still be computed the same way.
-  *)
-  Definition cut_before (v : nat) (mem : t) : t :=
-    let len := List.length mem in
-    (* Here I'm using the m - n = 0 when n > m behavior *)
-    drop (len - v) mem.
-
-  (** Cuts the memory to only what exists after the timestamp, excluded.
-      Beware of timestamp computation. If you need the original timestamps,
-      use cut_after_timestamps
-   *)
-  Definition cut_after (v : nat) (mem : t) : t :=
-    let len := List.length mem in
-    take (len - v) mem.
-
-  (** Cuts the memory to only what exists after the timestamp, excluded.
-      Provide the original timestamps as a additional value.
-  *)
-  Fixpoint attach_timestamps (mem : t) : list (ev * nat) :=
-    match mem with
-    | [] => []
-    | h :: q =>
-      (h, List.length mem) :: attach_timestamps q
-    end.
-
-  Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
-    take (length mem - v) (attach_timestamps mem).
-
-End PM.
-Arguments t : clear implicits.
-End PromMemory.
-#[export] Typeclasses Transparent PromMemory.t.
-
-(* Partial Promising State *)
-Module PPState.
-  Section PPS.
-  Context {tState : Type}.
-  Context {mEvent : Type}.
-  Context {iis_t : Type}.
-
-  Record t :=
-    Make {
-        state : tState;
-        mem : PromMemory.t mEvent;
-        iis : iis_t;
-      }.
-  #[global] Instance eta : Settable t :=
-    settable! @Make <state;mem;iis>.
-  End PPS.
-  Arguments t : clear implicits.
-End PPState.
 
 (* to be imported *)
 Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
@@ -137,6 +59,258 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
   Import Arch.
   Import Inter.
   Import TM.
+
+  (** A message in the promising model memory. [size] is a field (not a
+      parameter) so that [Msg.t] is a plain [Set] and all messages
+      can live in one list. *)
+  Module Msg.
+    Record t : Set :=
+      make {
+          tid : nat;
+          addr : address;
+          size : N;
+          val : bv (8 * size);
+        }.
+
+    #[export] Instance eq_dec : EqDecision t.
+    Proof. intros [] []. decide_eq. Defined.
+
+    (** Decides if a msg overlaps with an address range *)
+    Definition overlap (a : address) (sz : N) (msg : t) :=
+      addr_overlap a sz msg.(addr) msg.(size).
+    #[export] Typeclasses Transparent overlap.
+
+    (** Extracts a byte from a message *)
+    Definition read_byte (a : address) (msg : t) : option (bv 8) :=
+      if decide (addr_in_range (addr msg) (size msg) a) then
+        let offset := Z.to_N (bv_unsigned a - bv_unsigned (addr msg)) in
+        Some (bv_get_byte 8 offset (val msg))
+      else None.
+  End Msg.
+  Export (hints) Msg.
+
+
+  (** This module define the representation of a promising model memory as a
+      sequence of events.
+
+      The sequence is 1 indexed so that timestamp 0 represent memory as it was
+      initially.
+
+      The current implementation is a list in reverse order but that may change
+      *)
+  Module PromMemory. (* namespace *)
+  Section PM.
+
+    Context {ev : Type}.
+
+    (* I'm using a simple list representation. The most recent write is the head
+       of the list. *)
+    Definition t := list ev.
+    #[export] Typeclasses Transparent t.
+
+    (** Definition of the memory numbering. So it can be used with the !!
+        operator *)
+    #[export] Instance lookup_inst : Lookup nat ev t := {
+        lookup k mem :=
+          if k =? 0%nat then None
+          else
+            let len := List.length mem in
+            if (k <=? len)%nat then List.nth_error mem (len - k)%nat else None
+      }.
+
+    (** Cuts the memory to only what exists before the timestamp, included.
+        The timestamp can still be computed the same way. *)
+    Definition cut_before (v : nat) (mem : t) : t :=
+      let len := List.length mem in
+      (* Here I'm using the m - n = 0 when n > m behavior *)
+      drop (len - v) mem.
+
+    (** Cuts the memory to only what exists after the timestamp, excluded.
+        Beware of timestamp computation. If you need the original timestamps,
+        use cut_after_timestamps *)
+    Definition cut_after (v : nat) (mem : t) : t :=
+      let len := List.length mem in
+      take (len - v) mem.
+
+    (** Cuts the memory to only what exists after the timestamp, excluded.
+        Provide the original timestamps as a additional value. *)
+    Fixpoint attach_timestamps (mem : t) : list (ev * nat) :=
+      match mem with
+      | [] => []
+      | h :: q =>
+        (h, List.length mem) :: attach_timestamps q
+      end.
+
+    Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
+      take (length mem - v) (attach_timestamps mem).
+
+    (** Promises an event and adds it at the end of memory *)
+    Definition promise (e : ev) : Exec.t t string nat :=
+      mSet (cons e);;
+      mem ← mGet;
+      mret (List.length mem).
+
+    (** Returns a view among a promise set that correspond to an event. The
+        oldest matching timestamp is taken. This is because it can be proven
+        that fulfilling a more recent timestamp will make the previous promises
+        unfulfillable, and thus the corresponding executions would be
+        discarded. TODO prove it. *)
+    Definition fulfill `{EqDecision ev} (e : ev) (prom : list nat) (mem : t) :
+        option nat :=
+      prom |> filter (λ t, mem !! t = Some e)
+      |> reverse
+      |> head.
+
+    (** For model that have events other than [Msg.t], this need to extract the
+        [Msg.t] for the generic reading functions to work *)
+    Context (get_msg : ev → option Msg.t).
+    Section Reading.
+      Context (addr : address) (size : N) (imem : memoryMap) .
+
+      (** Reads [size] bytes starting at [addr] from the memory state at
+          timestamp [tread]. Assumes that the memory [mem] has size [tread] (the
+          more recent events have been cut off). Returns each byte paired with
+          its actual write-timestamp [twrite]. Throws if any byte is unmapped.
+          *)
+      Fixpoint read_from_aux (mem : t) (tread : nat) :
+          result string (list (bv 8 * nat)) :=
+        match tread with
+        | 0%nat =>
+            othrow ("Memory read of unmapped bytes at " ++ pretty addr)%string $
+              mem_lookup_bytes addr size imem |$> map (.,0%nat)
+        | S ntread =>
+            if mem is ev :: nmem then
+              if get_msg ev is Some msg then
+                if decide (msg.(Msg.addr) = addr ∧ msg.(Msg.size) = size) then
+                  msg.(Msg.val) |> bv_to_bytes 8 |> map (.,tread) |> mret
+                else
+                  prev ← read_from_aux nmem ntread;
+                  if decide (Msg.overlap addr size msg) then
+                    imap (λ idx byte_time,
+                        if Msg.read_byte (addr `+Z` Z.of_nat idx)%bv msg
+                             is Some byte
+                        then (byte, tread)
+                        else byte_time) prev |> mret
+                  else mret prev
+              else read_from_aux nmem ntread
+            else mthrow "read_from_aux_invalid_precondition"
+        end.
+
+      (** Reads [size] bytes starting at [addr] from the memory state at
+          timestamp [tread]. Returns each byte paired with its actual
+          write-timestamp [twrite]. Throws if any byte is unmapped. *)
+      Definition read_from (mem : t) (tread : nat) :
+          result string (list (bv 8 * nat)) :=
+        let snap := cut_before tread mem in
+        read_from_aux snap tread.
+
+      (** Reads [size] bytes starting at [addr] from the memory state and return
+          all possible values observable between [tmin] and [tmax] included.
+          This function assumes the length of [mem] is precisely [tmax] and that
+          [tmin ≤ tmax]. For each possible read, returns each byte paired with
+          its actual write-timestamp [twrite]. Throws if any byte is unmapped. *)
+      Fixpoint read_all_aux (mem : t) (tmin tmax: nat) :
+          result string (list (list (bv 8 * nat))) :=
+        if tmax =? tmin then
+          read_from_aux mem tmin |$> (.::[])
+        else
+          if tmax is S ntmax then
+            if mem is ev :: nmem then
+              prev ← read_all_aux nmem tmin ntmax;
+              if get_msg ev is Some msg then
+                if decide (msg.(Msg.addr) = addr ∧ msg.(Msg.size) = size) then
+                  mret ((msg.(Msg.val) |> bv_to_bytes 8 |> map (.,tmax)) :: prev)
+                else
+                  if decide (Msg.overlap addr size msg) then
+                    if prev is prevm :: _ then
+                      let newm :=
+                        imap (λ idx byte_time,
+                            if Msg.read_byte (addr `+Z` Z.of_nat idx)%bv msg
+                                 is Some byte
+                            then (byte, tmax)
+                            else byte_time) prevm
+                      in mret (newm :: prev)
+                    else mthrow "read_all_aux: returned empty list"
+                  else mret prev
+              else mret prev
+            else mthrow "read_all_aux: invalid precondition"
+          else mthrow "read_all_aux: invalid precondition".
+
+      (** Reads [size] bytes starting at [addr] from the memory state and
+          returns all possible values observable after [tmin] included. For each
+          possible read, returns each byte paired with its actual
+          write-timestamp [twrite]. Throws if any byte is unmapped. *)
+      Definition read_all (mem : t) (tmin : nat) :
+          result string (list (list (bv 8 * nat))) :=
+        read_all_aux mem tmin (length mem).
+
+      (** Read [size] byte from initial memory. Throws if any byte is unmapped
+          or was modified *)
+      Definition read_initial (mem : t) : result string (list (bv 8)) :=
+        bytes ← read_from_aux mem (length mem);
+        for (byte, time) in bytes do
+          if time =? 0%nat then mret byte else mthrow "Modified memory"
+        end.
+    End Reading.
+
+    (** Reads a byte at timestamp [time]. *)
+    Definition read_byte (addr : address) (imem : memoryMap) (mem : t)
+        (time : nat) : result string (bv 8) :=
+      bytes ← read_from addr 1 imem mem time;
+      othrow "read_byte: internal error" $ List.head (bytes.*1).
+
+    (** Reads an 8-byte word at timestamp [time]. *)
+    Definition read_word (addr : address) (imem : memoryMap) (mem : t)
+        (time : nat) : result string (bv 64) :=
+      bytes ← read_from addr 8 imem mem time;
+      mret (bv_of_bytes 64 bytes.*1).
+
+
+    (** Transforms an initial [memoryMap] and a promising memory history back to
+        a [memoryMap] *)
+    Definition to_memMap (imem : memoryMap) (mem : t) : memoryMap :=
+      foldr (λ ev mm,
+          if get_msg ev is Some msg
+          then mem_insert_bv (Msg.addr msg) (Msg.val msg) mm
+          else mm) imem mem.
+
+    (** Checks that no overlapping writes have been made by any
+        thread other than [tid] in between [tread] and [twrite] *)
+    Definition exclusive (tid : nat) (addr : address) (size : N)
+        (tread : nat) (twrite : nat) (mem : t) : Prop :=
+      ∀ ev ∈ (cut_after tread (cut_before (twrite - 1)%nat mem)),
+      if get_msg ev is Some msg
+      then Msg.overlap addr size msg → Msg.tid msg = tid
+      else true.
+    #[export] Instance exclusive_dec tid addr size tread twrite mem :
+      Decision (exclusive tid addr size tread twrite mem).
+    Proof. unfold exclusive. apply _. Defined.
+
+  End PM.
+  Arguments t : clear implicits.
+  End PromMemory.
+  #[export] Typeclasses Transparent PromMemory.t.
+
+  (* Partial Promising State. The state over which the semantics of individual
+     instruction is defined *)
+  Module PPState.
+    Section PPS.
+    Context {tState : Type}.
+    Context {mEvent : Type}.
+    Context {iis_t : Type}.
+
+    Record t :=
+      Make {
+          state : tState;
+          mem : PromMemory.t mEvent;
+          iis : iis_t;
+        }.
+    #[global] Instance eta : Settable t :=
+      settable! @Make <state;mem;iis>.
+    End PPS.
+    Arguments t : clear implicits.
+  End PPState.
+
 
   (* Namespace *)
   Module Promising.
