@@ -91,6 +91,7 @@ rule token = parse
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
   | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
   | digit+ as s { NUM (Z.of_string s) }
+    (** IDENT rule must match [Eval_state.is_valid_symbol_name]*)
   | ident_start ident_char* as s { IDENT s }
   | eof { EOF }
   | _ as c {

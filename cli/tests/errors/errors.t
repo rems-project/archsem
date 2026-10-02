@@ -231,3 +231,10 @@ Page table DSL parser errors report the DSL line and TOML path
   File "invalid-page-table-token.litmus.toml", path "page_table_setup":
   page-table setup parse error at line 2, character 3
   [1]
+
+Symbolic names must be valid identifiers
+  $ archsem seq reserved-symbol.litmus.toml
+  archsem: eval error:
+  File "reserved-symbol.litmus.toml", path "symbolic":
+  Symbol "$x" is invalid: names must start with a letter or '_' and only contain letters, digits and '_'
+  [1]
