@@ -63,9 +63,15 @@ let pc_reg arch =
   | Litmus.Arch_id.Arm -> Archsem.Arm.Reg.to_string Archsem.Arm.Reg.pc
   | Litmus.Arch_id.X86 -> Archsem.X86.Reg.to_string Archsem.X86.Reg.pc
 
+(** Return the register defaults of [registers.defaults], overridden key by key
+    by [profile.p.registers.defaults] for the profile selected for the test *)
 let register_defaults =
-  Config.make_getter ~default:[]
+  Config.make_getter_selected_profile
     (Toml.get_table_values Litmus.Parser.toml_to_gen)
+    (fun base overrides ->
+       List.filter (fun (reg, _) -> not (List.mem_assoc reg overrides)) base
+       @ overrides
+     )
     ["registers"; "defaults"]
 
 let instruction_step =
@@ -289,6 +295,7 @@ let find_section name (asm_result : Assembler.assembly_result) =
 (* Build per-thread initial register maps: PC + user init + config defaults. *)
 let build_registers
       ~arch
+      ~page_table_setup
       ?page_table_root
       ~state
       ~pc
@@ -316,12 +323,13 @@ let build_registers
   let default_regs =
     List.filter_map
       (fun (reg, value) -> if has base_regs reg then None else Some (reg, value))
-      (register_defaults ())
+      (register_defaults ~page_table_setup)
   in
   base_regs @ default_regs
 
 let build_threads
       ~arch
+      ~page_table_setup
       ?page_table_root
       ~state
       asm_result
@@ -332,7 +340,8 @@ let build_threads
     (fun tid (thread : Ir.thread) ->
        let sec = find_section (thread_section_name tid) asm_result in
        let regs =
-         build_registers ~arch ?page_table_root ~state ~pc sec.addr thread
+         build_registers ~arch ~page_table_setup ?page_table_root ~state ~pc
+           sec.addr thread
        in
        let breakpoints =
          let context = Breakpoints tid in
@@ -512,7 +521,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
   in
   let threads =
-    build_threads ~arch:ir.arch ?page_table_root ~state asm_result ir.threads
+    build_threads ~arch:ir.arch ~page_table_setup:(ir.page_table_setup <> [])
+      ?page_table_root ~state asm_result ir.threads
   in
   let memory =
     build_memory ~default_mem_size ~symbol_sizes:ir.sizes
