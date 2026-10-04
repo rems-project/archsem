@@ -49,7 +49,27 @@ type t =
 
 let create () = {symbols = Hashtbl.create 32; page_table = None}
 
+(** Decides if a string is an Archsem symbol: must start with a ASCII letter or
+    [_] and followed by alphanumeric character (or [_]).
+    Ideally this should match the `ident` non terminal in the lexer *)
+let is_valid_symbol_name name =
+  let is_ident_start = function
+    | 'a' .. 'z' | 'A' .. 'Z' | '_' -> true
+    | _ -> false
+  in
+  let is_ident_char = function '0' .. '9' -> true | c -> is_ident_start c in
+  name <> "" && is_ident_start name.[0] && String.for_all is_ident_char name
+
+(** Check if a string is a valid symbol name *)
+let check_symbol_name name =
+  if not (is_valid_symbol_name name) then
+    Printf.ksprintf failwith
+      "Symbol %S is invalid: names must start with a letter or '_' and only \
+       contain letters, digits and '_'"
+       name
+
 let check_fresh_symbol state name =
+  check_symbol_name name;
   if Hashtbl.mem state.symbols name then
     Printf.ksprintf failwith "Symbol %s is already defined" name
 
