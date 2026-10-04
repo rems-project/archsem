@@ -15,7 +15,7 @@ x |-> pa_x at level 2;
 pa_x = 12
 
 [thread.0]
-init = { X1 = "x", X2 = "y", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X1 = "x", X2 = "y", CurrentEL = 1 }
 code = """
 LDR W0,[X1,#8]
 """
