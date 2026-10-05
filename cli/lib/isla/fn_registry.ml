@@ -44,12 +44,22 @@
     Any error during evaluation should be reported with [Failure] which will be
     converted into a [eval_error] in [Term.eval] *)
 
-type positional_fn = string * (Z.t list -> Z.t)
+type value =
+  | Num of Z.t
+  | Walk of string * int list
 
-type keyword_fn = string * ((string * Z.t) list -> Z.t)
+type positional_fn = string * (value list -> value)
+
+type keyword_fn = string * ((string * value) list -> value)
 
 (** Raise a function-scoped evaluation error. *)
 let error fmt = Litmus.Error.failwith ("function: " ^^ fmt)
+
+(** Require a numeric value for an ordinary function or expression. *)
+let number name : value -> Z.t = function
+  | Num z -> z
+  | Walk (walk_name, _) ->
+      error "%s: table walk %s used where a number is required" name walk_name
 
 (** Convert a Zarith argument to an OCaml [int], preserving function context. *)
 let int_arg name arg value =

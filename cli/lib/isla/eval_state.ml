@@ -44,10 +44,12 @@ type page_table = (int, int64) Hashtbl.t
 
 type t =
   { symbols : (string, int) Hashtbl.t;
+    walks : (string, int list) Hashtbl.t; (* PTE addresses from level 0. *)
     mutable page_table : page_table option
   }
 
-let create () = {symbols = Hashtbl.create 32; page_table = None}
+let create () =
+  {symbols = Hashtbl.create 32; walks = Hashtbl.create 16; page_table = None}
 
 (** Decides if a string is an Archsem symbol: must start with a ASCII letter or
     [_] and followed by alphanumeric character (or [_]).
@@ -70,7 +72,7 @@ let check_symbol_name name =
 
 let check_fresh_symbol state name =
   check_symbol_name name;
-  if Hashtbl.mem state.symbols name then
+  if Hashtbl.mem state.symbols name || Hashtbl.mem state.walks name then
     Printf.ksprintf failwith "Symbol %s is already defined" name
 
 let add_symbol state name addr =
@@ -80,4 +82,11 @@ let add_symbol state name addr =
 let lookup_addr state name =
   match Hashtbl.find_opt state.symbols name with
   | Some addr -> addr
+  | None when Hashtbl.mem state.walks name ->
+      Printf.ksprintf failwith "Symbol %s is a table walk, expected an address"
+        name
   | None -> Printf.ksprintf failwith "Symbol %s not found" name
+
+let add_walk state name walk =
+  check_fresh_symbol state name;
+  Hashtbl.add state.walks name walk

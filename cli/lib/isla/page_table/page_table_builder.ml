@@ -213,6 +213,8 @@ let check_aligned_at_level name level addr =
 
 (** Write an encoded descriptor at [va], allocating intermediate tables. *)
 let write_descriptor ?(level = Desc.last_level) builder ~root ~va desc =
+  if level < Desc.root_level || level > Desc.last_level then
+    error "page_table: invalid mapping level: %d" level;
   let rec walk table_addr current_level =
     let idx = Desc.va_index va current_level in
     if current_level = level then
@@ -335,6 +337,23 @@ let require_root = function
         "page_table: top-level mapping requires an implicit default table, but \
          default_tables = false"
 
+(** Record PTE addresses through [level] or the end of the existing path. *)
+let record_walk ?(level = Desc.last_level) builder ~root ~va name =
+  match name with
+  | None -> ()
+  | Some name ->
+      let rec walk table current_level =
+        let idx = Desc.va_index va current_level in
+        let addr = entry_addr table idx in
+        if current_level = level then [addr]
+        else
+          match child_table_addr builder table idx with
+          | None -> [addr]
+          | Some child -> addr :: walk child (current_level + 1)
+      in
+      Eval_state.add_walk builder.state name
+        (walk (require_root root) Desc.root_level)
+
 let rec eval_stmt builder ~table_block ~root = function
   | Page_table_ast.OptionDefaultTables _ -> ()
   | Page_table_ast.Virtual _ -> ()
@@ -346,24 +365,31 @@ let rec eval_stmt builder ~table_block ~root = function
          )
         names
   | Page_table_ast.AlignedVirtual _ -> ()
-  | Page_table_ast.Mapping {va_name; target; attrs; level} ->
+  | Page_table_ast.Mapping {va_name; target; attrs; level; walk_name} ->
+      Option.iter (Eval_state.check_fresh_symbol builder.state) walk_name;
       let root = require_root root in
       let va = Eval_state.lookup_addr builder.state va_name in
-      eval_mapping_target ?level ~attrs builder ~root ~va target
+      eval_mapping_target ?level ~attrs builder ~root ~va target;
+      record_walk ?level builder ~root:(Some root) ~va walk_name
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
       let value = Term.eval ~state:builder.state value in
       Hashtbl.replace builder.data_inits pa value
-  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code} ->
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code; walk_name}
+    ->
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
       if addr < Allocator.page_size || addr >= Allocator.big_size then
         error "page_table: identity code address 0x%x is outside the code arena"
-          addr
-  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data} ->
+          addr;
+      record_walk builder ~root ~va:addr walk_name
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data; walk_name}
+    ->
+      Option.iter (Eval_state.check_fresh_symbol builder.state) walk_name;
       let root = require_root root in
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
-      add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
+      add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data;
+      record_walk builder ~root:(Some root) ~va:addr walk_name
   | Page_table_ast.TableBlock {name; base; body; _} ->
       let base = table_addr "table base" base in
       if Hashtbl.mem builder.named_roots name then

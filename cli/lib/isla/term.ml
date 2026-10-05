@@ -43,13 +43,25 @@
 include Term_ast
 
 let eval ~state term =
-  let positional_functions =
-    Bv_fns.functions @ Page_table_fns.positional_functions ~state
+  let positional_functions : Fn_registry.positional_fn list =
+    List.map
+      (fun (name, eval) ->
+         ( name,
+           fun args ->
+             Fn_registry.Num (eval (List.map (Fn_registry.number name) args))
+         )
+       )
+      Bv_fns.functions
+    @ Page_table_fns.positional_functions ~state
   in
   let keyword_functions = Page_table_fns.keyword_functions in
   let rec eval_term = function
-    | Const z -> z
-    | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
+    | Const z -> Fn_registry.Num z
+    | Sym sym -> (
+      match Hashtbl.find_opt state.Eval_state.walks sym with
+      | Some walk -> Fn_registry.Walk (sym, walk)
+      | None -> Fn_registry.Num (Z.of_int (Eval_state.lookup_addr state sym))
+    )
     | Fn (name, args) ->
         let evaluated = List.map eval_term args in
         Fn_registry.eval ~fns:positional_functions name evaluated
@@ -57,4 +69,4 @@ let eval ~state term =
         let evaluated = List.map (fun (k, v) -> (k, eval_term v)) kwargs in
         Fn_registry.eval ~fns:keyword_functions name evaluated
   in
-  eval_term term
+  Fn_registry.number "expression" (eval_term term)

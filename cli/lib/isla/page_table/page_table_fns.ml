@@ -41,7 +41,7 @@
 (** Page-table helper functions available in Isla expressions. *)
 
 (** [page(a)] extracts a 4KB page number from an address. *)
-let page_function =
+let page_function : string * (Z.t list -> Z.t) =
   ( "page",
     function
     | [a] -> Z.extract a 12 36
@@ -49,7 +49,7 @@ let page_function =
   )
 
 (** [asid(v)] shifts an ASID value into bits [63:48]. *)
-let asid_function =
+let asid_function : string * (Z.t list -> Z.t) =
   ( "asid",
     function
     | [v] -> Z.shift_left v 48
@@ -79,28 +79,52 @@ let pte_addr name entries ~base ~va ~level =
   in
   walk base Page_table_desc.root_level
 
-(** [pteN(va, base)] treats [base] as the root translation-table PA, then
-    returns the identity-mapped VA of the matching PTE. *)
-let pte_function entries level =
-  let name = Printf.sprintf "pte%d" level in
-  ( name,
-    function
+(** [pteN(walk)] and [tableN(walk)] use recorded addresses;
+    [pteN(va, base)] and [tableN(va, base)] query the current tables. *)
+let entry_function ~pte entries level : Fn_registry.positional_fn =
+  let name = Printf.sprintf "%s%d" (if pte then "pte" else "table") level in
+  let eval : Fn_registry.value list -> int = function
+    | [Fn_registry.Walk (walk_name, walk)] -> (
+      match List.nth_opt walk level with
+      | Some addr -> addr
+      | None ->
+          Fn_registry.error "%s: table walk %s has no level %d" name walk_name
+            level
+    )
+    | [_] -> Fn_registry.error "%s: expected a table walk" name
     | [va; base] ->
-        let va = Fn_registry.int_arg name "va" va in
-        let base = Fn_registry.int_arg name "base" base in
-        let pte_pa = pte_addr name entries ~base ~va ~level in
-        if pte_pa < Allocator.big_size || pte_pa >= 2 * Allocator.big_size then
+        let va = Fn_registry.int_arg name "va" (Fn_registry.number name va) in
+        let base =
+          Fn_registry.int_arg name "base" (Fn_registry.number name base)
+        in
+        let addr = pte_addr name entries ~base ~va ~level in
+        if pte && (addr < Allocator.big_size || addr >= 2 * Allocator.big_size)
+        then
           Fn_registry.error
             "%s: PTE level %d for VA 0x%x was resolved at PA 0x%x which is \
              outside page-table storage, for root 0x%x"
-             name level va pte_pa base;
-        Z.of_int pte_pa
-    | args -> Fn_registry.arity_error name 2 (List.length args)
+             name level va addr base;
+        addr
+    | args ->
+        Fn_registry.error "%s: expected 1 or 2 arguments, got %d" name
+          (List.length args)
+  in
+  ( name,
+    fun args ->
+      let addr = eval args in
+      Fn_registry.Num
+        (Z.of_int (if pte then addr else Page_table_desc.align_page_addr addr))
   )
+
+let pte_function entries level : Fn_registry.positional_fn =
+  entry_function ~pte:true entries level
+
+let table_function entries level : Fn_registry.positional_fn =
+  entry_function ~pte:false entries level
 
 (** [descN(va, base)] treats [base] as the root translation-table PA and
     returns the descriptor stored in the matching level-[N] PTE. *)
-let desc_function entries level =
+let desc_function entries level : string * (Z.t list -> Z.t) =
   let name = Printf.sprintf "desc%d" level in
   ( name,
     function
@@ -119,21 +143,8 @@ let desc_function entries level =
     | args -> Fn_registry.arity_error name 2 (List.length args)
   )
 
-(** [tableN(va, base)] returns the page containing the level-[N] PTE. *)
-let table_function entries level =
-  let name = Printf.sprintf "table%d" level in
-  ( name,
-    function
-    | [va; base] ->
-        let va = Fn_registry.int_arg name "va" va in
-        let base = Fn_registry.int_arg name "base" base in
-        let addr = pte_addr name entries ~base ~va ~level in
-        Z.of_int (Page_table_desc.align_page_addr addr)
-    | args -> Fn_registry.arity_error name 2 (List.length args)
-  )
-
 (** [mkdescN(oa=..., ...)] encodes a level-[N] block/page descriptor. *)
-let eval_desc name level kwargs =
+let eval_desc name level (kwargs : (string * Z.t) list) : Z.t =
   Fn_registry.check_kwargs name ["oa"; "Valid"; "AF"; "AP"; "DBM"; "nG"] kwargs;
   let oa = Fn_registry.required_kwarg name "oa" kwargs in
   let fields =
@@ -151,7 +162,7 @@ let eval_desc name level kwargs =
     )
 
 (** [mkdescN(table=...)] encodes a next-level table descriptor. *)
-let eval_table_desc name kwargs =
+let eval_table_desc name (kwargs : (string * Z.t) list) : Z.t =
   Fn_registry.check_kwargs name ["table"; "APTable"] kwargs;
   let table_addr = Fn_registry.required_kwarg name "table" kwargs in
   let fields = [descriptor_field_arg kwargs "APTable" Z.zero] in
@@ -160,7 +171,7 @@ let eval_table_desc name kwargs =
        (Fn_registry.int_arg name "table" table_addr)
     )
 
-let mkdesc_function level =
+let mkdesc_function level : string * ((string * Z.t) list -> Z.t) =
   let name = Printf.sprintf "mkdesc%d" level in
   let eval kwargs =
     match (List.mem_assoc "oa" kwargs, List.mem_assoc "table" kwargs) with
@@ -178,7 +189,7 @@ let check_unsigned name arg bits value =
 
 (** [ttbr(asid=..., base=...)] and [ttbr(vmid=..., base=...)] combine a
     concrete translation-table root PA with its 16-bit address-space ID. *)
-let ttbr_function =
+let ttbr_function : string * ((string * Z.t) list -> Z.t) =
   let name = "ttbr" in
   let eval kwargs =
     Fn_registry.check_kwargs name ["asid"; "vmid"; "base"] kwargs;
@@ -197,17 +208,44 @@ let ttbr_function =
   in
   (name, eval)
 
-let positional_functions ~state =
-  let functions = [page_function; asid_function] in
+let positional_functions ~state : Fn_registry.positional_fn list =
+  let functions =
+    List.map
+      (fun (name, eval) ->
+         ( name,
+           fun args ->
+             Fn_registry.Num (eval (List.map (Fn_registry.number name) args))
+         )
+       )
+      [page_function; asid_function]
+  in
   match state.Eval_state.page_table with
   | None -> functions
   | Some entries ->
       let levels = [0; 1; 2; 3] in
       functions
       @ List.map (pte_function entries) levels
-      @ List.map (desc_function entries) levels
+      @ List.map
+          (fun level ->
+             let (name, eval) = desc_function entries level in
+             ( name,
+               fun args ->
+                 Fn_registry.Num (eval (List.map (Fn_registry.number name) args))
+             )
+           )
+          levels
       @ List.map (table_function entries) levels
 
 let keyword_functions : Fn_registry.keyword_fn list =
   let levels = [0; 1; 2; 3] in
-  ttbr_function :: List.map mkdesc_function levels
+  List.map
+    (fun (name, eval) ->
+       ( name,
+         fun kwargs ->
+           let args =
+             List.map (fun (k, v) -> (k, Fn_registry.number name v)) kwargs
+           in
+           Fn_registry.Num (eval args)
+       )
+     )
+    (ttbr_function :: List.map mkdesc_function levels)

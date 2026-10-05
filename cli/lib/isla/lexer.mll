@@ -76,6 +76,7 @@ rule token = parse
   | "physical" { PHYSICAL }
   | "identity" { IDENTITY }
   | "with" { WITH }
+  | "as" { AS }
   | "and" { AND_KW }
   | "default" { DEFAULT }
   | "code" { CODE }

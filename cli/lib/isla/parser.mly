@@ -67,6 +67,7 @@
 %token PHYSICAL
 %token IDENTITY
 %token WITH
+%token AS
 %token DEFAULT
 %token AND_KW
 %token CODE
@@ -89,7 +90,7 @@
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
   page_table_block
-%type <Page_table_ast.mapping_target * Page_table_ast.descriptor_expr_field list * int option>
+%type <Page_table_ast.mapping_target * Page_table_ast.descriptor_expr_field list * int option * string option>
   page_table_mapping_rhs
 %type <Page_table_ast.mapping_target> page_table_mapping_target
 %type <Page_table_ast.attr> page_table_attr
@@ -127,17 +128,18 @@ page_table_stmt_inner:
   | ALIGNED; alignment = NUM; VIRTUAL; names = nonempty_list(IDENT)
     { Page_table_ast.AlignedVirtual {alignment; names} }
   | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs
-    { let (target, attrs, level) = rhs in
-      Page_table_ast.Mapping {va_name; target; attrs; level}
+    { let (target, attrs, level, walk_name) = rhs in
+      Page_table_ast.Mapping {va_name; target; attrs; level; walk_name}
     }
   | va_name = IDENT; "?->"; rhs = page_table_mapping_rhs
-    { let (target, attrs, level) = rhs in
-      Page_table_ast.MaybeMapping {va_name; target; attrs; level}
+    { let (target, attrs, level, walk_name) = rhs in
+      Page_table_ast.MaybeMapping {va_name; target; attrs; level; walk_name}
     }
   | "*"; pa_name = IDENT; "="; value = term
     { Page_table_ast.DataInit {pa_name; value} }
-  | IDENTITY; addr = term; WITH; attr = page_table_attr
-    { Page_table_ast.IdentityMapping {addr; attr} }
+  | IDENTITY; addr = term; WITH; attr = page_table_attr;
+    walk_name = option(page_table_walk_name)
+    { Page_table_ast.IdentityMapping {addr; attr; walk_name} }
 
 page_table_block:
   | stage = page_table_stage; name = IDENT; base = NUM; "{";
@@ -151,8 +153,12 @@ page_table_stage:
 page_table_mapping_rhs:
   | target = page_table_mapping_target;
     attrs = option(page_table_descriptor_attrs);
-    level = option(page_table_mapping_level)
-    { (target, Option.value ~default:[] attrs, level) }
+    level = option(page_table_mapping_level);
+    walk_name = option(page_table_walk_name)
+    { (target, Option.value ~default:[] attrs, level, walk_name) }
+
+page_table_walk_name:
+  | AS; name = IDENT { name }
 
 page_table_mapping_target:
   | name = IDENT { Page_table_ast.PaName name }

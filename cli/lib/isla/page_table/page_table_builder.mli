@@ -63,9 +63,7 @@ type layout =
 exception Error of string
 
 (** Build a concrete page-table layout by executing statements in source order.
-    Symbols are registered as they are allocated. Expressions query the live
-    entries built so far. After setup, [state] retains these entries for register
-    and assertion evaluation. *)
+    [state] retains symbols, entries and named walks for expression evaluation. *)
 val build :
    arch:Litmus.Arch_id.t ->
   (* Allocate physical addresses for data symbols. *)

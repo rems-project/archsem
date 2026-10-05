@@ -52,7 +52,7 @@ let int_of_bit_arg name arg value =
 
     Any error during evaluation should be reported with [Failure] which will be
     converted into a [eval_error] in [Term.eval] *)
-let functions : Fn_registry.positional_fn list =
+let functions : (string * (Z.t list -> Z.t)) list =
   [ ( "bvand",
       function
       | [a; b] -> Z.logand a b

@@ -80,19 +80,23 @@ type stmt =
         names : string list
       }
   (* [x |-> pa_x;] maps a named address to a physical-address target.
-     Optional [with ... and default] clauses override descriptor fields. *)
+     Optional [with ... and default] clauses override descriptor fields.
+     [as name] records the mapping's table and PTE addresses. *)
   | Mapping of
       { va_name : string;
         target : mapping_target;
         attrs : descriptor_expr_field list;
-        level : int option
+        level : int option;
+        walk_name : string option
       }
-  (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
+  (* [x ?-> pa_x;] is accepted for Isla compatibility and ignored,
+     including any [as name] annotation. *)
   | MaybeMapping of
       { va_name : string;
         target : mapping_target;
         attrs : descriptor_expr_field list;
-        level : int option
+        level : int option;
+        walk_name : string option
       }
   (* [*pa_name = value;] allocates the PA on first use and evaluates the value. *)
   | DataInit of
@@ -102,7 +106,8 @@ type stmt =
   (* [identity addr with attr;] maps one page to itself. *)
   | IdentityMapping of
       { addr : Term_ast.t;
-        attr : attr
+        attr : attr;
+        walk_name : string option
       }
   (* [s1table name 0x280000 { ... }] immediately binds the name to its fixed
      root PA before executing the body. *)
