@@ -87,7 +87,8 @@ type stmt =
         attrs : descriptor_expr_field list;
         level : int option
       }
-  (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
+  (* [x ?-> pa_x;] creates no initial mapping. Explicit table targets reserve
+     storage for tables that can be installed during execution. *)
   | MaybeMapping of
       { va_name : string;
         target : mapping_target;

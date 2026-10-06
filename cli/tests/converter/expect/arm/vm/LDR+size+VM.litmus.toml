@@ -40,7 +40,7 @@ name = "LDR+size+VM"
 
 [[memory]]
   sym = "pa_pad"
-  addr = 0x610000
+  addr = 0x601000
   step = 8
   data = 0
 

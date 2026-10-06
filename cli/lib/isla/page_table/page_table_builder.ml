@@ -66,6 +66,8 @@ type t =
     symbol_allocator : Allocator.t;
     (* Allocates root and child translation-table pages. *)
     table_allocator : Allocator.t;
+    (* Explicit child tables must not be reused for automatic allocation. *)
+    reserved_tables : (pa, unit) Hashtbl.t;
     (* Default root translation-table used when statements are not nested in a
        named table block. *)
     default_root : pa option;
@@ -81,11 +83,19 @@ type t =
     data_inits : (pa, data_value) Hashtbl.t
   }
 
-let make ~state ~symbol_allocator ~table_allocator ~pa_alignments ~default_root =
+let make
+      ~state
+      ~symbol_allocator
+      ~table_allocator
+      ~reserved_tables
+      ~pa_alignments
+      ~default_root
+  =
   Option.iter (Eval_state.add_symbol state "page_table_base") default_root;
   { state;
     symbol_allocator;
     table_allocator;
+    reserved_tables;
     default_root;
     named_roots = Hashtbl.create 8;
     entries = Hashtbl.create 256;
@@ -157,13 +167,59 @@ let table_addr name value =
   check_table_addr name addr;
   addr
 
-(** Allocate a fresh child translation-table page. *)
-let create_table_page builder =
+(* Reserve addresses that can already be resolved without executing setup.
+   A private symbol table lets expressions refer to fixed named roots. Terms
+   depending on the default root, PA allocation, or a live walk remain deferred;
+   their normal evaluation still reports any errors at the statement itself. *)
+let reserve_explicit_tables ~state reserved_tables stmts =
+  let state =
+    {state with Eval_state.symbols = Hashtbl.copy state.Eval_state.symbols}
+  in
+  let rec roots stmts =
+    List.iter
+      (function
+        | Page_table_ast.TableBlock {name; base; body; _} ->
+            Hashtbl.replace state.symbols name (addr_of_z "table base" base);
+            roots body
+        | _ -> ()
+        )
+      stmts
+  in
+  roots stmts;
+  let reserve term =
+    match Z.to_int (Term.eval ~state term) with
+    | addr
+      when addr >= table_storage_base && addr < table_storage_limit
+           && addr mod Allocator.page_size = 0 ->
+        Hashtbl.replace reserved_tables addr ()
+    | _ -> ()
+    | exception (Failure _ | Z.Overflow) -> ()
+  in
+  let rec collect stmts =
+    List.iter
+      (function
+        | Page_table_ast.Mapping {target = Page_table_ast.Table term; _}
+         |Page_table_ast.MaybeMapping {target = Page_table_ast.Table term; _} ->
+            reserve term
+        | Page_table_ast.TableBlock {body; _} -> collect body
+        | _ -> ()
+        )
+      stmts
+  in
+  collect stmts
+
+let rec alloc_table_page table_allocator reserved_tables =
   let addr =
-    try Allocator.alloc_page builder.table_allocator
+    try Allocator.alloc_page table_allocator
     with Failure msg -> error "page_table: %s" msg
   in
-  addr
+  if Hashtbl.mem reserved_tables addr then
+    alloc_table_page table_allocator reserved_tables
+  else addr
+
+(** Allocate a fresh child translation-table page. *)
+let create_table_page builder =
+  alloc_table_page builder.table_allocator builder.reserved_tables
 
 let entry_addr table_addr idx = table_addr + (idx * Desc.entry_size)
 
@@ -321,6 +377,7 @@ let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
       let table_pa =
         table_addr "table address" (Term.eval ~state:builder.state addr)
       in
+      Hashtbl.replace builder.reserved_tables table_pa ();
       let fields = eval_fields builder attrs in
       let desc =
         try Desc.table_descriptor ~fields table_pa
@@ -391,20 +448,20 @@ let to_layout builder : layout =
 let build ~arch ~symbol_allocator ~table_allocator ~table_block ~state stmts =
   check_arch arch;
   if stmts = [] then error "page_table: empty page_table_setup";
+  let reserved_tables = Hashtbl.create 32 in
+  reserve_explicit_tables ~state reserved_tables stmts;
   let default_root =
     if default_tables_enabled stmts then
-      Some
-        ( try Allocator.alloc_page table_allocator
-          with Failure msg -> error "page_table: %s" msg
-        )
+      Some (alloc_table_page table_allocator reserved_tables)
     else None
   in
   let builder =
-    make ~state ~symbol_allocator ~table_allocator
+    make ~state ~symbol_allocator ~table_allocator ~reserved_tables
       ~pa_alignments:(pa_alignment_requests stmts)
       ~default_root
   in
   state.Eval_state.page_table <- Some builder.entries;
+  reserve_explicit_tables ~state reserved_tables stmts;
   Option.iter (initialise_root builder ~table_block) builder.default_root;
   ( try List.iter (eval_stmt builder ~table_block ~root:builder.default_root) stmts
     with Failure msg -> error "%s" msg

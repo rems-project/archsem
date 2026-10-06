@@ -171,9 +171,11 @@ let checked_mapping_alignment level =
   with Invalid_argument _ ->
     eval_error Page_table_setup "page_table: invalid mapping level: %d" level
 
-let symbolic_va_alignments ir =
+let symbolic_va_layout ir =
   let virtual_names = symbolic_names ir in
   let alignments = Hashtbl.create 32 in
+  (* Alignment alone does not reserve a whole block of virtual addresses. *)
+  let sizes = Hashtbl.create 32 in
   let request name alignment =
     let previous =
       Hashtbl.find_opt alignments name
@@ -194,8 +196,21 @@ let symbolic_va_alignments ir =
                  request name alignment
                )
               names
-        | Page_table_ast.Mapping {va_name; level = Some level; _} ->
-            request va_name (checked_mapping_alignment level)
+        | Page_table_ast.Mapping {va_name; target; level = Some level; _} -> (
+            let alignment = checked_mapping_alignment level in
+            match target with
+            (* A table descriptor selects a parent slot; its VAs can still
+               select distinct pages within that table. *)
+            | Page_table_ast.Table _ -> ()
+            | Page_table_ast.PaName _ | Page_table_ast.Address _
+             |Page_table_ast.Invalid ->
+                request va_name alignment;
+                let previous =
+                  Hashtbl.find_opt sizes va_name
+                  |> Option.value ~default:Allocator.page_size
+                in
+                Hashtbl.replace sizes va_name (max previous alignment)
+          )
         | Page_table_ast.TableBlock {body; _} -> collect body
         | _ -> ()
         )
@@ -206,7 +221,8 @@ let symbolic_va_alignments ir =
     (fun name ->
        ( name,
          Hashtbl.find_opt alignments name
-         |> Option.value ~default:Allocator.page_size
+         |> Option.value ~default:Allocator.page_size,
+         Hashtbl.find_opt sizes name |> Option.value ~default:Allocator.page_size
        )
      )
     virtual_names
@@ -261,13 +277,11 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
   in
   let symbols =
     List.map
-      (fun (name, alignment) ->
-         let addr =
-           Allocator.alloc_aligned symbol_allocator ~size:alignment ~alignment
-         in
+      (fun (name, alignment, size) ->
+         let addr = Allocator.alloc_aligned symbol_allocator ~size ~alignment in
          {Assembler.name; addr}
        )
-      (symbolic_va_alignments ir)
+      (symbolic_va_layout ir)
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 
