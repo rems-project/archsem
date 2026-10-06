@@ -242,7 +242,7 @@ Module CandidateExecutions (Arch : Arch) (Inter : InterfaceT Arch)
       Proof.
         unfold ISA_complete, lookup_instruction.
         cdestruct |- ** as H Ht He # CDestrEqOpt.
-        eapply Ht; [rewrite elem_of_vlookup | by eapply elem_of_list_lookup_2].
+        eapply Ht; [rewrite elem_of_vlookup | by eapply list_elem_of_lookup_2].
         naive_solver.
       Qed.
 
@@ -252,7 +252,7 @@ Module CandidateExecutions (Arch : Arch) (Inter : InterfaceT Arch)
       Proof.
         unfold ISA_match, lookup_instruction.
         cdestruct |- ** as H Ht He # CDestrEqOpt.
-        eapply H. by eapply elem_of_list_lookup_2.
+        eapply H. by eapply list_elem_of_lookup_2.
       Qed.
 
       Definition instruction_list pe : list (nat * nat * iTrace ()) :=

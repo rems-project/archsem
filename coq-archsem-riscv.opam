@@ -20,7 +20,7 @@ bug-reports: "https://github.com/rems-project/archsem/issues"
 depends: [
   "dune" {>= "3.14"}
   "coq-archsem"
-  "coq-sail-riscv" {dev}
+  "rocq-sail-riscv" {= "0.14.1"}
   "odoc" {with-doc}
 ]
 build: [

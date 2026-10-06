@@ -22,13 +22,13 @@
  (name coq-archsem-common)
  (synopsis "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library")
  (depends
-  (coq (>= 9.0))
-   coq-stdlib
-  (coq-equations (>= 1.3))
+  (rocq-core (>= 9.1))
+   rocq-stdlib
+  (rocq-equations (>= 1.3.1))
   (coq-record-update (>= 0.3.4))
   (coq-hammer-tactics (>= 1.3.2))
-  (coq-stdpp (= 1.12.0))
-  (coq-stdpp-bitvector (= 1.12.0))
+  (rocq-stdpp (= 1.13.0))
+  (rocq-stdpp-bitvector (= 1.13.0))
   (headache :with-dev-setup)
  )
 )
@@ -38,7 +38,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, architecture generic part")
  (depends
    coq-archsem-common
-  (coq-sail-stdpp (= 0.20)) ; See coq-archsem.opam.locked for the commit number
+  (rocq-sail-stdpp (= 0.20.3)) ; See coq-archsem.opam.locked for the commit number
  )
 )
 
@@ -47,7 +47,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, Arm instantiation")
  (depends
    coq-archsem
-   (coq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.locked for the commit number
+   (rocq-sail-tiny-arm :dev) ; See coq-archsem-arm.opam.locked for the commit number
  )
 )
 
@@ -56,7 +56,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, RISC-V instantiation")
  (depends
    coq-archsem
-   (coq-sail-riscv :dev) ; See coq-archsem-riscv.opam.locked for the commit number
+   (rocq-sail-riscv (= 0.14.1)) ; See coq-archsem-riscv.opam.locked for the commit number
  )
 )
 
@@ -65,7 +65,7 @@
  (synopsis "Coq infrastructure to reason about hardware CPU architecture semantics, x86 instantiation")
  (depends
    coq-archsem
-   (coq-sail-tiny-x86 :dev) ; See coq-archsem-x86.opam.locked for the commit number
+   (rocq-sail-tiny-x86 :dev) ; See coq-archsem-x86.opam.locked for the commit number
  )
 )
 
@@ -76,7 +76,7 @@
    coq-archsem
    coq-archsem-arm
   (otoml (>= 1.0))
-  (cmdliner (>= 1.3))
+  (cmdliner (>= 2.0))
   (menhir (>= 20231231))
   (ounit2 (and :with-test (>= 2.2)))
   (ocamlformat (and :with-dev-setup (>= 0.28)))

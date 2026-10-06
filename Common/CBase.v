@@ -118,6 +118,17 @@ Proof.
   by apply functional_extensionality.
 Qed.
 
+(** Since Rocq 9.1, [ReflexiveProxy] on a relation containing evars no longer
+    calls back to [Reflexive], so [reflexive_respectful] is not found when
+    [setoid_rewrite] leaves the target relation open. *)
+Instance reflexive_proxy_respectful {A B} `{ReflexiveProxy C R'}
+  : ReflexiveProxy (pointwise_relation A (=@{B}) ==> R')%signature.
+Proof.
+  intros f x y Hpr.
+  enough (x = y) as Heq by (subst; apply reflexive_proxy).
+  by apply functional_extensionality.
+Qed.
+
 
 (** * Notations ***)
 
