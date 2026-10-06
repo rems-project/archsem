@@ -1371,22 +1371,14 @@ Module TLB.
       else
         mret $ get_result_from_leaf_FE fe events tmin_ok tmax.
 
-    (** Lookup all entries reachable from TLB or walk-caches. Does not return
-        level-0 invalid PTEs as they are not reachable from the TLB *)
-    Definition lookup
-      (tmin_ok tmin_unc tmax : nat) (asids: list (bv 16 * view)) :
+    (** Lookup all entries reachable from TLB or walk-caches that are either
+        global or tagged with [asid]. Does not return level-0 invalid PTEs as
+        they are not reachable from the TLB *)
+    Definition lookup (tmin_ok tmin_unc tmax : nat) (asid : bv 16) :
         result string (list Result.t) :=
-      global_results ← for (fe, events) in get_fes get_global_Ctxts do
+      for (fe, events) in get_fes (get_global_Ctxts ++ get_asid_Ctxts asid) do
         get_result_from_FE fe events tmin_ok tmin_unc tmax
-      end |$> List.concat;
-      asid_results ← for (asid, vasid) in asids do
-        let tmin_ok := tmin_ok ⊔ vasid in
-        let tmin_unc := tmin_unc ⊔ vasid in
-        for (fe, events) in get_fes (get_asid_Ctxts asid) do
-          get_result_from_FE fe events tmin_ok tmin_unc tmax
-        end |$> List.concat
-      end |$> List.concat;
-      mret (global_results ++ asid_results).
+      end |$> List.concat.
 
   End TLBLookup.
 
@@ -1796,13 +1788,16 @@ Module TState.
         TLB.fill_cse tid imem mem v ttbr0.1 ttbr1) ts;
     mret ts.
 
+  (** Lookup the TLB for [vpn]. Only global entries and non-global entries
+      tagged with [asid] are considered. [ttbr0] is the TTBR0_EL1 value already
+      read by the instruction, its view is assumed to be included in [tmin_ok]
+      and [tmin_unc] *)
   Definition tlb_lookup (tid : nat) (imem : memoryMap) (mem : Memory.t) (ts : t)
-      (ifetch upper : bool) (vpn : pn) (tmin_ok tmin_unc tmax : nat) :
+      (ifetch upper : bool) (vpn : pn) (asid : bv 16) (ttbr0 : bv 64)
+      (tmin_ok tmin_unc tmax : nat) :
     result string (list TLB.Result.t) :=
     tlb ← othrow "TLB lookup, but translation disabled by SCTLR_EL1" $ ts.(tlb);
-    ttbr0s ← othrow "Can't read TTBR0_EL1" $ read_sreg_indirect ts TTBR0_EL1;
-    let asids := ttbr0s |> map (λ '(ttbr0, vttbr0), (bv_extract 48 16 ttbr0, vttbr0)) in
-    from_tlb ← TLB.lookup tid imem mem tlb ifetch upper vpn tmin_ok tmin_unc tmax asids;
+    from_tlb ← TLB.lookup tid imem mem tlb ifetch upper vpn tmin_ok tmin_unc tmax asid;
     (* Still missing invalid lookups from root, those do not go through the TLB *)
     from_lvl0_inv ←
     ( if decide (tmin_unc ≤ tmax) then
@@ -1810,7 +1805,7 @@ Module TState.
           (if upper then
             othrow "Can't read TTBR1_EL1, but using negative addresses" $
               read_sreg_indirect ts TTBR1_EL1 : result string (list (bv 64 * view))
-          else mret ttbr0s);
+          else mret [(ttbr0, 0)]);
         let lvl0_index := vpn_level_index 0%fin vpn in
         for (ttbr, vttbr) in ttbrs do
           let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
@@ -2350,8 +2345,15 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
     if is_upper_va va is Some upper then
       reg_ttbr ← mlift $ root_ttbr regime upper;
       let vpn := va_to_vpn va in
+      (* The ASID read has already chosen a TTBR0_EL1 value for the instruction,
+         and its view is included in [IIS.strict] *)
+      '(ttbr0, _) ← Exec.liftSt (PPState.state ×× PPState.iis) $
+        (read_sreg_indirect TTBR0_EL1 None
+          : Exec.t _ _ (bv 64 * view));
+      guard_or "Translation ASID does not match the TTBR0_EL1 value read"
+        (asid = bv_extract 48 16 ttbr0);;
       tlb_results ← mlift $ TState.tlb_lookup tid imem mem ts ifetch upper vpn
-        vpre_t vpre_inv vmax_t;
+        asid ttbr0 vpre_t vpre_inv vmax_t;
       (* The only valid reason for tlb_result to be empty, is if the only
          possibility was to fault but a fault is impossible with the current
          promising context, otherwise this means the page tables are not set up
