@@ -1861,10 +1861,13 @@ Module IIS.
         (* The translations results of the latest translation *)
         trs : option TransRes.t;
         inv_time : option nat;
-        rmw_read : option (nat * bool)
+        rmw_read : option (nat * bool);
+        (* Values chosen for relaxed system registers read indirectly by this
+           instruction, so that all reads of a register agree *)
+        sreg_reads : dmap reg (λ reg, reg_type reg * view)%type
       }.
 
-  Definition init : t := make 0 None None None.
+  Definition init : t := make 0 None None None ∅.
 
   (** Add a new view to the IIS *)
   Definition add (v : view) (iis : t) : t :=
@@ -1875,6 +1878,10 @@ Module IIS.
 
   Definition set_inv_time (ti_opt : option nat) :=
     setv inv_time ti_opt.
+
+  (** Record the value chosen for an indirect system register read *)
+  Definition add_sreg_read (r : reg) (vv : reg_type r * view) :=
+    set sreg_reads (dmap_insert r vv).
 
 End IIS.
 
@@ -1887,6 +1894,20 @@ Section RunOutcome.
 
 (** ** Register semantics *)
 
+Definition read_sreg_indirect (reg : reg) (racc : reg_acc) :
+    Exec.t (TState.t * IIS.t) string (reg_type reg * view) :=
+  (* All indirect reads of a register within an instruction must agree *)
+  iis ← mget snd;
+  if dmap_lookup reg iis.(IIS.sreg_reads) is Some vv then mret vv
+  else
+    ts ← mget fst;
+    valvs ← othrow
+            ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
+            $ TState.read_sreg_indirect ts reg;
+    vv ← mchoosel valvs;
+    mset snd $ IIS.add_sreg_read reg vv;;
+    mret vv.
+
 Definition run_reg_general_read (reg : reg) (racc : reg_acc) :
     Exec.t (TState.t * IIS.t) string (reg_type reg * view) :=
   ts ← mget fst;
@@ -1895,11 +1916,7 @@ Definition run_reg_general_read (reg : reg) (racc : reg_acc) :
       then othrow
             ("Register " ++ pretty reg ++ " unmapped on direct read")%string
             $ TState.read_sreg_direct ts reg
-    else
-      valvs ← othrow
-              ("Register " ++ pretty reg ++ " unmapped on indirect read")%string
-              $ TState.read_sreg_indirect ts reg;
-      mchoosel valvs
+    else read_sreg_indirect reg racc
   else
     othrow
       ("Register " ++ pretty reg ++ " unmapped; cannot read")%string
