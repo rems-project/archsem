@@ -1,6 +1,7 @@
-(coq.theory
+(rocq.theory
  (name ArchSemX86)
- (package coq-archsem-x86)
+ (generate_project_file)
+ (package rocq-archsem-x86)
  (modules X86Inst OperationalX86TSO AxiomaticX86TSO)
  (theories
   Stdlib
@@ -13,7 +14,7 @@
   ASCommon
   ArchSem
   SailTinyX86)
- (coqdoc_flags
+ (rocqdoc_flags
   :standard
   --utf8
   --external
@@ -34,7 +35,7 @@
   (alias all)))
 
 (alias
- (name coq)
+ (name rocq)
  (deps
   (alias all)))
 

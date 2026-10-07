@@ -1,6 +1,7 @@
-(coq.theory
+(rocq.theory
  (name ASCommon)
- (package coq-archsem-common)
+ (generate_project_file)
+ (package rocq-archsem-common)
  (modules
   Common
   CBase
@@ -26,7 +27,7 @@
   Exec
   HVec)
  (theories Stdlib stdpp Hammer RecordUpdate Equations Ltac2)
- (coqdoc_flags
+ (rocqdoc_flags
   :standard
   --utf8
   --external
@@ -36,6 +37,6 @@
   https://coq.inria.fr/doc/V8.20.1/stdlib))
 
 (alias
- (name coq)
+ (name rocq)
  (deps
   (alias_rec all)))

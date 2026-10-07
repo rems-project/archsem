@@ -1,6 +1,7 @@
-(coq.theory
+(rocq.theory
  (name ArchSemArm)
- (package coq-archsem-arm)
+ (generate_project_file)
+ (package rocq-archsem-arm)
  (modules
   ArmInst
   UMPromising
@@ -21,7 +22,7 @@
   ASCommon
   ArchSem
   SailTinyArm)
- (coqdoc_flags
+ (rocqdoc_flags
   :standard
   --utf8
   --external
@@ -42,7 +43,7 @@
   (alias all)))
 
 (alias
- (name coq)
+ (name rocq)
  (deps
   (alias all)))
 

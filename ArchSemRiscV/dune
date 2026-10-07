@@ -1,6 +1,7 @@
-(coq.theory
+(rocq.theory
  (name ArchSemRiscV)
- (package coq-archsem-riscv)
+ (generate_project_file)
+ (package rocq-archsem-riscv)
  (modules RiscVInst GenAxiomaticRiscV UMAxRiscV)
  (theories
   Stdlib
@@ -13,7 +14,7 @@
   ASCommon
   ArchSem
   Riscv)
- (coqdoc_flags
+ (rocqdoc_flags
   :standard
   --utf8
   --external
@@ -34,7 +35,7 @@
   (alias all)))
 
 (alias
- (name coq)
+ (name rocq)
  (deps
   (alias all)))
 

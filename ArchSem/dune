@@ -1,6 +1,7 @@
-(coq.theory
+(rocq.theory
  (name ArchSem)
- (package coq-archsem)
+ (generate_project_file)
+ (package rocq-archsem)
  (modules
   Interface
   ISAManip
@@ -19,7 +20,7 @@
   Ltac2
   SailStdpp
   ASCommon)
- (coqdoc_flags
+ (rocqdoc_flags
   :standard
   --utf8
   --external
@@ -31,9 +32,9 @@
   --coqlib_url
   https://coq.inria.fr/doc/V8.20.1/stdlib))
 
-; This alias is useful to build all the coq libaries without extraction
+; This alias is useful to build all the Rocq libraries without extraction
 
 (alias
- (name coq)
+ (name rocq)
  (deps
   (alias_rec all)))

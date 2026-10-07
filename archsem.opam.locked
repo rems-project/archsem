@@ -33,9 +33,9 @@ depends: [
   "conf-linux-libc-dev" {= "0"}
   "conf-pkg-config" {= "5"}
   "coq" {= "9.1.0"}
-  "coq-archsem" {= "dev"}
-  "coq-archsem-arm" {= "dev"}
-  "coq-archsem-common" {= "dev"}
+  "rocq-archsem" {= "dev"}
+  "rocq-archsem-arm" {= "dev"}
+  "rocq-archsem-common" {= "dev"}
   "coq-core" {= "9.1.0"}
   "coq-hammer-tactics" {= "1.3.3+9.1"}
   "coq-record-update" {= "0.3.6"}

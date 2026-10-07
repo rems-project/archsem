@@ -1,5 +1,5 @@
 opam-version: "2.0"
-name: "coq-archsem-common"
+name: "rocq-archsem-common"
 version: "dev"
 synopsis:
   "Common infrastructure and definition for the ArchSem project, includes CDestruct and a free monad library"
