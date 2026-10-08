@@ -9,7 +9,7 @@ y |-> pa_x;
 """
 
 [thread.0]
-init = { X0 = 1, X1 = "x", X2 = "y", TTBR0_EL1 = "page_table_base", SCTLR_EL1 = 1, CurrentEL = 1 }
+init = { X0 = 1, X1 = "x", X2 = "y", TTBR0_EL1 = "page_table_base", CurrentEL = 1 }
 code = """
 	STR X0,[X1]
 	LDR X3,[X2]

@@ -80,7 +80,6 @@ name = "MP+VM"
   "R1" = 0x400000
   "R2" = 1
   "R3" = 0x401000
-  "SCTLR_EL1" = 1
   CurrentEL = 1
   "TTBR0_EL1" = 0x200000
   "R4" = 0
@@ -111,10 +110,17 @@ name = "MP+VM"
   "R29" = 0
   "R30" = 0
   "TCR_EL1" = 0
-  "ID_AA64MMFR1_EL1" = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0x3000000000
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "SPSR_EL1" = 0
+  "PAR_EL1" = 0
 
 [thread."1"]
   breakpoints = [0x2008]
@@ -123,7 +129,6 @@ name = "MP+VM"
   _PC = 0x2000
   "R1" = 0x401000
   "R3" = 0x400000
-  "SCTLR_EL1" = 1
   CurrentEL = 1
   "TTBR0_EL1" = 0x200000
   "R0" = 0
@@ -156,10 +161,17 @@ name = "MP+VM"
   "R29" = 0
   "R30" = 0
   "TCR_EL1" = 0
-  "ID_AA64MMFR1_EL1" = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0x3000000000
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "SPSR_EL1" = 0
+  "PAR_EL1" = 0
 
 [final]
   assertion = {and = [{"1:X0" = 1}, {"1:X2" = 0}]}

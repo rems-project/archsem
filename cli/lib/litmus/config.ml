@@ -87,6 +87,15 @@ let get () =
 
 (** {1 Generic getter} *)
 
+(** Run [f], turning TOML errors into fatal config errors *)
+let with_config_errors f =
+  try f () with
+  | Toml.Path_error (path, Toml.FieldMissing field) ->
+      Error.fatal "TOML error in config: path %s: Missing field: %s"
+        (String.concat "." path) field
+  | Toml.Path_error (path, Toml.GenError msg) ->
+      Error.fatal "TOML error in config: path %s: %s" (String.concat "." path) msg
+
 (** Builds a generic config getter that memoizes the results without parsing the
     TOML again *)
 let make_getter ?default getter path =
@@ -96,17 +105,11 @@ let make_getter ?default getter path =
     | Some content -> content
     | None ->
         let content =
-          try
+          with_config_errors (fun () ->
             match default with
             | None -> Toml.find (get ()) getter path
             | Some default -> Toml.find_or ~default (get ()) getter path
-          with
-          | Toml.Path_error (path, Toml.FieldMissing field) ->
-              Error.fatal "TOML error in config: path %s: Missing field: %s"
-                (String.concat "." path) field
-          | Toml.Path_error (path, Toml.GenError msg) ->
-              Error.fatal "TOML error in config: path %s: %s"
-                (String.concat "." path) msg
+          )
         in
         x := Some content;
         content
@@ -135,3 +138,92 @@ let get_reg_rename reg = Hashtbl.find_opt (get_reg_renames ()) reg
 (** Return the renamed version of a register according to [register.renames] or
     the orignal if there is no rename *)
 let get_reg_rename_or reg = get_reg_rename reg |> Option.value ~default:reg
+
+(** {1 Profiles}
+
+    A profile [p] is a [profile.p] table that overrides parts of the config.
+    Currently only [profile.p.registers.defaults] is supported, which overrides
+    [registers.defaults] key by key. The profile is either selected on the CLI
+    with [set_profile], or by default with [page_table_setup_default_profile]
+    for tests having a [page_table_setup]. *)
+
+(** The profile selected on the CLI if any *)
+let cli_profile : string option ref = ref None
+
+let profile_exists name =
+  with_config_errors (fun () ->
+    Toml.find_opt (get ()) Toml.get_table ["profile"; name] |> Option.is_some
+  )
+
+(** Select a profile for all tests, overriding the default selection *)
+let set_profile profile =
+  Option.iter
+    (fun name ->
+       if not (profile_exists name) then
+         Error.fatal "config: unknown profile %s" name
+     )
+    profile;
+  cli_profile := profile
+
+let get_page_table_setup_default_profile =
+  make_getter ~default:None
+    (fun toml -> Some (Toml.get_string toml))
+    ["page_table_setup_default_profile"]
+
+(** The profile to use for a test, depending on whether it has a
+    [page_table_setup]. Memoized for both values of [page_table_setup] *)
+let select_profile =
+  let memo = Hashtbl.create 2 in
+  fun ~page_table_setup ->
+    match Hashtbl.find_opt memo page_table_setup with
+    | Some profile -> profile
+    | None ->
+        let profile =
+          match !cli_profile with
+          | Some _ as profile -> profile
+          | None when not page_table_setup -> None
+          | None ->
+              let profile = get_page_table_setup_default_profile () in
+              Option.iter
+                (fun name ->
+                   if not (profile_exists name) then
+                     Error.fatal
+                       "config: page_table_setup_default_profile: unknown \
+                        profile %s"
+                        name
+                 )
+                profile;
+              profile
+        in
+        Hashtbl.add memo page_table_setup profile;
+        profile
+
+(** Builds a config getter that depends on the profile and memoizes the result
+    for each profile. [getter] parses the value at [path] and, if the profile
+    [p] defines it, the value at [profile.p.path]. Then [merger default override]
+    combines them. *)
+let make_getter_profile getter merger path =
+  let memo = Hashtbl.create 2 in
+  fun profile ->
+    match Hashtbl.find_opt memo profile with
+    | Some content -> content
+    | None ->
+        let content =
+          with_config_errors (fun () ->
+            let default = Toml.find (get ()) getter path in
+            let in_profile name =
+              Toml.find_opt (get ()) getter (["profile"; name] @ path)
+            in
+            match Option.bind profile in_profile with
+            | None -> default
+            | Some override -> merger default override
+          )
+        in
+        Hashtbl.add memo profile content;
+        content
+
+(** Same as [make_getter_profile], but the getter selects the profile itself
+    depending on whether the test has a [page_table_setup] *)
+let make_getter_selected_profile getter merger path =
+  let get_profile = make_getter_profile getter merger path in
+  fun ~page_table_setup -> get_profile (select_profile ~page_table_setup)

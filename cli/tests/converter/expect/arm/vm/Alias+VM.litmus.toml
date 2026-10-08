@@ -67,7 +67,6 @@ name = "Alias+VM"
   "R1" = 0x400000
   "R2" = 0x401000
   "TTBR0_EL1" = 0x200000
-  "SCTLR_EL1" = 1
   CurrentEL = 1
   "R3" = 0
   "R4" = 0
@@ -98,10 +97,17 @@ name = "Alias+VM"
   "R29" = 0
   "R30" = 0
   "TCR_EL1" = 0
-  "ID_AA64MMFR1_EL1" = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0x3000000000
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "SPSR_EL1" = 0
+  "PAR_EL1" = 0
 
 [final]
   assertion = {"0:X3" = 1}

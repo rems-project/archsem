@@ -3,8 +3,7 @@ Set the environement for consistency
 
 Non-existing file
   $ archsem seq nonexistingfile.archsem.toml
-  Usage: archsem seq [--help] [--asm-dump=DIR] [--config=FILE] [--format=FMT]
-         [OPTION]… TESTS…
+  Usage: archsem seq [--help] [OPTION]… TESTS…
   archsem: TESTS… arguments: no 'nonexistingfile.archsem.toml' file or
            directory
   [124]
@@ -240,4 +239,9 @@ Symbolic names must be valid identifiers
   archsem: eval error:
   File "reserved-symbol.litmus.toml", path "symbolic":
   Symbol "$x" is invalid: names must start with a letter or '_' and only contain letters, digits and '_'
+  [1]
+
+Unknown config profile
+  $ archsem seq --profile nonexistent invalid-page-table-token.litmus.toml
+  archsem: fatal error: config: unknown profile nonexistent
   [1]
