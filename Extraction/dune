@@ -41,7 +41,6 @@
   CArith
   CList
   CMaps
-  COption
   Common
   CVec
   countable
