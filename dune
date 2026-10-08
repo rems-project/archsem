@@ -1,6 +1,15 @@
-; By default build everything installable *)
+; By default build everything installable, and generate the _RocqProject files
+; (promoted to the source tree) for editor support
 
 (alias
  (name default)
  (deps
-  (alias_rec install)))
+  (alias_rec install)
+  Common/_RocqProject
+  ArchSem/_RocqProject
+  ArchSemArm/_RocqProject
+  ArchSemArm/tests/_RocqProject
+  ArchSemRiscV/_RocqProject
+  ArchSemRiscV/tests/_RocqProject
+  ArchSemX86/_RocqProject
+  ArchSemX86/tests/_RocqProject))

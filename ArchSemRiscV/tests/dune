@@ -1,5 +1,6 @@
-(coq.theory
+(rocq.theory
  (name ArchSemRiscV.tests)
+ (generate_project_file)
  (modules RiscVSeqModelTest)
  (theories ArchSemRiscV))
 

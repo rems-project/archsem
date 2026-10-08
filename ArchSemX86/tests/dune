@@ -1,5 +1,6 @@
-(coq.theory
+(rocq.theory
  (name ArchSemX86.tests)
+ (generate_project_file)
  (modules X86SeqModelTest X86OperationalModelTest)
  (theories ArchSemX86))
 
