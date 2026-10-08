@@ -950,53 +950,63 @@ Module TLB.
             else mret ());;
           mret true.
 
-      (** Return a list of newly reachable level 0 entries (and add them) from a
-          list of register contexts (asid, root, upper) *)
-      Definition fill_root (asid_roots : list (bv 16 * bv 64 * bool)) :
-          tlb_mon (list FE.t) :=
-        for (asid, val_ttbr, upper) in asid_roots do
+      (** Decode reachable root entries without consulting or updating the TLB.
+          [present] is immutable during execution. Candidate order and duplicates
+          are retained; [fill_entry] decides which entries are newly loaded. *)
+      Definition root_candidates (present : gmap pn (list (bv 9)))
+          (asid_roots : list (bv 16 * bv 64 * bool)) : list FE.t :=
+        List.concat $ map (λ '(asid, val_ttbr, upper),
           let lvl0_pn := ttbr_root_table val_ttbr in
-          indexes ← mget ((.!!!lvl0_pn) ∘ pte_present);
-          for idx in indexes do
+          omap (λ idx,
             let pte_addr := index_table lvl0_pn idx in
             if Memory.read_word pte_addr imem mem time is Ok memval then
               if decide (is_table 0%fin memval) then
-                let entry := FE.make0 upper idx asid val_ttbr memval in
-                loaded ← fill_entry entry;
-                if loaded : bool then mret [entry] else mret []
-              else mret []
-            else
-              (* Error for required entries missing are checked by requiring at
-                least on entry during translation *)
-              mret []
-          end |$> List.concat
-        end |$> List.concat.
+                Some (FE.make0 upper idx asid val_ttbr memval)
+              else None
+            else None) (present !!! lvl0_pn)) asid_roots.
 
-      (** Fill all entry reachable from [entry] one level down. Returns all new
-          table entries that need to be explored further. Assumes [entry] is a
-          table entry *)
-      Definition fill_from_entry (entry : FE.t) : tlb_mon (list FE.t) :=
+      (** Decode one level of children without consulting or updating the TLB.
+          The boolean records whether the child is itself a table. Missing or
+          unfillable PTEs are skipped, as in [fill_root]; translation checks that
+          a required entry is present. *)
+      Definition child_candidates (entry : FE.t) (indexes : list (bv 9)) :
+          result string (list (FE.t * bool)) :=
         guard_or "Fill_from_entry should only take tables" (FE.is_table entry);;
         let next_pn := FE.next_table entry in
-        indexes ← mget ((.!!!next_pn) ∘ pte_present);
         clvl ← othrow "Filling from level 3 entry" (child_lvl (FE.lvl entry));
         for idx in indexes do
           let pte_addr := index_table next_pn idx in
           if Memory.read_word pte_addr imem mem time is Ok memval then
             if decide (is_tlb_fillable clvl memval) then
-              next_entry ← mlift $ FE.append entry idx memval;
-              loaded ← fill_entry next_entry;
-              if loaded : bool then
-                if decide (is_table clvl memval)
-                then mret [next_entry]
-                else mret []
-              else mret []
+              next_entry ← FE.append entry idx memval;
+              mret [(next_entry, bool_decide (is_table clvl memval))]
             else mret []
-          else
-            (* Error for required entries missing are checked by requiring at
-              least on entry during translation *)
-            mret []
+          else mret []
         end |$> List.concat.
+
+      (** Install candidates in order, returning only newly loaded tables.
+          Active entries and entries invalidated by a TLBI are distinguished
+          here using the current branch's TLB. *)
+      Definition fill_candidates (candidates : list (FE.t * bool)) :
+          tlb_mon (list FE.t) :=
+        for (entry, table) in candidates do
+          loaded ← fill_entry entry;
+          if loaded && table then mret [entry] else mret []
+        end |$> List.concat.
+
+      (** Return a list of newly reachable level 0 entries (and add them) from a
+          list of register contexts (asid, root, upper). *)
+      Definition fill_root (asid_roots : list (bv 16 * bv 64 * bool)) :
+          tlb_mon (list FE.t) :=
+        present ← mget pte_present;
+        fill_candidates (map (., true) (root_candidates present asid_roots)).
+
+      (** Fill all entries reachable from [entry] one level down. Returns all new
+          table entries that need to be explored further. *)
+      Definition fill_from_entry (entry : FE.t) : tlb_mon (list FE.t) :=
+        indexes ← mget ((.!!! FE.next_table entry) ∘ pte_present);
+        candidates ← mlift $ child_candidates entry indexes;
+        fill_candidates candidates.
 
       (** Take a list of table entries and fill from all of them and returns the
           resulting new next level table entries *)
