@@ -64,9 +64,9 @@ name = "page-table-pa-as-va"
 [thread."0".regs]
   _PC = 0x1000
   "R1" = 0x400000
-  "TTBR0_EL1" = 0x200000
   "SCTLR_EL1" = 1
   CurrentEL = 1
+  "TTBR0_EL1" = 0x200000
   "R0" = 0
   "R2" = 0
   "R3" = 0
