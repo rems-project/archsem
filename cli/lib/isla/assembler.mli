@@ -78,6 +78,8 @@ type assembly_result =
 
 (** {1 Pipeline} *)
 
+val check_symbol_name : string -> unit
+
 (** Assemble, link, and parse ELF. Uses config for toolchain commands.
     [filename] names copied artifacts when [--asm-dump] is enabled. *)
 val assemble : filename:string -> assembly_input -> assembly_result
