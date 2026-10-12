@@ -268,24 +268,17 @@ let mapping_alignment level =
     mappings. In particular, non-leaf mappings can require more than page
     alignment: [_ -> pa at level 2] requires [pa] to be 2 MiB aligned. *)
 let pa_alignment_requests stmts =
-  let alignments = Hashtbl.create 32 in
-  let rec collect stmts =
-    List.iter
-      (function
-        | Page_table_ast.Mapping
-            {target = Page_table_ast.PaName name; level = Some level; _} ->
-            let alignment = mapping_alignment level in
-            let previous =
-              Hashtbl.find_opt alignments name
-              |> Option.value ~default:Allocator.page_size
-            in
-            Hashtbl.replace alignments name (max previous alignment)
-        | Page_table_ast.TableBlock {body; _} -> collect body
-        | _ -> ()
-        )
-      stmts
-  in
-  collect stmts; alignments
+  let alignments = Address_constraints.alignment_requests stmts in
+  Page_table_ast.iter
+    (function
+      | Page_table_ast.Mapping
+          {target = Page_table_ast.PaName name; level = Some level; _} ->
+          Address_constraints.request_alignment alignments name
+            (mapping_alignment level)
+      | _ -> ()
+      )
+    stmts;
+  alignments
 
 let default_tables_enabled stmts =
   List.find_map
@@ -346,6 +339,7 @@ let rec eval_stmt builder ~table_block ~root = function
          )
         names
   | Page_table_ast.AlignedVirtual _ -> ()
+  | Page_table_ast.Aligned _ | Page_table_ast.Same _ -> ()
   | Page_table_ast.Mapping {va_name; target; attrs; level} ->
       let root = require_root root in
       let va = Eval_state.lookup_addr builder.state va_name in

@@ -79,6 +79,14 @@ type stmt =
       { alignment : Z.t;
         names : string list
       }
+  | Aligned of
+      { alignment : Z.t;
+        names : string list
+      }
+  | Same of
+      { size : Z.t;
+        names : string list
+      }
   (* [x |-> pa_x;] maps a named address to a physical-address target.
      Optional [with ... and default] clauses override descriptor fields. *)
   | Mapping of
@@ -112,3 +120,11 @@ type stmt =
         base : Z.t;
         body : stmt list
       }
+
+let rec iter f stmts =
+  List.iter
+    (fun stmt ->
+       f stmt;
+       match stmt with TableBlock {body; _} -> iter f body | _ -> ()
+     )
+    stmts

@@ -71,6 +71,7 @@ rule token = parse
   | ',' { COMMA }
   | '-' { MINUS }
   | "aligned" { ALIGNED }
+  | "same" { SAME }
   | "option" { OPTION }
   | "virtual" { VIRTUAL }
   | "physical" { PHYSICAL }
@@ -90,6 +91,11 @@ rule token = parse
   | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
   | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
+  | (digit+ as n) (['k' 'K' 'm' 'M' 'g' 'G'] as unit) {
+      let shift = match unit with
+        | 'k' | 'K' -> 10 | 'm' | 'M' -> 20 | _ -> 30 in
+      SIZE (Z.shift_left (Z.of_string n) shift)
+    }
   | digit+ as s { NUM (Z.of_string s) }
     (** IDENT rule must match [Eval_state.is_valid_symbol_name]*)
   | ident_start ident_char* as s { IDENT s }

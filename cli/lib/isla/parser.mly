@@ -43,6 +43,7 @@
 %}
 
 %token <Z.t> NUM
+%token <Z.t> SIZE
 %token <string> IDENT
 %token LPAREN "("
 %token RPAREN ")"
@@ -63,6 +64,7 @@
 %token MAYBE_MAPS_TO "?->"
 %token OPTION
 %token ALIGNED
+%token SAME
 %token VIRTUAL
 %token PHYSICAL
 %token IDENTITY
@@ -124,8 +126,12 @@ page_table_stmt_inner:
     { Page_table_ast.Virtual names }
   | PHYSICAL; names = nonempty_list(IDENT)
     { Page_table_ast.Physical names }
-  | ALIGNED; alignment = NUM; VIRTUAL; names = nonempty_list(IDENT)
+  | ALIGNED; alignment = address_size; VIRTUAL; names = nonempty_list(IDENT)
     { Page_table_ast.AlignedVirtual {alignment; names} }
+  | ALIGNED; alignment = address_size; names = nonempty_list(IDENT)
+    { Page_table_ast.Aligned {alignment; names} }
+  | SAME; size = address_size; names = nonempty_list(IDENT)
+    { Page_table_ast.Same {size; names} }
   | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs
     { let (target, attrs, level) = rhs in
       Page_table_ast.Mapping {va_name; target; attrs; level}
@@ -138,6 +144,10 @@ page_table_stmt_inner:
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = term; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+
+address_size:
+  | size = NUM { size }
+  | size = SIZE { size }
 
 page_table_block:
   | stage = page_table_stage; name = IDENT; base = NUM; "{";

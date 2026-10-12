@@ -171,44 +171,32 @@ let checked_mapping_alignment level =
   with Invalid_argument _ ->
     eval_error Page_table_setup "page_table: invalid mapping level: %d" level
 
-let symbolic_va_alignments ir =
+let symbolic_va_alignments ~alignments ir =
   let virtual_names = symbolic_names ir in
-  let alignments = Hashtbl.create 32 in
-  let request name alignment =
-    let previous =
-      Hashtbl.find_opt alignments name
-      |> Option.value ~default:Allocator.page_size
-    in
-    Hashtbl.replace alignments name (max previous alignment)
-  in
-  let rec collect stmts =
-    List.iter
-      (function
-        | Page_table_ast.AlignedVirtual {alignment; names} ->
-            let alignment = checked_virtual_alignment alignment in
-            List.iter
-              (fun name ->
-                 if not (List.mem name virtual_names) then
-                   eval_error Page_table_setup "page_table: undeclared VA: %s"
-                     name;
-                 request name alignment
-               )
-              names
-        (* Table mappings do not require larger VA allocations. *)
-        | Page_table_ast.Mapping {target = Page_table_ast.Table _; _} -> ()
-        | Page_table_ast.Mapping {va_name; level = Some level; _} ->
-            request va_name (checked_mapping_alignment level)
-        | Page_table_ast.TableBlock {body; _} -> collect body
-        | _ -> ()
-        )
-      stmts
-  in
-  collect ir.Ir.page_table_setup;
+  let alignments = Hashtbl.copy alignments in
+  Page_table_ast.iter
+    (function
+      | Page_table_ast.AlignedVirtual {alignment; names} ->
+          let alignment = checked_virtual_alignment alignment in
+          List.iter
+            (fun name ->
+               if not (List.mem name virtual_names) then
+                 eval_error Page_table_setup "page_table: undeclared VA: %s" name;
+               Address_constraints.request_alignment alignments name alignment
+             )
+            names
+      (* Table mappings do not require larger VA allocations. *)
+      | Page_table_ast.Mapping {target = Page_table_ast.Table _; _} -> ()
+      | Page_table_ast.Mapping {va_name; level = Some level; _} ->
+          Address_constraints.request_alignment alignments va_name
+            (checked_mapping_alignment level)
+      | _ -> ()
+      )
+    ir.Ir.page_table_setup;
   List.map
     (fun name ->
        ( name,
-         Hashtbl.find_opt alignments name
-         |> Option.value ~default:Allocator.page_size
+         max Allocator.page_size (Address_constraints.alignment alignments name)
        )
      )
     virtual_names
@@ -239,13 +227,21 @@ let rec table_root_pages = function
 let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
   Assembler.assembly_input
   =
+  let alignments =
+    try Address_constraints.alignment_requests ir.page_table_setup
+    with Failure msg -> eval_error Page_table_setup "%s" msg
+  in
+  let allocate_code name =
+    let alignment =
+      max Allocator.page_size (Address_constraints.alignment alignments name)
+    in
+    Allocator.alloc_aligned code_allocator ~size:Allocator.page_size ~alignment
+  in
   let code_sections =
     List.mapi
       (fun i (thread : Ir.thread) ->
-         { Assembler.name = thread_section_name i;
-           code = thread.code;
-           addr = Allocator.alloc_page code_allocator
-         }
+         let name = thread_section_name i in
+         {Assembler.name; code = thread.code; addr = allocate_code name}
        )
       ir.threads
   in
@@ -255,7 +251,7 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
          let addr =
            match sec.address with
            | Some addr -> addr
-           | None -> Allocator.alloc_page code_allocator
+           | None -> allocate_code sec.sec_name
          in
          {Assembler.name = sec.sec_name; code = sec.code; addr}
        )
@@ -269,7 +265,7 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
          in
          {Assembler.name; addr}
        )
-      (symbolic_va_alignments ir)
+      (symbolic_va_alignments ~alignments ir)
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 
@@ -510,6 +506,9 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
       in
       (asm_input, asm_result, Some page_table)
   in
+  ( try Address_constraints.check ~state ir.page_table_setup
+    with Failure msg -> eval_error Page_table_setup "%s" msg
+  );
   let page_table_root =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
   in
