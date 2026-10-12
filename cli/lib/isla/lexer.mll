@@ -42,12 +42,34 @@
   open Parser
 
   exception Error of string
+
+  let keywords =
+    Hashtbl.of_seq
+      (List.to_seq
+         [ ("aligned", ALIGNED);
+           ("option", OPTION);
+           ("virtual", VIRTUAL);
+           ("physical", PHYSICAL);
+           ("identity", IDENTITY);
+           ("with", WITH);
+           ("and", AND_KW);
+           ("default", DEFAULT);
+           ("code", CODE);
+           ("data", DATA);
+           ("invalid", INVALID);
+           ("s1table", S1TABLE);
+           ("s2table", S2TABLE);
+           ("at", AT);
+           ("level", LEVEL);
+           ("true", TRUE);
+           ("false", FALSE) ])
 }
 
 let digit = ['0'-'9']
 let hex = ['0'-'9' 'a'-'f' 'A'-'F']
 let ident_start = ['a'-'z' 'A'-'Z' '_']
 let ident_char = ident_start | digit
+let ident = ident_start ident_char*
 
 rule token = parse
   | [' ' '\t']+ { token lexbuf }
@@ -71,31 +93,26 @@ rule token = parse
   | ',' { COMMA }
   | '-' { MINUS }
   | '+' { PLUS }
-  | "aligned" { ALIGNED }
-  | "option" { OPTION }
-  | "virtual" { VIRTUAL }
-  | "physical" { PHYSICAL }
-  | "identity" { IDENTITY }
-  | "with" { WITH }
-  | "and" { AND_KW }
-  | "default" { DEFAULT }
-  | "code" { CODE }
-  | "data" { DATA }
-  | "invalid" { INVALID }
-  | "s1table" { S1TABLE }
-  | "s2table" { S2TABLE }
-  | "at" { AT }
-  | "level" { LEVEL }
-  | "true" { TRUE }
-  | "false" { FALSE }
   | '0' ['x' 'X'] hex+ as s { NUM (Z.of_string s) }
   | '0' ['b' 'B'] ['0' '1']+ as s { NUM (Z.of_string s) }
   | digit+ as s { NUM (Z.of_string s) }
-    (** IDENT rule must match [Eval_state.is_valid_symbol_name]*)
-  | ident_start ident_char* as s { IDENT s }
+  | ident as s
+      { match Hashtbl.find_opt keywords s with Some kw -> kw | None -> IDENT s }
   | eof { EOF }
   | _ as c {
       raise (Error (Printf.sprintf
         "assertion lexer: unexpected character '%c' at position %d"
         c (Lexing.lexeme_start lexbuf)))
     }
+
+and ident_only = parse
+  | (ident as s) eof { not (Hashtbl.mem keywords s) }
+  | _ { false }
+  | eof { false }
+
+{
+  (** [is_ident s] holds iff [s] lexes as a single [IDENT] token: it starts
+      with a letter or '_', contains only letters, digits and '_', and is not
+      a keyword. *)
+  let is_ident s = ident_only (Lexing.from_string s)
+}

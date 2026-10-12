@@ -1,0 +1,10 @@
+arch = "AArch64"
+name = "keyword-symbol"
+symbolic = ["code"]
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"

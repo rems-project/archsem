@@ -252,7 +252,14 @@ Symbolic names must be valid identifiers
   $ archsem seq reserved-symbol.litmus.toml
   archsem: eval error:
   File "reserved-symbol.litmus.toml", path "symbolic":
-  Symbol "$x" is invalid: names must start with a letter or '_' and only contain letters, digits and '_'
+  Symbol "$x" is invalid: names must start with a letter or '_', only contain letters, digits and '_', and not be a keyword
+  [1]
+
+Symbolic names must not be keywords
+  $ archsem seq keyword-symbol.litmus.toml
+  archsem: eval error:
+  File "keyword-symbol.litmus.toml", path "symbolic":
+  Symbol "code" is invalid: names must start with a letter or '_', only contain letters, digits and '_', and not be a keyword
   [1]
 
 Unknown config profile
