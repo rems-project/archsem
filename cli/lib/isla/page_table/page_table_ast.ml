@@ -104,11 +104,11 @@ type stmt =
       { addr : Term_ast.t;
         attr : attr
       }
-  (* [s1table name 0x280000 { ... }] immediately binds the name to its fixed
-     root PA before executing the body. *)
+  (* [s1table name [0x280000] { ... }] binds the name to a root PA before
+     executing the body. An omitted base allocates a fresh table page. *)
   | TableBlock of
       { stage : table_stage;
         name : string;
-        base : Z.t;
+        base : Z.t option;
         body : stmt list
       }

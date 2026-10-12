@@ -96,7 +96,6 @@
 %type <Page_table_ast.descriptor_expr_field list> page_table_descriptor_attrs
 %type <bool> page_table_bool
 %type <int> page_table_mapping_level
-%type <Page_table_ast.table_stage> page_table_stage
 %type <string> kw_name
 
 %%
@@ -140,13 +139,12 @@ page_table_stmt_inner:
     { Page_table_ast.IdentityMapping {addr; attr} }
 
 page_table_block:
-  | stage = page_table_stage; name = IDENT; base = NUM; "{";
+  | S1TABLE; name = IDENT; base = option(NUM); "{";
     body = list(page_table_stmt); "}"
-    { Page_table_ast.TableBlock {stage; name; base; body} }
-
-page_table_stage:
-  | S1TABLE { Page_table_ast.S1 }
-  | S2TABLE { Page_table_ast.S2 }
+    { Page_table_ast.TableBlock {stage = Page_table_ast.S1; name; base; body} }
+  | S2TABLE; name = IDENT; base = NUM; "{";
+    body = list(page_table_stmt); "}"
+    { Page_table_ast.TableBlock {stage = Page_table_ast.S2; name; base = Some base; body} }
 
 page_table_mapping_rhs:
   | target = page_table_mapping_target;
