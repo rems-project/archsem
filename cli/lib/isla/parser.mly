@@ -89,11 +89,12 @@
 %start <Page_table_ast.stmt list> page_table_setup
 %type <Page_table_ast.stmt> page_table_stmt page_table_stmt_inner
   page_table_block
-%type <Page_table_ast.mapping_target * Page_table_ast.descriptor_expr_field list * int option>
+%type <Page_table_ast.mapping_target * (Page_table_ast.attr option * Page_table_ast.descriptor_expr_field list) * int option>
   page_table_mapping_rhs
 %type <Page_table_ast.mapping_target> page_table_mapping_target
-%type <Page_table_ast.attr> page_table_attr
-%type <Page_table_ast.descriptor_expr_field list> page_table_descriptor_attrs
+%type <Page_table_ast.attr option> page_table_attr
+%type <Page_table_ast.attr option * Page_table_ast.descriptor_expr_field list>
+  page_table_attrs page_table_descriptor_attrs
 %type <bool> page_table_bool
 %type <int> page_table_mapping_level
 %type <Page_table_ast.table_stage> page_table_stage
@@ -127,17 +128,19 @@ page_table_stmt_inner:
   | ALIGNED; alignment = NUM; VIRTUAL; names = nonempty_list(IDENT)
     { Page_table_ast.AlignedVirtual {alignment; names} }
   | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs
-    { let (target, attrs, level) = rhs in
-      Page_table_ast.Mapping {va_name; target; attrs; level}
+    { let (target, (kind, attrs), level) = rhs in
+      Page_table_ast.Mapping {va_name; target; kind; attrs; level}
     }
   | va_name = IDENT; "?->"; rhs = page_table_mapping_rhs
-    { let (target, attrs, level) = rhs in
-      Page_table_ast.MaybeMapping {va_name; target; attrs; level}
+    { let (target, (kind, attrs), level) = rhs in
+      Page_table_ast.MaybeMapping {va_name; target; kind; attrs; level}
     }
   | "*"; pa_name = IDENT; "="; value = term
     { Page_table_ast.DataInit {pa_name; value} }
-  | IDENTITY; addr = term; WITH; attr = page_table_attr
-    { Page_table_ast.IdentityMapping {addr; attr} }
+  | IDENTITY; addr = term; WITH; attributes = page_table_attrs
+    { let (kind, attrs) = attributes in
+      let attr = Option.value ~default:Page_table_ast.Data kind in
+      Page_table_ast.IdentityMapping {addr; attr; attrs} }
 
 page_table_block:
   | stage = page_table_stage; name = IDENT; base = NUM; "{";
@@ -152,7 +155,7 @@ page_table_mapping_rhs:
   | target = page_table_mapping_target;
     attrs = option(page_table_descriptor_attrs);
     level = option(page_table_mapping_level)
-    { (target, Option.value ~default:[] attrs, level) }
+    { (target, Option.value ~default:(None, []) attrs, level) }
 
 page_table_mapping_target:
   | name = IDENT { Page_table_ast.PaName name }
@@ -162,22 +165,28 @@ page_table_mapping_target:
   | TABLE; "("; addr = term; ")" { Page_table_ast.Table addr }
 
 page_table_descriptor_attrs:
-  | WITH; "[";
-    attrs = separated_nonempty_list(",", page_table_descriptor_attr);
-    "]"; option(page_table_descriptor_default)
-    { attrs }
+  | WITH; attrs = page_table_attrs { attrs }
 
-page_table_descriptor_default:
-  | AND_KW; DEFAULT { () }
+page_table_attrs:
+  | kind = page_table_attr; attrs = option(preceded(AND_KW, page_table_fields))
+    { (kind, Option.value ~default:[] attrs) }
+  | attrs = page_table_fields; kind = option(preceded(AND_KW, page_table_attr))
+    { (Option.join kind, attrs) }
+
+page_table_fields:
+  | "[";
+    attrs = separated_nonempty_list(",", page_table_descriptor_attr);
+    "]"
+    { attrs }
 
 %inline page_table_descriptor_attr:
   | name = IDENT; "="; value = term
     { Page_table_ast.{name; value} }
 
 page_table_attr:
-  | CODE { Page_table_ast.Code }
-  | DATA { Page_table_ast.Data }
-  | DEFAULT { Page_table_ast.Data }
+  | CODE { Some Page_table_ast.Code }
+  | DATA { Some Page_table_ast.Data }
+  | DEFAULT { None }
 
 page_table_mapping_level:
   | AT; LEVEL; level = NUM

@@ -84,6 +84,7 @@ type stmt =
   | Mapping of
       { va_name : string;
         target : mapping_target;
+        kind : attr option;
         attrs : descriptor_expr_field list;
         level : int option
       }
@@ -91,6 +92,7 @@ type stmt =
   | MaybeMapping of
       { va_name : string;
         target : mapping_target;
+        kind : attr option;
         attrs : descriptor_expr_field list;
         level : int option
       }
@@ -102,7 +104,8 @@ type stmt =
   (* [identity addr with attr;] maps one page to itself. *)
   | IdentityMapping of
       { addr : Term_ast.t;
-        attr : attr
+        attr : attr;
+        attrs : descriptor_expr_field list
       }
   (* [s1table name 0x280000 { ... }] immediately binds the name to its fixed
      root PA before executing the body. *)

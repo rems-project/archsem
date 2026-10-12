@@ -73,6 +73,9 @@ type t =
     named_roots : (string, pa) Hashtbl.t;
     (* Page-table descriptors, keyed by their physical addresses. *)
     entries : (pa, descriptor) Hashtbl.t;
+    (* Code pages whose implicit defaults may be replaced by an identity
+       declaration after splitting the initial code block. *)
+    implicit_code_entries : (pa, unit) Hashtbl.t;
     (* Required alignment for each physical-address symbol. *)
     pa_alignments : (string, int) Hashtbl.t;
     (* PA names and their allocated physical addresses. *)
@@ -89,6 +92,7 @@ let make ~state ~symbol_allocator ~table_allocator ~pa_alignments ~default_root 
     default_root;
     named_roots = Hashtbl.create 8;
     entries = Hashtbl.create 256;
+    implicit_code_entries = Hashtbl.create 512;
     pa_alignments;
     data_symbols_pa = Hashtbl.create 32;
     data_inits = Hashtbl.create 32
@@ -251,6 +255,37 @@ let initialise_root builder ~table_block root =
   add_mapping ~level:2 builder ~root ~va:table_block ~pa:table_block
     Page_table_ast.Data
 
+(** Refine the implicit code block into pages before applying attributes to a
+    single code page. Other pages retain their original code permissions. *)
+let add_code_identity builder ~root ~addr ~fields =
+  let va = Desc.align_page_addr addr in
+  let rec walk table level =
+    let idx = Desc.va_index va level in
+    if level = 2 then
+      match read_entry builder table idx with
+      | Some desc when desc = Desc.block_descriptor 0 2 Page_table_ast.Code [] ->
+          let child = create_table_page builder in
+          for index = 0 to (Desc.table_size / Desc.entry_size) - 1 do
+            let pa = index * Allocator.page_size in
+            write_entry builder child index
+              (Desc.page_descriptor pa Page_table_ast.Code []);
+            Hashtbl.add builder.implicit_code_entries (entry_addr child index) ()
+          done;
+          Hashtbl.replace builder.entries (entry_addr table idx)
+            (Desc.table_descriptor child);
+          child
+      | _ -> ensure_child_table builder table idx
+    else walk (ensure_child_table builder table idx) (level + 1)
+  in
+  let table = walk root Desc.root_level in
+  let slot = entry_addr table (Desc.va_index va Desc.last_level) in
+  let desc = Desc.page_descriptor va Page_table_ast.Code fields in
+  if Hashtbl.mem builder.implicit_code_entries slot then (
+    Hashtbl.remove builder.implicit_code_entries slot;
+    Hashtbl.replace builder.entries slot desc
+  )
+  else write_descriptor builder ~root ~va desc
+
 (** {1 Statement evaluation} *)
 
 let check_table_level = function
@@ -300,18 +335,25 @@ let eval_fields builder fields =
      )
     fields
 
-let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
+let eval_mapping_target ?level ?kind ?(attrs = []) builder ~root ~va target =
+  ( match (target, kind) with
+  | ((Page_table_ast.Invalid | Page_table_ast.Table _), Some _) ->
+      error "page_table: code/data attributes require a page or block target"
+  | _ -> ()
+  );
+  let kind = Option.value ~default:Page_table_ast.Data kind in
+  match target with
   | Page_table_ast.PaName pa_name ->
       let alignment = Option.map mapping_alignment level in
       let pa = alloc_pa ?alignment ?mapping_level:level builder pa_name in
       let fields = eval_fields builder attrs in
-      add_mapping ?level ~fields builder ~root ~va ~pa Page_table_ast.Data
+      add_mapping ?level ~fields builder ~root ~va ~pa kind
   | Page_table_ast.Address addr ->
       let pa =
         addr_of_z "mapping address" (Term.eval ~state:builder.state addr)
       in
       let fields = eval_fields builder attrs in
-      add_mapping ?level ~fields builder ~root ~va ~pa Page_table_ast.Data
+      add_mapping ?level ~fields builder ~root ~va ~pa kind
   | Page_table_ast.Invalid ->
       let fields = eval_fields builder attrs in
       let desc = Desc.apply_page_block_fields 0L fields in
@@ -346,24 +388,29 @@ let rec eval_stmt builder ~table_block ~root = function
          )
         names
   | Page_table_ast.AlignedVirtual _ -> ()
-  | Page_table_ast.Mapping {va_name; target; attrs; level} ->
+  | Page_table_ast.Mapping {va_name; target; kind; attrs; level} ->
       let root = require_root root in
       let va = Eval_state.lookup_addr builder.state va_name in
-      eval_mapping_target ?level ~attrs builder ~root ~va target
+      eval_mapping_target ?level ?kind ~attrs builder ~root ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
       let pa = alloc_pa builder pa_name in
       let value = Term.eval ~state:builder.state value in
       Hashtbl.replace builder.data_inits pa value
-  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code} ->
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code; attrs} ->
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
       if addr < Allocator.page_size || addr >= Allocator.big_size then
         error "page_table: identity code address 0x%x is outside the code arena"
-          addr
-  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data} ->
+          addr;
+      if attrs <> [] then
+        let root = require_root root in
+        let fields = eval_fields builder attrs in
+        add_code_identity builder ~root ~addr ~fields
+  | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Data; attrs} ->
       let root = require_root root in
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
-      add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
+      let fields = eval_fields builder attrs in
+      add_mapping ~fields builder ~root ~va:addr ~pa:addr Page_table_ast.Data
   | Page_table_ast.TableBlock {name; base; body; _} ->
       let base = table_addr "table base" base in
       if Hashtbl.mem builder.named_roots name then
