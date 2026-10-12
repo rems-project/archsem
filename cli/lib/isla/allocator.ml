@@ -51,6 +51,8 @@ let page_size = 0x1000
 
 let big_size = 1 lsl 21
 
+let copy allocator = {allocator with current = allocator.current}
+
 let align_up addr alignment =
   if alignment <= 0 then Error.fatal "allocator: alignment must be positive";
   let rem = addr mod alignment in

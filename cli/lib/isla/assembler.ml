@@ -210,10 +210,12 @@ let run_pipeline
        write_file asm_path (generate_asm symbols sections);
        write_file ld_path (generate_linker_script symbols sections);
        (* -nostdlib: don't link any standard library or startup files.
+          -Wl,-no-pie: all addresses are fixed by the linker script; allow
+          absolute symbol references without dynamic relocations.
           -Wl,-e,0: pass -e 0 to the linker — disables the default entry
           symbol by setting the entry address to 0 (we don't have main).
           -Wl,-T,<path>: pass the linker script we generated. *)
-       run_cmd "%s -nostdlib -Wl,-e,0 -Wl,-T,%s -o %s %s" command
+       run_cmd "%s -nostdlib -Wl,-no-pie -Wl,-e,0 -Wl,-T,%s -o %s %s" command
          (Filename.quote ld_path) (Filename.quote elf_path)
          (Filename.quote asm_path);
        (* Dump intermediate artifacts if configured *)

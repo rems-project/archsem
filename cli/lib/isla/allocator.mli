@@ -42,6 +42,9 @@
 
 type t
 
+(** Copy the current allocation position and limit for independent planning. *)
+val copy : t -> t
+
 (** Size of one page allocated by [alloc_page]. *)
 val page_size : int
 

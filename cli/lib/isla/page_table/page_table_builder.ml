@@ -293,6 +293,57 @@ let default_tables_enabled stmts =
     stmts
   |> Option.value ~default:true
 
+(** Determine external symbols for the assembler without evaluating mappings.
+    Copies of the allocators keep descriptor construction in source order;
+    expressions can still depend on labels discovered by the assembler. *)
+let assembly_symbols ~symbol_allocator ~table_allocator ~known_symbols stmts =
+  let symbol_allocator = Allocator.copy symbol_allocator in
+  let table_allocator = Allocator.copy table_allocator in
+  let state = Eval_state.create () in
+  List.iter
+    (fun (name, addr) -> Eval_state.add_symbol state name addr)
+    known_symbols;
+  let default_root =
+    if default_tables_enabled stmts then
+      Some (Allocator.alloc_page table_allocator)
+    else None
+  in
+  let builder =
+    make ~state ~symbol_allocator ~table_allocator
+      ~pa_alignments:(pa_alignment_requests stmts)
+      ~default_root
+  in
+  let rec collect stmts =
+    List.iter
+      (function
+        | Page_table_ast.Physical names ->
+            List.iter
+              (fun name ->
+                 Eval_state.check_fresh_symbol state name;
+                 ignore (alloc_pa builder name)
+               )
+              names
+        | Page_table_ast.Mapping {target = Page_table_ast.PaName name; level; _}
+          ->
+            let alignment = Option.map mapping_alignment level in
+            ignore (alloc_pa ?alignment ?mapping_level:level builder name)
+        | Page_table_ast.DataInit {pa_name; _} -> ignore (alloc_pa builder pa_name)
+        | Page_table_ast.TableBlock {name; base; body; _} ->
+            Eval_state.add_symbol state name (table_addr "table base" base);
+            collect body
+        | _ -> ()
+        )
+      stmts
+  in
+  collect stmts;
+  Hashtbl.fold
+    (fun name addr symbols ->
+       if List.mem_assoc name known_symbols then symbols
+       else (name, addr) :: symbols
+     )
+    state.symbols []
+  |> List.sort (fun (a, _) (b, _) -> String.compare a b)
+
 let eval_fields builder fields =
   List.map
     (fun Page_table_ast.{name; value} ->

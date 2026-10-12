@@ -273,11 +273,47 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
   in
   {Assembler.sections = code_sections @ named_sections; symbols}
 
-let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
+let assemble
+      ?table_allocator
+      ~filename
+      ~state
+      ~code_allocator
+      ~symbol_allocator
+      ir
+  =
   let input = to_assembly_input ~code_allocator ~symbol_allocator ir in
+  let external_symbols =
+    match table_allocator with
+    | None -> []
+    | Some table_allocator -> (
+        let known_symbols =
+          List.map
+            (fun (s : Assembler.data_symbol) -> (s.name, s.addr))
+            input.symbols
+          @ List.map
+              (fun (s : Assembler.section) -> (s.name, s.addr))
+              input.sections
+        in
+        try
+          Page_table_builder.assembly_symbols ~symbol_allocator ~table_allocator
+            ~known_symbols ir.page_table_setup
+        with Page_table_builder.Error msg | Failure msg ->
+          eval_error Page_table_setup "%s" msg
+      )
+  in
+  let input =
+    { input with
+      symbols =
+        input.symbols
+        @ List.map (fun (name, addr) -> Assembler.{name; addr}) external_symbols
+    }
+  in
   let result = Assembler.assemble ~filename input in
   List.iter
-    (fun (name, addr) -> Eval_state.add_symbol state name addr)
+    (fun (name, addr) ->
+       if not (List.mem_assoc name external_symbols) then
+         Eval_state.add_symbol state name addr
+     )
     result.symbols;
   (input, result)
 
@@ -502,12 +538,20 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
         make_arena ~reserved:(table_root_pages ir.page_table_setup) table_base
       in
       let (asm_input, asm_result) =
-        assemble ~filename ~state ~code_allocator ~symbol_allocator ir
+        assemble ~table_allocator ~filename ~state ~code_allocator
+          ~symbol_allocator ir
       in
       let page_table =
         build_page_table_setup ir ~symbol_allocator ~table_allocator
           ~table_block:table_base ~state
       in
+      List.iter
+        (fun (symbol : Assembler.data_symbol) ->
+           if Eval_state.lookup_addr state symbol.name <> symbol.addr then
+             eval_error Page_table_setup "address of %s changed after assembly"
+               symbol.name
+         )
+        asm_input.symbols;
       (asm_input, asm_result, Some page_table)
   in
   let page_table_root =

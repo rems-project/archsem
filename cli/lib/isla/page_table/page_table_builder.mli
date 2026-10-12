@@ -62,6 +62,16 @@ type layout =
 
 exception Error of string
 
+(** Resolve PA and root names for assembly using copies of the allocators.
+    [known_symbols] contains already assigned VA and code-section addresses.
+    Mapping expressions are evaluated later by [build]. *)
+val assembly_symbols :
+   symbol_allocator:Allocator.t ->
+  table_allocator:Allocator.t ->
+  known_symbols:(string * int) list ->
+  Page_table_ast.stmt list ->
+  (string * int) list
+
 (** Build a concrete page-table layout by executing statements in source order.
     Symbols are registered as they are allocated. Expressions query the live
     entries built so far. After setup, [state] retains these entries for register
