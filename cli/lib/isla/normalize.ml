@@ -43,13 +43,27 @@
 module Toml = Litmus.Toml
 module Config = Litmus.Config
 
+(** A table such as [PSTATE = {EL = 1, SP = 0}] can name several scalar
+    registers through configured field aliases. Preserve other structures for
+    the architecture's register decoder. *)
+let normalize_register (reg, value) =
+  match (Config.get_reg_rename reg, value) with
+  | (Some target, _) -> [(target, value)]
+  | (None, Ir.Struct (_ :: _ as fields)) ->
+      let renamed =
+        List.map
+          (fun (field, value) ->
+             Config.get_reg_rename (reg ^ "." ^ field)
+             |> Option.map (fun target -> (target, value))
+           )
+          fields
+      in
+      if List.for_all Option.is_some renamed then List.filter_map Fun.id renamed
+      else [(reg, value)]
+  | (None, _) -> [(reg, value)]
+
 let normalize_thread (thread : Ir.thread) =
-  { thread with
-    regs =
-      List.map
-        (fun (reg, value) -> (Config.get_reg_rename_or reg, value))
-        thread.regs
-  }
+  {thread with regs = List.concat_map normalize_register thread.regs}
 
 let apply (ir : Ir.t) : Ir.t =
   {ir with threads = List.map normalize_thread ir.threads}

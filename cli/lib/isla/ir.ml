@@ -47,10 +47,16 @@ module Arch_id = Litmus.Arch_id
 
 module Toml = Litmus.Toml
 
+type register_value =
+  | Expr of Term.t
+  | String of string
+  | Array of register_value list
+  | Struct of (string * register_value) list
+
 type thread =
   { tid : int;
     code : string;
-    regs : (string * Term.t) list;
+    regs : (string * register_value) list;
     breakpoints : Term.t list
   }
 
@@ -90,13 +96,24 @@ let parse_term : Toml.t -> Term.t = function
         "Isla value is invalid, should be int or string expression, but is: %s"
         (Toml.Printer.to_string value)
 
+(** A leading quote distinguishes literal strings from integer expressions.
+    Compound values retain expressions until the test's symbols are known. *)
+let rec parse_register_value : Toml.t -> register_value = function
+  | TomlString s when String.starts_with ~prefix:"'" s ->
+      String (String.sub s 1 (String.length s - 1))
+  | (TomlArray _ | TomlTableArray _) as value ->
+      Array (Toml.get_array parse_register_value value)
+  | (TomlTable _ | TomlInlineTable _) as value ->
+      Struct (Toml.get_table_values parse_register_value value)
+  | value -> Expr (parse_term value)
+
 let is_meta_key k = String.starts_with ~prefix:"__isla" k
 
 let parse_reset_entry k v =
   if is_meta_key k then None
   else
     let value =
-      try parse_term v
+      try parse_register_value v
       with Toml.Path_error (path, Toml.GenError msg) ->
         Toml.error ~path "register %s has invalid reset value: %s" k msg
     in
@@ -109,7 +126,9 @@ let parse_thread (tid, table) =
   let tid = Litmus.Parser.parse_tid tid in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   let init =
-    Toml.find_or ~default:[] table (Toml.get_table_values parse_term) ["init"]
+    Toml.find_or ~default:[] table
+      (Toml.get_table_values parse_register_value)
+      ["init"]
   in
   let reset = Toml.find_or ~default:[] table parse_reset_table ["reset"] in
   List.iter
