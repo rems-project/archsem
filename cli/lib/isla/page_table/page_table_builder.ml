@@ -365,7 +365,11 @@ let rec eval_stmt builder ~table_block ~root = function
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
       add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
   | Page_table_ast.TableBlock {name; base; body; _} ->
-      let base = table_addr "table base" base in
+      let base =
+        match base with
+        | Some base -> table_addr "table base" base
+        | None -> Allocator.alloc_page builder.table_allocator
+      in
       if Hashtbl.mem builder.named_roots name then
         error "page_table: duplicate table root: %s" name;
       if

@@ -225,13 +225,14 @@ let table_base = Allocator.big_size
 
 let data_base = table_base + Allocator.big_size
 
-(* Named roots occupy fixed pages in the shared table arena. Reserve those
-   pages before allocating the default root and child tables. The builder
-   validates the root addresses. *)
+(* Reserve explicitly assigned root pages before allocating automatic roots,
+   the default root, and child tables. The builder validates root addresses. *)
 let rec table_root_pages = function
   | [] -> []
-  | Page_table_ast.TableBlock {base; body; _} :: stmts ->
-      Z.to_int base :: (table_root_pages body @ table_root_pages stmts)
+  | Page_table_ast.TableBlock {base; body; _} :: stmts -> (
+      let nested = table_root_pages body @ table_root_pages stmts in
+      match base with Some base -> Z.to_int base :: nested | None -> nested
+    )
   | _ :: stmts -> table_root_pages stmts
 
 (* Build assembly input after assigning concrete addresses to every section and
