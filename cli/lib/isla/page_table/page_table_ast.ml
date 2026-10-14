@@ -82,14 +82,14 @@ type stmt =
   (* [x |-> pa_x;] maps a named address to a physical-address target.
      Optional [with ... and default] clauses override descriptor fields. *)
   | Mapping of
-      { va_name : string;
+      { va : Term_ast.t;
         target : mapping_target;
         attrs : descriptor_expr_field list;
         level : int option
       }
   (* [x ?-> pa_x;] is accepted for Isla compatibility, but ignored entirely. *)
   | MaybeMapping of
-      { va_name : string;
+      { va : Term_ast.t;
         target : mapping_target;
         attrs : descriptor_expr_field list;
         level : int option
