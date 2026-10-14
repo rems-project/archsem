@@ -170,7 +170,12 @@ Unparenthesized bitwise or in Isla final assertion
   $ archsem seq unparenthesized-final-or.litmus.toml
   archsem: TOML error:
   File "unparenthesized-final-or.litmus.toml", path "final.assertion":
-  assertion parse error at position 20 in: 0:R0 = 0x101 | 0x203
+  assertion parse error at position 20 (unexpected end of input) in: 0:R0 = 0x101 | 0x203
+  Expected ':' after the thread number '0x203': register locations are written
+  TID:REG, e.g. 0x203:X0.
+  Hint: '&' and '|' bind looser than '=', so 0:X0 = 1 | 0x203 is parsed as
+  (0:X0 = 1) | 0x203, where 0x203 starts a new register location like 0x203:X0.
+  To use them as bitwise operators on a value, parenthesize it: 0:X0 = (1 | 0x203).
   [1]
 
 Negative zero extension in Isla function
@@ -238,7 +243,9 @@ Page table DSL parser errors report the DSL line and TOML path
   $ archsem seq invalid-page-table-token.litmus.toml
   archsem: TOML error:
   File "invalid-page-table-token.litmus.toml", path "page_table_setup":
-  page-table setup parse error at line 2, character 3
+  page-table setup parse error at line 2, character 3 (unexpected '='):
+  Expected an infix operator (+, -, &, |), '|->' or '?->' after 'x' to define
+  a mapping, e.g. `x |-> pa;`.
   [1]
 
 Symbolic names must be valid identifiers
@@ -258,4 +265,38 @@ Page table table(...) targets take a single positional address
   archsem: TOML error:
   File "invalid-page-table-table-target.litmus.toml", path "page_table_setup":
   page-table setup parse error: table(ADDR) takes a single positional argument
+  [1]
+
+Syntax error messages quote the input: register thread number
+  $ archsem seq syntax-error-register.litmus.toml
+  archsem: TOML error:
+  File "syntax-error-register.litmus.toml", path "final.assertion":
+  assertion parse error at position 4 (unexpected '=') in: 1: = 0
+  Expected a register name after '1:', e.g. 1:X0.
+  [1]
+
+Syntax error messages quote the input: keyword argument name
+  $ archsem seq syntax-error-keyword-argument.litmus.toml
+  archsem: TOML error:
+  File "syntax-error-keyword-argument.litmus.toml", path "thread.0.init.R0":
+  term parse error at position 26 (unexpected '0x2') in: mkdesc2(table = 0x1000 0x2)
+  Expected an infix operator (+, -, &, |), ',' or ')' after the keyword argument
+  'table = 0x1000'.
+  [1]
+
+Syntax error messages quote the input: page-table data initialization
+  $ archsem seq syntax-error-page-table-data-init.litmus.toml
+  archsem: TOML error:
+  File "syntax-error-page-table-data-init.litmus.toml", path "page_table_setup":
+  page-table setup parse error at line 2, character 9 (unexpected ';'):
+  Expected an initial value for `*pa_x` after '='.
+  [1]
+
+Syntax error messages quote the input: page-table block stage and name
+  $ archsem seq syntax-error-page-table-block.litmus.toml
+  archsem: TOML error:
+  File "syntax-error-page-table-block.litmus.toml", path "page_table_setup":
+  page-table setup parse error at line 1, character 14 (unexpected 'x'):
+  Expected a base address or '{' after the table name 'root',
+  e.g. `s2table root { ... }` or `s2table root 0x200000 { ... }`.
   [1]

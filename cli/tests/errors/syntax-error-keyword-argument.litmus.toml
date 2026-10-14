@@ -1,0 +1,9 @@
+arch = "AArch64"
+name = "syntax-error-keyword-argument"
+
+[thread.0]
+init = { R0 = "mkdesc2(table = 0x1000 0x2)" }
+code = "NOP"
+
+[final]
+assertion = "true"
