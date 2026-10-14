@@ -82,7 +82,6 @@ rule token = parse
   | "code" { CODE }
   | "data" { DATA }
   | "invalid" { INVALID }
-  | "table" { TABLE }
   | "s1table" { S1TABLE }
   | "s2table" { S2TABLE }
   | "at" { AT }
