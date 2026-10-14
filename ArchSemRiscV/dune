@@ -2,7 +2,7 @@
  (name ArchSemRiscV)
  (generate_project_file)
  (package rocq-archsem-riscv)
- (modules RiscVInst GenAxiomaticRiscV UMAxRiscV)
+ (modules RiscVInst GenAxiomaticRiscV UMAxRiscV UMPromisingRiscV)
  (theories
   Stdlib
   stdpp

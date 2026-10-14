@@ -352,10 +352,10 @@ Module Interface (A : Arch).
         Arm terminology). See [WriteReq.t] for the various required fields.
 
         If the result is:
-        - inl true: The write happened
-        - inl false: The write didn't happened because the required strength
+        - Ok true: The write happened
+        - Ok false: The write did not happen because the required strength
           could not be achieved (e.g. exclusive failure)
-        - inr abort: The write was attempted, but a physical abort happened
+        - Error abort: The write was attempted, but a physical abort happened
           *)
   | MemWrite (mr : MemReq.t) (value : bv (8 * mr.(MemReq.size)))
       (tags : bv mr.(MemReq.num_tag))
@@ -387,7 +387,7 @@ Module Interface (A : Arch).
             | RegRead r _ => reg_type r
             | MemRead mr =>
                 result abort (bv (8 * mr.(MemReq.size)) * bv mr.(MemReq.num_tag))%type
-            | MemWrite _ _ _ => (result abort ())%type
+            | MemWrite _ _ _ => (result abort bool)%type
             | GenericFail _ => ∅%type
             | _ => unit
             end.
@@ -738,7 +738,7 @@ Module Interface (A : Arch).
   Section isMemWriteReq.
     Context
       (P : ∀ mr : MemReq.t, bv (8 * mr.(MemReq.size)) →
-                            bv mr.(MemReq.num_tag) → (result abort ()) → Prop).
+                            bv mr.(MemReq.num_tag) → (result abort bool) → Prop).
     Implicit Type ev : iEvent.
 
     Definition is_mem_write_reqP ev : Prop :=
@@ -773,13 +773,13 @@ Module Interface (A : Arch).
         memory abort, or an exclusive failure).*)
     Definition is_mem_writeP ev: Prop :=
       is_mem_write_reqP (λ mr val tags wres,
-          if wres is Ok () then P mr val tags else False)
+          if wres is Ok true then P mr val tags else False)
         ev.
     Typeclasses Opaque is_mem_writeP.
 
     Definition is_mem_writeP_spec ev:
       is_mem_writeP ev ↔
-        ∃ mr val tags, ev = MemWrite mr val tags &→ Ok () ∧ P mr val tags.
+        ∃ mr val tags, ev = MemWrite mr val tags &→ Ok true ∧ P mr val tags.
     Proof. unfold is_mem_writeP. rewrite is_mem_write_reqP_spec. hauto l:on. Qed.
     Definition is_mem_writeP_cdestr ev := cdestr_simpl false (is_mem_writeP_spec ev).
     #[global] Existing Instance is_mem_writeP_cdestr.

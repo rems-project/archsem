@@ -437,12 +437,22 @@ Module CandidateExecutions (Arch : Arch) (Inter : InterfaceT Arch)
         collect_all (λ _, is_mem_write_reqP (λ _ _ _, is_Error)).
       Typeclasses Opaque mem_write_aborts.
 
+      (** Failed conditional writes have no memory effect. *)
+      Definition mem_write_failures :=
+        collect_all (λ _, is_mem_write_reqP (λ _ _ _ wres,
+          wres = Ok false)).
+      Typeclasses Opaque mem_write_failures.
+
       Lemma mem_write_reqs_union pe :
-        mem_write_reqs pe = mem_writes pe ∪ mem_write_aborts pe.
+        mem_write_reqs pe = mem_writes pe ∪ mem_write_failures pe
+          ∪ mem_write_aborts pe.
       Proof.
-        unfold mem_writes, mem_write_reqs, mem_write_aborts, is_Error.
+        unfold mem_writes, mem_write_reqs, mem_write_aborts,
+          mem_write_failures, is_Error.
         set_unfold.
-        cdestruct |- *** #CDestrSplitGoal ##cdestruct_result; naive_solver.
+        cdestruct |- *** #CDestrSplitGoal ##cdestruct_result;
+          repeat match goal with b : bool |- _ => destruct b end;
+          naive_solver.
       Qed.
 
       Definition mem_events := collect_all (λ _, is_mem_event).
@@ -1041,7 +1051,7 @@ Module CandidateExecutions (Arch : Arch) (Inter : InterfaceT Arch)
       foldl
         (λ mmap '(eid, ev),
           match ev with
-          | MemWrite wr val _ &→ _ =>
+          | MemWrite wr val _ &→ Ok true =>
               foldl
                 (λ mmap i,
                   let addr := (MemReq.address wr `+Z` Z.of_nat i)%bv in

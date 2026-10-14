@@ -253,7 +253,7 @@ Module IMonFromSail (SA : SailArch) (SI : SailInterfaceT SA)
     | SI.MemWrite wr val tags =>
         mcall (MemWrite (MemReq_from_sail wr) val tags)
           |$> (λ o, match o with
-                    | Ok () => inl (Some true)
+                    | Ok success => inl (Some success)
                     | Error a => inr a
                     end)
     | SI.MemAddressAnnounce aa =>

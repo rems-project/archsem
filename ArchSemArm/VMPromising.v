@@ -2472,7 +2472,7 @@ Definition run_take_exception (fault : exn) (vmax_t : view) : prom_mon () :=
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       guard_or "Only explicit writes are supported" (is_explicit macc);;
       vpre_opt ← write_mem addr size macc val;
-      mret (Ok (), vpre_opt)
+      mret (Ok true, vpre_opt)
   | MemWrite _ _ _ => mthrow "Memory write with tags unsupported"
   | Barrier barrier =>
       mem ← mget PPState.mem;

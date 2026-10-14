@@ -86,7 +86,7 @@ Section UMRiscV.
   Notation R := (explicit_reads pe).
   Notation M := (mem_explicit pe).
   Notation Wx := (exclusive_writes pe).
-  Notation Rx := (exclusive_writes pe).
+  Notation Rx := (exclusive_reads pe).
   Notation X := (mem_exclusive pe).
   Notation RL := (RL cd).
   Notation AQ := (AQ cd).

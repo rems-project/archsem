@@ -1,7 +1,7 @@
 (rocq.theory
  (name ArchSemRiscV.tests)
  (generate_project_file)
- (modules RiscVSeqModelTest)
+ (modules RiscVSeqModelTest UMPromisingRiscVTest)
  (theories ArchSemRiscV))
 
 ; Do not build this folder by default but do it when running @runtest

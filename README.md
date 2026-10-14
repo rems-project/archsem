@@ -127,6 +127,7 @@ particular `cdestruct` is in [Common/CDestruct.v](Common/CDestruct.v).
   paper](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf) (`VMSA22Arm.v`)
 - `ArchSemRiscV` The RISC-V instantiation of the library. This includes:
   - A User-mode axiomatic model (`UMAxRiscV.v`)
+  - A User-mode promising model for RVWMO ordinary memory (`UMPromisingRiscV.v`)
 - `ArchSemX86` The x86 instantiation of the library. This includes:
   - A operational TSO implementation (`OperationalX86TSO.v`)
   - An equivalent axiomatic model (`AxiomaticX86TSO.v`) (equivalence not formally proven)

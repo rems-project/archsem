@@ -299,7 +299,7 @@ Section Model.
             empty_write_buffer tid;;
             release_lock_conditional tid
         else mret ());;
-        mret (Ok ())
+        mret (Ok true)
     | MemWrite _ _ _ => mthrow "Unsupported MemWrite"
     | Barrier Barrier_MFENCE =>
         (* Cannot eagerly perform memory barriers that do something*)

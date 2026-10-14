@@ -141,7 +141,7 @@ Module SequentialModel (Arch : Arch) (Inter : InterfaceT Arch)
             mget (mem_present addr size ∘ archState.memory ∘ sst);
           guard_or "Memory isn't mapped to write" mapped;;
           write_mem_seq_state addr (val |> bv_to_bytes 8);;
-        mret (Ok ())
+        mret (Ok true)
       | MemWrite _ _ _ => mthrow "CHERI tags are unsupported for now"
       | Barrier _ => mret ()
       | CacheOp _ => mret ()

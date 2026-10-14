@@ -473,7 +473,7 @@ Section RunOutcome.
       guard_or "Access outside Non-Secure" (addr_space = PAS_NonSecure);;
       guard_or "Only explicit writes are supported" (is_explicit macc);;
       vpre_opt ← write_mem tid addr size macc val;
-      mret (Ok (), vpre_opt)
+      mret (Ok true, vpre_opt)
   | MemWrite _ _ _ => mthrow "Memory write with tags unsupported"
   | Barrier (Barrier_DMB dmb) => (* dmb *)
       ts ← mget PPState.state;
