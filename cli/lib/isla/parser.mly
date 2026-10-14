@@ -125,13 +125,13 @@ page_table_stmt_inner:
     { Page_table_ast.Physical names }
   | ALIGNED; alignment = NUM; VIRTUAL; names = nonempty_list(IDENT)
     { Page_table_ast.AlignedVirtual {alignment; names} }
-  | va_name = IDENT; "|->"; rhs = page_table_mapping_rhs
+  | va = term; "|->"; rhs = page_table_mapping_rhs
     { let (target, attrs, level) = rhs in
-      Page_table_ast.Mapping {va_name; target; attrs; level}
+      Page_table_ast.Mapping {va; target; attrs; level}
     }
-  | va_name = IDENT; "?->"; rhs = page_table_mapping_rhs
+  | va = term; "?->"; rhs = page_table_mapping_rhs
     { let (target, attrs, level) = rhs in
-      Page_table_ast.MaybeMapping {va_name; target; attrs; level}
+      Page_table_ast.MaybeMapping {va; target; attrs; level}
     }
   | "*"; pa_name = IDENT; "="; value = term
     { Page_table_ast.DataInit {pa_name; value} }

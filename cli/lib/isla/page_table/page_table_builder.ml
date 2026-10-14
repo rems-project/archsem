@@ -346,9 +346,9 @@ let rec eval_stmt builder ~table_block ~root = function
          )
         names
   | Page_table_ast.AlignedVirtual _ -> ()
-  | Page_table_ast.Mapping {va_name; target; attrs; level} ->
+  | Page_table_ast.Mapping {va; target; attrs; level} ->
       let root = require_root root in
-      let va = Eval_state.lookup_addr builder.state va_name in
+      let va = addr_of_z "mapping address" (Term.eval ~state:builder.state va) in
       eval_mapping_target ?level ~attrs builder ~root ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->

@@ -202,7 +202,7 @@ let symbolic_va_alignments ir =
               names
         (* Table mappings do not require larger VA allocations. *)
         | Page_table_ast.Mapping {target = Page_table_ast.Table _; _} -> ()
-        | Page_table_ast.Mapping {va_name; level = Some level; _} ->
+        | Page_table_ast.Mapping {va = Term.Sym va_name; level = Some level; _} ->
             request va_name (checked_mapping_alignment level)
         | Page_table_ast.TableBlock {body; _} -> collect body
         | _ -> ()
