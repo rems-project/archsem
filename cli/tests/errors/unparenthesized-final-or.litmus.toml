@@ -1,0 +1,9 @@
+arch = "AArch64"
+name = "unparenthesized-final-or"
+
+[thread.0]
+init = { R0 = "0x101 | 0x203" }
+code = "NOP"
+
+[final]
+assertion = "0:R0 = 0x101 | 0x203"

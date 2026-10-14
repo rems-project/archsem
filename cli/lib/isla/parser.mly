@@ -54,6 +54,7 @@
 %token STAR "*"
 %token COLON ":"
 %token MINUS "-"
+%token PLUS "+"
 %token SEMICOLON ";"
 %token LBRACKET "["
 %token RBRACKET "]"
@@ -82,6 +83,8 @@
 
 %left OR
 %left AND
+%nonassoc EQ (* This is intended for the `atom` rule *)
+%left PLUS MINUS
 %nonassoc NOT
 
 %start <Term.t Litmus.Assertion.expr> assertion
@@ -155,9 +158,10 @@ page_table_mapping_rhs:
     { (target, Option.value ~default:[] attrs, level) }
 
 page_table_mapping_target:
-  | name = IDENT { Page_table_ast.PaName name }
-  | value = NUM { Page_table_ast.Address (Term.Const value) }
-  | value = fn_term { Page_table_ast.Address value }
+  | value = term
+    { match value with
+      | Term.Sym name -> Page_table_ast.PaName name
+      | _ -> Page_table_ast.Address value }
   | INVALID { Page_table_ast.Invalid }
   | TABLE; "("; addr = term; ")" { Page_table_ast.Table addr }
 
@@ -204,15 +208,24 @@ atom:
 
 loc:
   | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | "*"; s = IDENT { Mem s }
-  | "*"; addr = fn_term { MemAddr addr }
+  | "*"; addr = closed_term
+    { match addr with Term.Sym name -> Mem name | _ -> MemAddr addr }
 
 term:
+  | v = closed_term { v }
+  | "-"; v = closed_term
+    { match v with Term.Const z -> Term.Const (Z.neg z) | _ -> Term.Negate v }
+  | lhs = term; "+"; rhs = term { Term.Binary (lhs, Term.Add, rhs) }
+  | lhs = term; "-"; rhs = term { Term.Binary (lhs, Term.Sub, rhs) }
+  | lhs = term; "&"; rhs = term { Term.Binary (lhs, Term.Bit_and, rhs) }
+  | lhs = term; "|"; rhs = term { Term.Binary (lhs, Term.Bit_or, rhs) }
+
+closed_term:
   | v = NUM { Term.Const v }
-  | "-"; v = NUM { Term.Const (Z.neg v) }
   | fn = fn_term { fn }
   | s = IDENT; ":" { Term.Sym s }
   | s = IDENT { Term.Sym s }
+  | "("; v = term; ")" { v }
 
 fn_term:
   | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
