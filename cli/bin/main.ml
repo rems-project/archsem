@@ -184,8 +184,18 @@ let config_term =
   in
   Arg.(value & opt (some file) None & info ["config"; "c"] ~doc ~docv:"FILE")
 
+let profile_term =
+  let doc =
+    "Config profile to use for all tests. By default, tests with a \
+     page_table_setup use the profile given by page_table_setup_default_profile \
+     in the config, and other tests use no profile"
+  in
+  Arg.(value & opt (some string) None & info ["profile"] ~doc ~docv:"NAME")
+
 let path_and_conf_term =
-  let+ paths = test_path_term and+ conf = config_term in
+  let+ paths = test_path_term
+  and+ conf = config_term
+  and+ profile = profile_term in
   let files = get_all_tests paths in
   let conf =
     match conf with
@@ -200,7 +210,7 @@ let path_and_conf_term =
               (Arch_id.to_string arch)
       )
   in
-  Config.load conf; files
+  Config.load conf; Config.set_profile profile; files
 
 let format_term =
   let doc =

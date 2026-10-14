@@ -59,7 +59,6 @@ name = "LDR+size+VM"
   _PC = 0x1000
   "R1" = 0x400000
   "R2" = 0x600000
-  "SCTLR_EL1" = 1
   CurrentEL = 1
   "TTBR0_EL1" = 0x200000
   "R0" = 0
@@ -92,10 +91,17 @@ name = "LDR+size+VM"
   "R29" = 0
   "R30" = 0
   "TCR_EL1" = 0
-  "ID_AA64MMFR1_EL1" = 0
   SPSel = 0
   NZCV = 0
   DAIF = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0x3000000000
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "SPSR_EL1" = 0
+  "PAR_EL1" = 0
 
 [final]
   assertion = {and = [{"0:X0" = 1}, {"0:X2" = 0x600000}, {pa_x = 0x10000000100000001}]}
