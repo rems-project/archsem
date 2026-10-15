@@ -105,7 +105,7 @@ let parse_reset_entry k v =
 let parse_reset_table toml =
   Toml.get_table_key_values parse_reset_entry toml |> List.filter_map Fun.id
 
-let parse_thread (tid, table) =
+let parse_thread tid table =
   let tid = Litmus.Parser.parse_tid tid in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   let init =
@@ -125,9 +125,9 @@ let parse_thread (tid, table) =
   {tid; code; regs; breakpoints}
 
 let parse_threads toml =
-  let table = Toml.get_table toml in
   let l =
-    List.sort (fun a b -> compare a.tid b.tid) (List.map parse_thread table)
+    Toml.get_table_key_values parse_thread toml
+    |> List.sort (fun a b -> compare a.tid b.tid)
   in
   List.iteri (fun i t -> if i != t.tid then Toml.error "Thread %i is missing" i) l;
   l
