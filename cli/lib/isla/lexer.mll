@@ -70,6 +70,7 @@ rule token = parse
   | '}' { RBRACE }
   | ',' { COMMA }
   | '-' { MINUS }
+  | '+' { PLUS }
   | "aligned" { ALIGNED }
   | "option" { OPTION }
   | "virtual" { VIRTUAL }

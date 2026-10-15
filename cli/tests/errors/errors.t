@@ -166,6 +166,13 @@ Negative Isla final assertion
   final assertion values must be non-negative: -0x1
   [1]
 
+Unparenthesized bitwise or in Isla final assertion
+  $ archsem seq unparenthesized-final-or.litmus.toml
+  archsem: TOML error:
+  File "unparenthesized-final-or.litmus.toml", path "final.assertion":
+  assertion parse error at position 20 in: 0:R0 = 0x101 | 0x203
+  [1]
+
 Negative zero extension in Isla function
   $ archsem seq negative-extz.litmus.toml
   archsem: eval error:
