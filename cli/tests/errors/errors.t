@@ -252,3 +252,10 @@ Unknown config profile
   $ archsem seq --profile nonexistent invalid-page-table-token.litmus.toml
   archsem: fatal error: config: unknown profile nonexistent
   [1]
+
+Page table table(...) targets take a single positional address
+  $ archsem seq invalid-page-table-table-target.litmus.toml
+  archsem: TOML error:
+  File "invalid-page-table-table-target.litmus.toml", path "page_table_setup":
+  page-table setup parse error: table(ADDR) takes a single positional argument
+  [1]

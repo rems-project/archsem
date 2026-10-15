@@ -73,7 +73,6 @@
 %token CODE
 %token DATA
 %token INVALID
-%token TABLE
 %token S1TABLE
 %token S2TABLE
 %token AT
@@ -99,7 +98,6 @@
 %type <Page_table_ast.descriptor_expr_field list> page_table_descriptor_attrs
 %type <bool> page_table_bool
 %type <int> page_table_mapping_level
-%type <string> kw_name
 
 %%
 
@@ -159,9 +157,11 @@ page_table_mapping_target:
   | value = term
     { match value with
       | Term.Sym name -> Page_table_ast.PaName name
+      | Term.Fn ("table", [addr]) -> Page_table_ast.Table addr
+      | Term.Fn ("table", _) | Term.KwFn ("table", _) ->
+          failwith "table(ADDR) takes a single positional argument"
       | _ -> Page_table_ast.Address value }
   | INVALID { Page_table_ast.Invalid }
-  | TABLE; "("; addr = term; ")" { Page_table_ast.Table addr }
 
 page_table_descriptor_attrs:
   | WITH; "[";
@@ -230,8 +230,4 @@ fn_term:
   | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
 
 kw_arg:
-  | k = kw_name; "="; v = term { (k, v) }
-
-kw_name:
-  | k = IDENT { k }
-  | TABLE { "table" }
+  | k = IDENT; "="; v = term { (k, v) }
