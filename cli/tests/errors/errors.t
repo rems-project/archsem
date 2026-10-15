@@ -113,7 +113,7 @@ Invalid thread in final condition
 Invalid reset value in Isla file
   $ archsem convert --format isla invalid-reset.litmus.toml
   archsem: TOML error:
-  File "invalid-reset.litmus.toml", path "thread.reset.X0":
+  File "invalid-reset.litmus.toml", path "thread.0.reset.X0":
   register X0 has invalid reset value: Isla value is invalid, should be int or string expression, but is: true
   [1]
 
