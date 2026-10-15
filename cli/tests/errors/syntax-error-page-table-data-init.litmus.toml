@@ -1,0 +1,17 @@
+arch = "AArch64"
+name = "syntax-error-page-table-data-init"
+symbolic = ["x"]
+
+page_table_setup = """
+physical pa_x;
+*pa_x = ;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"
