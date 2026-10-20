@@ -1,0 +1,8 @@
+arch = "AArch64"
+name = "syntax-error-register"
+
+[thread.0]
+code = "NOP"
+
+[final]
+assertion = "1: = 0"

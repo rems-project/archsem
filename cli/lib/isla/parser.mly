@@ -86,6 +86,21 @@
 %left PLUS MINUS
 %nonassoc NOT
 
+(* On a syntax error after a complete term, comparison or proposition, report
+   it in the context of the enclosing construct rather than in the middle of an
+   infix expression *)
+%on_error_reduce closed_term term atom prop
+
+(* On a syntax error after a mapping target, report it in the same state
+   whatever the kind of target *)
+%on_error_reduce page_table_mapping_target
+
+(* The semicolon after a page-table block is optional and usually omitted: on a
+   syntax error after a block, report it as after any other statement.
+   On a syntax error in a block body, report it at the end of the body, where
+   the table name is known *)
+%on_error_reduce option(SEMICOLON) list(page_table_stmt)
+
 %start <Term.t Litmus.Assertion.expr> assertion
 %start <Term.t> binding
 %start <Page_table_ast.stmt list> page_table_setup
