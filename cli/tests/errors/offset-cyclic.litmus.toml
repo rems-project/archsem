@@ -1,0 +1,11 @@
+arch = "AArch64"
+name = "offset-cyclic"
+
+[offsets]
+y.base = "z"
+y.offset = 32
+z.base = "y"
+z.offset = 32
+
+[thread.0]
+code = "nop"

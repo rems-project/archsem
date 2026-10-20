@@ -1,0 +1,20 @@
+arch = "AArch64"
+name = "offset-also-declared"
+symbolic = ["x"]
+
+page_table_setup = """
+s1table y {
+  x |-> pa;
+}
+"""
+
+[offsets]
+y.base = "pa"
+y.offset = 32
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"

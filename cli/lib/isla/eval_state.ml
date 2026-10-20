@@ -44,12 +44,21 @@ type page_table = (int, int64) Hashtbl.t
 
 type t =
   { symbols : (string, int) Hashtbl.t;
+    offsets : (string, string * int) Hashtbl.t;
     mutable page_table : page_table option
   }
 
-let create () = {symbols = Hashtbl.create 32; page_table = None}
+let create ?(offsets = []) () =
+  { symbols = Hashtbl.create 32;
+    offsets = Hashtbl.of_seq (List.to_seq offsets);
+    page_table = None
+  }
+
+exception Error of string list * string
 
 let check_fresh_symbol state name =
+  if Hashtbl.mem state.offsets name then
+    Printf.ksprintf failwith "Offset symbol %s is also declared" name;
   if Hashtbl.mem state.symbols name then
     Printf.ksprintf failwith "Symbol %s is already defined" name
 
@@ -61,3 +70,21 @@ let lookup_addr state name =
   match Hashtbl.find_opt state.symbols name with
   | Some addr -> addr
   | None -> Printf.ksprintf failwith "Symbol %s not found" name
+
+(** Resolve offsets whose bases are already defined. *)
+let resolve_offsets state =
+  Hashtbl.fold
+    (fun name (base, offset) resolved ->
+       if Hashtbl.mem state.symbols name then resolved
+       else
+         match Hashtbl.find_opt state.symbols base with
+         | None -> resolved
+         | Some addr ->
+             if addr > max_int - offset then
+               raise (Error (["offsets"; name], "Offset address is out of range"));
+             let addr = addr + offset in
+             Hashtbl.add state.symbols name addr;
+             (name, base, addr) :: resolved
+     )
+    state.offsets []
+  |> List.rev

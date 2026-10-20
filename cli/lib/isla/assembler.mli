@@ -79,8 +79,13 @@ type assembly_result =
 (** {1 Pipeline} *)
 
 (** Assemble, link, and parse ELF. Uses config for toolchain commands.
-    [filename] names copied artifacts when [--asm-dump] is enabled. *)
-val assemble : filename:string -> assembly_input -> assembly_result
+    [filename] names copied artifacts when [--asm-dump] is enabled.
+    [offsets] aliases are resolved by the converter and omitted from [symbols]. *)
+val assemble :
+   ?offsets:(string * (string * int)) list ->
+  filename:string ->
+  assembly_input ->
+  assembly_result
 
 (** {1 Dump configuration}
 

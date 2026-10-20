@@ -262,6 +262,19 @@ Symbolic names must not be keywords
   Symbol "code" is invalid: names must start with a letter or '_', only contain letters, digits and '_', and not be a keyword
   [1]
 
+Offset symbols cannot also name a table root
+  $ archsem seq offset-also-declared.litmus.toml
+  archsem: eval error:
+  File "offset-also-declared.litmus.toml", path "page_table_setup":
+  Offset symbol y is also declared
+  [1]
+
+The assembler rejects cyclic offsets
+  $ archsem seq offset-cyclic.litmus.toml 2>offset-error
+  [1]
+  $ sed -n 's/.*error: /error: /p' offset-error
+  error: Recursive use of 'z'
+
 Unknown config profile
   $ archsem seq --profile nonexistent invalid-page-table-token.litmus.toml
   archsem: fatal error: config: unknown profile nonexistent

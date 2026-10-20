@@ -89,7 +89,7 @@ type eval_context =
   | Final_assertion
   | Page_table_setup
 
-exception Eval_error of string list * string
+exception Eval_error = Eval_state.Error
 
 let eval_context_path = function
   | Location_init sym -> ["locations"; sym]
@@ -164,6 +164,29 @@ let symbolic_names ir =
   collect
     (List.fold_left (add ["symbolic"]) [] ir.Ir.symbolic)
     ir.Ir.page_table_setup
+
+(* Validate names before including them in assembly directives. *)
+let check_offset_names ir =
+  List.iter
+    (fun (name, (base, _)) ->
+       let path = ["offsets"; name] in
+       check_symbol_name path name; check_symbol_name path base
+     )
+    ir.Ir.offsets
+
+(* Create backing memory for data offsets without a page table. *)
+let resolve_offsets ~state data_symbols =
+  List.fold_left
+    (fun symbols (name, base, addr) ->
+       if
+         List.exists
+           (fun (sym : Assembler.data_symbol) -> sym.name = base)
+           symbols
+       then symbols @ [{Assembler.name; addr}]
+       else symbols
+     )
+    data_symbols
+    (Eval_state.resolve_offsets state)
 
 let checked_virtual_alignment alignment =
   let alignment =
@@ -293,7 +316,7 @@ let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
   let input = to_assembly_input ~code_allocator ~symbol_allocator ir in
   let result =
     try
-      let result = Assembler.assemble ~filename input in
+      let result = Assembler.assemble ~offsets:ir.offsets ~filename input in
       List.iter
         (fun (name, addr) -> Eval_state.add_symbol state name addr)
         result.symbols;
@@ -518,9 +541,10 @@ let build_memory
 (** {1 Public API} *)
 
 let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
-  let state = Eval_state.create () in
+  let state = Eval_state.create ~offsets:ir.offsets () in
   let default_mem_size = default_memory_size () in
-  let (asm_input, asm_result, page_table) =
+  check_offset_names ir;
+  let (data_symbols, asm_result, page_table) =
     if ir.page_table_setup = [] then
       let allocator =
         Allocator.make ~base:0
@@ -531,7 +555,7 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
         assemble ~filename ~state ~code_allocator:allocator
           ~symbol_allocator:allocator ir
       in
-      (asm_input, asm_result, None)
+      (resolve_offsets ~state asm_input.symbols, asm_result, None)
     else
       let reserved_code_pages = reserved_section_addrs ir.sections in
       let code_allocator = make_arena ~reserved:(0 :: reserved_code_pages) 0 in
@@ -546,7 +570,7 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
         build_page_table_setup ir ~symbol_allocator ~table_allocator
           ~table_block:table_base ~state
       in
-      (asm_input, asm_result, Some page_table)
+      (asm_input.symbols, asm_result, Some page_table)
   in
   let page_table_root =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
@@ -556,9 +580,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
       ?page_table_root ~state asm_result ir.threads
   in
   let memory =
-    build_memory ~default_mem_size ~symbol_sizes:ir.sizes
-      ~data_symbols:asm_input.symbols ~state ~locations:ir.locations asm_result
-      page_table
+    build_memory ~default_mem_size ~symbol_sizes:ir.sizes ~data_symbols ~state
+      ~locations:ir.locations asm_result page_table
   in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
