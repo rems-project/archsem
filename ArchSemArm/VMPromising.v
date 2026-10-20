@@ -2418,8 +2418,8 @@ Definition run_trans_end (trans_end : trans_end) :
       if trans_time <=? trs.(IIS.TransRes.trans_end) then
         mset snd $ IIS.add trans_time;;
 
-        let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-        let vbob := (view_if is_write ts.(TState.vdmbst)) ⊔ ts.(TState.vdmb)
+        (* DMB ST orders preceding writes before both read and write faults. *)
+        let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb)
               ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
         mset snd $ IIS.add vbob
       else mdiscard

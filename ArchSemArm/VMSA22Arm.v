@@ -586,7 +586,7 @@ Section VMSAArm.
   Definition obfault :=
     data⨾⦗Fault_T ∩ FaultFromW⦘
       ∪ speculative⨾⦗Fault_T ∩ FaultFromW⦘
-      ∪ ⦗dmb_store cd⦘⨾po⨾⦗Fault_T ∩ FaultFromW⦘
+      ∪ ⦗dmb_store cd⦘⨾po⨾⦗Fault_T ∩ (FaultFromW ∪ FaultFromR)⦘
       ∪ ⦗dmb_load cd⦘⨾po⨾⦗Fault_T ∩ (FaultFromW  ∪ FaultFromR)⦘
       ∪ ⦗A ∪ Q⦘⨾po⨾⦗Fault_T ∩ (FaultFromW  ∪ FaultFromR)⦘
       ∪ ⦗R ∪ W⦘⨾po⨾⦗Fault_T ∩ FaultFromW ∩ FaultFromReleaseW⦘.
