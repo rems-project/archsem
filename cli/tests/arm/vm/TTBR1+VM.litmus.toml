@@ -1,0 +1,21 @@
+arch = "AArch64"
+name = "TTBR1+VM"
+symbolic = ["x"]
+
+page_table_setup = """
+physical pa1;
+*pa1 = 1;
+
+s1table table1 0x300000 {
+  x |-> pa1;
+}
+"""
+
+[thread.0]
+init = { X2 = "bvor(x, 0xffff000000000000)", TTBR1_EL1 = "ttbr(asid=0x0, base=table1)", CurrentEL = 1 }
+code = """
+LDR X1, [X2]
+"""
+
+[final]
+assertion = "0:X1 = 1"

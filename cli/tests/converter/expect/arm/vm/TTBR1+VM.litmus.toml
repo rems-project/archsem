@@ -1,0 +1,132 @@
+arch = "Arm"
+name = "TTBR1+VM"
+
+[[memory]]
+  sym = "__thread0"
+  kind = "code"
+  addr = 0x1000
+  step = 4
+  data = 0xf9400041
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x300000
+  step = 8
+  data = 0x304003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x301000
+  step = 8
+  data = 0x302003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x302000
+  step = 8
+  data = 0x303003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x303000
+  step = 8
+  data = 0x4c1
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x303008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x304000
+  step = 8
+  data = 0x305003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x305000
+  step = 8
+  data = 0x4c1
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x305008
+  step = 8
+  data = 0x200441
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x305010
+  step = 8
+  data = 0x306003
+
+[[memory]]
+  kind = "pagetable"
+  addr = 0x306000
+  step = 8
+  data = 0x401443
+
+[[memory]]
+  sym = "pa1"
+  addr = 0x401000
+  step = 8
+  data = 1
+
+[thread]
+
+[thread."0"]
+  breakpoints = [0x1004]
+
+[thread."0".regs]
+  _PC = 0x1000
+  "R2" = 0xffff000000400000
+  "TTBR1_EL1" = 0x300000
+  CurrentEL = 1
+  "TTBR0_EL1" = 0x301000
+  "R0" = 0
+  "R1" = 0
+  "R3" = 0
+  "R4" = 0
+  "R5" = 0
+  "R6" = 0
+  "R7" = 0
+  "R8" = 0
+  "R9" = 0
+  "R10" = 0
+  "R11" = 0
+  "R12" = 0
+  "R13" = 0
+  "R14" = 0
+  "R15" = 0
+  "R16" = 0
+  "R17" = 0
+  "R18" = 0
+  "R19" = 0
+  "R20" = 0
+  "R21" = 0
+  "R22" = 0
+  "R23" = 0
+  "R24" = 0
+  "R25" = 0
+  "R26" = 0
+  "R27" = 0
+  "R28" = 0
+  "R29" = 0
+  "R30" = 0
+  "TCR_EL1" = 0
+  SPSel = 0
+  NZCV = 0
+  DAIF = 0
+  "SCTLR_EL1" = 1
+  "ID_AA64MMFR1_EL1" = 0x3000000000
+  "ESR_EL1" = 0
+  "FAR_EL1" = 0
+  "ELR_EL1" = 0
+  "VBAR_EL1" = 0
+  "SPSR_EL1" = 0
+  "PAR_EL1" = 0
+
+[final]
+  assertion = {"0:X1" = 1}
