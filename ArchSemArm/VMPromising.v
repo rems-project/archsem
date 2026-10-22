@@ -151,11 +151,14 @@ Module TLBI.
     end.
 End TLBI.
 
-(** Events in the VMPromising history can be either memory writes or TLBI effects *)
+(** Events in the VMPromising history can be either memory writes or TLBI
+    effects. The [recipient] is the thread whose TLB is affected by that TLBI
+    operation. The [epoch] of a TLBI is the [TState.dsb_epoch] of its emitter
+    when it was issued, it is only used to filter redundant promise orders *)
 Module Ev.
   Inductive t :=
   | Msg (msg : Msg.t)
-  | Tlbi (tlbi : TLBI.t) (recipient : nat).
+  | Tlbi (tlbi : TLBI.t) (recipient : nat) (epoch : nat).
 
   #[export] Instance dec : EqDecision t.
   Proof. solve_decision. Defined.
@@ -163,7 +166,7 @@ Module Ev.
   Definition tid (ev : t) :=
     match ev with
     | Msg msg => Msg.tid msg
-    | Tlbi tlbi _ => TLBI.tid tlbi
+    | Tlbi tlbi _ _ => TLBI.tid tlbi
     end.
 
   Definition get_msg (ev : t) : option Msg.t :=
@@ -174,13 +177,13 @@ Module Ev.
 
   Definition get_tlbi (ev : t) : option TLBI.t :=
     match ev with
-    | Tlbi tlbi _ => Some tlbi
+    | Tlbi tlbi _ _ => Some tlbi
     | _ => None
     end.
 
   Definition get_tlbi_recipient (ev : t) : option nat :=
     match ev with
-    | Tlbi _ recipient => Some recipient
+    | Tlbi _ recipient _ => Some recipient
     | _ => None
     end.
 
@@ -189,7 +192,26 @@ Module Ev.
   Definition affects (ev : t) (tid' : nat) : bool :=
     match ev with
     | Msg _ => true
-    | Tlbi tlbi recipient => bool_decide (tid' = TLBI.tid tlbi ∨ tid' = recipient)
+    | Tlbi tlbi recipient _ =>
+        bool_decide (tid' = TLBI.tid tlbi ∨ tid' = recipient)
+    end.
+
+  (** Whether [ev2] right after [ev1] in memory is a redundant order: the two
+      events can be swapped without changing the set of behaviours, and the
+      swapped order is the one that is explored.
+
+      Writes are never swapped. Two TLBIs can be swapped if they have different
+      recipients and either their affected threads (emitter and recipient) are
+      disjoint, or they have the same emitter and the same epoch (no DSB between
+      them). Swappable TLBIs are explored by increasing recipient *)
+  Definition out_of_order (ev1 ev2 : t) : bool :=
+    match ev1, ev2 with
+    | Tlbi tlbi1 r1 k1, Tlbi tlbi2 r2 k2 =>
+        let e1 := TLBI.tid tlbi1 in
+        let e2 := TLBI.tid tlbi2 in
+        bool_decide (r2 < r1 ∧
+          (e1 ≠ e2 ∧ e1 ≠ r2 ∧ r1 ≠ e2 ∨ e1 = e2 ∧ k1 = k2))
+    | _, _ => false
     end.
 
   (** Checks whether an write event overlaps an address range *)
@@ -1137,7 +1159,7 @@ Module TLB.
           (ev : Ev.t) : tlb_mon () :=
         match ev with
         | Ev.Msg msg => fill_write asid_roots msg
-        | Ev.Tlbi tlbi recipient =>
+        | Ev.Tlbi tlbi recipient _ =>
             if decide (tid = recipient) then fill_tlbi asid_roots tlbi else mret ()
         end.
     End TLBFillTime.
@@ -1493,6 +1515,12 @@ Module TState.
            run yet. *)
         xclb : option XclItem.t;
 
+        (* The number of DSB SY-type barriers executed so far (in any domain).
+           This is an optimisation-only field: it tags the TLBIs, so that the
+           promise filter can recognise commuting TLBIs. It has no effect on
+           the semantics, outside the filter *)
+        dsb_epoch : nat;
+
         (* The TLB structure. This is for caching purposes. The TLB can be
            functionally computed from the regitsers (regs + levs) and memory
            state. [None] is when translation is disabled *)
@@ -1502,7 +1530,7 @@ Module TState.
   #[global] Instance eta : Settable _ :=
     settable! make <prom_wr; prom_tlbi;regs;levs;coh;tcoh;vrd;vwr;vdmbst;vdmb;vdsb;
                     vspec;vcse;vtlbi_self;vtlbi_other;vmsr;vacq;vrel;fwdb;xclb;
-                    tlb>.
+                    dsb_epoch;tlb>.
 
   Definition init (tid : nat) (imem : memoryMap) (iregs : registerMap) :=
     el ← othrow "CurrentEL is not set" $ reg_lookup CurrentEL iregs;
@@ -1533,6 +1561,7 @@ Module TState.
       vrel := 0;
       fwdb := ∅;
       xclb := None;
+      dsb_epoch := 0;
       tlb := tlb;
     |})%nat.
 
@@ -2216,6 +2245,7 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) : prom_mon () :=
           in
           guard_discard (TState.no_promises_until vpost ts);;
           mset PPState.state $ TState.update TState.vdsb vpost;;
+          mset (TState.dsb_epoch ∘ PPState.state) S;;
           mset PPState.iis $ IIS.add vpost
       | MBReqTypes_Reads (* dsb ld *) =>
           let vpost := ts.(TState.vrd) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vdsb) in
@@ -2243,8 +2273,8 @@ Definition run_barrier (barrier : barrier) (vmax_t : view) : prom_mon () :=
 Definition materialize_tlbi_for_recipient
     (vpre : view) (tlbi : TLBI.t) (recipient : nat) :
     Exec.t (PPState.t TState.t Ev.t IIS.t) string (view * bool) :=
-  let ev := Ev.Tlbi tlbi recipient in
   ts ← mget PPState.state;
+  let ev := Ev.Tlbi tlbi recipient ts.(TState.dsb_epoch) in
   mem ← mget PPState.mem;
   '(time, new_tlbi_event) ←
     match Memory.fulfill ev (TState.prom_tlbi ts) mem with
@@ -2724,19 +2754,15 @@ End BBM.
 
 Import Promising.
 
-(** Avoid exploring duplicate TLBI promise orders.  During one enumeration run,
-    we keep TLBI recipients in nondecreasing order, comparing each candidate
-    with the last TLBI promise already selected in memory. *)
-Definition filter_tlbi_promises
+(** Avoid exploring equivalent promise orders: a candidate cannot be promised
+    if it is [Ev.out_of_order] after the last event in memory. Every sequence of
+    events can be sorted by swapping adjacent out-of-order events, so at least
+    one order of each class of equivalent orders is explored *)
+Definition filter_commuting_promises
     (n_threads tid : nat) (mem : Memory.t) (candidates : list Ev.t) :
     list Ev.t :=
-  let run_recipient :=
-    if mem is ev :: _ then Ev.get_tlbi_recipient ev else None in
-  if run_recipient is Some prev_recipient then
-    filter (λ ev,
-      if Ev.get_tlbi_recipient ev is Some recipient
-      then prev_recipient ≤ recipient
-      else True) candidates
+  if mem is last :: _ then
+    filter (λ ev, negb (Ev.out_of_order last ev)) candidates
   else candidates.
 
 Definition VMPromising (bbm : bool) : Promising.Model :=
@@ -2753,7 +2779,7 @@ Definition VMPromising (bbm : bool) : Promising.Model :=
     mEvent := Ev.t;
     mEvent_tid := Ev.tid;
     mEvent_affects := Ev.affects;
-    filter_promises := filter_tlbi_promises;
+    filter_promises := filter_commuting_promises;
     handle_outcome := run_outcome;
     emit_promise := TState.emit_promise;
     check_valid_end := λ _ imem ts mem,

@@ -1,0 +1,8 @@
+Test TLBI+DSBNSH+TLBI Allowed
+States 1
+1:X5=1; 
+Ok
+Witnesses
+Positive: 4 Negative: 0
+Condition TLBI+DSBNSH+TLBI exists 1:X5=1
+Observation TLBI+DSBNSH+TLBI Always 4 0

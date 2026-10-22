@@ -1,0 +1,11 @@
+Test CrossTLBI Allowed
+States 4
+0:X4=0; 0:X6=0; 
+0:X4=0; 0:X6=3; 
+0:X4=1; 0:X6=0; 
+0:X4=1; 0:X6=3; 
+Ok
+Witnesses
+Positive: 3 Negative: 258
+Condition CrossTLBI exists (0:X4=1 /\ 0:X6=3)
+Observation CrossTLBI Sometimes 3 258
