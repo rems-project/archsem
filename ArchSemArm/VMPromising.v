@@ -1372,13 +1372,15 @@ Module TLB.
         mret $ get_result_from_leaf_FE fe events tmin_ok tmax.
 
     (** Lookup all entries reachable from TLB or walk-caches that are either
-        global or tagged with [asid]. Does not return level-0 invalid PTEs as
-        they are not reachable from the TLB *)
+        global or tagged with [asid]. Keep results from each entry even if
+        another entry fails, and keep those errors too.
+        Does not return level-0 invalid PTEs as they are not reachable from the
+        TLB *)
     Definition lookup (tmin_ok tmin_unc tmax : nat) (asid : bv 16) :
-        result string (list Result.t) :=
-      for (fe, events) in get_fes (get_global_Ctxts ++ get_asid_Ctxts asid) do
-        get_result_from_FE fe events tmin_ok tmin_unc tmax
-      end |$> List.concat.
+        Exec.res string Result.t :=
+      '(fe, events) ← mchoosel (get_fes (get_global_Ctxts ++ get_asid_Ctxts asid));
+      results ← mlift $ get_result_from_FE fe events tmin_ok tmin_unc tmax;
+      mchoosel results.
 
   End TLBLookup.
 
@@ -1795,31 +1797,32 @@ Module TState.
   Definition tlb_lookup (tid : nat) (imem : memoryMap) (mem : Memory.t) (ts : t)
       (ifetch upper : bool) (vpn : pn) (asid : bv 16) (ttbr0 : bv 64)
       (tmin_ok tmin_unc tmax : nat) :
-    result string (list TLB.Result.t) :=
-    tlb ← othrow "TLB lookup, but translation disabled by SCTLR_EL1" $ ts.(tlb);
-    from_tlb ← TLB.lookup tid imem mem tlb ifetch upper vpn tmin_ok tmin_unc tmax asid;
+    Exec.res string TLB.Result.t :=
+    if ts.(tlb) is Some tlb then
+    let from_tlb := TLB.lookup tid imem mem tlb ifetch upper vpn
+      tmin_ok tmin_unc tmax asid in
     (* Still missing invalid lookups from root, those do not go through the TLB *)
-    from_lvl0_inv ←
+    let from_lvl0_inv : Exec.res string TLB.Result.t :=
     ( if decide (tmin_unc ≤ tmax) then
-        ttbrs ←
+        ttbrs ← mlift
           (if upper then
             othrow "Can't read TTBR1_EL1, but using negative addresses" $
               read_sreg_indirect ts TTBR1_EL1 : result string (list (bv 64 * view))
           else mret [(ttbr0, 0)]);
         let lvl0_index := vpn_level_index 0%fin vpn in
-        for (ttbr, vttbr) in ttbrs do
-          let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
-          let tmin := tmin_unc ⊔ vttbr in
-          ptes ← Memory.read_all_pte pte_addr imem mem tmin tmax;
-          ptes
-          |> filter (λ '(pte, _), ¬ is_tlb_fillable 0%fin pte)
-          (* TODO figure out if top-level invalid entries are concerned by *)
-          (*      invalidation times *)
-          |> map (λ '(pte, vpte), TLB.Result.make ttbr [pte] (tmin ⊔ vpte) tmax None)
-          |> mret
-        end |$> List.concat
-      else mret []);
-    mret (from_tlb ++ from_lvl0_inv).
+        '(ttbr, vttbr) ← mchoosel ttbrs;
+        let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
+        let tmin := tmin_unc ⊔ vttbr in
+        ptes ← mlift $ Memory.read_all_pte pte_addr imem mem tmin tmax;
+        ptes
+        |> filter (λ '(pte, _), ¬ is_tlb_fillable 0%fin pte)
+        (* TODO figure out if top-level invalid entries are concerned by *)
+        (*      invalidation times *)
+        |> map (λ '(pte, vpte), TLB.Result.make ttbr [pte] (tmin ⊔ vpte) tmax None)
+        |> mchoosel
+      else mdiscard) in
+    Exec.merge from_tlb from_lvl0_inv
+    else mthrow "TLB lookup, but translation disabled by SCTLR_EL1".
 
   Definition ets2 (ts : t) : bool :=
     if ts.(tlb) is Some tlb then bool_decide (2 ≤ tlb.(TLB.ets))%N else false.
@@ -2352,15 +2355,14 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
           : Exec.t _ _ (bv 64 * view));
       guard_or "Translation ASID does not match the TTBR0_EL1 value read"
         (asid = bv_extract 48 16 ttbr0);;
-      tlb_results ← mlift $ TState.tlb_lookup tid imem mem ts ifetch upper vpn
-        asid ttbr0 vpre_t vpre_inv vmax_t;
-      (* The only valid reason for tlb_result to be empty, is if the only
-         possibility was to fault but a fault is impossible with the current
-         promising context, otherwise this means the page tables are not set up
-         properly *)
+      let tlb_results := TState.tlb_lookup tid imem mem ts ifetch upper vpn
+        asid ttbr0 vpre_t vpre_inv vmax_t in
+      (* Report missing page tables when lookup has no results or errors,
+         unless [vmax_t < vpre_inv] rules out faults. *)
       guard_or ("Can't translate address " ++ pretty va)%string
-        (tlb_results = [] → vmax_t < vpre_inv);;
-      tlb_result ← mchoosel tlb_results;
+        (tlb_results.(Exec.results) = [] → tlb_results.(Exec.errors) = [] →
+          vmax_t < vpre_inv);;
+      tlb_result ← mlift tlb_results;
       val_ttbr ← othrow
         "Unexpected TTBR value type"
           (val_to_regval reg_ttbr tlb_result.(TLB.Result.ttbr));
