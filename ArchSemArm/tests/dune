@@ -1,7 +1,7 @@
 (rocq.theory
  (name ArchSemArm.tests)
  (generate_project_file)
- (modules ArmSeqModelTest UMPromisingTest VMPromisingTest)
+ (modules ArmSeqModelTest UMPromisingTest VMPromisingTest VMPromisingLookupTest)
  (theories ArchSemArm))
 
 ; Do not build this folder by default but do it when running @runtest

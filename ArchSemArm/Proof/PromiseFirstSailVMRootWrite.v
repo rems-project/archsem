@@ -1,5 +1,5 @@
 (******************************************************************************)
-(* A Sail page-table write lost by the current promise-first VM runner        *)
+(* A complete Sail page-table write after preserving lookup alternatives        *)
 (******************************************************************************)
 
 From ASCommon Require Import Options Common Exec FMon StateT.
@@ -87,10 +87,6 @@ Lemma initial_finals :
   (CPState.enumerate_results isem prom term 0%fin (PState.initmem init_ps)
     1 (PState.tstate 0%fin init_ps) (PState.events init_ps)).(CPState.final_states prom) = [].
 Proof. vm_compute. reflexivity. Qed.
-Lemma promised_step_one :
-  Exec.results (CPState.run_transition_promise_first isem prom term 1 promised) = [].
-Proof. apply (proj1 (length_zero_iff_nil _)). vm_compute. reflexivity. Qed.
-
 Lemma initial_step_positive fuel next res :
   Exec.elem_of_results (next, res)
     (CPState.run_transition_promise_first isem prom term (S fuel) init_ps) →
@@ -113,93 +109,58 @@ Proof.
     rewrite promise_succeeds in Hpromise. apply ok_injective in Hpromise.
     split; [rewrite Hnext; symmetry; exact Hpromise|reflexivity].
 Qed.
-Lemma promised_step_positive fuel :
-  Exec.results (CPState.run_transition_promise_first isem prom term (S fuel) promised) = [].
+(** The original lookup implementation had no promise-first result at any
+    fuel for this program (commit 7df9902). With independent lookup alternatives,
+    its promise-first execution completes with two runner transitions. *)
+Lemma initial_searches_complete :
+  PromiseFirstSearchesComplete prom false term 2%nat init_ps.
 Proof.
-  rewrite <- (complete_transition_fuel_irrelevant prom false term 1%nat (S fuel)
-    promised ltac:(lia) promised_certification_complete).
-  exact promised_step_one.
+  split.
+  - eapply certification_complete_more_fuel with (fuel := 1%nat);
+      [lia|exact initial_certification_complete].
+  - intros next Hstep.
+    destruct (initial_step_positive 1%nat next None Hstep) as [-> _].
+    split; [exact promised_certification_complete|]. intros. exact I.
 Qed.
 
-Local Lemma no_results_bind {St E A B} (e : Exec.t St E A)
-    (k : A → Exec.t St E B) st :
-  Exec.results (e st) = [] → Exec.results ((e ≫= k) st) = [].
-Proof.
-  intro H. unfold mbind, Exec.mbind_inst.
-  unfold mbind, Exec.res_mbind_inst. rewrite H. reflexivity.
-Qed.
-
-Lemma promised_run_no_results fuel :
-  Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
-    fuel term initial promised) = [].
-Proof.
-  destruct fuel; [reflexivity|]. cbn [opModel.run].
-  apply no_results_bind, promised_step_positive.
-Qed.
-
-Theorem promise_first_no_results fuel :
-  Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
-    fuel term initial init_ps) = [].
-Proof.
-  destruct fuel as [|fuel]; [reflexivity|].
-  destruct (Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
-    (S fuel) term initial init_ps)) as [|[returned fsig] rest] eqn:Hresults;
-    [reflexivity|].
-  exfalso.
-  assert (Hrun : Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom 1) (S fuel) term initial init_ps)).
-  { unfold Exec.elem_of_results. rewrite Hresults. left; reflexivity. }
-  cbn [opModel.run] in Hrun.
-  apply Exec.elem_of_bind_elim in Hrun as [next [res [Hstep Htail]]].
-  apply initial_step_positive in Hstep as [-> ->].
-  unfold Exec.elem_of_results in Htail. rewrite promised_run_no_results in Htail.
-  inversion Htail.
-Qed.
-
-Lemma direct_result_count :
-  length (Exec.results (opModel.run (@CPState.opmodel isem prom 1)
-    3 term initial init_ps)) = 1%nat.
+Lemma promise_first_result_count :
+  length (Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
+    2 term initial init_ps)) = 1%nat.
 Proof. vm_compute. reflexivity. Qed.
 
-Lemma direct_has_result :
+Lemma promise_first_has_result :
   ∃ st fsig, Exec.elem_of_results (st, fsig)
-    (opModel.run (@CPState.opmodel isem prom 1) 3 term initial init_ps).
+    (opModel.run (@CPState.opmodel_pf isem prom 1) 2 term initial init_ps).
 Proof.
-  pose proof direct_result_count as Hcount.
-  destruct (Exec.results (opModel.run (@CPState.opmodel isem prom 1)
-    3 term initial init_ps)) as [|[st fsig] rest] eqn:Hresults;
+  pose proof promise_first_result_count as Hcount.
+  destruct (Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
+    2 term initial init_ps)) as [|[st fsig] rest] eqn:Hresults;
     [discriminate|].
   exists st, fsig. unfold Exec.elem_of_results. rewrite Hresults. left; reflexivity.
 Qed.
 
-(** This failure holds for every promise-first runner budget, although both
-    nonterminal promise-first states have complete certification at fuel one. *)
-Theorem not_final_state_equivalent :
-  ¬ VMPromisingFinalStateEquiv false isem term initial.
+(** The completeness premise of the general soundness theorem is inhabited
+    by this actual Sail execution, including a promise that changes a PTE. *)
+Theorem complete_execution_exists :
+  ∃ st fsig, CompletePromiseFirstExecution prom false term 2%nat init_ps st fsig.
 Proof.
-  intros Hequiv. destruct direct_has_result as [st [[fs pt] Hrun]].
-  assert (Hin : archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc prom isem 3%nat 1%nat term initial).
-  { eapply direct_final_state_intro; [exact initialization|exact Hrun]. }
-  destruct (proj1 (Hequiv fs) ltac:(exists 3%nat, pt; exact Hin))
-    as [fuel [pt_pf Hpf]].
-  destruct (promise_first_final_state_inv isem term initial fuel fs pt_pf Hpf)
-    as [initPs [Hinit [st_pf [fsig [Hrun_pf Hfs]]]]].
-  rewrite initialization in Hinit. apply ok_injective in Hinit. subst initPs.
-  unfold Exec.elem_of_results in Hrun_pf.
-  rewrite promise_first_no_results in Hrun_pf. inversion Hrun_pf.
+  destruct promise_first_has_result as [st [fsig Hrun]].
+  exists st, fsig. eapply successful_run_complete;
+    [exact initial_searches_complete|exact Hrun].
 Qed.
 
-Theorem no_exhaustion_does_not_restore_equivalence :
-  (∀ fuel, CertificationCompleteAt prom false term (S fuel) init_ps ∧
-           CertificationCompleteAt prom false term (S fuel) promised) ∧
-  ¬ VMPromisingFinalStateEquiv false isem term initial.
+Theorem common_final_result :
+  ∃ returned final fsig cost,
+    Exec.elem_of_results (returned, fsig)
+      (opModel.run (@CPState.opmodel_pf isem prom 1) 2 term initial init_ps) ∧
+    ∀ fuel, (cost < fuel)%nat → Exec.elem_of_results (final, fsig)
+      (opModel.run (@CPState.opmodel isem prom 1) fuel term initial init_ps).
 Proof.
-  split; [|exact not_final_state_equivalent]. intro fuel. split.
-  - eapply certification_complete_more_fuel with (fuel := 1%nat);
-      [lia|exact initial_certification_complete].
-  - eapply certification_complete_more_fuel with (fuel := 1%nat);
-      [lia|exact promised_certification_complete].
+  destruct complete_execution_exists as [returned [fsig Hcomplete]].
+  destruct (VMSail_complete_execution_sound false false term initial 2%nat
+    init_ps returned fsig Hcomplete) as [final [cost Hdirect]].
+  exists returned, final, fsig, cost. split; [|exact Hdirect].
+  apply complete_execution_is_run, Hcomplete.
 Qed.
 
 Definition instruction_bytes : code_region :=
