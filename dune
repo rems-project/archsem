@@ -18,3 +18,13 @@
  (name proof)
  (deps
   (alias ArchSemArm/Proof/proof)))
+
+(alias
+ (name proof-current)
+ (deps
+  (alias ArchSemArm/Proof/proof-current)))
+
+(alias
+ (name proof-sail)
+ (deps
+  (alias ArchSemArm/Proof/proof-sail)))
