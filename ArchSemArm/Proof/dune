@@ -15,7 +15,7 @@
   PromiseFirstSailSerialization
   PromiseFirstSailScheduling
   PromiseFirstSailNoFuel
-  PromiseFirstSailVMFinalObstruction
+  PromiseFirstSailVMRootWrite
   PromiseFirstSailState
   PromiseFirstSailReplay
   PromiseFirstSailRead
@@ -33,7 +33,7 @@
   PromiseFirstSailVMTranslation
   PromiseFirstSailVMCache
   PromiseFirstSailVMCacheFill
-  PromiseFirstSailVMLookupObstruction
+  PromiseFirstSailVMLookup
   PromiseFirstSailCurrent)
  (theories
   Stdlib
@@ -69,7 +69,7 @@
   PromiseFirstSailSerialization.vo
   PromiseFirstSailScheduling.vo
   PromiseFirstSailNoFuel.vo
-  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailVMRootWrite.vo
   PromiseFirstSailState.vo
   PromiseFirstSailReplay.vo
   PromiseFirstSailRead.vo
@@ -87,7 +87,7 @@
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
-  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailVMLookup.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -107,7 +107,7 @@
   PromiseFirstSailSerialization.vo
   PromiseFirstSailScheduling.vo
   PromiseFirstSailNoFuel.vo
-  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailVMRootWrite.vo
   PromiseFirstSailState.vo
   PromiseFirstSailReplay.vo
   PromiseFirstSailRead.vo
@@ -125,7 +125,7 @@
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
-  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailVMLookup.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -137,7 +137,7 @@
   PromiseFirstSailSerialization.vo
   PromiseFirstSailScheduling.vo
   PromiseFirstSailNoFuel.vo
-  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailVMRootWrite.vo
   PromiseFirstSailState.vo
   PromiseFirstSailReplay.vo
   PromiseFirstSailRead.vo
@@ -155,5 +155,5 @@
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
-  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailVMLookup.vo
   PromiseFirstSailCurrent.vo))
