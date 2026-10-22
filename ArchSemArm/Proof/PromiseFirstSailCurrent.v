@@ -148,11 +148,18 @@ Definition VMSailNoSelfModifying bbm nondet {n}
     stable promise prefix and final batch under one decreasing runner budget.
     The direct-to-promise-first direction still needs normalization of mixed
     promise/instruction traces and the corresponding VM translation replay.
-    PromiseFirstSailVMFinalObstruction proves that a concrete Sail root-PTE
-    write currently has a direct final result and no promise-first final
-    result at any fuel, even with complete certification. It also proves the
-    write misses the instruction bytes; it does not establish all fields of
-    VMSailNoSelfModifying for that program. *)
+    PromiseFirstSailMixed transports a completed UM certificate before a
+    fixed-history instruction prefix, including error-ending certificates.
+    With the candidate's thread ownership given explicitly, it also replays
+    that prefix to the actual state obtained by promising at its old endpoint.
+    The original VM lookup counterexample is preserved at commit 7df9902.
+    With the lookup fix, PromiseFirstSailVMLookup proves that an actual global
+    promise preserves successful lookup candidates within the old history's
+    time bound, including table walks and invalid L0 candidates. Future foreign
+    TLBIs can add deadlines beyond that bound. PromiseFirstSailVMRootWrite
+    provides a complete promise-first run and a shared direct final result for
+    the actual Sail root-PTE write. Full VM instruction replay must also handle
+    query bounds that grow and changes of register context. *)
 Definition UMSailPromiseFirstClaim : Prop :=
   ∀ nondet n (term : terminationCondition n) initMs code,
     UMSailNoSelfModifying nondet term initMs code →
