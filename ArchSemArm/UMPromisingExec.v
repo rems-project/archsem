@@ -47,10 +47,7 @@ From ArchSemArm Require Import ArmInst UMPromising.
 #[local] Open Scope stdpp.
 
 Definition UMPromising_nocert :=
-  Promising_to_Modelnc (*certified=*)false UMPromising.
-
-Definition UMPromising_cert :=
-  Promising_to_Modelnc (*certified=*)true UMPromising.
+  Promising_to_Modelnc UMPromising.
 
 Definition UMPromising_exe := Promising_to_Modelc UMPromising.
 

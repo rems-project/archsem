@@ -1,10 +1,40 @@
-(coq.theory
+(rocq.theory
  (name ArchSemArm.Proof)
  (modules
-  UMPromisingFacts
-  UMPromisingFinalEquiv
-  VMPromisingFacts
-  VMPromisingFinalEquiv)
+  PromiseFirstCurrent
+  PromiseFirstMemoryCurrent
+  PromiseFirstExecutionCurrent
+  PromiseFirstVMExecutionCurrent
+  PromiseFirstCounterexampleCurrent
+  PromiseFirstPrefixPrototype
+  PromiseFirstEquivCurrent
+  PromiseFirstConcreteCurrent
+  PromiseFirstSailSyntax
+  PromiseFirstSailExecution
+  PromiseFirstSailCertification
+  PromiseFirstSailSerialization
+  PromiseFirstSailScheduling
+  PromiseFirstSailNoFuel
+  PromiseFirstSailVMFinalObstruction
+  PromiseFirstSailState
+  PromiseFirstSailReplay
+  PromiseFirstSailRead
+  PromiseFirstSailFulfilled
+  PromiseFirstSailControl
+  PromiseFirstSailInstruction
+  PromiseFirstSailSequence
+  PromiseFirstSailThread
+  PromiseFirstSailThreadCertification
+  PromiseFirstSailThreadNormalization
+  PromiseFirstSailInterleaving
+  PromiseFirstSailMixed
+  PromiseFirstSailForeign
+  PromiseFirstSailVMReplay
+  PromiseFirstSailVMTranslation
+  PromiseFirstSailVMCache
+  PromiseFirstSailVMCacheFill
+  PromiseFirstSailVMLookupObstruction
+  PromiseFirstSailCurrent)
  (theories
   Stdlib
   stdpp
@@ -18,10 +48,112 @@
   SailTinyArm
   ArchSemArm))
 
+; The UMPromisingFacts/VMPromisingFacts proof stack targets the pre-main
+; promise-first API and is retained as historical source.  The current proof
+; alias is built from the reworked statement below.
+
 (alias
  (name proof)
  (deps
-  UMPromisingFacts.vo
-  UMPromisingFinalEquiv.vo
-  VMPromisingFacts.vo
-  VMPromisingFinalEquiv.vo))
+  PromiseFirstCurrent.vo
+  PromiseFirstMemoryCurrent.vo
+  PromiseFirstExecutionCurrent.vo
+  PromiseFirstVMExecutionCurrent.vo
+  PromiseFirstCounterexampleCurrent.vo
+  PromiseFirstPrefixPrototype.vo
+  PromiseFirstEquivCurrent.vo
+  PromiseFirstConcreteCurrent.vo
+  PromiseFirstSailSyntax.vo
+  PromiseFirstSailExecution.vo
+  PromiseFirstSailCertification.vo
+  PromiseFirstSailSerialization.vo
+  PromiseFirstSailScheduling.vo
+  PromiseFirstSailNoFuel.vo
+  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailState.vo
+  PromiseFirstSailReplay.vo
+  PromiseFirstSailRead.vo
+  PromiseFirstSailFulfilled.vo
+  PromiseFirstSailControl.vo
+  PromiseFirstSailInstruction.vo
+  PromiseFirstSailSequence.vo
+  PromiseFirstSailThread.vo
+  PromiseFirstSailThreadCertification.vo
+  PromiseFirstSailThreadNormalization.vo
+  PromiseFirstSailInterleaving.vo
+  PromiseFirstSailMixed.vo
+  PromiseFirstSailForeign.vo
+  PromiseFirstSailVMReplay.vo
+  PromiseFirstSailVMTranslation.vo
+  PromiseFirstSailVMCache.vo
+  PromiseFirstSailVMCacheFill.vo
+  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailCurrent.vo))
+
+(alias
+ (name proof-current)
+ (deps
+  PromiseFirstCurrent.vo
+  PromiseFirstMemoryCurrent.vo
+  PromiseFirstExecutionCurrent.vo
+  PromiseFirstVMExecutionCurrent.vo
+  PromiseFirstCounterexampleCurrent.vo
+  PromiseFirstPrefixPrototype.vo
+  PromiseFirstEquivCurrent.vo
+  PromiseFirstConcreteCurrent.vo
+  PromiseFirstSailSyntax.vo
+  PromiseFirstSailExecution.vo
+  PromiseFirstSailCertification.vo
+  PromiseFirstSailSerialization.vo
+  PromiseFirstSailScheduling.vo
+  PromiseFirstSailNoFuel.vo
+  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailState.vo
+  PromiseFirstSailReplay.vo
+  PromiseFirstSailRead.vo
+  PromiseFirstSailFulfilled.vo
+  PromiseFirstSailControl.vo
+  PromiseFirstSailInstruction.vo
+  PromiseFirstSailSequence.vo
+  PromiseFirstSailThread.vo
+  PromiseFirstSailThreadCertification.vo
+  PromiseFirstSailThreadNormalization.vo
+  PromiseFirstSailInterleaving.vo
+  PromiseFirstSailMixed.vo
+  PromiseFirstSailForeign.vo
+  PromiseFirstSailVMReplay.vo
+  PromiseFirstSailVMTranslation.vo
+  PromiseFirstSailVMCache.vo
+  PromiseFirstSailVMCacheFill.vo
+  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailCurrent.vo))
+
+(alias
+ (name proof-sail)
+ (deps
+  PromiseFirstSailSyntax.vo
+  PromiseFirstSailExecution.vo
+  PromiseFirstSailCertification.vo
+  PromiseFirstSailSerialization.vo
+  PromiseFirstSailScheduling.vo
+  PromiseFirstSailNoFuel.vo
+  PromiseFirstSailVMFinalObstruction.vo
+  PromiseFirstSailState.vo
+  PromiseFirstSailReplay.vo
+  PromiseFirstSailRead.vo
+  PromiseFirstSailFulfilled.vo
+  PromiseFirstSailControl.vo
+  PromiseFirstSailInstruction.vo
+  PromiseFirstSailSequence.vo
+  PromiseFirstSailThread.vo
+  PromiseFirstSailThreadCertification.vo
+  PromiseFirstSailThreadNormalization.vo
+  PromiseFirstSailInterleaving.vo
+  PromiseFirstSailMixed.vo
+  PromiseFirstSailForeign.vo
+  PromiseFirstSailVMReplay.vo
+  PromiseFirstSailVMTranslation.vo
+  PromiseFirstSailVMCache.vo
+  PromiseFirstSailVMCacheFill.vo
+  PromiseFirstSailVMLookupObstruction.vo
+  PromiseFirstSailCurrent.vo))

@@ -445,7 +445,7 @@ Proof.
   - constructor.
   - rewrite NoDup_cons.
     split.
-    + rewrite elem_of_list_fmap.
+    + rewrite list_elem_of_fmap.
       intros [i [Heq _]].
       inversion Heq.
     + apply NoDup_fmap_2.
@@ -464,8 +464,8 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   unfold fmap, Exec.fmap_inst, res_fmap_inst.
   cbn.
-  rewrite elem_of_list_fmap.
-  apply elem_of_list_lookup in Hx as [i Hi].
+  rewrite list_elem_of_fmap.
+  apply list_elem_of_lookup in Hx as [i Hi].
   assert (Hlt : i < length l) by (eapply lookup_lt_Some; eauto).
   exists (st, nat_to_fin Hlt).
   split.
@@ -475,7 +475,7 @@ Proof.
     rewrite vec_to_list_to_vec.
     rewrite fin_to_nat_to_fin.
     exact Hi.
-  - rewrite elem_of_list_fmap.
+  - rewrite list_elem_of_fmap.
     exists (nat_to_fin Hlt).
     split; [reflexivity|apply elem_of_fin_enum].
 Qed.
@@ -489,8 +489,8 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   unfold fmap, res_fmap_inst.
   cbn.
-  rewrite elem_of_list_fmap.
-  apply elem_of_list_lookup in Hx as [i Hi].
+  rewrite list_elem_of_fmap.
+  apply list_elem_of_lookup in Hx as [i Hi].
   assert (Hlt : i < length l) by (eapply lookup_lt_Some; eauto).
   exists (nat_to_fin Hlt).
   split.
@@ -510,10 +510,10 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   unfold fmap, res_fmap_inst.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [idx [Hx _]].
   inversion Hx; subst x.
-  apply elem_of_list_lookup.
+  apply list_elem_of_lookup.
   exists (idx : nat).
   pose proof
     (proj1 (vlookup_lookup (list_to_vec l) idx
@@ -529,7 +529,7 @@ Proof.
   unfold elem_of, elem_of_results.
   destruct r as [rs es].
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intro H.
   exists x.
   split; [reflexivity|exact H].
@@ -545,7 +545,7 @@ Proof.
   unfold fmap, Exec.fmap_inst.
   destruct (e st) as [rs es].
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [[st0 a] [Heq Hin]].
   inversion Heq; subst.
   exists a.
@@ -561,7 +561,7 @@ Proof.
   unfold fmap, Exec.fmap_inst.
   destruct (e st) as [rs es].
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intro Hin.
   exists (st', a).
   split; [reflexivity|exact Hin].
@@ -574,7 +574,7 @@ Proof.
   unfold elem_of, elem_of_results.
   destruct r as [rs es].
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [y [Heq Hy]].
   inversion Heq; subst.
   naive_solver.
@@ -590,7 +590,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   destruct (e (getter st)) as [rs es] eqn:He.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intro Hin.
   exists (st', a).
   split; [reflexivity|].
@@ -610,7 +610,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   destruct (e (getter st)) as [rs es] eqn:He.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [[st_inner a0] [Heq Hin]].
   inversion Heq; subst.
   exists st_inner.
@@ -625,7 +625,7 @@ Proof.
   unfold mchoose.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [i' [Heq _]].
   inversion Heq.
   reflexivity.
@@ -637,7 +637,7 @@ Proof.
   unfold mchoose.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   exists i.
   split; [reflexivity|apply elem_of_fin_enum].
 Qed.
@@ -650,14 +650,14 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   unfold fmap, Exec.fmap_inst, res_fmap_inst.
   cbn.
-  rewrite elem_of_list_fmap.
+  rewrite list_elem_of_fmap.
   intros [[st0 idx] [Heq Hidx]].
   inversion Heq; subst st' x.
-  rewrite elem_of_list_fmap in Hidx.
+  rewrite list_elem_of_fmap in Hidx.
   destruct Hidx as [idx' [Heq_idx _]].
   inversion Heq_idx; subst st0 idx'.
   split; [reflexivity|].
-  apply elem_of_list_lookup.
+  apply list_elem_of_lookup.
   exists (idx : nat).
   pose proof
     (proj1 (vlookup_lookup (list_to_vec l) idx
@@ -671,7 +671,7 @@ Lemma elem_of_mGet {St E} st :
 Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  apply elem_of_list_singleton.
+  apply list_elem_of_singleton.
   reflexivity.
 Qed.
 
@@ -682,7 +682,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
   intro H.
-  apply elem_of_list_singleton in H.
+  apply list_elem_of_singleton in H.
   inversion H; subst.
   naive_solver.
 Qed.
@@ -693,7 +693,7 @@ Proof.
   unfold mget.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  apply elem_of_list_singleton.
+  apply list_elem_of_singleton.
   reflexivity.
 Qed.
 
@@ -705,7 +705,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
   intro H.
-  apply elem_of_list_singleton in H.
+  apply list_elem_of_singleton in H.
   inversion H; subst.
   naive_solver.
 Qed.
@@ -715,7 +715,7 @@ Lemma elem_of_mret {St E A} st (x : A) :
 Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  apply elem_of_list_singleton.
+  apply list_elem_of_singleton.
   reflexivity.
 Qed.
 
@@ -726,7 +726,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
   intro H.
-  apply elem_of_list_singleton in H.
+  apply list_elem_of_singleton in H.
   inversion H; subst.
   naive_solver.
 Qed.
@@ -839,7 +839,7 @@ Lemma elem_of_mSetv {St E} st (v : St) :
 Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
-  apply elem_of_list_singleton.
+  apply list_elem_of_singleton.
   reflexivity.
 Qed.
 
@@ -850,7 +850,7 @@ Proof.
   unfold elem_of, Exec.elem_of_results.
   cbn.
   intro H.
-  apply elem_of_list_singleton in H.
+  apply list_elem_of_singleton in H.
   inversion H.
   reflexivity.
 Qed.
@@ -886,7 +886,7 @@ Proof.
   eapply Exec.elem_of_bind_intro with (st' := st) (a := st).
   - unfold elem_of, Exec.elem_of_results.
     cbn.
-    apply elem_of_list_singleton.
+    apply list_elem_of_singleton.
     reflexivity.
   - apply elem_of_mSetv.
 Qed.
@@ -917,7 +917,7 @@ Proof.
   apply Exec.elem_of_bind_elim in Hres as [st0 [s [Hget Hset]]].
   unfold elem_of, Exec.elem_of_results in Hget.
   cbn in Hget.
-  apply elem_of_list_singleton in Hget.
+  apply list_elem_of_singleton in Hget.
   inversion Hget; subst st0 s.
   apply elem_of_mSetv_inv in Hset.
   exact Hset.
