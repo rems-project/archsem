@@ -48,25 +48,22 @@ From ArchSemArm Require Import ArmInst VMPromising.
 #[local] Open Scope nat.
 #[local] Open Scope stdpp.
 
-Definition VMPromising_nocert (bbm_param : BBM.param) :=
-  Promising_to_Modelnc (*certified=*)false (VMPromising bbm_param).
+Definition VMPromising_nocert (bbm_param : bool) :=
+  Promising_to_Modelnc (VMPromising bbm_param).
 
-Definition VMPromising_cert (bbm_param : BBM.param) :=
-  Promising_to_Modelnc (*certified=*)true (VMPromising bbm_param).
-
-Definition VMPromising_exe (bbm_param : BBM.param) :=
+Definition VMPromising_exe (bbm_param : bool) :=
   Promising_to_Modelc (VMPromising bbm_param).
 
-Definition VMPromising_pf (bbm_param : BBM.param) :=
+Definition VMPromising_pf (bbm_param : bool) :=
   Promising_to_Modelc_pf (VMPromising bbm_param).
 
-Definition VMPromising_final_state (bbm_param : BBM.param) {n}
+Definition VMPromising_final_state (bbm_param : bool) {n}
     (isem : iMon ()) (term : terminationCondition n) initMs fs : Prop :=
   ∃ fuel pt,
     archModel.Res.FinalState fs pt ∈
       VMPromising_exe bbm_param isem fuel n term initMs.
 
-Definition VMPromising_pf_final_state (bbm_param : BBM.param) {n}
+Definition VMPromising_pf_final_state (bbm_param : bool) {n}
     (isem : iMon ()) (term : terminationCondition n) initMs fs : Prop :=
   ∃ fuel pt,
     archModel.Res.FinalState fs pt ∈
