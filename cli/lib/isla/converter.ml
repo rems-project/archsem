@@ -102,10 +102,17 @@ let eval_context_path = function
 
 (** {2 Term evaluation} *)
 
-let eval_error context fmt =
-  Printf.ksprintf
-    (fun msg -> raise (Eval_error (eval_context_path context, msg)))
-    fmt
+let eval_error_at path fmt =
+  Printf.ksprintf (fun msg -> raise (Eval_error (path, msg))) fmt
+
+let eval_error context fmt = eval_error_at (eval_context_path context) fmt
+
+let check_symbol_name path name =
+  if not (Lexer.is_ident name) then
+    eval_error_at path
+      "Symbol %S is invalid: names must start with a letter or '_', only contain \
+       letters, digits and '_', and not be a keyword"
+       name
 
 let eval_term ~context ~state term =
   try
@@ -141,11 +148,9 @@ let thread_section_name tid = Printf.sprintf "__thread%d" tid
 
 let symbolic_names ir =
   let add path names name =
-    ( try Eval_state.check_symbol_name name
-      with Failure msg -> raise (Eval_error (path, msg))
-    );
+    check_symbol_name path name;
     if List.mem name names then
-      raise (Eval_error (path, Printf.sprintf "Symbol %s is already defined" name));
+      eval_error_at path "Symbol %s is already defined" name;
     names @ [name]
   in
   let rec collect names = function
@@ -166,10 +171,13 @@ let checked_virtual_alignment alignment =
     with Z.Overflow ->
       eval_error Page_table_setup "page_table: virtual alignment is out of range"
   in
-  if alignment <= 0 || alignment mod Allocator.page_size <> 0 then
+  (* Alignment requests are combined with [max], which preserves all requests
+     when each alignment is a power of two. *)
+  if alignment < Allocator.page_size || alignment land (alignment - 1) <> 0 then
     eval_error Page_table_setup
-      "page_table: virtual alignment must be a positive multiple of page size: %d"
-      alignment;
+      "page_table: virtual alignment must be a power of two of at least %d \
+       bytes: %d"
+       Allocator.page_size alignment;
   alignment
 
 let checked_mapping_alignment level =
@@ -259,6 +267,7 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
   let named_sections =
     List.map
       (fun (sec : Ir.section) ->
+         check_symbol_name ["section"; sec.sec_name] sec.sec_name;
          let addr =
            match sec.address with
            | Some addr -> addr
@@ -282,10 +291,29 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
 
 let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
   let input = to_assembly_input ~code_allocator ~symbol_allocator ir in
-  let result = Assembler.assemble ~filename input in
-  List.iter
-    (fun (name, addr) -> Eval_state.add_symbol state name addr)
-    result.symbols;
+  let result =
+    try
+      let result = Assembler.assemble ~filename input in
+      List.iter
+        (fun (name, addr) -> Eval_state.add_symbol state name addr)
+        result.symbols;
+      result
+    with Failure msg -> eval_error_at ["code"] "%s" msg
+  in
+  (* Assembly preserves input order: threads followed by named sections. *)
+  List.iteri
+    (fun i (sec : Assembler.linked_section) ->
+       let size = Bytes.length sec.data in
+       if size > Allocator.page_size then
+         let path =
+           if i < List.length ir.threads then ["thread"; string_of_int i; "code"]
+           else ["section"; sec.name; "code"]
+         in
+         eval_error_at path
+           "Code section %s is %d bytes; expected at most %d bytes" sec.name size
+           Allocator.page_size
+     )
+    result.sections;
   (input, result)
 
 (** {2 Thread register construction} *)
