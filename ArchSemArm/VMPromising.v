@@ -1350,13 +1350,14 @@ Module TLB.
         result string (list Result.t) :=
       if decide (tmax < tmin) then mret [] else
       if child_lvl (FE.lvl fe) is Some lvl then
+        let presults :=
+          get_results_from_events (FE.ttbr fe) (FE.ptes fe) events tmin tmax None
+        in
+        if presults is [] then mret [] else
         let next_table := FE.next_table fe in
         let index := vpn_level_index lvl vpn in
         let next_pte_addr := index_table next_table index in
         ptes ← Memory.read_all_pte next_pte_addr imem mem tmin tmax;
-        let presults :=
-          get_results_from_events (FE.ttbr fe) (FE.ptes fe) events tmin tmax None
-        in
         mret $ get_results_from_events_uncacheable_aux presults ptes tmin tmax lvl
       else mret [].
 
