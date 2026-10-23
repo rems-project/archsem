@@ -1533,73 +1533,42 @@ Module TState.
   Definition min_new_prom_view (ts : t) : view :=
     ts.(vdsb) ⊔ ts.(vspec) ⊔ ts.(vcse).
 
-  Definition filter_wsreg : list LEv.t → list WSReg.t := omap LEv.get_wsreg.
+  Section SysRegReadLev.
+    Context (regs : dmap reg (λ reg, reg_type reg * view)%type).
+    Context (sreg : reg).
 
-  Definition filter_cse : list LEv.t → list view := omap LEv.get_cse.
+    (** Do a direct system register read: Return the last value written *)
+    Fixpoint read_sreg_direct_lev (lev : list LEv.t) :
+        option (reg_type sreg * view) :=
+      if lev is ev :: tl then
+        if ev is LEv.Wsreg wsreg then
+          if WSReg.to_val_view_if sreg wsreg is Some vlvw then Some vlvw
+          else read_sreg_direct_lev tl
+        else read_sreg_direct_lev tl
+      else dmap_lookup sreg regs.
 
-  (** Convert a CSE timestamp to the suffix position expected by
-      read_sreg_last. Events are stored newest-first in levs, so an event at
-      index i corresponds to the suffix of length lev_cur ts - i. *)
-  Definition cse_position (ts : t) (cse : view) : nat :=
-    match List.find
-      (λ '(_, lev), if lev is LEv.Cse t then t =? cse else false)
-      (enumerate ts.(levs)) with
-    | Some (i, _) => (lev_cur ts - i)%nat
-    | None => 0%nat
-    end.
+    (** Do an indirect system register read: Return the last CSE synchronised value
+        plus all the value written since that last CSE. *)
+    Fixpoint read_sreg_indirect_lev (lev : list LEv.t) :
+        option (list (reg_type sreg * view)) :=
+      if lev is ev :: tl then
+        if ev is LEv.Wsreg wsreg then
+          rest ← read_sreg_indirect_lev tl;
+          if WSReg.to_val_view_if sreg wsreg is Some vlvw then
+            Some (vlvw :: rest)
+          else Some rest
+        else (* CSE *) read_sreg_direct_lev tl |$> (λ x, [x])
+      else dmap_lookup sreg regs |$> (λ x, [x]).
+    End SysRegReadLev.
 
-  (** Read the last system register write at system register position s *)
-  Definition read_sreg_last (ts : t) (sreg : reg) (s : nat) :=
-    let newval :=
-      ts.(levs)
-      |> drop ((lev_cur ts) - s)
-      |> filter_wsreg
-      |> omap (WSReg.to_val_view_if sreg)
-      |> hd_error in
-    newval ∪ dmap_lookup sreg ts.(regs).
-
-  (** Read all possible system register values for sreg assuming the optional
-      last synchronization timestamp tcse *)
-  Definition read_sreg_by_cse (ts : t) (sreg : reg) (tcse : option nat)
-    : option (list (reg_type sreg * view))
-    :=
-    let s := if tcse is Some tcse then cse_position ts tcse else 0%nat in
-    sync_val ← read_sreg_last ts sreg s;
-    let rest :=
-      ts.(levs)
-      |> take ((lev_cur ts) - s)
-      |> filter_wsreg
-      |> omap (WSReg.to_val_view_if sreg)
-    in Some $ sync_val :: rest.
-
-  (** Read the most recent system register write (for MRS implementation). *)
+  (** Do a direct system register read: Return the last value written *)
   Definition read_sreg_direct (ts : t) (sreg : reg) :=
-    read_sreg_last ts sreg (lev_cur ts).
+    read_sreg_direct_lev ts.(regs) sreg ts.(levs).
 
-  (** Read possible system register values from the timestamp of the most recent CSE *)
+  (** Do an indirect system register read: Return the last CSE synchronised value
+      plus all the value written since that last CSE. *)
   Definition read_sreg_indirect (ts : t) (sreg : reg) :=
-    let max_cse :=
-      ts.(levs)
-           |> filter_cse
-           |> hd_error
-    in
-    read_sreg_by_cse ts sreg max_cse.
-
-  (** Read system register values at the timestamp t *)
-  Definition read_sreg_at (ts : t) (sreg : reg) (t : nat) :
-      option (list (reg_type sreg * nat)) :=
-    let last_cse :=
-      ts.(levs)
-           |> filter_cse
-           |> filter (λ tcse, tcse < t)
-           |> hd_error
-    in
-    read_sreg_by_cse ts sreg last_cse
-      |$> omap (M:=list) (
-            λ '(val, view),
-              if bool_decide (view ≤ t)
-              then Some (val, view)
-              else None).
+    read_sreg_indirect_lev ts.(regs) sreg ts.(levs).
 
   (** Read uniformly a register of any kind. *)
   Definition read_reg (ts : t) (r : reg) : option (reg_type r * view) :=
