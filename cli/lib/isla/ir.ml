@@ -68,6 +68,9 @@ type t =
     page_table_setup : Page_table_ast.stmt list;
     symbolic : string list;
     sizes : (string * int) list;
+    (* [name, (base, offset)]: [name] is defined as [base + offset] instead of
+       being allocated. *)
+    offsets : (string * (string * int)) list;
     locations : (string * Term.t) list;
     kind : Litmus.Testrepr.kind;
     assertion : Term.t Assertion.expr
@@ -201,6 +204,14 @@ let parse_arch toml =
 
 let parse_sizes toml = Toml.get_table_values Toml.get_positive toml
 
+let parse_offset toml =
+  let offset = Toml.find toml Toml.get_integer ["offset"] in
+  if offset < 0 then
+    Toml.error ~path:["offset"] "Expected non-negative integer, got %i" offset;
+  (Toml.find toml Toml.get_string ["base"], offset)
+
+let parse_offsets toml = Toml.get_table_values parse_offset toml
+
 let lexbuf_line_char lexbuf =
   let pos = Lexing.lexeme_start_p lexbuf in
   (pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1)
@@ -227,6 +238,7 @@ let of_toml toml =
     symbolic =
       Toml.find_or ~default:[] toml (Toml.get_array Toml.get_string) ["symbolic"];
     sizes = Toml.find_or ~default:[] toml parse_sizes ["sizes"];
+    offsets = Toml.find_or ~default:[] toml parse_offsets ["offsets"];
     locations =
       Toml.find_or ~default:[] toml
         (Toml.get_table_values parse_term)

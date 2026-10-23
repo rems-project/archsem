@@ -100,6 +100,16 @@ let check_arch = function
       error "page_table: only AArch64 is supported, got %s"
         (Litmus.Arch_id.to_string arch)
 
+(* Define the offset symbols whose base is now known. An offset from a PA
+   symbol is a PA symbol too, with its own backing memory. *)
+let resolve_offsets builder =
+  List.iter
+    (fun (name, base, addr) ->
+       if Hashtbl.mem builder.data_symbols_pa base then
+         Hashtbl.add builder.data_symbols_pa name addr
+     )
+    (Eval_state.resolve_offsets builder.state)
+
 let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
   let alignment =
     max alignment
@@ -122,12 +132,16 @@ let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
               name addr alignment
     )
   | None ->
+      if Hashtbl.mem builder.state.offsets name then
+        error "page_table: define the physical base of offset %s before using it"
+          name;
       let addr =
         Allocator.alloc_aligned builder.symbol_allocator ~size:alignment
           ~alignment
       in
       Hashtbl.add builder.data_symbols_pa name addr;
       Eval_state.add_symbol builder.state name addr;
+      resolve_offsets builder;
       addr
 
 (** {1 Table roots and page allocation} *)
@@ -352,7 +366,11 @@ let rec eval_stmt builder ~table_block ~root = function
       eval_mapping_target ?level ~attrs builder ~root ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
-      let pa = alloc_pa builder pa_name in
+      let pa =
+        match Hashtbl.find_opt builder.data_symbols_pa pa_name with
+        | Some pa -> pa
+        | None -> alloc_pa builder pa_name
+      in
       let value = Term.eval ~state:builder.state value in
       Hashtbl.replace builder.data_inits pa value
   | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code} ->
@@ -379,6 +397,7 @@ let rec eval_stmt builder ~table_block ~root = function
              builder.named_roots false
       then error "page_table: duplicate table base: 0x%x" base;
       Eval_state.add_symbol builder.state name base;
+      resolve_offsets builder;
       Hashtbl.add builder.named_roots name base;
       initialise_root builder ~table_block base;
       List.iter (eval_stmt builder ~table_block ~root:(Some base)) body
@@ -410,7 +429,9 @@ let build ~arch ~symbol_allocator ~table_allocator ~table_block ~state stmts =
   in
   state.Eval_state.page_table <- Some builder.entries;
   Option.iter (initialise_root builder ~table_block) builder.default_root;
-  ( try List.iter (eval_stmt builder ~table_block ~root:builder.default_root) stmts
+  ( try
+      resolve_offsets builder;
+      List.iter (eval_stmt builder ~table_block ~root:builder.default_root) stmts
     with Failure msg -> error "%s" msg
   );
   to_layout builder
