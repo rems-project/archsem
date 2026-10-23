@@ -75,15 +75,53 @@ type t =
 
 (** {1 Isla test parsing } *)
 
+module I = Parser.MenhirInterpreter
+module E = MenhirLib.ErrorReports
+
+(** Show the fragment of [text] between two positions, shortened to fit in an
+    error message *)
+let show_text text positions =
+  E.extract text positions |> E.sanitize |> E.compress |> E.shorten 20
+
+(** Run the incremental parser [entry] on [lexbuf], which reads [text]. On a
+    syntax error, return the message of the error state from [parser.messages],
+    in which every [$i] is replaced by the text of the [i]-th element of the
+    parser stack, counting from the top starting at 0 (as in the Menhir
+    calc-syntax-errors demo) *)
+let run_parser entry text lexbuf =
+  let supplier = I.lexer_lexbuf_to_supplier Lexer.token lexbuf in
+  let fail = function
+    | I.HandlingError env ->
+        let get i =
+          match I.get i env with
+          | Some (I.Element (_, _, pos1, pos2)) -> show_text text (pos1, pos2)
+          | None -> "???"
+        in
+        let msg =
+          try Parser_messages.message (I.current_state_number env)
+          with Not_found -> "Syntax error."
+        in
+        Error (E.expand get msg |> String.trim)
+    | _ -> assert false
+  in
+  I.loop_handle Result.ok fail supplier (entry lexbuf.lex_curr_p)
+
+(** Describe the token on which a syntax error happened *)
+let unexpected_token lexbuf =
+  match Lexing.lexeme lexbuf with
+  | "" -> "unexpected end of input"
+  | tok -> Printf.sprintf "unexpected '%s'" tok
+
 let parse_term : Toml.t -> Term.t = function
   | TomlInteger i -> Term.Const i
   | TomlString s -> (
       let lexbuf = Lexing.from_string s in
-      try Parser.binding Lexer.token lexbuf with
-      | Parser.Error ->
-          Toml.error "term parse error at position %d in: %s"
-            lexbuf.lex_curr_p.pos_cnum s
-      | Lexer.Error msg -> Toml.error "%s" msg
+      match run_parser Parser.Incremental.binding s lexbuf with
+      | Ok v -> v
+      | Error msg ->
+          Toml.error "term parse error at position %d (%s) in: %s\n%s"
+            lexbuf.lex_curr_p.pos_cnum (unexpected_token lexbuf) s msg
+      | exception Lexer.Error msg -> Toml.error "%s" msg
     )
   | value ->
       Toml.error
@@ -105,7 +143,7 @@ let parse_reset_entry k v =
 let parse_reset_table toml =
   Toml.get_table_key_values parse_reset_entry toml |> List.filter_map Fun.id
 
-let parse_thread (tid, table) =
+let parse_thread tid table =
   let tid = Litmus.Parser.parse_tid tid in
   let code = Toml.find table Toml.get_string ["code"] |> String.trim in
   let init =
@@ -125,9 +163,9 @@ let parse_thread (tid, table) =
   {tid; code; regs; breakpoints}
 
 let parse_threads toml =
-  let table = Toml.get_table toml in
   let l =
-    List.sort (fun a b -> compare a.tid b.tid) (List.map parse_thread table)
+    Toml.get_table_key_values parse_thread toml
+    |> List.sort (fun a b -> compare a.tid b.tid)
   in
   List.iteri (fun i t -> if i != t.tid then Toml.error "Thread %i is missing" i) l;
   l
@@ -143,11 +181,12 @@ let parse_sections toml = Toml.get_table_key_values parse_section toml
 
 let parse_assertion_expr s =
   let lexbuf = Lexing.from_string s in
-  try Parser.assertion Lexer.token lexbuf with
-  | Parser.Error ->
-      Toml.error "assertion parse error at position %d in: %s"
-        lexbuf.lex_curr_p.pos_cnum s
-  | Lexer.Error msg -> Toml.error "%s" msg
+  match run_parser Parser.Incremental.assertion s lexbuf with
+  | Ok e -> e
+  | Error msg ->
+      Toml.error "assertion parse error at position %d (%s) in: %s\n%s"
+        lexbuf.lex_curr_p.pos_cnum (unexpected_token lexbuf) s msg
+  | exception Lexer.Error msg -> Toml.error "%s" msg
 
 let parse_assertion toml =
   let assertion_str = Toml.get_string toml |> String.trim in
@@ -169,12 +208,14 @@ let lexbuf_line_char lexbuf =
 let parse_page_table_setup toml =
   let s = Toml.get_string toml |> String.trim in
   let lexbuf = Lexing.from_string s in
-  try Parser.page_table_setup Lexer.token lexbuf with
-  | Parser.Error ->
+  match run_parser Parser.Incremental.page_table_setup s lexbuf with
+  | Ok stmts -> stmts
+  | Error msg ->
       let (line, character) = lexbuf_line_char lexbuf in
-      Toml.error "page-table setup parse error at line %d, character %d" line
-        character
-  | Failure msg -> Toml.error "page-table setup parse error: %s" msg
+      Toml.error "page-table setup parse error at line %d, character %d (%s):\n%s"
+        line character (unexpected_token lexbuf) msg
+  | exception Failure msg -> Toml.error "page-table setup parse error: %s" msg
+  | exception Lexer.Error msg -> Toml.error "%s" msg
 
 let of_toml toml =
   { arch = Toml.find toml parse_arch ["arch"];

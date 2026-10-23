@@ -45,10 +45,18 @@
     Keeping the expression type here breaks the dependency cycle
     [Term -> Page_table_fns -> Page_table_ast -> Term]. *)
 
+type binary_op =
+  | Add
+  | Sub
+  | Bit_and
+  | Bit_or
+
 type t =
   | Const of Z.t
   | Sym of string
   | Fn of string * t list
   | KwFn of string * (string * t) list
+  | Binary of t * binary_op * t
+  | Negate of t
 
 let zero = Const Z.zero

@@ -50,6 +50,17 @@ let eval ~state term =
   let rec eval_term = function
     | Const z -> z
     | Sym sym -> Z.of_int (Eval_state.lookup_addr state sym)
+    | Binary (lhs, op, rhs) ->
+        let lhs = eval_term lhs in
+        let rhs = eval_term rhs in
+        ( match op with
+        | Add -> Z.add
+        | Sub -> Z.sub
+        | Bit_and -> Z.logand
+        | Bit_or -> Z.logor
+        )
+          lhs rhs
+    | Negate value -> Z.neg (eval_term value)
     | Fn (name, args) ->
         let evaluated = List.map eval_term args in
         Fn_registry.eval ~fns:positional_functions name evaluated

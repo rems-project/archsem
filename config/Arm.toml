@@ -4,7 +4,7 @@ arch = "Arm"
 page_table_setup_default_profile = "vm"
 
 [execution]
-fuel = 1000
+fuel = 100
 
 [vmp]
 bbm = false

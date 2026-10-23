@@ -1,0 +1,8 @@
+Test TTBR1+VM Allowed
+States 1
+0:X1=1; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition TTBR1+VM exists 0:X1=1
+Observation TTBR1+VM Always 1 0

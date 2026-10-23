@@ -54,6 +54,7 @@
 %token STAR "*"
 %token COLON ":"
 %token MINUS "-"
+%token PLUS "+"
 %token SEMICOLON ";"
 %token LBRACKET "["
 %token RBRACKET "]"
@@ -72,7 +73,6 @@
 %token CODE
 %token DATA
 %token INVALID
-%token TABLE
 %token S1TABLE
 %token S2TABLE
 %token AT
@@ -82,7 +82,24 @@
 
 %left OR
 %left AND
+%nonassoc EQ (* This is intended for the `atom` rule *)
+%left PLUS MINUS
 %nonassoc NOT
+
+(* On a syntax error after a complete term, comparison or proposition, report
+   it in the context of the enclosing construct rather than in the middle of an
+   infix expression *)
+%on_error_reduce closed_term term atom prop
+
+(* On a syntax error after a mapping target, report it in the same state
+   whatever the kind of target *)
+%on_error_reduce page_table_mapping_target
+
+(* The semicolon after a page-table block is optional and usually omitted: on a
+   syntax error after a block, report it as after any other statement.
+   On a syntax error in a block body, report it at the end of the body, where
+   the table name is known *)
+%on_error_reduce option(SEMICOLON) list(page_table_stmt)
 
 %start <Term.t Litmus.Assertion.expr> assertion
 %start <Term.t> binding
@@ -96,7 +113,7 @@
 %type <Page_table_ast.descriptor_expr_field list> page_table_descriptor_attrs
 %type <bool> page_table_bool
 %type <int> page_table_mapping_level
-%type <string> kw_name
+%type <Page_table_ast.table_stage> page_table_stage
 
 %%
 
@@ -139,12 +156,13 @@ page_table_stmt_inner:
     { Page_table_ast.IdentityMapping {addr; attr} }
 
 page_table_block:
-  | S1TABLE; name = IDENT; base = option(NUM); "{";
+  | stage = page_table_stage; name = IDENT; base = option(NUM); "{";
     body = list(page_table_stmt); "}"
-    { Page_table_ast.TableBlock {stage = Page_table_ast.S1; name; base; body} }
-  | S2TABLE; name = IDENT; base = NUM; "{";
-    body = list(page_table_stmt); "}"
-    { Page_table_ast.TableBlock {stage = Page_table_ast.S2; name; base = Some base; body} }
+    { Page_table_ast.TableBlock {stage; name; base; body} }
+
+page_table_stage:
+  | S1TABLE { Page_table_ast.S1 }
+  | S2TABLE { Page_table_ast.S2 }
 
 page_table_mapping_rhs:
   | target = page_table_mapping_target;
@@ -153,11 +171,14 @@ page_table_mapping_rhs:
     { (target, Option.value ~default:[] attrs, level) }
 
 page_table_mapping_target:
-  | name = IDENT { Page_table_ast.PaName name }
-  | value = NUM { Page_table_ast.Address (Term.Const value) }
-  | value = fn_term { Page_table_ast.Address value }
+  | value = term
+    { match value with
+      | Term.Sym name -> Page_table_ast.PaName name
+      | Term.Fn ("table", [addr]) -> Page_table_ast.Table addr
+      | Term.Fn ("table", _) | Term.KwFn ("table", _) ->
+          failwith "table(ADDR) takes a single positional argument"
+      | _ -> Page_table_ast.Address value }
   | INVALID { Page_table_ast.Invalid }
-  | TABLE; "("; addr = term; ")" { Page_table_ast.Table addr }
 
 page_table_descriptor_attrs:
   | WITH; "[";
@@ -202,23 +223,28 @@ atom:
 
 loc:
   | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
-  | "*"; s = IDENT { Mem s }
-  | "*"; addr = fn_term { MemAddr addr }
+  | "*"; addr = closed_term
+    { match addr with Term.Sym name -> Mem name | _ -> MemAddr addr }
 
 term:
+  | v = closed_term { v }
+  | "-"; v = closed_term
+    { match v with Term.Const z -> Term.Const (Z.neg z) | _ -> Term.Negate v }
+  | lhs = term; "+"; rhs = term { Term.Binary (lhs, Term.Add, rhs) }
+  | lhs = term; "-"; rhs = term { Term.Binary (lhs, Term.Sub, rhs) }
+  | lhs = term; "&"; rhs = term { Term.Binary (lhs, Term.Bit_and, rhs) }
+  | lhs = term; "|"; rhs = term { Term.Binary (lhs, Term.Bit_or, rhs) }
+
+closed_term:
   | v = NUM { Term.Const v }
-  | "-"; v = NUM { Term.Const (Z.neg v) }
   | fn = fn_term { fn }
   | s = IDENT; ":" { Term.Sym s }
   | s = IDENT { Term.Sym s }
+  | "("; v = term; ")" { v }
 
 fn_term:
   | f = IDENT; "("; args = separated_list(",", term); ")" { Term.Fn (f, args) }
   | f = IDENT; "("; kw = separated_nonempty_list(",", kw_arg); ")" { Term.KwFn (f, kw) }
 
 kw_arg:
-  | k = kw_name; "="; v = term { (k, v) }
-
-kw_name:
-  | k = IDENT { k }
-  | TABLE { "table" }
+  | k = IDENT; "="; v = term { (k, v) }

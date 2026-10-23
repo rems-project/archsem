@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "invalid-page-table-table-target"
+symbolic = ["x"]
+
+page_table_setup = """
+x |-> table(0x1000, 2) at level 2;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

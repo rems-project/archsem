@@ -1645,7 +1645,13 @@ Module TState.
         ( match sreg return reg_type sreg → stateT TLB.t (result string) () with
           | TTBR0_EL1 =>
               λ val,
-              TLB.fill_asid_root tid imem mem (bv_extract 48 16 val, val, false) v
+              let asid := bv_extract 48 16 val in
+              TLB.fill_asid_root tid imem mem (asid, val, false) v;;
+              let ttbr1s := default [] (read_sreg_indirect ts TTBR1_EL1) in
+              for (ttbr1, v1) in ttbr1s do
+                TLB.fill_asid_root tid imem mem (asid, ttbr1, true) (v ⊔ v1)
+              end;;
+              mret ()
           | TTBR1_EL1 =>
               λ val,
               ttbr0s ←
@@ -2425,8 +2431,8 @@ Definition run_trans_end (trans_end : trans_end) :
       if trans_time <=? trs.(IIS.TransRes.trans_end) then
         mset snd $ IIS.add trans_time;;
 
-        let is_write := fault.(FaultRecord_access).(AccessDescriptor_write) in
-        let vbob := (view_if is_write ts.(TState.vdmbst)) ⊔ ts.(TState.vdmb)
+        (* DMB ST orders preceding writes before both read and write faults. *)
+        let vbob := ts.(TState.vdmbst) ⊔ ts.(TState.vdmb)
               ⊔ ts.(TState.vdsb) ⊔ ts.(TState.vcse) ⊔ ts.(TState.vacq) in
         mset snd $ IIS.add vbob
       else mdiscard

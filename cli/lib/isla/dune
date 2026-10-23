@@ -3,9 +3,63 @@
 (library
  (name isla)
  (public_name archsem.isla)
- (libraries archsem litmus otoml zarith unix linksem))
+ (libraries archsem litmus otoml zarith unix linksem menhirLib))
 
 (ocamllex lexer)
 
 (menhir
- (modules parser))
+ (modules parser)
+ (flags --table))
+
+; Syntax error messages. parser.messages maps every error state of the grammar
+; to a message, see the "Error handling: the new way" section of the Menhir
+; manual.
+
+(rule
+ (with-stdout-to
+  parser_messages.ml
+  (run menhir %{dep:parser.mly} --compile-errors %{dep:parser.messages})))
+
+; Keep parser.messages in sync with the grammar: when the grammar changes, the
+; build fails on entries that are no longer valid and `dune runtest` shows the
+; update. `dune promote` drops invalid entries (check that their message is not
+; needed elsewhere), refreshes the comments and adds the missing entries with a
+; placeholder message to replace by hand. If two entries end up in the same
+; state, the build keeps failing until one of them is removed by hand.
+
+(rule
+ (with-stdout-to
+  parser.messages.all
+  (run menhir %{dep:parser.mly} --list-errors)))
+
+(rule
+ (with-stdout-to
+  parser.messages.merged
+  (run
+   menhir
+   %{dep:parser.mly}
+   --merge-errors
+   %{dep:parser.messages}
+   --merge-errors
+   %{dep:parser.messages.all})))
+
+(rule
+ (with-stdout-to
+  parser.messages.updated
+  (run
+   menhir
+   %{dep:parser.mly}
+   --update-errors
+   %{dep:parser.messages.merged})))
+
+(rule
+ (alias runtest)
+ (action
+  (diff parser.messages parser.messages.updated)))
+
+(rule
+ (alias runtest)
+ (deps parser.messages)
+ (action
+  (system
+   "! grep -n '<YOUR SYNTAX ERROR MESSAGE HERE>' parser.messages || { echo 'parser.messages: some error messages are placeholders' >&2; exit 1; }")))
