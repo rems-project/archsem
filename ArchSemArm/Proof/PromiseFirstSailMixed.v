@@ -9,7 +9,7 @@ From ArchSemArm.Proof Require Import PromiseFirstCurrent PromiseFirstConcreteCur
   PromiseFirstSailThreadCertification PromiseFirstSailCertification
   PromiseFirstSailInterleaving PromiseFirstSailScheduling PromiseFirstSailCurrent
   PromiseFirstEquivCurrent PromiseFirstSailState PromiseFirstSailForeign
-  PromiseFirstSailSerialization.
+  PromiseFirstSailSerialization PromiseFirstSailOwnership.
 
 #[local] Open Scope stdpp.
 #[local] Open Scope nat_scope.
@@ -28,6 +28,7 @@ Proof.
   eapply Nat.le_trans; [|exact IHHsteps].
   exact (instruction_min_view_monotone tid imem isem _ _ _ H0).
 Qed.
+
 (** Moving an own-thread promise before an unchanged-history prefix preserves
     that prefix. Its new pending timestamp remains pending at the endpoint.
     The endpoint view bound is supplied by [candidate_bounds] when the promise
@@ -395,9 +396,8 @@ Proof.
 Qed.
 
 (** A completed certificate can be moved across the whole fixed-history
-    interleaving and replayed up to the same endpoint. Message ownership is
-    an explicit premise here; the full mixed-trace normalization must derive
-    it for candidates collected from successful and failing searches. *)
+    interleaving and replayed up to the same endpoint. Ownership follows from
+    certification, including candidates collected from failing searches. *)
 Theorem UMSail_interleaved_complete_promise_replay nondet {n}
     (term : terminationCondition n) initMs code st before after (tid : fin n) fuel msg :
   UMSailNoSelfModifying nondet term initMs code →
@@ -409,14 +409,16 @@ Theorem UMSail_interleaved_complete_promise_replay nondet {n}
   msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.promises UMPromising) →
-  Msg.tid msg = (tid : nat) →
   PState.promise UMPromising msg before = Ok after →
   ∃ next, PState.promise UMPromising msg st = Ok next ∧
     StableCertifiedPromiseStep UMPromising nondet term st next ∧
     PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet) term initMs true next ∧
     rtc (InstructionTransition UMPromising nondet term) next after.
 Proof.
-  intros Hsafe Hreach Hprefix Hcomplete Hcandidate Howner Hlate.
+  intros Hsafe Hreach Hprefix Hcomplete Hcandidate Hlate.
+  pose proof (UMCollectedOwnership.enumerated_promise_owner tid
+    (PState.initmem before) (sail_tiny_arm_sem nondet) term fuel
+    (PState.tstate tid before) (PState.events before) msg Hcandidate) as Howner.
   destruct (UMSail_interleaved_complete_promise_before_prefix nondet term st before
     tid fuel msg Hprefix Hcomplete Hcandidate) as [next [Hpromise Hstable]].
   destruct (UMSail_interleaved_candidate_before_prefix nondet term st before
@@ -440,3 +442,151 @@ Proof.
   - eapply PromiseFirstReachable_step; eassumption.
   - eapply UMSail_fixed_prefix_promise_replay; eassumption.
 Qed.
+
+Section MixedFulfillment.
+Context (nondet : bool) {n : nat} (term : terminationCondition n).
+Local Notation state := (PState.t UMPromising.TState.t Msg.t n).
+Local Notation isem := (sail_tiny_arm_sem nondet).
+Local Notation fixed_step := (FixedHistoryInstructionStep nondet term).
+Local Notation promise_step := (StableCertifiedPromiseStep UMPromising nondet term).
+
+(** Instructions may read and fulfill old promises. Every event added to the
+    shared history in this trace comes from an explicit certified promise. *)
+Definition MixedFulfillmentStep (st next : state) : Prop :=
+  fixed_step st next ∨ promise_step st next.
+
+Lemma stable_promise_before_fixed_prefix initMs code st before after :
+  UMSailNoSelfModifying nondet term initMs code →
+  PromiseFirstReachable UMPromising isem term initMs true st →
+  rtc fixed_step st before → promise_step before after →
+  ∃ next, promise_step st next ∧
+    PromiseFirstReachable UMPromising isem term initMs true next ∧
+    rtc fixed_step next after.
+Proof.
+  intros Hsafe Hreach Hprefix [tid [msg [Hstable Hlate]]].
+  destruct (fixed_history_trace_projection nondet term st before Hprefix)
+    as [Himem [Hmem Hthreads]].
+  destruct (Hthreads tid) as [count Hthread]. rewrite Hmem in Hthread.
+  assert (Hstable_early : StablePromiseCandidate UMPromising nondet term tid
+    (PState.initmem st) (PState.tstate tid st) (PState.events st) msg).
+  { eapply UMMixedCertification.stable_candidate_before_fixed_prefix;
+      [exact Hthread|]. rewrite Himem, Hmem in Hstable. exact Hstable. }
+  destruct Hstable as [fuel Hcandidate]. specialize (Hcandidate fuel ltac:(lia)).
+  pose proof (UMCollectedOwnership.enumerated_promise_owner tid
+    (PState.initmem before) isem term fuel (PState.tstate tid before)
+    (PState.events before) msg Hcandidate) as Howner.
+  destruct (UMMixedCertification.candidate_bounds tid (PState.initmem before) term
+    isem fuel (PState.tstate tid before) (PState.events before) msg Hcandidate)
+    as [_ [Hbound _]]. rewrite Hmem in Hbound.
+  destruct (UMPromising_promise_exists msg st) as [next Hpromise].
+  assert (Hstable_step : promise_step st next).
+  { exists tid, msg. auto. }
+  destruct (stable_promise_first_step_fuel UMPromising nondet term st next Hstable_step)
+    as [threshold Hstep]. specialize (Hstep threshold ltac:(lia)).
+  destruct (UMSail_interleaved_candidate_before_prefix nondet term st before
+    tid fuel msg Hprefix Hcandidate) as [prefix_count Hearly].
+  pose proof (UMPromising_enumerated_promise_misses_code isem term initMs code true
+    st tid (prefix_count + fuel) msg (sail_observed_code_immutable _ _ _ _ _ _ Hsafe)
+    Hreach Hearly) as Hmiss.
+  exists next. split; [exact Hstable_step|]. split.
+  - eapply PromiseFirstReachable_step; eassumption.
+  - apply instruction_trace_fixed_history.
+    + eapply UMSail_fixed_prefix_promise_replay; eassumption.
+    + destruct (UMPromising_promise_success msg st next Hpromise) as [_ [Hnext _]].
+      destruct (UMPromising_promise_success msg before after Hlate) as [_ [Hafter _]].
+      rewrite Hafter, Hnext, Hmem. reflexivity.
+Qed.
+
+Lemma mixed_fulfillment_memory_suffix st final :
+  rtc MixedFulfillmentStep st final →
+  ∃ extra, PState.events final = (extra ++ PState.events st)%list.
+Proof.
+  intro Htrace. induction Htrace as [st|st mid final Hstep Htail [extra Hextra]].
+  - exists []. reflexivity.
+  - destruct Hstep as [[_ Hmem]|[tid [msg [_ Hpromise]]]].
+    + exists extra. rewrite Hextra, Hmem. reflexivity.
+    + destruct (UMPromising_promise_success msg st mid Hpromise) as [_ [Hmem _]].
+      exists (extra ++ [msg])%list. rewrite Hextra, Hmem, <- app_assoc. reflexivity.
+Qed.
+
+Lemma mixed_fulfillment_fixed_history st final :
+  rtc MixedFulfillmentStep st final → PState.events final = PState.events st →
+  rtc fixed_step st final.
+Proof.
+  intro Htrace. induction Htrace as [st|st mid final Hstep Htail IH]; intro Hmem.
+  - apply rtc_refl.
+  - destruct Hstep as [Hfixed|[tid [msg [_ Hpromise]]]].
+    + eapply rtc_l; [exact Hfixed|]. apply IH. rewrite (proj2 Hfixed). exact Hmem.
+    + destruct (mixed_fulfillment_memory_suffix mid final Htail) as [extra Hextra].
+      destruct (UMPromising_promise_success msg st mid Hpromise) as [_ [Hnew _]].
+      rewrite Hnew, Hmem in Hextra. apply (f_equal length) in Hextra.
+      rewrite length_app in Hextra. cbn in Hextra. lia.
+Qed.
+
+Lemma first_mixed_promise st final :
+  rtc MixedFulfillmentStep st final → PState.events final ≠ PState.events st →
+  ∃ before after, rtc fixed_step st before ∧ promise_step before after ∧
+    rtc MixedFulfillmentStep after final.
+Proof.
+  intro Htrace. induction Htrace as [st|st mid final Hstep Htail IH]; intro Hnew;
+    [contradiction|].
+  destruct Hstep as [Hfixed|Hpromise].
+  - destruct (IH ltac:(rewrite (proj2 Hfixed); exact Hnew))
+      as [before [after [Hprefix [Hpromise Hsuffix]]]].
+    exists before, after. split; [eapply rtc_l; eassumption|auto].
+  - exists st, mid. split; [apply rtc_refl|auto].
+Qed.
+
+Local Lemma normalize_mixed_fulfillment_bounded initMs code final budget :
+  ∀ st,
+  UMSailNoSelfModifying nondet term initMs code →
+  PromiseFirstReachable UMPromising isem term initMs true st →
+  rtc MixedFulfillmentStep st final →
+  length (PState.events final) ≤ budget + length (PState.events st) →
+  ∃ before, rtc promise_step st before ∧
+    PromiseFirstReachable UMPromising isem term initMs true before ∧
+    rtc fixed_step before final.
+Proof.
+  induction budget as [|budget IH]; intros st Hsafe Hreach Htrace Hbound.
+  - destruct (mixed_fulfillment_memory_suffix st final Htrace) as [extra Hextra].
+    assert (Hnil : extra = []).
+    { rewrite Hextra, length_app in Hbound. destruct extra; [reflexivity|cbn in Hbound; lia]. }
+    subst extra. cbn in Hextra.
+    exists st. split; [apply rtc_refl|]. split; [exact Hreach|].
+    apply mixed_fulfillment_fixed_history; assumption.
+  - destruct (decide (PState.events final = PState.events st)) as [Hsame|Hnew].
+    + exists st. split; [apply rtc_refl|]. split; [exact Hreach|].
+      apply mixed_fulfillment_fixed_history; assumption.
+    + destruct (first_mixed_promise st final Htrace Hnew)
+        as [before [after [Hprefix [Hpromise Hsuffix]]]].
+      destruct (stable_promise_before_fixed_prefix initMs code st before after
+        Hsafe Hreach Hprefix Hpromise) as [next [Hearly [Hreach_next Hreplay]]].
+      assert (Htrace_next : rtc MixedFulfillmentStep next final).
+      { eapply rtc_trans; [|exact Hsuffix].
+        clear -Hreplay.
+        induction Hreplay; [apply rtc_refl|]. eapply rtc_l; [left; eassumption|exact IHHreplay]. }
+      assert (Hbound_next : length (PState.events final) ≤ budget + length (PState.events next)).
+      { destruct Hearly as [tid [msg [_ Hemit]]].
+        destruct (UMPromising_promise_success msg st next Hemit) as [_ [Hmem _]].
+        rewrite Hmem. cbn [length]. rewrite Nat.add_succ_r. exact Hbound. }
+      destruct (IH next Hsafe Hreach_next Htrace_next Hbound_next)
+        as [last [Hpromises [Hreach_last Hfinal]]].
+      exists last. split; [eapply rtc_l; eassumption|auto].
+Qed.
+
+(** A complete mixed trace whose instructions only fulfill existing promises
+    is transformed into a stable promise prefix and an instruction suffix.
+    The full endpoint is preserved, including memory and all thread states. *)
+Theorem UMSail_mixed_fulfillment_normalization initMs code st final :
+  UMSailNoSelfModifying nondet term initMs code →
+  PromiseFirstReachable UMPromising isem term initMs true st →
+  rtc MixedFulfillmentStep st final →
+  ∃ before, rtc promise_step st before ∧
+    PromiseFirstReachable UMPromising isem term initMs true before ∧
+    rtc fixed_step before final.
+Proof.
+  intros Hsafe Hreach Htrace.
+  eapply (normalize_mixed_fulfillment_bounded initMs code final
+    (length (PState.events final))); try eassumption. lia.
+Qed.
+End MixedFulfillment.

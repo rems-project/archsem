@@ -27,7 +27,11 @@
   PromiseFirstSailThreadCertification
   PromiseFirstSailThreadNormalization
   PromiseFirstSailInterleaving
+  PromiseFirstSailOwnership
   PromiseFirstSailMixed
+  PromiseFirstSailFinalization
+  PromiseFirstSailDirect
+  PromiseFirstSailUMStore
   PromiseFirstSailForeign
   PromiseFirstSailVMReplay
   PromiseFirstSailVMTranslation
@@ -81,7 +85,11 @@
   PromiseFirstSailThreadCertification.vo
   PromiseFirstSailThreadNormalization.vo
   PromiseFirstSailInterleaving.vo
+  PromiseFirstSailOwnership.vo
   PromiseFirstSailMixed.vo
+  PromiseFirstSailFinalization.vo
+  PromiseFirstSailDirect.vo
+  PromiseFirstSailUMStore.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo
@@ -119,7 +127,11 @@
   PromiseFirstSailThreadCertification.vo
   PromiseFirstSailThreadNormalization.vo
   PromiseFirstSailInterleaving.vo
+  PromiseFirstSailOwnership.vo
   PromiseFirstSailMixed.vo
+  PromiseFirstSailFinalization.vo
+  PromiseFirstSailDirect.vo
+  PromiseFirstSailUMStore.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo
@@ -149,7 +161,11 @@
   PromiseFirstSailThreadCertification.vo
   PromiseFirstSailThreadNormalization.vo
   PromiseFirstSailInterleaving.vo
+  PromiseFirstSailOwnership.vo
   PromiseFirstSailMixed.vo
+  PromiseFirstSailFinalization.vo
+  PromiseFirstSailDirect.vo
+  PromiseFirstSailUMStore.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo

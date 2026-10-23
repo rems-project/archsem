@@ -146,12 +146,22 @@ Definition VMSailNoSelfModifying bbm nondet {n}
     instruction trace into a promise prefix using separately extracted fuel
     for each step, preserving the complete final state. Scheduling combines a
     stable promise prefix and final batch under one decreasing runner budget.
-    The direct-to-promise-first direction still needs normalization of mixed
-    promise/instruction traces and the corresponding VM translation replay.
     PromiseFirstSailMixed transports a completed UM certificate before a
     fixed-history instruction prefix, including error-ending certificates.
-    With the candidate's thread ownership given explicitly, it also replays
-    that prefix to the actual state obtained by promising at its old endpoint.
+    PromiseFirstSailOwnership derives the candidate's thread ownership from
+    certification. Mixed then normalizes any interleaving of stable promises
+    and fixed-history instructions, preserving the complete endpoint.
+    PromiseFirstSailFinalization converts a fixed-history instruction suffix
+    into a final batch when final minimum-promise views are bounded by memory.
+    PromiseFirstSailDirect connects this to the actual promise-first runner:
+    complete direct fulfillment witnesses preserve their architectural result
+    at every sufficiently large fuel. Its single-thread result also permits
+    fresh writes, using the terminating continuation to stabilize certificates.
+    Both results keep the final view bound explicit. PromiseFirstSailUMStore
+    inhabits the complete fulfillment witness with an actual Sail store and
+    proves a shared direct/promise-first final result. Interleavings that mix
+    fresh writes and explicit promises, and full VM translation replay, remain
+    outside these direct-to-promise-first results.
     The original VM lookup counterexample is preserved at commit 7df9902.
     With the lookup fix, PromiseFirstSailVMLookup proves that an actual global
     promise preserves successful lookup candidates within the old history's
