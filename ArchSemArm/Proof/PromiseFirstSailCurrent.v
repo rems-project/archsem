@@ -126,11 +126,17 @@ Definition VMSailNoSelfModifying bbm nondet {n}
   SailNoSelfModifying (VMPromising.VMPromising bbm) nondet
     term initMs VMPromisingReadByte code.
 
-(** These are the statements to prove. The instruction semantics is fixed;
-    neither statement assumes an execution transformation or changes the
-    current runner. Their proofs remain open. PromiseFirstSailSerialization
-    proves replay of the final batch; PromiseFirstSailScheduling identifies
-    unstable OutOfFuel certificates as the remaining reverse-direction case.
+(** The statements below record the broad equivalence target. They are not
+    established by the current proof stack. PromiseFirstSailVMTLBIOrder proves
+    that unrestricted VM direct-to-promise-first inclusion is false for the
+    current recipient-order filter: two broadcast TLBIs separated by DSB ISH
+    have a direct final result and no promise-first final result at any fuel.
+    Translation is enabled, BBM is disabled, the program performs no stores,
+    and the relevant searches are complete. The filter must be repaired before
+    a whole-program VM inclusion theorem can hold.
+    PromiseFirstSailSerialization proves replay of the final batch;
+    PromiseFirstSailScheduling identifies unstable OutOfFuel certificates
+    in the promise-first-to-direct direction.
     PromiseFirstSailNoFuel closes that case for UM and VM when certification
     searches at the budgets of a successful promise-first run are complete:
     the direct runner produces the same architectural final result at every
