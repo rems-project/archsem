@@ -42,6 +42,7 @@
   PromiseFirstSailVMLookup
   PromiseFirstSailVMDirect
   PromiseFirstSailVMRootDirect
+  PromiseFirstSailVMTLBIOrder
   PromiseFirstSailCurrent)
  (theories
   Stdlib
@@ -104,6 +105,7 @@
   PromiseFirstSailVMLookup.vo
   PromiseFirstSailVMDirect.vo
   PromiseFirstSailVMRootDirect.vo
+  PromiseFirstSailVMTLBIOrder.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -150,6 +152,7 @@
   PromiseFirstSailVMLookup.vo
   PromiseFirstSailVMDirect.vo
   PromiseFirstSailVMRootDirect.vo
+  PromiseFirstSailVMTLBIOrder.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -188,4 +191,5 @@
   PromiseFirstSailVMLookup.vo
   PromiseFirstSailVMDirect.vo
   PromiseFirstSailVMRootDirect.vo
+  PromiseFirstSailVMTLBIOrder.vo
   PromiseFirstSailCurrent.vo))
