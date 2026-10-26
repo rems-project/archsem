@@ -31,13 +31,17 @@
   PromiseFirstSailMixed
   PromiseFirstSailFinalization
   PromiseFirstSailDirect
+  PromiseFirstSailUMMixedDirect
   PromiseFirstSailUMStore
+  PromiseFirstSailUMTwoThread
   PromiseFirstSailForeign
   PromiseFirstSailVMReplay
   PromiseFirstSailVMTranslation
   PromiseFirstSailVMCache
   PromiseFirstSailVMCacheFill
   PromiseFirstSailVMLookup
+  PromiseFirstSailVMDirect
+  PromiseFirstSailVMRootDirect
   PromiseFirstSailCurrent)
  (theories
   Stdlib
@@ -89,13 +93,17 @@
   PromiseFirstSailMixed.vo
   PromiseFirstSailFinalization.vo
   PromiseFirstSailDirect.vo
+  PromiseFirstSailUMMixedDirect.vo
   PromiseFirstSailUMStore.vo
+  PromiseFirstSailUMTwoThread.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
   PromiseFirstSailVMLookup.vo
+  PromiseFirstSailVMDirect.vo
+  PromiseFirstSailVMRootDirect.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -131,13 +139,17 @@
   PromiseFirstSailMixed.vo
   PromiseFirstSailFinalization.vo
   PromiseFirstSailDirect.vo
+  PromiseFirstSailUMMixedDirect.vo
   PromiseFirstSailUMStore.vo
+  PromiseFirstSailUMTwoThread.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
   PromiseFirstSailVMLookup.vo
+  PromiseFirstSailVMDirect.vo
+  PromiseFirstSailVMRootDirect.vo
   PromiseFirstSailCurrent.vo))
 
 (alias
@@ -165,11 +177,15 @@
   PromiseFirstSailMixed.vo
   PromiseFirstSailFinalization.vo
   PromiseFirstSailDirect.vo
+  PromiseFirstSailUMMixedDirect.vo
   PromiseFirstSailUMStore.vo
+  PromiseFirstSailUMTwoThread.vo
   PromiseFirstSailForeign.vo
   PromiseFirstSailVMReplay.vo
   PromiseFirstSailVMTranslation.vo
   PromiseFirstSailVMCache.vo
   PromiseFirstSailVMCacheFill.vo
   PromiseFirstSailVMLookup.vo
+  PromiseFirstSailVMDirect.vo
+  PromiseFirstSailVMRootDirect.vo
   PromiseFirstSailCurrent.vo))

@@ -172,6 +172,43 @@ Proof.
 Qed.
 End Serialization.
 
+Lemma direct_run_invariant (prom : Promising.Model) (isem : iMon ()) {n}
+    (term : terminationCondition n) initMs
+    (Inv : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n → Prop)
+    (Result : {s & archState.is_terminated term s} → Prop) :
+  (∀ fuel st next, Inv st → Exec.elem_of_results (next, None)
+    (CPState.run_transition isem prom term (S fuel) st) → Inv next) →
+  (∀ st (pt : CPState.terminated prom term st), Inv st →
+    Result (CPState.to_final_archState (CPState.make_final prom term st pt))) →
+  ∀ fuel st returned fsig, Inv st → Exec.elem_of_results (returned, fsig)
+    (opModel.run (@CPState.opmodel isem prom n) fuel term initMs st) → Result fsig.
+Proof. intros Hstep Hfinal fuel. induction fuel as [|fuel IH]; intros st returned fsig Hinv Hrun.
+  - cbn [opModel.run] in Hrun. change ((returned, fsig) ∈ []) in Hrun. inversion Hrun.
+  - cbn [opModel.run] in Hrun.
+    apply Exec.elem_of_bind_elim in Hrun as [next [res [Htransition Htail]]].
+    destruct res as [sig|].
+    + apply Exec.elem_of_mret_inv in Htail as [Hreturned Hsig]. subst next sig.
+      destruct (run_transition_some_inv (prom := prom) isem term (S fuel) st returned fsig Htransition)
+        as [pt [_ ->]]. apply Hfinal, Hinv.
+    +
+      exact (IH next returned fsig (Hstep fuel st next Hinv Htransition) Htail).
+Qed.
+
+Lemma validate_final_preserves_state (prom : Promising.Model) {n}
+    (final ambient returned : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n) :
+  Exec.elem_of_results (returned, ()) (CPState.validate_final prom final ambient) →
+  returned = ambient.
+Proof.
+  unfold CPState.validate_final. intro Hrun.
+  apply Exec.elem_of_bind_elim in Hrun as [mid [pt [Hguard Htail]]].
+  apply Exec.elem_of_guard_discard_inv in Hguard as ->.
+  destruct (CPState.check_valid_end prom final) as [|err errs].
+  - apply Exec.elem_of_mret_inv in Htail as [Hstate _]. exact Hstate.
+  - apply Exec.elem_of_bind_elim in Htail as [last [e [_ Hthrow]]].
+    unfold mthrow, Exec.throw_inst, Exec.res_throw_inst, Exec.elem_of_results in Hthrow.
+    cbn in Hthrow. inversion Hthrow.
+Qed.
+
 Lemma validate_final_transport (prom : Promising.Model) {n}
     (final ambient ambient' returned : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n) :
   Exec.elem_of_results (returned, ()) (CPState.validate_final prom final ambient) →

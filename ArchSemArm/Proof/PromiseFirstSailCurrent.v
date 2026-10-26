@@ -159,17 +159,30 @@ Definition VMSailNoSelfModifying bbm nondet {n}
     fresh writes, using the terminating continuation to stabilize certificates.
     Both results keep the final view bound explicit. PromiseFirstSailUMStore
     inhabits the complete fulfillment witness with an actual Sail store and
-    proves a shared direct/promise-first final result. Interleavings that mix
-    fresh writes and explicit promises, and full VM translation replay, remain
-    outside these direct-to-promise-first results.
+    proves a shared direct/promise-first final result.
+    PromiseFirstSailUMMixedDirect normalizes arbitrary interleavings of fresh
+    writes and explicit promises for any finite number of threads. Actual
+    direct results transfer to the promise-first runner under the final view
+    bound and completeness of candidate-bearing searches exposed by this
+    normalization. Completeness only at the original direct searches or at one
+    larger fuel is not assumed to establish this premise. Without it, the
+    theorem gives a promise-first result or a reachable unstable candidate
+    whose enumeration reports OutOfFuel. PromiseFirstSailUMTwoThread proves
+    the selected searches complete for two actual Sail stores and preserves
+    the result of a direct path mixing a fresh write and an explicit promise.
     The original VM lookup counterexample is preserved at commit 7df9902.
     With the lookup fix, PromiseFirstSailVMLookup proves that an actual global
     promise preserves successful lookup candidates within the old history's
     time bound, including table walks and invalid L0 candidates. Future foreign
     TLBIs can add deadlines beyond that bound. PromiseFirstSailVMRootWrite
     provides a complete promise-first run and a shared direct final result for
-    the actual Sail root-PTE write. Full VM instruction replay must also handle
-    query bounds that grow and changes of register context. *)
+    the actual Sail root-PTE write. PromiseFirstSailVMDirect certifies bounded
+    fixed-history VM instruction suffixes with the actual handlers and final
+    BBM validation. PromiseFirstSailVMRootDirect proves direct-to-promise-first
+    inclusion for every successful direct run of the root-PTE program at any
+    fuel, with translation enabled and BBM checking disabled. Full VM replay
+    with interleaved new events, growing query bounds, and context changes
+    remains open. *)
 Definition UMSailPromiseFirstClaim : Prop :=
   ∀ nondet n (term : terminationCondition n) initMs code,
     UMSailNoSelfModifying nondet term initMs code →
