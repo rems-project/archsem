@@ -876,8 +876,8 @@ Module TLB.
         (** Map from physical page numbers to TLB entries that point to them *)
         next_table_cache : gmap pn (list FE.t);
 
-        (** Root contexts active at the end of memory, for new promises *)
-        asid_roots : list (bv 16 * bv 64 * bool);
+        (** Roots active at the end of memory, with their visibility times. *)
+        asid_roots : list ((bv 16 * bv 64 * bool) * nat);
 
         (** ETS level. Cannot be dynamically changed in this model. ETS1 is
             deprecated by Arm and behaves the same as ETS0 *)
@@ -1017,7 +1017,7 @@ Module TLB.
 
       (** Fill all entries reachable from a list of register contexts (asid,
           root, upper) *)
-      Definition fill_full (asid_roots : list (bv 16 * bv 64 * bool)) : tlb_mon () :=
+      Definition fill_from_roots (asid_roots : list (bv 16 * bv 64 * bool)) : tlb_mon () :=
         entries ← fill_root asid_roots;
         fill_from_entries entries.
 
@@ -1094,6 +1094,10 @@ Module TLB.
           (tlbi : TLBI.t) : tlb_mon () :=
         let last := TLBI.last tlbi in
         let tid := TLBI.tid tlbi in
+        (* Rollback can leave entries that have not been loaded yet. *)
+        let invalidate evs :=
+          if evs is [] then [] else (Entry.Tlbi tid, time) :: evs
+        in
         if last then
           (* For last TLBI invalidation, reloading from top won't work because
           parent entries are not invalidated, but reloading from parent entries
@@ -1105,18 +1109,18 @@ Module TLB.
           entries ← mget (VATLB.collect_fe (affects tlbi) ∘ vatlb);
           parent_entries ← for entry in entries do
             let page := FE.cur_table entry in
-            mset vatlb (alter ((Entry.Tlbi tid, time)::.) entry);;
+            mset vatlb (alter invalidate entry);;
             get_relevant_entries asids page
           end |$> List.concat;
           fill_from_entries parent_entries
         else
           let inv_if_affected fe evs :=
             if decide (affects tlbi fe) then
-              (Entry.Tlbi tid, time) :: evs
+              invalidate evs
             else evs
           in
           mset vatlb (VATLB.map_fe inv_if_affected);;
-          fill_full asid_roots.
+          fill_from_roots asid_roots.
 
       (** Updates the TLB for the event that is present at [time] based on the
           provided context roots (asid, root, upper). This assumes that [ev] is
@@ -1141,23 +1145,24 @@ Module TLB.
         of the first two is before the end of memory). This fact has not been
         proven though. *)
 
-    (** Load the TLB from [tmin] to [tmax] using a constant register context.
-        Assumes that the TLB is already loaded up to [tmin] excluded and
-        that the size of [mem] is [tmax] *)
-    Fixpoint fill_from_btw (asid_roots : list (bv 16 * bv 64 * bool))
+    (** Load [tmin..tmax], activating roots after the event at their timestamp.
+        Assumes the TLB is loaded up to [tmin] excluded and [length mem = tmax]. *)
+    Fixpoint fill_from_btw (asid_roots : list ((bv 16 * bv 64 * bool) * nat))
         (tmin tmax : nat) (mem : Memory.t) : tlb_mon () :=
       if decide (tmax < tmin) then mret () else
       if tmax is S ntmax then
         if mem is ev :: nmem then
-          fill_from_btw asid_roots tmin ntmax nmem;;
-          fill_event tmax asid_roots ev
+          let active := filter (λ '(_, time), time < tmax) asid_roots in
+          let added := filter (λ '(_, time), time = tmax) asid_roots in
+          fill_from_btw active tmin ntmax nmem;;
+          fill_event tmax active.*1 ev;;
+          fill_from_roots tmax added.*1
         else mthrow "fill_from_btw: Invalid precondition"
       else mthrow "fill_from_btw: Invalid precondition".
 
-    (** Load the TLB from [time] to the end of memory using a constant
-        register context. Assumes that the TLB is already loaded up to
-        [time] excluded *)
-    Definition fill_from (asid_roots : list (bv 16 * bv 64 * bool))
+    (** Load from [time] to the end of memory.
+        Assumes the TLB is loaded up to [time] excluded. *)
+    Definition fill_from (asid_roots : list ((bv 16 * bv 64 * bool) * nat))
         (time : nat) : tlb_mon () :=
       fill_from_btw asid_roots time (length mem) mem.
 
@@ -1180,8 +1185,8 @@ Module TLB.
         (** If the TTBR1 doesn't exist, we just don't use the upper address
             space. *)
         if ttbr1 is Some ttbr1
-        then [(asid, ttbr0, false); (asid, ttbr1, true)]
-        else [(asid, ttbr0, false)]
+        then [(asid, ttbr0, false, time); (asid, ttbr1, true, time)]
+        else [(asid, ttbr0, false, time)]
       in
       msetv asid_roots asid_roots';;
       fill_from asid_roots' (S time).
@@ -1191,15 +1196,18 @@ Module TLB.
         writes *)
     Definition fill_asid_root (asid_root : bv 16 * bv 64 * bool) (time : nat) :
         tlb_mon () :=
-      fill_full time [asid_root];;
-      fill_from [asid_root] (S time);;
-      mset asid_roots (asid_root::.).
+      (* TLBIs can affect every root, so roll back and refill them together. *)
+      roll_back time;;
+      mset asid_roots ((asid_root, time)::.);;
+      fill_from_roots time [asid_root];;
+      roots ← mget asid_roots;
+      fill_from roots (S time).
 
     (** Adds a new event at the end of memory. This is called whenever a promise
         is made. *)
     Definition fill_promise (ev : Ev.t) : tlb_mon () :=
       asid_roots ← mget asid_roots;
-      fill_event (length mem) asid_roots ev.
+      fill_event (length mem) asid_roots.*1 ev.
 
   End TLBFill.
 
@@ -1225,12 +1233,12 @@ Module TLB.
       in that same way that if a PTE is missing we don't load it. If a upper VA
       is used the model will crash saying there is no entry for that VA *)
       if reg_lookup TTBR1_EL1 iregs is Some ttbr1
-      then [(asid, ttbr0, false); (asid, ttbr1, true)]
-      else [(asid, ttbr0, false)]
+      then [((asid, ttbr0, false), 0%nat); ((asid, ttbr1, true), 0%nat)]
+      else [((asid, ttbr0, false), 0%nat)]
     in
     ets ← get_ets iregs;
     make VATLB.init (get_pte_present imem) ∅ asid_roots ets
-    |> fill_full imem [] 0 asid_roots
+    |> fill_from_roots imem [] 0 asid_roots.*1
     |$> fst.
 
 
