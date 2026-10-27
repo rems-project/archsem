@@ -1,0 +1,9 @@
+Test SwitchTTBR+TLBI Allowed
+States 2
+0:X1=0; 
+0:X1=1; 
+Ok
+Witnesses
+Positive: 16 Negative: 16
+Condition SwitchTTBR+TLBI exists 0:X1=0
+Observation SwitchTTBR+TLBI Sometimes 16 16
