@@ -1,0 +1,24 @@
+arch = "AArch64"
+name = "TLBI+DSB+TLBI"
+symbolic = []
+page_table_setup = "option default_tables = true;"
+
+[thread.0]
+init = { CurrentEL = 1 }
+code = """
+    TLBI VMALLE1IS
+    DSB ISH
+    TLBI VMALLE1IS
+end0:
+"""
+
+[thread.1]
+init = { CurrentEL = 1 }
+code = """
+    NOP
+end1:
+"""
+
+[final]
+expect = "sat"
+assertion = "0:PC = end0 & 1:PC = end1"

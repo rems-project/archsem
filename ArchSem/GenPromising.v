@@ -379,10 +379,13 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       mEvent_eq_dec : EqDecision mEvent;
       (** Give the tid that initiated that event *)
       mEvent_tid : mEvent → nat;
-      (** Filter executable promise candidates from a single enumeration run.
-          The memory does not yet contain the candidates being selected. *)
+      (** Filter executable promise candidates from a single outcome.
+          The memory before the outcome does not yet contain the candidates
+          being selected. *)
       filter_promises : (* num of threads *) nat → (* tid *) nat →
-                        PromMemory.t mEvent → list mEvent → list mEvent;
+                        (* memory length before enumeration *) nat →
+                        PPState.t tState mEvent iis →
+                        PPState.t tState mEvent iis → list mEvent → list mEvent;
       (** The address space this model is built against, we expect non-secure
           for Arm here *)
       address_space : addr_space;
@@ -643,16 +646,22 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Context (tid : fin n) (initmem : memoryMap).
 
       Definition run_outcome_with_promise (base : nat) (out : outcome) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string
+          Exec.t (list (list mEvent) * PPState.t tState mEvent iis) string
                  (eff_ret out) :=
+        before ← mget snd;
         '(res, vpre_opt) ←
           Exec.liftSt snd $ prom.(handle_outcome) n tid initmem out;
         if vpre_opt is Some vpre then
           if decide (vpre ≤ base)%nat then
-            mem ← mget (PPState.mem ∘ snd);
-            (* Take all promises after base (made by that outcome) and add them
-               to the list of possible new promises *)
-            mset fst (take (length mem - base) mem ++.);;
+            after ← mget snd;
+            let mem := PPState.mem after in
+            (* Take all promises made by that outcome and add them
+               to the list of possible new promises as a filtered batch. *)
+            let candidates := take (length mem - length (PPState.mem before)) mem in
+            let candidates :=
+              prom.(filter_promises) n tid base before after candidates in
+            (* An empty batch still records that this run created events. *)
+            mset fst (candidates ::.);;
             mret res
           else mret res
         else
@@ -665,7 +674,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           run cannot reach a final state. [fuel] is the maximum number of
           instructions to be run.*)
       Fixpoint run_to_termination (fuel : nat) (base : nat) :
-          Exec.t (list mEvent * PPState.t tState mEvent iis) string RunEnd :=
+          Exec.t (list (list mEvent) * PPState.t tState mEvent iis) string RunEnd :=
         ts ← mget (PPState.state ∘ snd);
         if decide (base < prom.(tState_min_new_prom_view) ts)%nat then
           mret StoppedEarly
@@ -706,8 +715,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
                         if r is OutOfFuel then True else False) in
         let promises :=
           List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
-            |> remove_dups in
-        let promises := prom.(filter_promises) n tid mem promises in
+            |> List.concat |> remove_dups in
         let tstates :=
           Exec.results res
           |> omap (λ '((new_proms, st), r),

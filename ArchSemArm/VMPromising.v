@@ -2739,20 +2739,24 @@ End BBM.
 
 Import Promising.
 
-(** Avoid exploring duplicate TLBI promise orders.  During one enumeration run,
+(** Avoid exploring duplicate TLBI promise orders.  During one TLBI outcome,
     we keep TLBI recipients in nondecreasing order, comparing each candidate
-    with the last TLBI promise already selected in memory. *)
+    with the last TLBI promise already selected in memory, if that outcome
+    fulfills it. *)
 Definition filter_tlbi_promises
-    (n_threads tid : nat) (mem : Memory.t) (candidates : list Ev.t) :
-    list Ev.t :=
-  let run_recipient :=
-    if mem is ev :: _ then Ev.get_tlbi_recipient ev else None in
-  if run_recipient is Some prev_recipient then
-    filter (λ ev,
-      if Ev.get_tlbi_recipient ev is Some recipient
-      then prev_recipient ≤ recipient
-      else True) candidates
-  else candidates.
+    (n_threads tid base : nat)
+    (before after : PPState.t TState.t Ev.t IIS.t)
+    (candidates : list Ev.t) : list Ev.t :=
+  match decide (base ∈ TState.prom_tlbi (PPState.state before) ∧
+                base ∉ TState.prom_tlbi (PPState.state after)),
+        PPState.mem before !! base with
+  | left _, Some (Ev.Tlbi tlbi prev_recipient) =>
+      filter (λ ev,
+        if ev is Ev.Tlbi next recipient
+        then tlbi ≠ next ∨ prev_recipient ≤ recipient
+        else True) candidates
+  | _, _ => candidates
+  end.
 
 Definition VMPromising (bbm : bool) : Promising.Model :=
   {|tState := TState.t;

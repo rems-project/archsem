@@ -1,0 +1,8 @@
+Test TLBI+DSB+TLBI Allowed
+States 1
+0:PC=0x100c; 1:PC=0x2004; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition TLBI+DSB+TLBI exists (0:PC=0x100c /\ 1:PC=0x2004)
+Observation TLBI+DSB+TLBI Always 1 0
