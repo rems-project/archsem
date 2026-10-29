@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "page-table-assert-failed"
+
+page_table_setup = """
+virtual x;
+assert x[3..0] != 0;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+kind = "forall"
+assertion = "true"

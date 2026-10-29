@@ -51,6 +51,7 @@
            ("virtual", VIRTUAL);
            ("physical", PHYSICAL);
            ("identity", IDENTITY);
+           ("assert", ASSERT);
            ("with", WITH);
            ("and", AND_KW);
            ("default", DEFAULT);
@@ -80,6 +81,8 @@ rule token = parse
   | "|->" { MAPS_TO }
   | "?->" { MAYBE_MAPS_TO }
   | '|' { OR }
+  | "==" { EQEQ }
+  | "!=" { NEQ }
   | '~' { NOT }
   | '=' { EQ }
   | '*' { STAR }

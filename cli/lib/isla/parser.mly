@@ -63,11 +63,14 @@
 %token RBRACE "}"
 %token MAPS_TO "|->"
 %token MAYBE_MAPS_TO "?->"
+%token EQEQ "=="
+%token NEQ "!="
 %token OPTION
 %token ALIGNED
 %token VIRTUAL
 %token PHYSICAL
 %token IDENTITY
+%token ASSERT
 %token WITH
 %token DEFAULT
 %token AND_KW
@@ -154,6 +157,12 @@ page_table_stmt_inner:
     { Page_table_ast.DataInit {pa_name; value} }
   | IDENTITY; addr = term; WITH; attr = page_table_attr
     { Page_table_ast.IdentityMapping {addr; attr} }
+  | ASSERT; lhs = term; op = page_table_assert_op; rhs = term
+    { Page_table_ast.Assert {lhs; op; rhs} }
+
+page_table_assert_op:
+  | "==" { Page_table_ast.Assert_eq }
+  | "!=" { Page_table_ast.Assert_neq }
 
 page_table_block:
   | stage = page_table_stage; name = IDENT; base = option(NUM); "{";
