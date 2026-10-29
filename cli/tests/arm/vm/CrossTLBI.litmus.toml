@@ -1,0 +1,54 @@
+arch = "AArch64"
+name = "CrossTLBI"
+symbolic = ["x", "z", "flag"]
+
+page_table_setup = """
+physical pa_x pa_z pa_flag;
+x |-> pa_x;
+z |-> pa_z;
+flag |-> pa_flag;
+
+*pa_x = 3;
+"""
+
+# Thread 1 unmaps x, then sets flag, then invalidates x with a broadcast TLBI.
+# Thread 0 sees flag = 1, then issues its own broadcast TLBI (for z) and a
+# DSB, then loads x. The load can still hit thread 0's stale TLB entry for x
+# if thread 1's TLBI to thread 0 is after thread 0's TLBI to thread 1 in
+# memory.
+[thread.0]
+code = """
+    LDR X4, [X3]
+    DSB SY
+    LSR X9, X5, #12
+    TLBI VAAE1IS, X9
+    DSB ISH
+    LDR X6, [X7]
+"""
+breakpoints = [0x4242400]
+
+[thread.0.init]
+X3 = "flag"
+X5 = "z"
+X7 = "x"
+VBAR_EL1 = 0x4242000
+
+[thread.1]
+code = """
+    STR X0, [X1]
+    DSB ISH
+    STR X2, [X3]
+    LSR X9, X4, #12
+    TLBI VAAE1IS, X9
+    DSB ISH
+"""
+
+[thread.1.init]
+X0 = 0
+X1 = "pte3(x, page_table_base)"
+X2 = 1
+X3 = "flag"
+X4 = "x"
+
+[final]
+assertion = "0:X4 = 1 & 0:X6 = 3"

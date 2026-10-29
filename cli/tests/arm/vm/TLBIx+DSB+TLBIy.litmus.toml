@@ -1,0 +1,31 @@
+arch = "AArch64"
+name = "TLBIx+DSB+TLBIy"
+symbolic = ["x", "y"]
+
+page_table_setup = """
+physical pa0 pa1;
+x |-> pa0;
+y |-> pa1;
+"""
+
+# Thread 0 issues two broadcast TLBIs ordered by a DSB. Thread 1 does nothing
+# that creates a memory event.
+[thread.0]
+init = { X3 = "x", X4 = "y" }
+code = """
+LSR X9, X3, #12
+TLBI VAAE1IS, X9
+DSB ISH
+LSR X9, X4, #12
+TLBI VAAE1IS, X9
+DSB ISH
+MOV X5, #1
+"""
+
+[thread.1]
+code = """
+MOV X1, #1
+"""
+
+[final]
+assertion = "0:X5 = 1"

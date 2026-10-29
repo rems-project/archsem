@@ -1,0 +1,31 @@
+arch = "AArch64"
+name = "TLBI+DSBNSH+TLBI"
+symbolic = ["x", "y"]
+
+page_table_setup = """
+physical pa0 pa1;
+x |-> pa0;
+y |-> pa1;
+"""
+
+# Thread 1 issues two broadcast TLBIs separated by a DSB NSH, which waits for
+# its own self-recipient TLBI. Thread 0 does nothing that creates a memory
+# event.
+[thread.0]
+code = """
+MOV X1, #1
+"""
+
+[thread.1]
+init = { X3 = "x", X4 = "y" }
+code = """
+LSR X9, X3, #12
+TLBI VAAE1IS, X9
+DSB NSH
+LSR X9, X4, #12
+TLBI VAAE1IS, X9
+MOV X5, #1
+"""
+
+[final]
+assertion = "1:X5 = 1"
