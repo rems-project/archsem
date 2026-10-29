@@ -379,6 +379,13 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       mEvent_eq_dec : EqDecision mEvent;
       (** Give the tid that initiated that event *)
       mEvent_tid : mEvent → nat;
+      (** Whether adding an event to memory can change the enumeration results
+          (promises, final states, errors) of thread [tid]. This must be true
+          for the thread that initiated the event, and [emit_promise] must
+          leave the state of an unaffected thread unchanged. This is used by
+          the promise-first model to reuse the enumeration results of
+          unaffected threads *)
+      mEvent_affects : mEvent → (* tid *) nat → bool;
       (** Filter executable promise candidates from a single enumeration run.
           The memory does not yet contain the candidates being selected. *)
       filter_promises : (* num of threads *) nat → (* tid *) nat →
@@ -617,7 +624,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
     Definition make_final (p : t) := exist (terminated prom term) p.
 
-    Definition validate_final (st : t) : Exec.t t string unit :=
+    Definition validate_final (st : t) : Exec.res string unit :=
       guard_discard $ nopromises prom st;;
       let errs := check_valid_end prom st in
       if errs is [] then
@@ -683,6 +690,8 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
       Record EnumerationResult :=
         {
+          (** Not yet filtered by [filter_promises], because the filter depends
+              on the current memory *)
           promises : list mEvent;
           final_states : list tState;
           errors : list string;
@@ -707,7 +716,6 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         let promises :=
           List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
             |> remove_dups in
-        let promises := prom.(filter_promises) n tid mem promises in
         let tstates :=
           Exec.results res
           |> omap (λ '((new_proms, st), r),
@@ -726,16 +734,30 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           out_of_fuel:=out_of_fuel|}.
     End EnumerateResult.
 
+    (** Choose one of the promises of an enumeration result, filtered against
+        the current memory *)
+    Definition choose_promise (st : t) (tid : fin n) (res : EnumerationResult) :
+        Exec.res string mEvent :=
+      mchoosel (prom.(filter_promises) n tid (events st) (promises res)).
+
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      let (promises, _, _, out_of_fuel) :=
+      let res :=
         enumerate_results tid (initmem st) fuel (tstate tid st) (events st)
       in
-      if out_of_fuel then
+      if out_of_fuel res then
         b ← mchoosef bool;
-        if (b : bool) then mthrow "out of fuel" else mchoosel promises
-      else mchoosel promises.
+        if (b : bool) then mthrow "out of fuel" else choose_promise st tid res
+      else choose_promise st tid res.
+
+    (** The state of the promise-first model: a regular [PState.t], along with
+        a cache of previous enumerations that are still valid *)
+    Record pf_t :=
+      PFMake {
+          pstate : t;
+          enum_cache : vec (option EnumerationResult) n;
+        }.
 
     (** Take any promising step for that tid and promise it *)
     Definition cpromise_tid (fuel : nat) (tid : fin n) : Exec.t t string () :=
@@ -767,7 +789,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         Exec.t t string (option {s & archState.is_terminated term s}) :=
       st ← mGet;
       if decide $ terminated prom term st is left pt then
-        validate_final st;;
+        mlift $ validate_final st;;
         mret (Some (to_final_archState (make_final st pt)))
       else
         run_step fuel;;
@@ -782,22 +804,33 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         [fuel] is the maximum number of instruction to be explored for each
         thread.
 
+        The enumeration results of the threads that are were not affected by
+        last event promise are reused from the [enum_cache] instead of being
+        recomputed
+
         Returning [None] means it was a non-final step *)
     Definition run_transition_promise_first (fuel : nat) :
-        Exec.t t string (option {s & archState.is_terminated term s}) :=
-      st ← mGet;
-      (* Find out next possible promises or terminating states for each thread *)
+        Exec.t pf_t string (option {s & archState.is_terminated term s}) :=
+      pst ← mGet;
+      let st := pstate pst in
+      (* Find out next possible promises or terminating states for each thread,
+         unless they are already known *)
       let execution_results :=
-        vmap (λ '(tid, ts),
-            enumerate_results tid (initmem st) fuel ts (events st)
-          ) (venumerate (tstates st)) in
+        vimap (λ tid ts,
+            if enum_cache pst !!! tid is Some res then res
+            else enumerate_results tid (initmem st) fuel ts (events st)
+          ) (tstates st) in
       opt ← mchoosel (seq 0 4);
       match opt : nat with
       | 0 =>
         tid ← mchoosef (fin n);
-        next_ev ← mchoosel (execution_results !!! tid).(promises);
+        next_ev ← mlift (choose_promise st tid (execution_results !!! tid));
         nst ← mlift (promise prom next_ev st);
-        mSetv nst;;
+        let cache :=
+          vimap (λ tid res,
+              if prom.(mEvent_affects) next_ev tid then None else Some res)
+            execution_results in
+        mSetv (PFMake nst cache);;
         mret None
       | 1 =>
         (* Compute cartesian products of the possible thread states *)
@@ -806,7 +839,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         let st := Make tstates st.(initmem) st.(events) in
         (* Discard the non-terminated ones *)
         term_proof ← guard_discard $ terminated prom term st;
-        validate_final st;;
+        mlift $ validate_final st;;
         mret (Some (to_final_archState (make_final st term_proof)))
       | 2 =>
         let errs := List.concat (vmap errors execution_results) in
@@ -837,9 +870,11 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
         The required fuel is (# of promises) + max(# of instructions or 1) *)
     Definition opmodel_pf : opModel n :=
-      let init _ initSt := from_archState prom initSt in
+      let init _ initSt :=
+        ps ← from_archState prom initSt;
+        mret (PFMake ps (vreplicate n None)) in
       let step term _ fuel := run_transition_promise_first term fuel in
-      opModel.Make n t init step.
+      opModel.Make n pf_t init step.
 
     End CPS.
     Arguments to_final_archState {_ _ _}.

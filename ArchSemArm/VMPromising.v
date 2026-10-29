@@ -184,6 +184,14 @@ Module Ev.
     | _ => None
     end.
 
+  (** Whether adding this event to memory can affect thread [tid']: a write can
+      affect all threads, but a TLBI only affects its emitter and recipient *)
+  Definition affects (ev : t) (tid' : nat) : bool :=
+    match ev with
+    | Msg _ => true
+    | Tlbi tlbi recipient => bool_decide (tid' = TLBI.tid tlbi ∨ tid' = recipient)
+    end.
+
   (** Checks whether an write event overlaps an address range *)
   Definition overlap (a : address) (sz : N) (ev : t) : Prop :=
     match ev with
@@ -2744,6 +2752,7 @@ Definition VMPromising (bbm : bool) : Promising.Model :=
     address_space := PAS_NonSecure;
     mEvent := Ev.t;
     mEvent_tid := Ev.tid;
+    mEvent_affects := Ev.affects;
     filter_promises := filter_tlbi_promises;
     handle_outcome := run_outcome;
     emit_promise := TState.emit_promise;
