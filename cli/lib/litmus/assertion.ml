@@ -42,15 +42,20 @@
 
 (** {1 The expression language} *)
 
-(** An architectural state location.
+(** An architectural state location, without bit slice.
 
     Symbolic memory locations have their size defined by the test setup.
     Addressed memory locations carry an address term, whose concrete type
     depends on whether the assertion has been evaluated yet. *)
-type 'a loc =
+type 'a base_loc =
   | Reg of int * string
   | Mem of string
   | MemAddr of 'a
+
+(** An architectural state location, possibly restricted to a bit slice *)
+type 'a loc =
+  | Base of 'a base_loc
+  | Slice of 'a base_loc * Z.t * Z.t  (** [loc[hi..lo]] (bounds included) *)
 
 (** A comparison atom: Comparing a location to a value or another location. The
     value can either be a number [Z.t] or an unevaluated expression
@@ -69,6 +74,26 @@ type 'a expr =
   | False
 
 (** {1 Helper functions} *)
+
+(** {2 Bit slices} *)
+
+(** [extract_bits ~hi ~lo v] is [v[hi..lo]] (bounds included), with the
+    two's-complement bits of [v] if it is negative. Fails if the bounds are
+    invalid *)
+let extract_bits ~hi ~lo v =
+  let error fmt =
+    Error.failwith
+      ("bit slice '[%s..%s]': " ^^ fmt)
+      (Z.to_string hi) (Z.to_string lo)
+  in
+  if Z.sign lo < 0 then error "low index is negative";
+  if Z.lt hi lo then error "high index is below low index";
+  let to_int z = try Z.to_int z with Z.Overflow -> error "index is too large" in
+  Z.extract v (to_int lo) (to_int Z.(hi - lo + one))
+
+(** The location under the bit slice of a location, if any *)
+let base_loc : 'a loc -> 'a base_loc = function
+  | Base loc | Slice (loc, _, _) -> loc
 
 (** {2 Flatten} *)
 
@@ -89,11 +114,16 @@ let rec flatten : 'a expr -> 'a expr = function
 
 (** {2 Constant map} *)
 
-(** Map an address term through a [loc] *)
-let map_cst_loc (f : 'a -> 'b) : 'a loc -> 'b loc = function
+(** Map an address term through a [base_loc] *)
+let map_cst_base_loc (f : 'a -> 'b) : 'a base_loc -> 'b base_loc = function
   | Reg (thread, reg) -> Reg (thread, reg)
   | Mem sym -> Mem sym
   | MemAddr addr -> MemAddr (f addr)
+
+(** Map an address term through a [loc] *)
+let map_cst_loc (f : 'a -> 'b) : 'a loc -> 'b loc = function
+  | Base loc -> Base (map_cst_base_loc f loc)
+  | Slice (loc, hi, lo) -> Slice (map_cst_base_loc f loc, hi, lo)
 
 (** Map term-valued assertion payloads through an [atom].
 
@@ -162,7 +192,8 @@ module Checker (Arch : Archsem.Arch) = struct
     | addr -> addr
     | exception Z.Overflow -> failwith "Memory address is too large"
 
-  let lookup_loc ~lookup_addr (fs : ArchState.t) : Z.t loc -> Z.t = function
+  let lookup_base_loc ~lookup_addr (fs : ArchState.t) : Z.t base_loc -> Z.t
+    = function
     | Reg (tid, name) ->
         let regs = ArchState.reg tid fs in
         let arch_name = Config.get_reg_rename_or name in
@@ -173,6 +204,11 @@ module Checker (Arch : Archsem.Arch) = struct
         MemMap.lookup addr size (ArchState.mem fs)
     | MemAddr addr ->
         MemMap.lookup (int_of_addr addr) pte_address_size (ArchState.mem fs)
+
+  let lookup_loc ~lookup_addr (fs : ArchState.t) : Z.t loc -> Z.t = function
+    | Base loc -> lookup_base_loc ~lookup_addr fs loc
+    | Slice (loc, hi, lo) ->
+        extract_bits ~hi ~lo (lookup_base_loc ~lookup_addr fs loc)
 
   let check_atom ~lookup_addr (fs : ArchState.t) : Z.t atom -> bool = function
     | CmpCst (loc, v) -> lookup_loc ~lookup_addr fs loc = v

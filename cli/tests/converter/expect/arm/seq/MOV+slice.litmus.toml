@@ -8,6 +8,12 @@ name = "MOV+slice"
   step = 4
   data = 0xaa0103e0
 
+[[memory]]
+  sym = "x"
+  addr = 0x2000
+  step = 8
+  data = 0x1234
+
 [thread]
 
 [thread."0"]
@@ -55,5 +61,5 @@ name = "MOV+slice"
   DAIF = 0
 
 [final]
-  assertion = {and = [{"0:X0" = 0x12}, {"0:X1" = 0x12}, {"0:X2" = 1}, {"0:X3" = 0xff}, {"0:X4" = 0xffffffffffffffff}]}
+  assertion = {and = [{"0:X0" = 0x12}, {"0:X1" = 0x12}, {"0:X2" = 1}, {"0:X3" = 0xff}, {"0:X4" = 0xffffffffffffffff}, {"0:X1[3..0]" = 2}, {"0:X4[63..63]" = 1}, {"x[15..8]" = 0x12}, {"0:X1" = "x[15..8]"}]}
   kind = "forall"

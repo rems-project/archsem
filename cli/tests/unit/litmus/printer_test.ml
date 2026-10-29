@@ -62,9 +62,42 @@ let parse_address_location_test =
   "parse-address-location"
   >:: fun _ ->
   assert_equal
-    (Assertion.MemAddr (Z.of_int 0x83000))
+    (Assertion.Base (Assertion.MemAddr (Z.of_int 0x83000)))
     (Parser.parse_location_string "0x83000")
+
+let slice loc hi lo = Assertion.Slice (loc, Z.of_int hi, Z.of_int lo)
+
+let slice_location_cases =
+  [ ("0:R0[15..8]", slice (Assertion.Reg (0, "R0")) 15 8);
+    ("x[3]", slice (Assertion.Mem "x") 3 3);
+    ("0x83000[15..8]", slice (Assertion.MemAddr (Z.of_int 0x83000)) 15 8)
+  ]
+
+let parse_slice_location_tests =
+  "parse-slice-location"
+  >::: List.map
+         (fun (str, loc) ->
+            str >:: fun _ -> assert_equal loc (Parser.parse_location_string str)
+          )
+         slice_location_cases
+
+let print_slice_location_tests =
+  "print-slice-location"
+  >::: List.map
+         (fun (_, loc) ->
+            Printer.location_to_string loc
+            >:: fun _ ->
+            assert_equal loc
+              (Parser.parse_location_string (Printer.location_to_string loc))
+          )
+         slice_location_cases
 
 let () =
   run_test_tt_main
-    ("litmus_printer" >::: [round_trip_tests; parse_address_location_test])
+    ("litmus_printer"
+    >::: [ round_trip_tests;
+           parse_address_location_test;
+           parse_slice_location_tests;
+           print_slice_location_tests
+         ]
+    )
