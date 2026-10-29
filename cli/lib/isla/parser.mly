@@ -71,7 +71,6 @@
 %token DEFAULT
 %token AND_KW
 %token CODE
-%token DATA
 %token INVALID
 %token S1TABLE
 %token S2TABLE
@@ -195,7 +194,6 @@ page_table_descriptor_default:
 
 page_table_attr:
   | CODE { Page_table_ast.Code }
-  | DATA { Page_table_ast.Data }
   | DEFAULT { Page_table_ast.Data }
 
 page_table_mapping_level:
