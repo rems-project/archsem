@@ -111,10 +111,15 @@ let memory_block_to_toml (block : Testrepr.memory_block) : Toml.t =
 
 (** {1 Final condition} *)
 
-let location_to_string : Z.t Assertion.loc -> string = function
+let base_location_to_string : Z.t Assertion.base_loc -> string = function
   | Reg (thread, reg) -> Printf.sprintf "%d:%s" thread reg
   | Mem mem -> mem
   | MemAddr addr -> Z.format "%#x" addr
+
+let location_to_string : Z.t Assertion.loc -> string = function
+  | Base loc -> base_location_to_string loc
+  | Slice (loc, hi, lo) ->
+      base_location_to_string loc ^ Assertion.slice_printer hi lo
 
 let atom_to_toml : Z.t Assertion.atom -> Toml.t = function
   | CmpCst (loc, cst) ->

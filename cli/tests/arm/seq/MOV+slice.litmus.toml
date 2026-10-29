@@ -1,5 +1,6 @@
 arch = "AArch64"
 name = "MOV+slice"
+symbolic = ["x"]
 
 [thread.0]
 init = { X1 = "0x1234[15..8]", X2 = "0x1234[2]", X3 = "(-1)[7..0]", X4 = "-(1[7..0])" }
@@ -7,6 +8,13 @@ code = """
     MOV X0, X1
 """
 
+[locations]
+x = 0x1234
+
 [final]
 kind = "forall"
-assertion = "0:X0 = 0x12 & 0:X1 = 0x1234[15..8] & 0:X2 = 1 & 0:X3 = 0xff & 0:X4 = 0xffffffffffffffff"
+assertion = """
+0:X0 = 0x12 & 0:X1 = 0x1234[15..8] & 0:X2 = 1 & 0:X3 = 0xff
+& 0:X4 = 0xffffffffffffffff
+& 0:X1[3..0] = 2 & 0:X4[63] = 1 & (*x)[15..8] = 0x12 & 0:X1 = (*x)[15..8]
+"""

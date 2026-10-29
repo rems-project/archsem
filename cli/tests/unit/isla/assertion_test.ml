@@ -46,11 +46,11 @@ open Isla.Term
 
 let n = Z.of_int
 
-let reg tid r = Reg (tid, r)
+let reg tid r = Base (Reg (tid, r))
 
-let mem s = Mem s
+let mem s = Base (Mem s)
 
-let mem_addr addr = MemAddr addr
+let mem_addr addr = Base (MemAddr addr)
 
 let sym s = Sym s
 
@@ -108,6 +108,26 @@ let parse_cases =
     ( "bit slice of function call",
       "0:X0 = f(a)[7..0]",
       Atom (CmpCst (reg 0 "X0", extract (fn "f" [sym "a"]) 7 0))
+    );
+    ( "register slice location",
+      "0:R0[15..8] = 1",
+      Atom (CmpCst (Slice (Reg (0, "R0"), n 15, n 8), cst Z.one))
+    );
+    ( "register bit location",
+      "0:R0[3] = 1",
+      Atom (CmpCst (Slice (Reg (0, "R0"), n 3, n 3), cst Z.one))
+    );
+    ( "memory slice location",
+      "(*x)[15..8] = 1",
+      Atom (CmpCst (Slice (Mem "x", n 15, n 8), cst Z.one))
+    );
+    ( "slice location on rhs",
+      "0:X0 = 1:X1[3..0]",
+      Atom (CmpLoc (reg 0 "X0", Slice (Reg (1, "X1"), n 3, n 0)))
+    );
+    ( "memory slice location on rhs",
+      "0:X0 = (*x)[7..0]",
+      Atom (CmpLoc (reg 0 "X0", Slice (Mem "x", n 7, n 0)))
     )
   ]
 
@@ -119,7 +139,9 @@ let parse_error_cases =
     ("symbolic bit index", "0:X0 = x[a..0]");
     ("unparenthesized chained bit slices", "0:X0 = x[15..8][3]");
     ("unparenthesized negated bit slice", "0:X0 = -x[7..0]");
-    ("unparenthesized bit slice location", "*x[7..0] = 1")
+    ("unparenthesized memory slice location", "*x[7..0] = 1");
+    ("parenthesized register location", "(0:R0)[3] = 1");
+    ("chained register slices", "0:R0[15..8][3] = 1")
   ]
 
 let cases ~name ~run xs =
