@@ -58,5 +58,6 @@ type t =
   | KwFn of string * (string * t) list
   | Binary of t * binary_op * t
   | Negate of t
+  | Extract of t * Z.t * Z.t  (** [x[hi..lo]] (bounds included) *)
 
 let zero = Const Z.zero
