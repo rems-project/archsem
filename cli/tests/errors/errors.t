@@ -185,6 +185,13 @@ Negative zero extension in Isla function
   function: extz: argument bits must be non-negative
   [1]
 
+Bit slice with the high index below the low index
+  $ archsem seq inverted-slice.litmus.toml
+  archsem: eval error:
+  File "inverted-slice.litmus.toml", path "thread.0.init.R0":
+  bit slice '[0..3]': high index is below low index
+  [1]
+
 ELF symbols must agree with preassigned data addresses
   $ archsem seq conflicting-elf-symbol.litmus.toml
   archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x2000, ELF 0x10000

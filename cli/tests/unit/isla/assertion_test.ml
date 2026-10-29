@@ -60,6 +60,8 @@ let fn name args = Fn (name, args)
 
 let kwfn name args = KwFn (name, args)
 
+let extract v hi lo = Extract (v, n hi, n lo)
+
 let parse = Isla.Ir.parse_assertion_expr
 
 let parse_cases =
@@ -90,11 +92,35 @@ let parse_cases =
           Atom (CmpCst (reg 2 "X0", cst Z.zero))
         ]
     );
-    ("false", "false", False)
+    ("false", "false", False);
+    ( "bit slice",
+      "0:X0 = x[15..8]",
+      Atom (CmpCst (reg 0 "X0", extract (sym "x") 15 8))
+    );
+    ( "single bit",
+      "0:X0 = x[3]",
+      Atom (CmpCst (reg 0 "X0", extract (sym "x") 3 3))
+    );
+    ( "bit slice binds tighter than +",
+      "0:X0 = a + b[3..0]",
+      Atom (CmpCst (reg 0 "X0", Binary (sym "a", Add, extract (sym "b") 3 0)))
+    );
+    ( "bit slice of function call",
+      "0:X0 = f(a)[7..0]",
+      Atom (CmpCst (reg 0 "X0", extract (fn "f" [sym "a"]) 7 0))
+    )
   ]
 
 let parse_error_cases =
-  [("register dereference", "*0:X0 = 4"); ("symbol lhs", "x = 1")]
+  [ ("register dereference", "*0:X0 = 4");
+    ("symbol lhs", "x = 1");
+    ("empty bit slice", "0:X0 = x[]");
+    ("missing low bit index", "0:X0 = x[1..]");
+    ("symbolic bit index", "0:X0 = x[a..0]");
+    ("unparenthesized chained bit slices", "0:X0 = x[15..8][3]");
+    ("unparenthesized negated bit slice", "0:X0 = -x[7..0]");
+    ("unparenthesized bit slice location", "*x[7..0] = 1")
+  ]
 
 let cases ~name ~run xs =
   name

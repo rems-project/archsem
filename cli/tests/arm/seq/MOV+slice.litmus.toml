@@ -1,0 +1,12 @@
+arch = "AArch64"
+name = "MOV+slice"
+
+[thread.0]
+init = { X1 = "0x1234[15..8]", X2 = "0x1234[2]", X3 = "(-1)[7..0]", X4 = "-(1[7..0])" }
+code = """
+    MOV X0, X1
+"""
+
+[final]
+kind = "forall"
+assertion = "0:X0 = 0x12 & 0:X1 = 0x1234[15..8] & 0:X2 = 1 & 0:X3 = 0xff & 0:X4 = 0xffffffffffffffff"

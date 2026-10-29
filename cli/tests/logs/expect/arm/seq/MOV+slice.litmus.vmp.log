@@ -1,0 +1,8 @@
+Test MOV+slice Forall
+States 1
+0:X0=0x12; 0:X1=0x12; 0:X2=1; 0:X3=0xff; 0:X4=0xffffffffffffffff; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition MOV+slice forall (0:X0=0x12 /\ 0:X1=0x12 /\ 0:X2=1 /\ 0:X3=0xff /\ 0:X4=0xffffffffffffffff)
+Observation MOV+slice Always 1 0
