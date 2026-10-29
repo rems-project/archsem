@@ -7,6 +7,7 @@ physical pa_x pa_y;
 x |-> pa_x;
 y |-> pa_y;
 x ?-> pa_y;
+assert x[47..21] == y[47..21];
 """
 
 [thread.0]

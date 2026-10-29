@@ -364,6 +364,19 @@ let rec eval_stmt builder ~table_block ~root = function
       let root = require_root root in
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
       add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
+  | Page_table_ast.Assert {lhs; op; rhs} ->
+      let lhs_value = Term.eval ~state:builder.state lhs in
+      let rhs_value = Term.eval ~state:builder.state rhs in
+      let (holds, op) =
+        match op with
+        | Page_table_ast.Assert_eq -> (Z.equal lhs_value rhs_value, "==")
+        | Page_table_ast.Assert_neq -> (not (Z.equal lhs_value rhs_value), "!=")
+      in
+      let value_to_string = Litmus.Toml.Numbers.int_to_string in
+      if not holds then
+        error "page_table: assertion '%s %s %s' failed: %s %s %s"
+          (Term.to_string lhs) op (Term.to_string rhs) (value_to_string lhs_value)
+          op (value_to_string rhs_value)
   | Page_table_ast.TableBlock {name; base; body; _} ->
       let base =
         match base with

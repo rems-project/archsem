@@ -67,6 +67,10 @@ type mapping_target =
   | Address of Term_ast.t
   | Table of Term_ast.t
 
+type assert_op =
+  | Assert_eq
+  | Assert_neq
+
 type stmt =
   (* Controls whether an implicit unnamed Stage-1 root is built. *)
   | OptionDefaultTables of bool
@@ -103,6 +107,13 @@ type stmt =
   | IdentityMapping of
       { addr : Term_ast.t;
         attr : attr
+      }
+  (* [assert lhs == rhs;] fails the setup unless the comparison holds. It does
+     not affect allocation. *)
+  | Assert of
+      { lhs : Term_ast.t;
+        op : assert_op;
+        rhs : Term_ast.t
       }
   (* [s1table name [0x280000] { ... }] binds the name to a root PA before
      executing the body. An omitted base allocates a fresh table page. *)
