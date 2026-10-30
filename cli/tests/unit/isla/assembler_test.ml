@@ -63,7 +63,7 @@ let resolve_symbol (result : assembly_result) name =
 
 let test_assemble_single_thread _ =
   let input =
-    make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\tMOV W1, #42\n"]
+    make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\tADR X1, x\n"]
   in
   let result = assemble_test input in
   let x_addr = resolve_symbol result "x" in
@@ -89,7 +89,7 @@ let test_assemble_multiple_symbols _ =
   let input =
     make_input
       ~symbols:[sym "x" 0x2000; sym "y" 0x3000]
-      [section "thread0" "\tNOP\n"]
+      [section "thread0" "\tADR X1, x\n\tADR X2, y\n"]
   in
   let result = assemble_test input in
   let x_addr = resolve_symbol result "x" in
