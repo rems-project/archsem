@@ -117,9 +117,21 @@ R27 = 0
 R28 = 0
 R29 = 0
 R30 = 0
-SCTLR_EL1 = 0
+
+#Virtual memory off but UMA on
+SCTLR_EL1 = 0x200
 TCR_EL1 = 0
 ID_AA64MMFR1_EL1 = 0
+
+# Can still process exception
+# VBAR is not set, must be set by the test
+ELR_EL1 = 0
+ESR_EL1 = 0
+SPSR_EL1 = 0
+FAR_EL1 = 0
+PAR_EL1 = 0
+
+#PSTATE fields, EL0 by default
 CurrentEL = 0
 SPSel = 0
 NZCV = 0
@@ -127,13 +139,7 @@ DAIF = 0
 
 # Virtual memory profile, overrides [registers.defaults]
 [profile.vm.registers.defaults]
-# Enable EL1&0 translation
-SCTLR_EL1 = 1
+# Enable EL1&0 translation (and UMA)
+SCTLR_EL1 = 0x201
 # Enable FEAT_ETS3 (ID_AA64MMFR1_EL1.ETS = 3)
 ID_AA64MMFR1_EL1 = 0x3000000000
-ESR_EL1 = 0
-FAR_EL1 = 0
-ELR_EL1 = 0
-VBAR_EL1 = 0
-SPSR_EL1 = 0
-PAR_EL1 = 0
