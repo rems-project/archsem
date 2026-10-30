@@ -187,7 +187,7 @@ Negative zero extension in Isla function
 
 ELF symbols must agree with preassigned data addresses
   $ archsem seq conflicting-elf-symbol.litmus.toml
-  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x2000, ELF 0x10000
+  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x1000, ELF 0x10000
   [1]
 
 Page table DSL on unsupported architecture

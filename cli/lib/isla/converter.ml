@@ -42,10 +42,10 @@
 
     Pipeline:
     - Reserve the pages of explicitly placed sections and table roots.
-    - Allocate the code sections, then every data symbol, and register the
-      symbols in the test's mutable evaluation state.
-    - Assemble the code sections against those symbols. The assembler only
-      emits code bytes and applies relocations.
+    - Allocate every data symbol and register it in the test's mutable
+      evaluation state.
+    - Allocate the code sections and assemble them against those symbols. The
+      assembler only emits code bytes and applies relocations.
     - Build page tables, memory, registers, termination, and outcomes. *)
 
 open Litmus
@@ -329,32 +329,35 @@ type page_table_allocation =
     data_symbols_pa : (string, int) Hashtbl.t
   }
 
-(* Allocate the code sections, then every data symbol, and register the
-   symbols in [state]. Without page tables, code sections and symbols share one
-   allocator. With page tables, code sections use the code arena, table roots
-   with an explicit base are registered, and virtual then physical symbols are
-   allocated in the data region. *)
-let allocate_addresses ~state ~reserved (ir : Ir.t) =
+(** Allocators left after data symbol allocation *)
+type allocation =
+  | No_page_table of Allocator.t
+      (** The allocator shared with the code sections *)
+  | Page_table of page_table_allocation
+
+(* Allocate every data symbol and register it in [state]. Without page tables,
+   one allocator is returned for the code sections. With page tables, table
+   roots with an explicit base are registered, virtual then physical symbols
+   are allocated in the data region, and the table allocator is returned. *)
+let allocate_symbols ~state ~reserved (ir : Ir.t) =
   let alloc allocator alignment =
     Allocator.alloc_aligned allocator ~size:alignment ~alignment
   in
   let virtuals = symbolic_va_alignments ir in
   if ir.page_table_setup = [] then begin
     let allocator = Allocator.make ~base:0 ~reserved () in
-    let sections = allocate_code_sections allocator ir in
     List.iter
       (fun (name, alignment) ->
          Eval_state.add_symbol state name (alloc allocator alignment)
        )
       virtuals;
-    (sections, None)
+    No_page_table allocator
   end
   else
     let add name addr =
       try Eval_state.add_symbol state name addr
       with Failure msg -> eval_error Page_table_setup "%s" msg
     in
-    let sections = allocate_code_sections (make_arena ~reserved 0) ir in
     let data_allocator =
       Allocator.make ~base:data_base
         ~reserved:(List.filter (fun addr -> addr >= data_base) reserved)
@@ -376,13 +379,21 @@ let allocate_addresses ~state ~reserved (ir : Ir.t) =
          add name addr
        )
       physicals;
-    (sections, Some {table_allocator; data_symbols_pa})
+    Page_table {table_allocator; data_symbols_pa}
 
 (** {2 Assembly} *)
 
-(* Assemble the placed code sections with a data symbol for every symbol in
-   [state]. Assembler-defined symbols are added to [state]. *)
-let assemble ~filename ~state (ir : Ir.t) sections =
+(* Allocate the code sections and assemble them with a data symbol for every
+   symbol in [state]. Without page tables, code sections take the allocator
+   left by [allocate_symbols]; with page tables, a fresh code arena.
+   Assembler-defined symbols are added to [state]. *)
+let assemble ~filename ~state ~reserved (ir : Ir.t) allocation =
+  let code_allocator =
+    match allocation with
+    | No_page_table allocator -> allocator
+    | Page_table _ -> make_arena ~reserved 0
+  in
+  let sections = allocate_code_sections code_allocator ir in
   let symbols =
     Hashtbl.fold
       (fun name addr symbols -> {Assembler.name; addr} :: symbols)
@@ -620,16 +631,13 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   let state = Eval_state.create () in
   let default_mem_size = default_memory_size () in
   let reserved = reserved_pages ir in
-  let (sections, page_table_allocation) =
-    allocate_addresses ~state ~reserved ir
-  in
-  let asm_result = assemble ~filename ~state ir sections in
+  let allocation = allocate_symbols ~state ~reserved ir in
+  let asm_result = assemble ~filename ~state ~reserved ir allocation in
   let page_table =
-    Option.map
-      (fun {table_allocator; data_symbols_pa} ->
-         build_page_table_setup ir ~data_symbols_pa ~table_allocator ~state
-       )
-      page_table_allocation
+    match allocation with
+    | No_page_table _ -> None
+    | Page_table {table_allocator; data_symbols_pa} ->
+        Some (build_page_table_setup ir ~data_symbols_pa ~table_allocator ~state)
   in
   let page_table_root =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
