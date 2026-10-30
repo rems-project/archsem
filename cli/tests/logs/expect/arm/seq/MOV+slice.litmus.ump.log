@@ -1,8 +1,8 @@
 Test MOV+slice Forall
 States 1
-0:X0=0x12; 0:X1=0x12; 0:X2=1; 0:X3=0xff; 0:X4=0xffffffffffffffff; 
+0:X0=0x12; 0:X1=0x12; 0:X2=1; 0:X3=0xff; 0:X4=0xffffffffffffffff; 0:X1[3..0]=2; 0:X4[63..63]=1; [x][15..8]=0x12; 
 Ok
 Witnesses
 Positive: 1 Negative: 0
-Condition MOV+slice forall (0:X0=0x12 /\ 0:X1=0x12 /\ 0:X2=1 /\ 0:X3=0xff /\ 0:X4=0xffffffffffffffff)
+Condition MOV+slice forall (0:X0=0x12 /\ 0:X1=0x12 /\ 0:X2=1 /\ 0:X3=0xff /\ 0:X4=0xffffffffffffffff /\ 0:X1[3..0]=2 /\ 0:X4[63..63]=1 /\ [x][15..8]=0x12 /\ 0:X1=[x][15..8])
 Observation MOV+slice Always 1 0

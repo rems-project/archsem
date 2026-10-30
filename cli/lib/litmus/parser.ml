@@ -137,8 +137,25 @@ let parse_test_memory toml : Testrepr.memory_block list =
 
 (** {1 Final condition} *)
 
-(** Parse a location string, either ["0:R0"], ["x"], or a concrete address. *)
-let parse_location_string str : Z.t Assertion.loc =
+(** Parse the bounds of a bit slice, either ["hi..lo"] or ["i"] *)
+let parse_slice_bounds ~loc bounds =
+  let bound b =
+    try Z.of_string b
+    with Invalid_argument _ | Failure _ ->
+      Toml.error "Invalid bit index \"%s\" in assertion location \"%s\"" b loc
+  in
+  let len = String.length bounds in
+  match String.index_opt bounds '.' with
+  | None -> (bound bounds, bound bounds)
+  | Some i when i + 1 < len && bounds.[i + 1] = '.' ->
+      ( bound (String.sub bounds 0 i),
+        bound (String.sub bounds (i + 2) (len - i - 2))
+      )
+  | Some _ -> Toml.error "Invalid bit slice in assertion location \"%s\"" loc
+
+(** Parse a location string without bit slice, either ["0:R0"], ["x"], or a
+    concrete address. *)
+let parse_base_location_string str : Z.t Assertion.base_loc =
   match String.split_on_char ':' str with
   | [thread; reg] ->
       let thread =
@@ -159,6 +176,19 @@ let parse_location_string str : Z.t Assertion.loc =
           Toml.error "Assertion location \"%s\" starts with a digit" mem
       else Assertion.Mem mem
   | _ -> Toml.error "Assertion location has more than one ':'"
+
+(** Parse a location string, a base location optionally followed by a bit slice
+    ["[hi..lo]"] or ["[i]"]. *)
+let parse_location_string str : Z.t Assertion.loc =
+  if String.ends_with ~suffix:"]" str then
+    match String.rindex_opt str '[' with
+    | None -> Toml.error "Assertion location \"%s\" has an unmatched ']'" str
+    | Some i ->
+        let base = String.sub str 0 i in
+        let bounds = String.sub str (i + 1) (String.length str - i - 2) in
+        let (hi, lo) = parse_slice_bounds ~loc:str bounds in
+        Assertion.Slice (parse_base_location_string base, hi, lo)
+  else Assertion.Base (parse_base_location_string str)
 
 let parse_atom key toml : Z.t Assertion.atom =
   let lhs = parse_location_string key in
@@ -190,12 +220,13 @@ let parse_final ~syms toml =
   in
   let locs = Assertion.get_unique_locs assertion in
   List.iter
-    (function
-      | Assertion.Mem sym ->
-          if not (List.mem sym syms) then
-            Toml.error ~path:["final"; "assertion"] "Symbol %s not found" sym
-      | _ -> ()
-      )
+    (fun loc ->
+       match Assertion.base_loc loc with
+       | Assertion.Mem sym ->
+           if not (List.mem sym syms) then
+             Toml.error ~path:["final"; "assertion"] "Symbol %s not found" sym
+       | _ -> ()
+     )
     locs;
   assertion
 

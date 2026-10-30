@@ -89,7 +89,7 @@
 (* On a syntax error after a complete term, comparison or proposition, report
    it in the context of the enclosing construct rather than in the middle of an
    infix expression *)
-%on_error_reduce closed_term term atom prop
+%on_error_reduce closed_term term loc atom prop
 
 (* On a syntax error after a mapping target, report it in the same state
    whatever the kind of target *)
@@ -221,7 +221,16 @@ atom:
   | lhs = loc; "="; rhs = loc { CmpLoc (lhs, rhs) }
 
 loc:
+  | r = reg_loc { Base r }
+  | r = reg_loc; s = bit_slice { let (hi, lo) = s in Slice (r, hi, lo) }
+  | m = mem_loc { Base m }
+  | "("; m = mem_loc; ")"; s = bit_slice
+    { let (hi, lo) = s in Slice (m, hi, lo) }
+
+reg_loc:
   | tid = NUM; ":"; r = IDENT { Reg (Z.to_int tid, r) }
+
+mem_loc:
   | "*"; addr = closed_term
     { match addr with Term.Sym name -> Mem name | _ -> MemAddr addr }
 

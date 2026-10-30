@@ -62,18 +62,7 @@ let eval ~state term =
           lhs rhs
     | Negate value -> Z.neg (eval_term value)
     | Extract (value, hi, lo) ->
-        let value = eval_term value in
-        if Z.lt hi lo then
-          Litmus.Error.failwith
-            "bit slice '[%s..%s]': high index is below low index" (Z.to_string hi)
-            (Z.to_string lo);
-        let to_int z =
-          try Z.to_int z
-          with Z.Overflow ->
-            Litmus.Error.failwith "bit slice '[%s..%s]': index is too large"
-              (Z.to_string hi) (Z.to_string lo)
-        in
-        Z.extract value (to_int lo) (to_int Z.(hi - lo + one))
+        Litmus.Assertion.extract_bits ~hi ~lo (eval_term value)
     | Fn (name, args) ->
         let evaluated = List.map eval_term args in
         Fn_registry.eval ~fns:positional_functions name evaluated
