@@ -731,3 +731,24 @@ Module MSR.
     reflexivity.
   Qed.
 End MSR.
+
+(* Merging of equivalent TLB lookup results, as after a TTBR root change to a
+   copy of the old tables: same leaf PTE and same table attributes, but
+   different roots and next-table addresses *)
+Module ResultMerge.
+  Import TLB.Result.
+
+  (* Walk through the old root *)
+  Definition r_old := make 0x80000 [0x81003; 0x200000000000703] 3 10 None.
+  (* Same walk through a copy of the tables, visible earlier *)
+  Definition r_new := make 0x280000 [0x281003; 0x200000000000703] 1 10 None.
+  (* Different end time *)
+  Definition r_tend := make 0x280000 [0x281003; 0x200000000000703] 1 9 None.
+  (* Different table attributes (APTable) *)
+  Definition r_attr :=
+    make 0x280000 [0x2000000000281003; 0x200000000000703] 1 10 None.
+
+  Goal merge [r_old; r_new; r_tend; r_attr] =
+    [make 0x80000 [0x81003; 0x200000000000703] 1 10 None; r_tend; r_attr].
+  Proof. vm_compute. reflexivity. Qed.
+End ResultMerge.

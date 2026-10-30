@@ -1285,6 +1285,77 @@ Module TLB.
           tend : nat; (* Last timestamp that could see this entry *)
           inv_time : option nat (* If other-thread TLBI, time of the that TLBI *)
         }.
+
+    (** *** Result merging *)
+
+    (** Translation entry merging is an optimisation that relies on the
+        following assumption on the ISA translation function: The outcome of a
+        translation (output address, attributes, fault) only depends on the
+        leaf PTE and on the non-address bits of the table PTEs. In particular
+        it depends neither on the root (the TTBR value) nor on the address of
+        any next-level table. This would not hold with hardware updates of the
+        access flag or dirty state ([TCR_EL1.{HA,HD}]), as those write back to
+        the descriptor address.
+
+        Under that assumption, two results are equivalent when they have the
+        same leaf PTE (bit for bit), the same non-address bits for all table
+        PTEs, and come from the same context. The context is the same because
+        a lookup is for a single VA and ASID, the level is the length of the
+        path, and whether the entry is global is determined by the leaf PTE.
+        The root is unconstrained.
+
+        Two equivalent results with the same [tend] and [inv_time] are merged
+        into one, keeping the earliest [tstart]: their ranges then share an end,
+        so the merged range is their union. The merged result keeps the root
+        and path of the first one, so that the root and the PTEs replayed to
+        the ISA stay consistent with each other.
+
+        This hides candidate executions that only differ in the root and the
+        addresses of the translation table walk reads, or that only differ by
+        using a later [tstart], but not final states. The latter holds because
+        [tstart] is only used as a lower bound on views, so an earlier
+        [tstart] allows every behaviour a later one does.
+
+        Typical example: After changing the TTBR to a new root whose tables are
+        a copy of the old ones, the old and new walks give identical results.
+
+        TODO: This is unconditionally on. When enumerating candidate
+        executions, it will need to be possible to disable it. *)
+
+    (** The bits of a table PTE that are not the next-level table address *)
+    Definition table_attrs (pte : bv 64) : bv 12 * bv 16 :=
+      (bv_extract 0 12 pte, bv_extract 48 16 pte).
+
+    (** The part of a path that the translation outcome depends on: the leaf
+        PTE and the attributes of all the table PTEs above it *)
+    Definition path_key (path : list (bv 64))
+        : option (bv 64 * list (bv 12 * bv 16)) :=
+      if reverse path is leaf :: tables
+      then Some (leaf, map table_attrs tables)
+      else None.
+
+    (** Decide if result [r] can be merged into result [r'] *)
+    Definition mergeable (r' r : t) : Prop :=
+      path_key r'.(path) = path_key r.(path)
+      ∧ r'.(tend) = r.(tend)
+      ∧ r'.(inv_time) = r.(inv_time).
+    #[export] Instance Decision_mergeable r' r : Decision (mergeable r' r).
+    Proof. unfold_decide. Defined.
+
+    (** Merge [r] into the first mergeable result of [rs], or add it at the end
+        if there is none *)
+    Fixpoint merge_into (r : t) (rs : list t) : list t :=
+      match rs with
+      | [] => [r]
+      | r' :: rs' =>
+          if decide (mergeable r' r)
+          then setv tstart (min r'.(tstart) r.(tstart)) r' :: rs'
+          else r' :: merge_into r rs'
+      end.
+
+    (** Merge equivalent results, in order *)
+    Definition merge (rs : list t) : list t :=
+      foldl (λ acc r, merge_into r acc) [] rs.
   End Result.
 
   Section TLBLookup.
@@ -1840,7 +1911,8 @@ Module TState.
           |> mret
         end |$> List.concat
       else mret []);
-    mret (from_tlb ++ from_lvl0_inv).
+    (* See [TLB.Result.merge] for the assumptions this optimisation relies on *)
+    mret (TLB.Result.merge (from_tlb ++ from_lvl0_inv)).
 
   Definition ets2 (ts : t) : bool :=
     if ts.(tlb) is Some tlb then bool_decide (2 ≤ tlb.(TLB.ets))%N else false.
