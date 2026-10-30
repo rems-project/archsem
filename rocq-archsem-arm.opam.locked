@@ -142,7 +142,7 @@ pin-depends: [
 ]
   [
   "rocq-sail-tiny-arm.dev"
-  "git+https://github.com/rems-project/sail-tiny-arm.git#2014578"
+  "git+https://github.com/rems-project/sail-tiny-arm.git#41f8246"
 ]
   ["sail.0.20.3" "git+https://github.com/rems-project/sail.git#0f818e4"]
   [
