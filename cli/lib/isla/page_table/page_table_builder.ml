@@ -62,8 +62,6 @@ let error fmt = Printf.ksprintf (fun msg -> raise (Error msg)) fmt
 
 type t =
   { state : Eval_state.t;
-    (* Allocates physical addresses for data symbols. *)
-    symbol_allocator : Allocator.t;
     (* Allocates root and child translation-table pages. *)
     table_allocator : Allocator.t;
     (* Default root translation-table used when statements are not nested in a
@@ -73,24 +71,20 @@ type t =
     named_roots : (string, pa) Hashtbl.t;
     (* Page-table descriptors, keyed by their physical addresses. *)
     entries : (pa, descriptor) Hashtbl.t;
-    (* Required alignment for each physical-address symbol. *)
-    pa_alignments : (string, int) Hashtbl.t;
     (* PA names and their allocated physical addresses. *)
     data_symbols_pa : (string, pa) Hashtbl.t;
     (* Initial data values, keyed by their allocated PAs. *)
     data_inits : (pa, data_value) Hashtbl.t
   }
 
-let make ~state ~symbol_allocator ~table_allocator ~pa_alignments ~default_root =
+let make ~state ~table_allocator ~data_symbols_pa ~default_root =
   Option.iter (Eval_state.add_symbol state "page_table_base") default_root;
   { state;
-    symbol_allocator;
     table_allocator;
     default_root;
     named_roots = Hashtbl.create 8;
     entries = Hashtbl.create 256;
-    pa_alignments;
-    data_symbols_pa = Hashtbl.create 32;
+    data_symbols_pa;
     data_inits = Hashtbl.create 32
   }
 
@@ -100,35 +94,10 @@ let check_arch = function
       error "page_table: only AArch64 is supported, got %s"
         (Litmus.Arch_id.to_string arch)
 
-let alloc_pa ?(alignment = Allocator.page_size) ?mapping_level builder name =
-  let alignment =
-    max alignment
-      (Hashtbl.find_opt builder.pa_alignments name
-      |> Option.value ~default:Allocator.page_size
-      )
-  in
+let pa_addr builder name =
   match Hashtbl.find_opt builder.data_symbols_pa name with
-  | Some addr -> (
-      if addr mod alignment = 0 then addr
-      else
-        match mapping_level with
-        | Some level ->
-            error
-              "page_table: PA symbol %s at 0x%x is not aligned for a level %d \
-               mapping (requires %d bytes)"
-               name addr level alignment
-        | None ->
-            error "page_table: PA symbol %s at 0x%x is not aligned to %d bytes"
-              name addr alignment
-    )
-  | None ->
-      let addr =
-        Allocator.alloc_aligned builder.symbol_allocator ~size:alignment
-          ~alignment
-      in
-      Hashtbl.add builder.data_symbols_pa name addr;
-      Eval_state.add_symbol builder.state name addr;
-      addr
+  | Some addr -> addr
+  | None -> error "page_table: unallocated PA symbol: %s" name
 
 (** {1 Table roots and page allocation} *)
 
@@ -260,33 +229,6 @@ let check_table_level = function
         Desc.root_level (Desc.last_level - 1)
   | Some level -> level
 
-let mapping_alignment level =
-  try Desc.level_size level
-  with Invalid_argument _ -> error "page_table: invalid mapping level: %d" level
-
-(** Gather alignment requirements for PA targets of explicitly levelled
-    mappings. In particular, non-leaf mappings can require more than page
-    alignment: [_ -> pa at level 2] requires [pa] to be 2 MiB aligned. *)
-let pa_alignment_requests stmts =
-  let alignments = Hashtbl.create 32 in
-  let rec collect stmts =
-    List.iter
-      (function
-        | Page_table_ast.Mapping
-            {target = Page_table_ast.PaName name; level = Some level; _} ->
-            let alignment = mapping_alignment level in
-            let previous =
-              Hashtbl.find_opt alignments name
-              |> Option.value ~default:Allocator.page_size
-            in
-            Hashtbl.replace alignments name (max previous alignment)
-        | Page_table_ast.TableBlock {body; _} -> collect body
-        | _ -> ()
-        )
-      stmts
-  in
-  collect stmts; alignments
-
 let default_tables_enabled stmts =
   List.find_map
     (function Page_table_ast.OptionDefaultTables value -> Some value | _ -> None)
@@ -302,8 +244,7 @@ let eval_fields builder fields =
 
 let eval_mapping_target ?level ?(attrs = []) builder ~root ~va = function
   | Page_table_ast.PaName pa_name ->
-      let alignment = Option.map mapping_alignment level in
-      let pa = alloc_pa ?alignment ?mapping_level:level builder pa_name in
+      let pa = pa_addr builder pa_name in
       let fields = eval_fields builder attrs in
       add_mapping ?level ~fields builder ~root ~va ~pa Page_table_ast.Data
   | Page_table_ast.Address addr ->
@@ -338,13 +279,7 @@ let require_root = function
 let rec eval_stmt builder ~table_block ~root = function
   | Page_table_ast.OptionDefaultTables _ -> ()
   | Page_table_ast.Virtual _ -> ()
-  | Page_table_ast.Physical names ->
-      List.iter
-        (fun name ->
-           Eval_state.check_fresh_symbol builder.state name;
-           ignore (alloc_pa builder name)
-         )
-        names
+  | Page_table_ast.Physical _ -> ()
   | Page_table_ast.AlignedVirtual _ -> ()
   | Page_table_ast.Mapping {va; target; attrs; level} ->
       let root = require_root root in
@@ -352,7 +287,7 @@ let rec eval_stmt builder ~table_block ~root = function
       eval_mapping_target ?level ~attrs builder ~root ~va target
   | Page_table_ast.MaybeMapping _ -> ()
   | Page_table_ast.DataInit {pa_name; value} ->
-      let pa = alloc_pa builder pa_name in
+      let pa = pa_addr builder pa_name in
       let value = Term.eval ~state:builder.state value in
       Hashtbl.replace builder.data_inits pa value
   | Page_table_ast.IdentityMapping {addr; attr = Page_table_ast.Code} ->
@@ -364,9 +299,9 @@ let rec eval_stmt builder ~table_block ~root = function
       let root = require_root root in
       let addr = addr_of_z "address" (Term.eval ~state:builder.state addr) in
       add_mapping builder ~root ~va:addr ~pa:addr Page_table_ast.Data
-  | Page_table_ast.TableBlock {name; base; body; _} ->
+  | Page_table_ast.TableBlock {name; base = explicit_base; body; _} ->
       let base =
-        match base with
+        match explicit_base with
         | Some base -> table_addr "table base" base
         | None -> Allocator.alloc_page builder.table_allocator
       in
@@ -378,7 +313,9 @@ let rec eval_stmt builder ~table_block ~root = function
              (fun _ root duplicate -> duplicate || root = base)
              builder.named_roots false
       then error "page_table: duplicate table base: 0x%x" base;
-      Eval_state.add_symbol builder.state name base;
+      (* Roots with an explicit base are registered with the data symbols. *)
+      if Option.is_none explicit_base then
+        Eval_state.add_symbol builder.state name base;
       Hashtbl.add builder.named_roots name base;
       initialise_root builder ~table_block base;
       List.iter (eval_stmt builder ~table_block ~root:(Some base)) body
@@ -392,7 +329,7 @@ let to_layout builder : layout =
     data_inits = builder.data_inits
   }
 
-let build ~arch ~symbol_allocator ~table_allocator ~table_block ~state stmts =
+let build ~arch ~data_symbols_pa ~table_allocator ~table_block ~state stmts =
   check_arch arch;
   if stmts = [] then error "page_table: empty page_table_setup";
   let default_root =
@@ -403,11 +340,7 @@ let build ~arch ~symbol_allocator ~table_allocator ~table_block ~state stmts =
         )
     else None
   in
-  let builder =
-    make ~state ~symbol_allocator ~table_allocator
-      ~pa_alignments:(pa_alignment_requests stmts)
-      ~default_root
-  in
+  let builder = make ~state ~table_allocator ~data_symbols_pa ~default_root in
   state.Eval_state.page_table <- Some builder.entries;
   Option.iter (initialise_root builder ~table_block) builder.default_root;
   ( try List.iter (eval_stmt builder ~table_block ~root:builder.default_root) stmts
