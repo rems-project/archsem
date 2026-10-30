@@ -187,7 +187,7 @@ Negative zero extension in Isla function
 
 ELF symbols must agree with preassigned data addresses
   $ archsem seq conflicting-elf-symbol.litmus.toml
-  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x2000, ELF 0x10000
+  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x1000, ELF 0x10000
   [1]
 
 Page table DSL on unsupported architecture
@@ -260,6 +260,34 @@ Symbolic names must not be keywords
   archsem: eval error:
   File "keyword-symbol.litmus.toml", path "symbolic":
   Symbol "code" is invalid: names must start with a letter or '_', only contain letters, digits and '_', and not be a keyword
+  [1]
+
+Offset symbols must be declared
+  $ archsem seq offset-undeclared.litmus.toml
+  archsem: eval error:
+  File "offset-undeclared.litmus.toml", path "offsets.y":
+  Offset symbol y is not declared
+  [1]
+
+Offset bases cannot be offset symbols
+  $ archsem seq offset-of-offset.litmus.toml
+  archsem: eval error:
+  File "offset-of-offset.litmus.toml", path "offsets.z":
+  Offset base y is an offset symbol
+  [1]
+
+Offset bases cannot be assembly labels
+  $ archsem seq offset-label-base.litmus.toml
+  archsem: eval error:
+  File "offset-label-base.litmus.toml", path "offsets.y":
+  Offset base start is not allocated
+  [1]
+
+Offset bases must be allocated before assembly
+  $ archsem seq offset-unallocated-base.litmus.toml
+  archsem: eval error:
+  File "offset-unallocated-base.litmus.toml", path "offsets.y":
+  Offset base root is not allocated
   [1]
 
 Unknown config profile

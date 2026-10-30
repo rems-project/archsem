@@ -1,0 +1,8 @@
+Test Offsets+VM Allowed
+States 1
+0:X1=7; [pa_base]=0x401020; [pa_x]=7; 
+Ok
+Witnesses
+Positive: 1 Negative: 0
+Condition Offsets+VM exists (0:X1=7 /\ [pa_x]=7 /\ [pa_base]=0x401020)
+Observation Offsets+VM Always 1 0

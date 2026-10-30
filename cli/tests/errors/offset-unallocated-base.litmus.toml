@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "offset-unallocated-base"
+symbolic = ["x", "y"]
+
+page_table_setup = """
+s1table root {
+  x |-> pa;
+}
+"""
+
+[offsets]
+y.base = "root"
+y.offset = 32
+
+[thread.0]
+code = "nop"

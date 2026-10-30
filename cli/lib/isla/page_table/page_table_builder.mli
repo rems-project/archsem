@@ -40,8 +40,9 @@
 
 (** Build and query concrete AArch64 page-table layouts.
 
-    This module owns PA allocation, descriptor construction, and layout
-    interpretation for page-table setup. *)
+    This module owns table allocation, descriptor construction, and layout
+    interpretation for page-table setup. PA symbols are allocated before
+    assembly and passed in. *)
 
 type va = int
 
@@ -63,13 +64,13 @@ type layout =
 exception Error of string
 
 (** Build a concrete page-table layout by executing statements in source order.
-    Symbols are registered as they are allocated. Expressions query the live
-    entries built so far. After setup, [state] retains these entries for register
-    and assertion evaluation. *)
+    Table roots without an explicit base are registered as they are allocated.
+    Expressions query the live entries built so far. After setup, [state]
+    retains these entries for register and assertion evaluation. *)
 val build :
    arch:Litmus.Arch_id.t ->
-  (* Allocate physical addresses for data symbols. *)
-  symbol_allocator:Allocator.t ->
+  (* Preallocated data symbols and their physical addresses. *)
+  data_symbols_pa:(string, pa) Hashtbl.t ->
   (* Allocate root and child translation-table pages. *)
   table_allocator:Allocator.t ->
   (* Base address of the 2 MiB translation-table storage region. *)

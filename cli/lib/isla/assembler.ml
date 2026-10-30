@@ -127,18 +127,9 @@ let emit_label buf name = Printf.bprintf buf "%s:\n" name
 
 (* Section flags for GAS (GNU Assembler) .section directive:
    "a" = allocatable (loaded into memory at runtime)
-   "x" = executable (code)
-   "w" = writable (data) *)
+   "x" = executable (code) *)
 let emit_code_section_dir buf name =
   Printf.bprintf buf "\t.section .%s, \"ax\"\n" name
-
-let emit_data_section_dir buf name =
-  Printf.bprintf buf "\t.section .data.%s, \"aw\"\n" name
-
-let emit_data_symbol buf (sym : data_symbol) =
-  emit_data_section_dir buf sym.name;
-  emit_global buf sym.name;
-  emit_label buf sym.name
 
 let emit_code_section buf (sec : section) =
   emit_code_section_dir buf sec.name;
@@ -148,42 +139,36 @@ let emit_code_section buf (sec : section) =
   if sec.code <> "" && sec.code.[String.length sec.code - 1] <> '\n' then
     Buffer.add_char buf '\n'
 
-(** Combine all sections into a single assembly string *)
+(** Combine all sections into a single assembly string. Data symbols are only
+    declared global here; the linker script defines them. *)
 let generate_asm (symbols : data_symbol list) (sections : section list) : string =
   let buf = Buffer.create 256 in
-  List.iter (emit_data_symbol buf) symbols;
+  List.iter (fun (sym : data_symbol) -> emit_global buf sym.name) symbols;
   List.iter (emit_code_section buf) sections;
   Buffer.contents buf
 
 (* {1 Stage 1b: linker script generation} *)
 
-(** Compute linker-script placements for preassigned data symbols and code
-    sections.
+(* PROVIDE leaves a label of the same name in the code in place, so the caller
+   can report the conflict. *)
+let emit_ld_symbol buf (sym : data_symbol) =
+  Printf.bprintf buf "PROVIDE(%s = 0x%x);\n" sym.name sym.addr
 
-    The converter has already assigned each symbol and code section its final
-    address. The linker script only pins each generated ELF section name to that
-    address: data symbols are emitted under [.data.<name>] and code sections
-    under [.<name>]. *)
-let compute_section_layout (symbols : data_symbol list) (sections : section list)
-  : (string * int) list
-  =
-  List.map (fun (sym : data_symbol) -> (".data." ^ sym.name, sym.addr)) symbols
-  @ List.map (fun (sec : section) -> ("." ^ sec.name, sec.addr)) sections
+let emit_ld_section buf (sec : section) =
+  Printf.bprintf buf "  .%s 0x%x : { *(.%s) }\n" sec.name sec.addr sec.name
 
-let emit_ld_section buf name addr =
-  Printf.bprintf buf "  %s 0x%x : { *(%s) }\n" name addr name
-
-(** Generate a linker script from a section layout. *)
+(** Generate a linker script that defines each data symbol as an absolute
+    symbol and pins each code section [.<name>] to its preassigned address.
+    Absolute symbols occupy no section, so distant data addresses do not
+    produce large ELF segments. *)
 let generate_linker_script (symbols : data_symbol list) (sections : section list)
   : string
   =
-  let layout =
-    compute_section_layout symbols sections
-    |> List.sort (fun a b -> compare (snd a) (snd b))
-  in
   let buf = Buffer.create 256 in
+  List.iter (emit_ld_symbol buf) symbols;
   Printf.bprintf buf "SECTIONS {\n";
-  List.iter (fun (name, addr) -> emit_ld_section buf name addr) layout;
+  List.iter (emit_ld_section buf)
+    (List.sort (fun (a : section) b -> compare a.addr b.addr) sections);
   Printf.bprintf buf "}\n";
   Buffer.contents buf
 
@@ -264,7 +249,7 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
   match info with
   | Linksem_error.Fail msg -> Error.fatal "assembler: ELF parse failed: %s" msg
   | Linksem_error.Success (elf_file, _epi, symbol_map) ->
-      let elf_symbols =
+      let symbols =
         List.filter_map
           (fun (name, (_, _, addr, _, _)) ->
              (* Skip symbols that are not valid archsem identifiers. They are
@@ -273,26 +258,6 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
              else None
            )
           symbol_map
-      in
-      let symbols =
-        let data_symbols =
-          List.map (fun (sym : data_symbol) -> (sym.name, sym.addr)) input.symbols
-        in
-        (* Check ELF copies of preassigned data symbols before removing duplicates. *)
-        data_symbols
-        @ List.filter
-            (fun (name, addr) ->
-               match List.assoc_opt name data_symbols with
-               | None -> true
-               | Some data_addr ->
-                   if addr <> data_addr then
-                     Error.fatal
-                       "assembler: symbol %S has conflicting addresses: assigned \
-                        0x%x, ELF 0x%x"
-                        name data_addr addr;
-                   false
-             )
-            elf_symbols
       in
       let sections =
         match elf_file with
