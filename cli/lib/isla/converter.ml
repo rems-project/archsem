@@ -42,8 +42,8 @@
 
     Pipeline:
     - Reserve the pages of explicitly placed sections and table roots.
-    - Allocate every data symbol and register it in the test's mutable
-      evaluation state.
+    - Allocate every data symbol, then define the offset symbols from their
+      bases, and register the symbols in the test's mutable evaluation state.
     - Allocate the code sections and assemble them against those symbols. The
       assembler only emits code bytes and applies relocations.
     - Build page tables, memory, registers, termination, and outcomes. *)
@@ -329,6 +329,38 @@ type page_table_allocation =
     data_symbols_pa : (string, int) Hashtbl.t
   }
 
+let rec declared_physical_names = function
+  | [] -> []
+  | Page_table_ast.Physical names :: stmts ->
+      names @ declared_physical_names stmts
+  | Page_table_ast.TableBlock {body; _} :: stmts ->
+      declared_physical_names body @ declared_physical_names stmts
+  | _ :: stmts -> declared_physical_names stmts
+
+(* Register each offset symbol at its base address plus its offset. Offset
+   symbols are declared like other data symbols, and their bases are symbols
+   allocated before assembly that are not offset symbols themselves. *)
+let allocate_offsets ~state ~declared (ir : Ir.t) =
+  List.map
+    (fun (name, (base, offset)) ->
+       let path = ["offsets"; name] in
+       if not (List.mem name declared) then
+         eval_error_at path "Offset symbol %s is not declared" name;
+       if List.mem_assoc base ir.offsets then
+         eval_error_at path "Offset base %s is an offset symbol" base;
+       let addr =
+         match Hashtbl.find_opt state.Eval_state.symbols base with
+         | Some addr when addr <= max_int - offset -> addr + offset
+         | Some _ -> eval_error_at path "Offset address is out of range"
+         | None -> eval_error_at path "Offset base %s is not allocated" base
+       in
+       ( try Eval_state.add_symbol state name addr
+         with Failure msg -> eval_error_at path "%s" msg
+       );
+       (name, addr)
+     )
+    ir.offsets
+
 (** Allocators left after data symbol allocation *)
 type allocation =
   | No_page_table of Allocator.t
@@ -338,11 +370,13 @@ type allocation =
 (* Allocate every data symbol and register it in [state]. Without page tables,
    one allocator is returned for the code sections. With page tables, table
    roots with an explicit base are registered, virtual then physical symbols
-   are allocated in the data region, and the table allocator is returned. *)
+   are allocated in the data region, and the table allocator is returned.
+   Offset symbols are registered after the other data symbols. *)
 let allocate_symbols ~state ~reserved (ir : Ir.t) =
   let alloc allocator alignment =
     Allocator.alloc_aligned allocator ~size:alignment ~alignment
   in
+  let not_offset (name, _) = not (List.mem_assoc name ir.offsets) in
   let virtuals = symbolic_va_alignments ir in
   if ir.page_table_setup = [] then begin
     let allocator = Allocator.make ~base:0 ~reserved () in
@@ -350,7 +384,8 @@ let allocate_symbols ~state ~reserved (ir : Ir.t) =
       (fun (name, alignment) ->
          Eval_state.add_symbol state name (alloc allocator alignment)
        )
-      virtuals;
+      (List.filter not_offset virtuals);
+    ignore (allocate_offsets ~state ~declared:(List.map fst virtuals) ir);
     No_page_table allocator
   end
   else
@@ -370,7 +405,7 @@ let allocate_symbols ~state ~reserved (ir : Ir.t) =
     let physicals = symbolic_pa_alignments ir in
     List.iter
       (fun (name, alignment) -> add name (alloc data_allocator alignment))
-      virtuals;
+      (List.filter not_offset virtuals);
     let data_symbols_pa = Hashtbl.create 32 in
     List.iter
       (fun (name, alignment) ->
@@ -378,7 +413,17 @@ let allocate_symbols ~state ~reserved (ir : Ir.t) =
          Hashtbl.add data_symbols_pa name addr;
          add name addr
        )
-      physicals;
+      (List.filter not_offset physicals);
+    let declared_physicals = declared_physical_names ir.page_table_setup in
+    List.iter
+      (fun (name, addr) ->
+         if List.mem name declared_physicals then
+           Hashtbl.add data_symbols_pa name addr
+       )
+      (allocate_offsets ~state
+         ~declared:(List.map fst virtuals @ declared_physicals)
+         ir
+      );
     Page_table {table_allocator; data_symbols_pa}
 
 (** {2 Assembly} *)
