@@ -246,6 +246,13 @@ Page table DSL rejects locations with page tables
   page_table: [locations] is not supported with page_table_setup
   [1]
 
+Page table DSL reports failed assertions
+  $ archsem seq page-table-assert-failed.litmus.toml
+  archsem: eval error:
+  File "page-table-assert-failed.litmus.toml", path "page_table_setup":
+  page_table: assertion 'x[3..0] != 0' failed: 0 != 0
+  [1]
+
 Page table DSL parser errors report the DSL line and TOML path
   $ archsem seq invalid-page-table-token.litmus.toml
   archsem: TOML error:
@@ -304,6 +311,15 @@ Syntax error messages quote the input: page-table data initialization
   File "syntax-error-page-table-data-init.litmus.toml", path "page_table_setup":
   page-table setup parse error at line 2, character 9 (unexpected ';'):
   Expected an initial value for `*pa_x` after '='.
+  [1]
+
+Syntax error messages quote the input: page-table assertion
+  $ archsem seq syntax-error-page-table-assert.litmus.toml
+  archsem: TOML error:
+  File "syntax-error-page-table-assert.litmus.toml", path "page_table_setup":
+  page-table setup parse error at line 2, character 10 (unexpected '='):
+  Expected an infix operator (+, -, &, |), '==' or '!=' after `assert x`,
+  e.g. `assert x == 0;`.
   [1]
 
 Syntax error messages quote the input: page-table block stage and name

@@ -1,0 +1,16 @@
+arch = "AArch64"
+name = "syntax-error-page-table-assert"
+
+page_table_setup = """
+virtual x y;
+assert x = y;
+"""
+
+[thread.0]
+code = """
+nop
+"""
+
+[final]
+kind = "forall"
+assertion = "true"
