@@ -38,9 +38,11 @@
 (*                                                                            *)
 (******************************************************************************)
 
-(** Evaluate Isla expressions against the current test state. *)
+(** Evaluate Isla expressions against the current test state, and print them. *)
 
 include Term_ast
+
+(** {1 Evaluation} *)
 
 let eval ~state term =
   let positional_functions =
@@ -71,3 +73,58 @@ let eval ~state term =
         Fn_registry.eval ~fns:keyword_functions name evaluated
   in
   eval_term term
+
+(** {1 Printing} *)
+
+let binary_op_to_string = function
+  | Add -> "+"
+  | Sub -> "-"
+  | Bit_and -> "&"
+  | Bit_or -> "|"
+
+(** Precedence levels, from the loosest to the tightest binding. The binary
+    operators follow the precedence declarations of [parser.mly] *)
+let binary_op_prec = function Bit_or -> 0 | Bit_and -> 1 | Add | Sub -> 2
+
+(** Negations, negative constants and bit slices, whose operand must be closed *)
+let unary_prec = 3
+
+(** Terms that never need parentheses *)
+let closed_prec = 4
+
+let int_to_string = Litmus.Toml.Numbers.int_to_string
+
+(** Print [term] in parenthesis if its precedence is lower than [prec] *)
+let rec to_string_prec prec term =
+  let (str, term_prec) =
+    match term with
+    | Const z when Z.sign z < 0 -> ("-" ^ int_to_string (Z.neg z), unary_prec)
+    | Const z -> (int_to_string z, closed_prec)
+    | Sym sym -> (sym, closed_prec)
+    | Fn (name, args) ->
+        let args = List.map to_string args in
+        (Printf.sprintf "%s(%s)" name (String.concat ", " args), closed_prec)
+    | KwFn (name, kwargs) ->
+        let kwargs = List.map (fun (k, v) -> k ^ " = " ^ to_string v) kwargs in
+        (Printf.sprintf "%s(%s)" name (String.concat ", " kwargs), closed_prec)
+    | Binary (lhs, op, rhs) ->
+        let prec = binary_op_prec op in
+        ( Printf.sprintf "%s %s %s" (to_string_prec prec lhs)
+            (binary_op_to_string op)
+            (to_string_prec (prec + 1) rhs),
+          prec
+        )
+    | Negate value -> ("-" ^ to_string_prec closed_prec value, unary_prec)
+    | Extract (value, hi, lo) ->
+        let slice =
+          if Z.equal hi lo then Printf.sprintf "[%s]" (Z.to_string hi)
+          else Printf.sprintf "[%s..%s]" (Z.to_string hi) (Z.to_string lo)
+        in
+        (to_string_prec closed_prec value ^ slice, unary_prec)
+  in
+  if term_prec < prec then "(" ^ str ^ ")" else str
+
+(** Print a term in the Isla term syntax, with the minimal parentheses.
+    Parsing the result gives back [term] for any term produced by the parser.
+    Top-level [&] and [|] still need parentheses in assertions. *)
+and to_string term = to_string_prec 0 term
