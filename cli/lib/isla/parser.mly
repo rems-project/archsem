@@ -58,6 +58,7 @@
 %token SEMICOLON ";"
 %token LBRACKET "["
 %token RBRACKET "]"
+%token DOTDOT ".."
 %token LBRACE "{"
 %token RBRACE "}"
 %token MAPS_TO "|->"
@@ -224,10 +225,16 @@ loc:
   | "*"; addr = closed_term
     { match addr with Term.Sym name -> Mem name | _ -> MemAddr addr }
 
+bit_slice:
+  | "["; hi = NUM; ".."; lo = NUM; "]" { (hi, lo) }
+  | "["; i = NUM; "]" { (i, i) }
+
 term:
   | v = closed_term { v }
   | "-"; v = closed_term
     { match v with Term.Const z -> Term.Const (Z.neg z) | _ -> Term.Negate v }
+  | v = closed_term; s = bit_slice
+    { let (hi, lo) = s in Term.Extract (v, hi, lo) }
   | lhs = term; "+"; rhs = term { Term.Binary (lhs, Term.Add, rhs) }
   | lhs = term; "-"; rhs = term { Term.Binary (lhs, Term.Sub, rhs) }
   | lhs = term; "&"; rhs = term { Term.Binary (lhs, Term.Bit_and, rhs) }
