@@ -6,6 +6,7 @@ symbolic = ["x"]
 code = """
 .section .data.x, "aw"
 .balign 65536
+x:
 .section .__thread0, "ax"
 nop
 """
