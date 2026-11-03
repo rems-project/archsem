@@ -1,0 +1,6 @@
+arch = "AArch64"
+name = "inverted-slice"
+
+[thread.0]
+init = { X0 = "0x10[0..3]" }
+code = "NOP"
