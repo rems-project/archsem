@@ -27,7 +27,7 @@ binding: LPAREN WITH
 ##
 ## Ends in an error in state: 4.
 ##
-## closed_term -> LPAREN . term RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQ EOF COMMA AT AND ]
+## closed_term -> LPAREN . term RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## LPAREN
@@ -39,7 +39,7 @@ binding: MINUS WITH
 ##
 ## Ends in an error in state: 5.
 ##
-## term -> MINUS . closed_term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EOF COMMA AT AND ]
+## term -> MINUS . closed_term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## MINUS
@@ -53,8 +53,8 @@ binding: IDENT LPAREN WITH
 ##
 ## Ends in an error in state: 7.
 ##
-## fn_term -> IDENT LPAREN . loption(separated_nonempty_list(COMMA,term)) RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQ EOF COMMA AT AND ]
-## fn_term -> IDENT LPAREN . separated_nonempty_list(COMMA,kw_arg) RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQ EOF COMMA AT AND ]
+## fn_term -> IDENT LPAREN . loption(separated_nonempty_list(COMMA,term)) RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQEQ EQ EOF COMMA AT AND ]
+## fn_term -> IDENT LPAREN . separated_nonempty_list(COMMA,kw_arg) RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## IDENT LPAREN
@@ -102,7 +102,7 @@ binding: IDENT PLUS WITH
 ##
 ## Ends in an error in state: 11.
 ##
-## term -> term PLUS . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EOF COMMA AT AND ]
+## term -> term PLUS . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## term PLUS
@@ -114,8 +114,8 @@ binding: IDENT LBRACKET WITH
 ##
 ## Ends in an error in state: 15.
 ##
-## bit_slice -> LBRACKET . NUM DOTDOT NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
-## bit_slice -> LBRACKET . NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET . NUM DOTDOT NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET . NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## LBRACKET
@@ -128,8 +128,8 @@ binding: IDENT LBRACKET NUM WITH
 ##
 ## Ends in an error in state: 16.
 ##
-## bit_slice -> LBRACKET NUM . DOTDOT NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
-## bit_slice -> LBRACKET NUM . RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET NUM . DOTDOT NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET NUM . RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## LBRACKET NUM
@@ -141,7 +141,7 @@ binding: IDENT LBRACKET NUM DOTDOT WITH
 ##
 ## Ends in an error in state: 18.
 ##
-## bit_slice -> LBRACKET NUM DOTDOT . NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET NUM DOTDOT . NUM RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## LBRACKET NUM DOTDOT
@@ -154,7 +154,7 @@ binding: IDENT LBRACKET NUM DOTDOT NUM WITH
 ##
 ## Ends in an error in state: 19.
 ##
-## bit_slice -> LBRACKET NUM DOTDOT NUM . RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EQ EOF COMMA AT AND ]
+## bit_slice -> LBRACKET NUM DOTDOT NUM . RBRACKET [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## LBRACKET NUM DOTDOT NUM
@@ -166,7 +166,7 @@ binding: IDENT OR WITH
 ##
 ## Ends in an error in state: 22.
 ##
-## term -> term OR . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EOF COMMA AT AND ]
+## term -> term OR . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## term OR
@@ -178,7 +178,7 @@ binding: IDENT MINUS WITH
 ##
 ## Ends in an error in state: 24.
 ##
-## term -> term MINUS . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EOF COMMA AT AND ]
+## term -> term MINUS . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## term MINUS
@@ -190,7 +190,7 @@ binding: IDENT AND WITH
 ##
 ## Ends in an error in state: 26.
 ##
-## term -> term AND . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO EOF COMMA AT AND ]
+## term -> term AND . term [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO EQEQ EOF COMMA AT AND ]
 ##
 ## The known suffix of the stack is as follows:
 ## term AND
@@ -265,7 +265,7 @@ binding: LPAREN NUM VIRTUAL
 ##
 ## Ends in an error in state: 42.
 ##
-## closed_term -> LPAREN term . RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQ EOF COMMA AT AND ]
+## closed_term -> LPAREN term . RPAREN [ WITH SEMICOLON RPAREN RBRACKET PLUS OR NEQ MINUS MAYBE_MAPS_TO MAPS_TO LBRACKET EQEQ EQ EOF COMMA AT AND ]
 ## term -> term . PLUS term [ RPAREN PLUS OR MINUS AND ]
 ## term -> term . MINUS term [ RPAREN PLUS OR MINUS AND ]
 ## term -> term . AND term [ RPAREN PLUS OR MINUS AND ]
@@ -517,7 +517,8 @@ page_table_setup: WITH
 ##
 
 Expected a page-table statement: `option`, `virtual`, `physical`, `aligned`,
-`identity`, `s1table`, `s2table`, `VA |-> ...`, `VA ?-> ...` or `*PA = VALUE`.
+`identity`, `assert`, `s1table`, `s2table`, `VA |-> ...`, `VA ?-> ...` or
+`*PA = VALUE`.
 
 page_table_setup: VIRTUAL WITH
 ##
@@ -699,9 +700,80 @@ page_table_setup: IDENTITY IDENT WITH WITH
 
 Expected `code` or `default` after 'identity $1 with'.
 
-page_table_setup: ALIGNED WITH
+page_table_setup: ASSERT WITH
 ##
 ## Ends in an error in state: 104.
+##
+## page_table_stmt_inner -> ASSERT . term page_table_assert_op term [ SEMICOLON ]
+##
+## The known suffix of the stack is as follows:
+## ASSERT
+##
+
+Expected a term after 'assert', e.g. `assert x[47..21] == y[47..21];`.
+
+page_table_setup: ASSERT IDENT WITH
+##
+## Ends in an error in state: 105.
+##
+## page_table_stmt_inner -> ASSERT term . page_table_assert_op term [ SEMICOLON ]
+## term -> term . PLUS term [ PLUS OR NEQ MINUS EQEQ AND ]
+## term -> term . MINUS term [ PLUS OR NEQ MINUS EQEQ AND ]
+## term -> term . AND term [ PLUS OR NEQ MINUS EQEQ AND ]
+## term -> term . OR term [ PLUS OR NEQ MINUS EQEQ AND ]
+##
+## The known suffix of the stack is as follows:
+## ASSERT term
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 6, spurious reduction of production closed_term -> IDENT
+## In state 14, spurious reduction of production term -> closed_term
+##
+
+Expected an infix operator (+, -, &, |), '==' or '!=' after `assert $0`,
+e.g. `assert $0 == 0;`.
+
+page_table_setup: ASSERT IDENT EQEQ WITH
+##
+## Ends in an error in state: 108.
+##
+## page_table_stmt_inner -> ASSERT term page_table_assert_op . term [ SEMICOLON ]
+##
+## The known suffix of the stack is as follows:
+## ASSERT term page_table_assert_op
+##
+
+Expected a term after `assert $1 $0`.
+
+page_table_setup: ASSERT IDENT EQEQ IDENT WITH
+##
+## Ends in an error in state: 109.
+##
+## page_table_stmt_inner -> ASSERT term page_table_assert_op term . [ SEMICOLON ]
+## term -> term . PLUS term [ SEMICOLON PLUS OR MINUS AND ]
+## term -> term . MINUS term [ SEMICOLON PLUS OR MINUS AND ]
+## term -> term . AND term [ SEMICOLON PLUS OR MINUS AND ]
+## term -> term . OR term [ SEMICOLON PLUS OR MINUS AND ]
+##
+## The known suffix of the stack is as follows:
+## ASSERT term page_table_assert_op term
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 6, spurious reduction of production closed_term -> IDENT
+## In state 14, spurious reduction of production term -> closed_term
+##
+
+Expected an infix operator (+, -, &, |) or ';' after `assert $2 $1 $0`.
+
+page_table_setup: ALIGNED WITH
+##
+## Ends in an error in state: 110.
 ##
 ## page_table_stmt_inner -> ALIGNED . NUM VIRTUAL nonempty_list(IDENT) [ SEMICOLON ]
 ##
@@ -713,7 +785,7 @@ Expected an alignment after 'aligned', e.g. `aligned 0x200000 virtual x;`.
 
 page_table_setup: ALIGNED NUM WITH
 ##
-## Ends in an error in state: 105.
+## Ends in an error in state: 111.
 ##
 ## page_table_stmt_inner -> ALIGNED NUM . VIRTUAL nonempty_list(IDENT) [ SEMICOLON ]
 ##
@@ -725,7 +797,7 @@ Expected 'virtual' after the alignment, e.g. `aligned $0 virtual x;`.
 
 page_table_setup: ALIGNED NUM VIRTUAL WITH
 ##
-## Ends in an error in state: 106.
+## Ends in an error in state: 112.
 ##
 ## page_table_stmt_inner -> ALIGNED NUM VIRTUAL . nonempty_list(IDENT) [ SEMICOLON ]
 ##
@@ -737,7 +809,7 @@ Expected one or more virtual address names after 'aligned $1 virtual'.
 
 page_table_setup: IDENT WITH
 ##
-## Ends in an error in state: 108.
+## Ends in an error in state: 114.
 ##
 ## page_table_stmt_inner -> term . MAPS_TO page_table_mapping_rhs [ SEMICOLON ]
 ## page_table_stmt_inner -> term . MAYBE_MAPS_TO page_table_mapping_rhs [ SEMICOLON ]
@@ -762,7 +834,7 @@ a mapping, e.g. `$0 |-> pa;`.
 
 page_table_setup: IDENT MAYBE_MAPS_TO WITH
 ##
-## Ends in an error in state: 109.
+## Ends in an error in state: 115.
 ##
 ## page_table_stmt_inner -> term MAYBE_MAPS_TO . page_table_mapping_rhs [ SEMICOLON ]
 ##
@@ -775,7 +847,7 @@ an address, `invalid` or `table(ADDR)`.
 
 page_table_setup: IDENT MAPS_TO INVALID VIRTUAL
 ##
-## Ends in an error in state: 112.
+## Ends in an error in state: 118.
 ##
 ## page_table_mapping_rhs -> page_table_mapping_target . option(page_table_descriptor_attrs) option(page_table_mapping_level) [ SEMICOLON ]
 ##
@@ -788,7 +860,7 @@ Expected `with [...]`, `at level N` or ';'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH WITH
 ##
-## Ends in an error in state: 113.
+## Ends in an error in state: 119.
 ##
 ## page_table_descriptor_attrs -> WITH . LBRACKET separated_nonempty_list(COMMA,page_table_descriptor_attr) RBRACKET option(page_table_descriptor_default) [ SEMICOLON AT ]
 ##
@@ -801,7 +873,7 @@ e.g. `with [AF = 1, AP = 0b01]`.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET WITH
 ##
-## Ends in an error in state: 114.
+## Ends in an error in state: 120.
 ##
 ## page_table_descriptor_attrs -> WITH LBRACKET . separated_nonempty_list(COMMA,page_table_descriptor_attr) RBRACKET option(page_table_descriptor_default) [ SEMICOLON AT ]
 ##
@@ -813,7 +885,7 @@ Expected a descriptor attribute of the form NAME = VALUE.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT WITH
 ##
-## Ends in an error in state: 115.
+## Ends in an error in state: 121.
 ##
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT . EQ term [ RBRACKET ]
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT . EQ term COMMA separated_nonempty_list(COMMA,page_table_descriptor_attr) [ RBRACKET ]
@@ -826,7 +898,7 @@ Expected '=' after the descriptor attribute name '$0'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ WITH
 ##
-## Ends in an error in state: 116.
+## Ends in an error in state: 122.
 ##
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT EQ . term [ RBRACKET ]
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT EQ . term COMMA separated_nonempty_list(COMMA,page_table_descriptor_attr) [ RBRACKET ]
@@ -839,7 +911,7 @@ Expected a value for the descriptor attribute '$1' after '='.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ NUM VIRTUAL
 ##
-## Ends in an error in state: 117.
+## Ends in an error in state: 123.
 ##
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT EQ term . [ RBRACKET ]
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT EQ term . COMMA separated_nonempty_list(COMMA,page_table_descriptor_attr) [ RBRACKET ]
@@ -863,7 +935,7 @@ attribute '$2 = $0'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ IDENT COMMA WITH
 ##
-## Ends in an error in state: 118.
+## Ends in an error in state: 124.
 ##
 ## separated_nonempty_list(COMMA,page_table_descriptor_attr) -> IDENT EQ term COMMA . separated_nonempty_list(COMMA,page_table_descriptor_attr) [ RBRACKET ]
 ##
@@ -875,7 +947,7 @@ Expected a descriptor attribute of the form NAME = VALUE after '$3 = $1,'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ IDENT RBRACKET WITH
 ##
-## Ends in an error in state: 121.
+## Ends in an error in state: 127.
 ##
 ## page_table_descriptor_attrs -> WITH LBRACKET separated_nonempty_list(COMMA,page_table_descriptor_attr) RBRACKET . option(page_table_descriptor_default) [ SEMICOLON AT ]
 ##
@@ -888,7 +960,7 @@ Expected `and default`, `at level N` or ';'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ IDENT RBRACKET AND_KW WITH
 ##
-## Ends in an error in state: 122.
+## Ends in an error in state: 128.
 ##
 ## page_table_descriptor_default -> AND_KW . DEFAULT [ SEMICOLON AT ]
 ##
@@ -900,7 +972,7 @@ Expected 'default' after 'and'.
 
 page_table_setup: IDENT MAPS_TO IDENT WITH LBRACKET IDENT EQ IDENT RBRACKET AND_KW DEFAULT WITH
 ##
-## Ends in an error in state: 127.
+## Ends in an error in state: 133.
 ##
 ## page_table_mapping_rhs -> page_table_mapping_target option(page_table_descriptor_attrs) . option(page_table_mapping_level) [ SEMICOLON ]
 ##
@@ -913,7 +985,7 @@ attributes `$0`.
 
 page_table_setup: IDENT MAPS_TO IDENT AT WITH
 ##
-## Ends in an error in state: 128.
+## Ends in an error in state: 134.
 ##
 ## page_table_mapping_level -> AT . LEVEL NUM [ SEMICOLON ]
 ##
@@ -925,7 +997,7 @@ Expected 'level' after 'at', e.g. `at level 2`.
 
 page_table_setup: IDENT MAPS_TO IDENT AT LEVEL WITH
 ##
-## Ends in an error in state: 129.
+## Ends in an error in state: 135.
 ##
 ## page_table_mapping_level -> AT LEVEL . NUM [ SEMICOLON ]
 ##
@@ -937,7 +1009,7 @@ Expected a level number after 'at level', e.g. `at level 2`.
 
 page_table_setup: IDENT MAPS_TO WITH
 ##
-## Ends in an error in state: 134.
+## Ends in an error in state: 140.
 ##
 ## page_table_stmt_inner -> term MAPS_TO . page_table_mapping_rhs [ SEMICOLON ]
 ##
@@ -950,9 +1022,9 @@ an address, `invalid` or `table(ADDR)`.
 
 page_table_setup: IDENTITY IDENT WITH CODE WITH
 ##
-## Ends in an error in state: 136.
+## Ends in an error in state: 142.
 ##
-## page_table_stmt -> page_table_stmt_inner . SEMICOLON [ VIRTUAL STAR S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ALIGNED ]
+## page_table_stmt -> page_table_stmt_inner . SEMICOLON [ VIRTUAL STAR S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ASSERT ALIGNED ]
 ##
 ## The known suffix of the stack is as follows:
 ## page_table_stmt_inner
@@ -962,7 +1034,7 @@ Expected ';' at the end of the statement '$0'.
 
 page_table_setup: PHYSICAL IDENT SEMICOLON RBRACE
 ##
-## Ends in an error in state: 138.
+## Ends in an error in state: 144.
 ##
 ## nonempty_list(page_table_stmt) -> page_table_stmt . [ EOF ]
 ## nonempty_list(page_table_stmt) -> page_table_stmt . nonempty_list(page_table_stmt) [ EOF ]
@@ -976,9 +1048,9 @@ statement '$0'.
 
 page_table_setup: S1TABLE WITH
 ##
-## Ends in an error in state: 139.
+## Ends in an error in state: 145.
 ##
-## page_table_block -> page_table_stage . IDENT option(NUM) LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ALIGNED ]
+## page_table_block -> page_table_stage . IDENT option(NUM) LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ASSERT ALIGNED ]
 ##
 ## The known suffix of the stack is as follows:
 ## page_table_stage
@@ -988,9 +1060,9 @@ Expected a table name after '$0', e.g. `$0 root 0x200000 { ... }`.
 
 page_table_setup: S1TABLE IDENT WITH
 ##
-## Ends in an error in state: 140.
+## Ends in an error in state: 146.
 ##
-## page_table_block -> page_table_stage IDENT . option(NUM) LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ALIGNED ]
+## page_table_block -> page_table_stage IDENT . option(NUM) LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ASSERT ALIGNED ]
 ##
 ## The known suffix of the stack is as follows:
 ## page_table_stage IDENT
@@ -1001,9 +1073,9 @@ e.g. `$1 $0 { ... }` or `$1 $0 0x200000 { ... }`.
 
 page_table_setup: S1TABLE IDENT NUM WITH
 ##
-## Ends in an error in state: 142.
+## Ends in an error in state: 148.
 ##
-## page_table_block -> page_table_stage IDENT option(NUM) . LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ALIGNED ]
+## page_table_block -> page_table_stage IDENT option(NUM) . LBRACE list(page_table_stmt) RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ASSERT ALIGNED ]
 ##
 ## The known suffix of the stack is as follows:
 ## page_table_stage IDENT option(NUM)
@@ -1013,9 +1085,9 @@ Expected '{' to start the body of table '$1' after its base address '$0'.
 
 page_table_setup: S1TABLE IDENT NUM LBRACE WITH
 ##
-## Ends in an error in state: 149.
+## Ends in an error in state: 155.
 ##
-## page_table_block -> page_table_stage IDENT option(NUM) LBRACE list(page_table_stmt) . RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ALIGNED ]
+## page_table_block -> page_table_stage IDENT option(NUM) LBRACE list(page_table_stmt) . RBRACE [ VIRTUAL STAR SEMICOLON S2TABLE S1TABLE RBRACE PHYSICAL OPTION NUM MINUS LPAREN IDENTITY IDENT EOF ASSERT ALIGNED ]
 ##
 ## The known suffix of the stack is as follows:
 ## page_table_stage IDENT option(NUM) LBRACE list(page_table_stmt)
@@ -1024,7 +1096,7 @@ page_table_setup: S1TABLE IDENT NUM LBRACE WITH
 ## This implies that, although the LR(1) items shown above provide an
 ## accurate view of the past (what has been recognized so far), they
 ## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 143, spurious reduction of production list(page_table_stmt) ->
+## In state 149, spurious reduction of production list(page_table_stmt) ->
 ##
 
 Expected a page-table statement or '}' to close table '$3'.
