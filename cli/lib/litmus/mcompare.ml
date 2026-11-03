@@ -40,11 +40,16 @@
 
 (** Functions for displaying mcompare-compatible output *)
 
-let loc_to_string (loc : Z.t Assertion.loc) =
+let base_loc_to_string (loc : Z.t Assertion.base_loc) =
   match loc with
   | Reg (tid, reg) -> Printf.sprintf "%d:%s" tid reg
   | Mem sym -> Printf.sprintf "[%s]" sym
   | MemAddr addr -> Printf.sprintf "[%s]" (Z.format "%#x" addr)
+
+let loc_to_string (loc : Z.t Assertion.loc) =
+  match loc with
+  | Base loc -> base_loc_to_string loc
+  | Slice (loc, hi, lo) -> base_loc_to_string loc ^ Assertion.slice_printer hi lo
 
 (** Print a state element in herd style e.g. [0:R0=4] *)
 let print_state_atom ((loc : Z.t Assertion.loc), value) =
