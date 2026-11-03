@@ -1285,6 +1285,44 @@ Module TLB.
           tend : nat; (* Last timestamp that could see this entry *)
           inv_time : option nat (* If other-thread TLBI, time of the that TLBI *)
         }.
+
+    (** *** Result merging *)
+
+    (** Merge results with the same leaf PTE, the same non-address bits in
+        every table PTE, and the same [tend] and [inv_time]. The merged result
+        keeps the first root and path and the earliest [tstart].
+
+        Hides candidate executions that differ only in walk addresses or a
+        later [tstart]. *)
+
+    (** The bits of a table PTE that are not the next-level table address *)
+    Definition table_attrs (pte : bv 64) : bv 12 * bv 16 :=
+      (bv_extract 0 12 pte, bv_extract 48 16 pte).
+
+    (** Decide if result [r] can be merged into result [r'] *)
+    Definition mergeable (r' r : t) : Prop :=
+      last r'.(path) = last r.(path)
+      ∧ map table_attrs (removelast r'.(path))
+        = map table_attrs (removelast r.(path))
+      ∧ r'.(tend) = r.(tend)
+      ∧ r'.(inv_time) = r.(inv_time).
+    #[export] Instance Decision_mergeable r' r : Decision (mergeable r' r).
+    Proof. unfold_decide. Defined.
+
+    (** Merge [r] into the first mergeable result of [rs], or add it at the end
+        if there is none *)
+    Fixpoint merge_into (r : t) (rs : list t) : list t :=
+      match rs with
+      | [] => [r]
+      | r' :: rs' =>
+          if decide (mergeable r' r)
+          then setv tstart (min r'.(tstart) r.(tstart)) r' :: rs'
+          else r' :: merge_into r rs'
+      end.
+
+    (** Merge equivalent results, in order *)
+    Definition merge (rs : list t) : list t :=
+      foldl (λ acc r, merge_into r acc) [] rs.
   End Result.
 
   Section TLBLookup.
@@ -1840,7 +1878,7 @@ Module TState.
           |> mret
         end |$> List.concat
       else mret []);
-    mret (from_tlb ++ from_lvl0_inv).
+    mret (TLB.Result.merge (from_tlb ++ from_lvl0_inv)).
 
   Definition ets2 (ts : t) : bool :=
     if ts.(tlb) is Some tlb then bool_decide (2 ≤ tlb.(TLB.ets))%N else false.
