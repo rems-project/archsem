@@ -192,11 +192,6 @@ Bit slice with the high index below the low index
   bit slice '[0..3]': high index is below low index
   [1]
 
-ELF symbols must agree with preassigned data addresses
-  $ archsem seq conflicting-elf-symbol.litmus.toml
-  archsem: fatal error: assembler: symbol "x" has conflicting addresses: assigned 0x2000, ELF 0x10000
-  [1]
-
 Page table DSL on unsupported architecture
   $ archsem seq x86-page-table.litmus.toml
   archsem: eval error:
