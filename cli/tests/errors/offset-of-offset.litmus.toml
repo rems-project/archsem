@@ -1,0 +1,12 @@
+arch = "AArch64"
+name = "offset-of-offset"
+symbolic = ["x", "y", "z"]
+
+[offsets]
+y.base = "x"
+y.offset = 32
+z.base = "y"
+z.offset = 32
+
+[thread.0]
+code = "nop"
