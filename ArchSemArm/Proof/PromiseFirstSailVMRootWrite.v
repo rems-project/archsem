@@ -40,7 +40,7 @@ Definition event := Ev.Msg (Msg.make 0 0 8 8195).
     establish. Keeping the result-valued operations here avoids storing large
     evaluated state terms in the source. *)
 Local Definition fallback := TState.make [] [] ∅ [] ∅ ∅
-  0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat ∅ None None.
+  0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat ∅ None 0%nat None.
 Definition init_ps : PState.t TState.t Ev.t 1 :=
   match PState.from_archState prom initial with
   | Ok st => st
@@ -78,18 +78,18 @@ Proof.
 Qed.
 
 Lemma initial_candidates :
-  (CPState.enumerate_results isem prom term 0%fin (PState.initmem init_ps)
+  (CPState.enumerate_results_filtered isem prom term 0%fin (PState.initmem init_ps)
     1 (PState.tstate 0%fin init_ps) (PState.events init_ps)).(CPState.promises prom) = [event].
 Proof.
   vm_compute. repeat first [reflexivity | apply bv_eq; reflexivity | progress f_equal].
 Qed.
 Lemma initial_finals :
-  (CPState.enumerate_results isem prom term 0%fin (PState.initmem init_ps)
+  (CPState.enumerate_results_filtered isem prom term 0%fin (PState.initmem init_ps)
     1 (PState.tstate 0%fin init_ps) (PState.events init_ps)).(CPState.final_states prom) = [].
 Proof. vm_compute. reflexivity. Qed.
 Lemma initial_step_positive fuel next res :
   Exec.elem_of_results (next, res)
-    (CPState.run_transition_promise_first isem prom term (S fuel) init_ps) →
+    (CPState.run_transition_promise_first_uncached isem prom term (S fuel) init_ps) →
   next = promised ∧ res = None.
 Proof.
   rewrite <- (complete_transition_fuel_irrelevant prom false term 1%nat (S fuel)
@@ -124,16 +124,16 @@ Proof.
 Qed.
 
 Lemma promise_first_result_count :
-  length (Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
+  length (Exec.results (opModel.run (@CPState.opmodel_pf_uncached isem prom 1)
     2 term initial init_ps)) = 1%nat.
 Proof. vm_compute. reflexivity. Qed.
 
 Lemma promise_first_has_result :
   ∃ st fsig, Exec.elem_of_results (st, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom 1) 2 term initial init_ps).
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom 1) 2 term initial init_ps).
 Proof.
   pose proof promise_first_result_count as Hcount.
-  destruct (Exec.results (opModel.run (@CPState.opmodel_pf isem prom 1)
+  destruct (Exec.results (opModel.run (@CPState.opmodel_pf_uncached isem prom 1)
     2 term initial init_ps)) as [|[st fsig] rest] eqn:Hresults;
     [discriminate|].
   exists st, fsig. unfold Exec.elem_of_results. rewrite Hresults. left; reflexivity.
@@ -152,7 +152,7 @@ Qed.
 Theorem common_final_result :
   ∃ returned final fsig cost,
     Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom 1) 2 term initial init_ps) ∧
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom 1) 2 term initial init_ps) ∧
     ∀ fuel, (cost < fuel)%nat → Exec.elem_of_results (final, fsig)
       (opModel.run (@CPState.opmodel isem prom 1) fuel term initial init_ps).
 Proof.

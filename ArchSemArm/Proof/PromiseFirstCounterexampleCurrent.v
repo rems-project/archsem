@@ -59,7 +59,7 @@ Definition init_ms : archState 2 :=
   {| archState.regs := [# regs 0; regs 10]; archState.memory := imem;
      archState.address_space := PAS_NonSecure |}.
 Definition enum (fuel : nat) (tid : fin 2) :=
-  CPState.enumerate_results sem UMPromising term tid imem fuel
+  CPState.enumerate_results_filtered sem UMPromising term tid imem fuel
     (PState.tstate tid init_ps) [].
 
 Example candidate_count_fuel_one :
@@ -106,17 +106,17 @@ Definition empty_enum : CPState.EnumerationResult UMPromising :=
 Lemma enum_empty fuel tid : enum (S (S fuel)) tid = empty_enum.
 Proof.
   inv_fin tid.
-  - unfold enum, CPState.enumerate_results.
+  - unfold enum, CPState.enumerate_results_filtered.
     rewrite thread_zero_empty. reflexivity.
   - intro tid. inv_fin tid.
-    + unfold enum, CPState.enumerate_results.
+    + unfold enum, CPState.enumerate_results_filtered.
       rewrite thread_one_empty. reflexivity.
     + intro tid. inv_fin tid.
 Qed.
 
 Lemma promise_first_initial_no_result fuel st res :
   Exec.elem_of_results (st, res)
-    (CPState.run_transition_promise_first sem UMPromising term
+    (CPState.run_transition_promise_first_uncached sem UMPromising term
       (S (S fuel)) init_ps) → False.
 Proof.
   intro Hstep. destruct res as [fsig|].
@@ -137,11 +137,11 @@ Qed.
 
 Lemma promise_first_initial_no_results fuel :
   Exec.results
-    (CPState.run_transition_promise_first sem UMPromising term
+    (CPState.run_transition_promise_first_uncached sem UMPromising term
       (S (S fuel)) init_ps) = [].
 Proof.
   destruct (Exec.results
-    (CPState.run_transition_promise_first sem UMPromising term
+    (CPState.run_transition_promise_first_uncached sem UMPromising term
       (S (S fuel)) init_ps)) as [|[st res] rest] eqn:Hresults; [reflexivity|].
   exfalso. eapply promise_first_initial_no_result.
   unfold Exec.elem_of_results. rewrite Hresults. left; reflexivity.
@@ -158,7 +158,7 @@ Qed.
 
 Lemma promise_first_no_results fuel :
   Exec.results
-    (opModel.run (@CPState.opmodel_pf sem UMPromising 2) fuel term init_ms init_ps) = [].
+    (opModel.run (@CPState.opmodel_pf_uncached sem UMPromising 2) fuel term init_ms init_ps) = [].
 Proof.
   destruct fuel as [|[|fuel]].
   - reflexivity.

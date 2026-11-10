@@ -93,7 +93,7 @@ Inductive BoundedThreadExecution : TState.t → TState.t → Prop :=
 
 Lemma bounded_thread_final_candidate ts fin :
   BoundedThreadExecution ts fin →
-  ∃ fuel, fin ∈ (CPState.enumerate_results isem prom term tid imem fuel ts mem)
+  ∃ fuel, fin ∈ (CPState.enumerate_results_filtered isem prom term tid imem fuel ts mem)
     .(CPState.final_states prom).
 Proof.
   intro Htrace.
@@ -163,20 +163,20 @@ Qed.
 Lemma VMSail_fixed_history_final_batch st final returned
     (pt : CPState.terminated prom term final) :
   rtc VMBoundedFixedHistoryStep st final → VMViewBound final →
-  Exec.elem_of_results (returned, ()) (CPState.validate_final prom final final) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state prom final final) →
   ∃ fuel, Exec.elem_of_results
     (st, Some (CPState.to_final_archState (CPState.make_final prom term final pt)))
-    (CPState.run_transition_promise_first isem prom term fuel st).
+    (CPState.run_transition_promise_first_uncached isem prom term fuel st).
 Proof.
   intros Htrace Hbound Hvalid.
   destruct (bounded_fixed_history_projection st final Htrace pt Hbound)
     as [Himem [Hmem Hthreads]].
   assert (Hcandidates : ∀ tid, ∃ fuel, PState.tstate tid final ∈
-    (CPState.enumerate_results isem prom term tid (PState.initmem st)
+    (CPState.enumerate_results_filtered isem prom term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states prom)).
   { intro tid. apply VMFinalCertification.bounded_thread_final_candidate, Hthreads. }
   assert (Hfinite : ∀ tids : list (fin n), ∃ fuel, ∀ tid, tid ∈ tids →
-    PState.tstate tid final ∈ (CPState.enumerate_results isem prom term tid (PState.initmem st)
+    PState.tstate tid final ∈ (CPState.enumerate_results_filtered isem prom term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states prom)).
   { intro tids. induction tids as [|tid tids [fuel Htail]].
     - exists 0. intros tid Hin. inversion Hin.
@@ -200,14 +200,14 @@ Theorem VMSail_preissued_direct_to_promise_first initMs st before final returned
     (pt : CPState.terminated prom term final) :
   rtc (StableCertifiedPromiseStep prom nondet term) st before →
   rtc VMBoundedFixedHistoryStep before final → VMViewBound final →
-  Exec.elem_of_results (returned, ()) (CPState.validate_final prom final final) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state prom final final) →
   ∃ direct_returned cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results
       (direct_returned, CPState.to_final_archState (CPState.make_final prom term final pt))
       (opModel.run (@CPState.opmodel isem prom n) fuel term initMs st) ∧
     Exec.elem_of_results
       (before, CPState.to_final_archState (CPState.make_final prom term final pt))
-      (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs st).
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs st).
 Proof.
   intros Hprefix Hsuffix Hbound Hvalid.
   destruct (VMSail_fixed_history_final_batch before final returned pt Hsuffix Hbound Hvalid)

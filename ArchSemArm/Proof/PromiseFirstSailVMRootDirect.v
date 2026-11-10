@@ -63,20 +63,20 @@ Proof. vm_compute; exact I. Qed.
 Lemma fulfilled_terminated : CPState.terminated prom term fulfilled_final.
 Proof. vm_compute; exact I. Qed.
 Lemma fresh_valid : Exec.elem_of_results (fresh_final, ())
-  (CPState.validate_final prom fresh_final fresh_final).
+  (CPState.validate_final_state prom fresh_final fresh_final).
 Proof.
   assert (Hnone : CPState.nopromises prom fresh_final) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end prom fresh_final = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) fresh_final Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
 Lemma fulfilled_valid : Exec.elem_of_results (fulfilled_final, ())
-  (CPState.validate_final prom fulfilled_final fulfilled_final).
+  (CPState.validate_final_state prom fulfilled_final fulfilled_final).
 Proof.
   assert (Hnone : CPState.nopromises prom fulfilled_final) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end prom fulfilled_final = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) fulfilled_final Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
@@ -108,13 +108,13 @@ Proof.
 Qed.
 
 Lemma promised_has_no_candidates :
-  (CPState.enumerate_results isem prom term 0%fin (PState.initmem promised) 1
+  (CPState.enumerate_results_filtered isem prom term 0%fin (PState.initmem promised) 1
     (PState.tstate 0%fin promised) (PState.events promised)).(CPState.promises prom) = [].
 Proof. vm_compute; reflexivity. Qed.
 
 Lemma promised_no_promise_step fuel next :
   ¬ Exec.elem_of_results (next, None)
-    (CPState.run_transition_promise_first isem prom term (S fuel) promised).
+    (CPState.run_transition_promise_first_uncached isem prom term (S fuel) promised).
 Proof.
   rewrite <- (complete_transition_fuel_irrelevant prom false term 1%nat (S fuel)
     promised ltac:(lia) promised_certification_complete).
@@ -222,10 +222,10 @@ Qed.
 
 Lemma promise_first_result : ∃ cost, ∀ fuel, (cost < fuel)%nat →
   Exec.elem_of_results (promised, result)
-    (opModel.run (@CPState.opmodel_pf isem prom 1) fuel term initial init_ps).
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom 1) fuel term initial init_ps).
 Proof.
   assert (Hpromise : Exec.elem_of_results (promised, None)
-    (CPState.run_transition_promise_first isem prom term 1 init_ps)).
+    (CPState.run_transition_promise_first_uncached isem prom term 1 init_ps)).
   { eapply (run_transition_promise_first_none_intro (prom := prom))
       with (tid := 0%fin) (ev := event) (nst := promised).
     - rewrite promise_first_execution_results_lookup, initial_candidates. left; reflexivity.
@@ -248,7 +248,7 @@ Theorem direct_to_promise_first fuel returned fsig :
     (opModel.run (@CPState.opmodel isem prom 1) fuel term initial init_ps) →
   ∃ cost, ∀ pf_fuel, (cost < pf_fuel)%nat →
     Exec.elem_of_results (promised, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom 1) pf_fuel term initial init_ps).
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom 1) pf_fuel term initial init_ps).
 Proof.
   intro Hrun. rewrite (direct_result_unique fuel init_ps returned fsig (or_introl eq_refl) Hrun).
   exact promise_first_result.
@@ -259,7 +259,7 @@ Local Opaque initial init_ps promised isem term.
 Corollary final_state_inclusion fuel fs (pt : archState.is_terminated term fs) :
   archModel.Res.FinalState fs pt ∈ Promising_to_Modelc prom isem fuel 1%nat term initial →
   ∃ cost, ∀ pf_fuel, (cost < pf_fuel)%nat →
-    archModel.Res.FinalState fs pt ∈ Promising_to_Modelc_pf prom isem pf_fuel 1%nat term initial.
+    archModel.Res.FinalState fs pt ∈ Promising_to_Modelc_pf_uncached prom isem pf_fuel 1%nat term initial.
 Proof.
   intro Hfinal.
   destruct (direct_final_state_inv (prom := prom) isem term initial fuel fs pt Hfinal)

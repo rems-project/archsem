@@ -63,7 +63,7 @@ Qed.
 Lemma fixed_execution_final_candidate ts fin :
   ThreadInstructionExecution UMPromising tid imem isem term mem ts fin →
   UMPromising.TState.min_new_prom_view fin ≤ length mem →
-  ∃ fuel, fin ∈ (CPState.enumerate_results isem UMPromising term tid imem
+  ∃ fuel, fin ∈ (CPState.enumerate_results_filtered isem UMPromising term tid imem
     fuel ts mem).(CPState.final_states UMPromising).
 Proof.
   intros Htrace Hbound.
@@ -85,16 +85,16 @@ Definition UMFinalViewBound (final : state) : Prop :=
 
 Lemma final_candidates_common_fuel (st final : state) :
   (∀ tid, ∃ fuel, PState.tstate tid final ∈
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states UMPromising)) →
   ∃ fuel, ∀ tid, PState.tstate tid final ∈
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states UMPromising).
 Proof.
   intro Hcandidates.
   assert (Hfinite : ∀ tids : list (fin n), ∃ fuel, ∀ tid, tid ∈ tids →
     PState.tstate tid final ∈
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states UMPromising)).
   { intro tids. induction tids as [|tid tids [fuel Htail]].
     - exists 0. intros tid Hin. inversion Hin.
@@ -114,14 +114,14 @@ Lemma UMSail_thread_executions_final_batch (st final returned : state)
   (∀ tid, ThreadInstructionExecution UMPromising tid (PState.initmem st)
     isem term (PState.events st) (PState.tstate tid st) (PState.tstate tid final)) →
   UMFinalViewBound final →
-  Exec.elem_of_results (returned, ()) (CPState.validate_final UMPromising final final) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state UMPromising final final) →
   ∃ fuel, Exec.elem_of_results
     (st, Some (CPState.to_final_archState (CPState.make_final UMPromising term final pt)))
-    (CPState.run_transition_promise_first isem UMPromising term fuel st).
+    (CPState.run_transition_promise_first_uncached isem UMPromising term fuel st).
 Proof.
   intros Himem Hmem Hthreads Hbound Hvalid.
   assert (Hcandidates : ∀ tid, ∃ fuel, PState.tstate tid final ∈
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
       fuel (PState.tstate tid st) (PState.events st)).(CPState.final_states UMPromising)).
   { intro tid. eapply fixed_execution_final_candidate; [apply Hthreads|].
     rewrite <- Hmem. apply Hbound. }
@@ -139,10 +139,10 @@ Lemma UMSail_fixed_history_final_batch (st final returned : state)
     (pt : CPState.terminated UMPromising term final) :
   rtc (FixedHistoryInstructionStep nondet term) st final →
   UMFinalViewBound final →
-  Exec.elem_of_results (returned, ()) (CPState.validate_final UMPromising final final) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state UMPromising final final) →
   ∃ fuel, Exec.elem_of_results
     (st, Some (CPState.to_final_archState (CPState.make_final UMPromising term final pt)))
-    (CPState.run_transition_promise_first isem UMPromising term fuel st).
+    (CPState.run_transition_promise_first_uncached isem UMPromising term fuel st).
 Proof.
   intros Htrace Hbound Hvalid.
   destruct (fixed_history_trace_projection nondet term st final Htrace)

@@ -324,7 +324,7 @@ Lemma enumerated_final_thread_execution
     (prom : Promising.Model) isem {n} (term : terminationCondition n)
     (tid : fin n) initmem fuel ts mem ts' :
   OutcomeMemoryGrowth prom →
-  ts' ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.final_states prom) →
   ThreadInstructionExecution prom tid initmem isem term mem ts ts'.
 Proof.

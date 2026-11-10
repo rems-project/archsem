@@ -208,9 +208,8 @@ Lemma VMPromising_filter_promises_subset bbm n tid mem candidates ev :
   ev ∈ candidates.
 Proof.
   cbn [Promising.filter_promises VMPromising.VMPromising].
-  unfold VMPromising.filter_tlbi_promises.
+  unfold VMPromising.filter_commuting_promises.
   destruct mem as [|prev mem]; [exact (λ H, H)|].
-  destruct (Ev.get_tlbi_recipient prev); [|exact (λ H, H)].
   intro Hin. apply list_elem_of_filter in Hin. exact (proj2 Hin).
 Qed.
 
@@ -237,7 +236,7 @@ Lemma UMPromising_enumerated_promise_misses_code
     (msg : Promising.mEvent UMPromising) :
   UMPromisingNoSelfModifying isem term initMs code →
   PromiseFirstReachable UMPromising isem term initMs use_pf st →
-  msg ∈ (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+  msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
     fuel (PState.tstate tid st) (PState.events st)).(CPState.promises UMPromising) →
   event_misses_code Msg.read_byte code msg.
 Proof.
@@ -250,7 +249,7 @@ Lemma VMPromising_enumerated_promise_misses_code
     (ev : Promising.mEvent (VMPromising.VMPromising bbm)) :
   VMPromisingNoSelfModifying bbm isem term initMs code →
   PromiseFirstReachable (VMPromising.VMPromising bbm) isem term initMs use_pf st →
-  ev ∈ (CPState.enumerate_results isem (VMPromising.VMPromising bbm) term tid
+  ev ∈ (CPState.enumerate_results_filtered isem (VMPromising.VMPromising bbm) term tid
     (PState.initmem st) fuel (PState.tstate tid st) (PState.events st))
       .(CPState.promises (VMPromising.VMPromising bbm)) →
   event_misses_code VMPromisingReadByte code ev.
@@ -267,7 +266,7 @@ Lemma UMPromising_enumerated_promise_ifetch
     (msg : Promising.mEvent UMPromising) addr :
   UMPromisingNoSelfModifying isem term initMs code →
   PromiseFirstReachable UMPromising isem term initMs use_pf st →
-  msg ∈ (CPState.enumerate_results isem UMPromising term tid (PState.initmem st)
+  msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st)
     fuel (PState.tstate tid st) (PState.events st)).(CPState.promises UMPromising) →
   code_covers_range code addr 4 →
   UMPromising.read_ifetch addr (PState.initmem st) (msg :: PState.events st) =
@@ -290,7 +289,7 @@ Lemma VMPromising_enumerated_promise_ifetch
     (ev : Promising.mEvent (VMPromising.VMPromising bbm)) addr :
   VMPromisingNoSelfModifying bbm isem term initMs code →
   PromiseFirstReachable (VMPromising.VMPromising bbm) isem term initMs use_pf st →
-  ev ∈ (CPState.enumerate_results isem (VMPromising.VMPromising bbm) term tid
+  ev ∈ (CPState.enumerate_results_filtered isem (VMPromising.VMPromising bbm) term tid
     (PState.initmem st) fuel (PState.tstate tid st) (PState.events st))
       .(CPState.promises (VMPromising.VMPromising bbm)) →
   code_covers_range code addr 4 →
@@ -317,7 +316,7 @@ Qed.
 Lemma UMPromising_enumerated_final_thread_execution
     isem {n} (term : terminationCondition n) (tid : fin n)
     initmem fuel ts mem (ts' : Promising.tState UMPromising) :
-  ts' ∈ (CPState.enumerate_results isem UMPromising term tid initmem fuel ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem UMPromising term tid initmem fuel ts mem)
     .(CPState.final_states UMPromising) →
   ThreadInstructionExecution UMPromising tid initmem isem term mem ts ts'.
 Proof.
@@ -328,7 +327,7 @@ Qed.
 Lemma VMPromising_enumerated_final_thread_execution
     bbm isem {n} (term : terminationCondition n) (tid : fin n)
     initmem fuel ts mem (ts' : Promising.tState (VMPromising.VMPromising bbm)) :
-  ts' ∈ (CPState.enumerate_results isem (VMPromising.VMPromising bbm) term tid
+  ts' ∈ (CPState.enumerate_results_filtered isem (VMPromising.VMPromising bbm) term tid
     initmem fuel ts mem).(CPState.final_states (VMPromising.VMPromising bbm)) →
   ThreadInstructionExecution (VMPromising.VMPromising bbm) tid initmem
     isem term mem ts ts'.

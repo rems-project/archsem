@@ -70,7 +70,7 @@ Qed.
 
 Lemma candidate_bounds {n} (tid : fin n) imem (term : terminationCondition n)
     isem fuel ts mem msg :
-  msg ∈ (CPState.enumerate_results isem UMPromising term tid imem fuel ts mem)
+  msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid imem fuel ts mem)
     .(CPState.promises UMPromising) →
   0 < fuel ∧ TState.min_new_prom_view ts ≤ length mem ∧
     CPState.terminated_ts UMPromising (term !!! tid) ts = false.
@@ -84,7 +84,7 @@ Proof.
   assert (Hbound : TState.min_new_prom_view ts ≤ length mem).
   { destruct (decide (length mem < TState.min_new_prom_view ts)) as [Hstop|Hstop];
       [|lia].
-    unfold CPState.enumerate_results in Hin.
+    unfold CPState.enumerate_results_filtered in Hin.
     destruct fuel; cbn [CPState.run_to_termination] in Hin;
       unfold mget, mGet, mcall, mbind, fmap,
         Exec.mbind_inst, Exec.fmap_inst, Exec.st_call_MState,
@@ -93,7 +93,7 @@ Proof.
       inversion Hin. }
   split; [|split; assumption].
   destruct fuel; [|lia].
-  unfold CPState.enumerate_results in Hin.
+  unfold CPState.enumerate_results_filtered in Hin.
   cbn [CPState.run_to_termination] in Hin.
   unfold mget, mGet, mcall, mbind, fmap,
     Exec.mbind_inst, Exec.fmap_inst, Exec.st_call_MState,
@@ -215,9 +215,9 @@ Theorem candidate_before_fixed_prefix nondet {n} (term : terminationCondition n)
     (tid : fin n) imem count ts mem fin fuel msg :
   thread_steps tid imem (term !!! tid) (sail_tiny_arm_sem nondet)
     count ts mem fin mem →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid imem fuel fin mem).(CPState.promises UMPromising) →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid imem (count + fuel) ts mem).(CPState.promises UMPromising).
 Proof.
   intros Hprefix Hcandidate.
@@ -231,7 +231,7 @@ Proof.
   destruct (enumerate_results_promise_witness (prom := UMPromising) (sail_tiny_arm_sem nondet)
     term tid imem (S fuel) fin mem msg ltac:(intros; assumption) Hcandidate)
     as [proms [ppst [Hin [[ending Hcert]|[err Hcert]]]]].
-  - unfold CPState.enumerate_results. cbn [CPState.promises Promising.filter_promises].
+  - unfold CPState.enumerate_results_filtered. cbn [CPState.promises Promising.filter_promises].
     eapply collected_promise_in_raw_candidates; [exact Hin|].
     eapply out_of_fuel_certification_continue; [exact Htruncated|].
     rewrite Hiis. exact Hcert.
@@ -241,7 +241,7 @@ Proof.
         ([], PPState.Make ts mem IIS.init))).
     { eapply out_of_fuel_error_continue; [exact Htruncated|].
       rewrite Hiis. exact Hcert. }
-    unfold CPState.enumerate_results. cbn [CPState.promises Promising.filter_promises].
+    unfold CPState.enumerate_results_filtered. cbn [CPState.promises Promising.filter_promises].
     apply elem_of_remove_dups, list_elem_of_In, List.in_concat.
     exists proms. split; [|apply list_elem_of_In; exact Hin].
     apply list_elem_of_In, elem_of_app. right.
@@ -351,10 +351,10 @@ Qed.
 Theorem UMSail_interleaved_candidate_before_prefix nondet {n}
     (term : terminationCondition n) st before (tid : fin n) fuel msg :
   rtc (FixedHistoryInstructionStep nondet term) st before →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.promises UMPromising) →
-  ∃ count, msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  ∃ count, msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem st) (count + fuel) (PState.tstate tid st)
     (PState.events st)).(CPState.promises UMPromising).
 Proof.
@@ -369,10 +369,10 @@ Qed.
 Theorem UMSail_interleaved_complete_promise_before_prefix nondet {n}
     (term : terminationCondition n) st before (tid : fin n) fuel msg :
   rtc (FixedHistoryInstructionStep nondet term) st before →
-  (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.out_of_fuel UMPromising) = false →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.promises UMPromising) →
   ∃ next, PState.promise UMPromising msg st = Ok next ∧
@@ -403,10 +403,10 @@ Theorem UMSail_interleaved_complete_promise_replay nondet {n}
   UMSailNoSelfModifying nondet term initMs code →
   PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet) term initMs true st →
   rtc (FixedHistoryInstructionStep nondet term) st before →
-  (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.out_of_fuel UMPromising) = false →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem before) fuel (PState.tstate tid before)
     (PState.events before)).(CPState.promises UMPromising) →
   PState.promise UMPromising msg before = Ok after →
@@ -424,7 +424,7 @@ Proof.
   destruct (UMSail_interleaved_candidate_before_prefix nondet term st before
     tid fuel msg Hprefix Hcandidate) as [count Hearly].
   assert (Hstep : Exec.elem_of_results (next, None)
-    (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet) UMPromising
+    (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet) UMPromising
       term (count + fuel) st)).
   { eapply run_transition_promise_first_none_intro with (tid := tid) (ev := msg) (nst := next).
     - rewrite promise_first_execution_results_lookup. exact Hearly.

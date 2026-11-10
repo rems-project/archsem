@@ -267,7 +267,7 @@ Theorem UMSail_interleaved_first_message_promise initMs code st final :
     Msg.tid msg = (tid : nat) ∧ event_misses_code Msg.read_byte code msg ∧
     (∀ other, tid ≠ other → PState.tstate other after = PState.tstate other before) ∧
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem UMPromising term count st) ∧
+      (CPState.run_transition_promise_first_uncached isem UMPromising term count st) ∧
     PromiseFirstReachable UMPromising isem term initMs true next ∧
     UMThreadReplay.thread_steps tid (PState.initmem next) (term !!! tid) isem
       count (PState.tstate tid next) (PState.events next)
@@ -286,7 +286,7 @@ Proof.
     tid st count (PState.tstate tid after) msg Hsafe Hreach Hthread) as Hreplay.
   destruct (UMPromising_promise_exists msg st) as [next Hpromise].
   assert (Hstep : Exec.elem_of_results (next, None)
-    (CPState.run_transition_promise_first isem UMPromising term count st)).
+    (CPState.run_transition_promise_first_uncached isem UMPromising term count st)).
   { eapply run_transition_promise_first_none_intro with (tid := tid) (ev := msg) (nst := next).
     - rewrite promise_first_execution_results_lookup. exact Hcandidate.
     - exact Hpromise.
@@ -315,7 +315,7 @@ Theorem UMSail_interleaved_first_message_replay initMs code st final :
   ∃ msg count next after,
     PState.promise UMPromising msg st = Ok next ∧
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem UMPromising term count st) ∧
+      (CPState.run_transition_promise_first_uncached isem UMPromising term count st) ∧
     PromiseFirstReachable UMPromising isem term initMs true next ∧
     PState.events after = PState.events next ∧
     rtc instruction_step next after ∧ rtc instruction_step after final.
@@ -375,7 +375,7 @@ Qed.
 Definition EnumeratedPromiseStep (st next : state) : Prop :=
   ∃ msg fuel, PState.promise UMPromising msg st = Ok next ∧
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem UMPromising term fuel st).
+      (CPState.run_transition_promise_first_uncached isem UMPromising term fuel st).
 
 Local Lemma normalize_interleaving_bounded initMs code final budget :
   ∀ st,

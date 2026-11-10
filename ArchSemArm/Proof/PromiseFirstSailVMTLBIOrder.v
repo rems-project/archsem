@@ -1,5 +1,5 @@
 (******************************************************************************)
-(* A Sail VM counterexample to unrestricted direct-to-promise-first inclusion *)
+(* The epoch filter admits DSB-separated broadcast TLBIs *)
 (******************************************************************************)
 From ASCommon Require Import Options Common Exec FMon StateT.
 From ArchSemArm Require Import ArmInst VMPromising.
@@ -11,12 +11,6 @@ Open Scope bv.
 
 Module VMSailTLBIOrder.
 
-Local Lemma ok_injective {E A} (x y : A) : @Ok E A x = Ok y → x = y.
-Proof. injection 1. trivial. Qed.
-
-(** Two VMALLE1IS instructions separated by DSB ISH. Thread 1 is already
-    terminated but remains a broadcast recipient. Translation is enabled,
-    BBM validation is disabled, and the program performs no memory writes. *)
 Definition regs : registerMap :=
   ∅ |> reg_insert _PC 0x3000
     |> reg_insert SCTLR_EL1 1 |> reg_insert TCR_EL1 0
@@ -32,38 +26,17 @@ Definition term : terminationCondition 2 := [# [0x300c]; [0x300c]].
 Definition prom := VMPromising false.
 #[local] Typeclasses Transparent prom.
 Definition isem := sail_tiny_arm_sem false.
-Definition event0 := Ev.Tlbi (TLBI.All 0) 0.
-Definition event1 := Ev.Tlbi (TLBI.All 0) 1.
+Definition event0 := Ev.Tlbi (TLBI.All 0) 0 0.
+Definition event1 := Ev.Tlbi (TLBI.All 0) 1 0.
 Definition fallback := TState.make [] [] ∅ [] ∅ ∅
-  0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat ∅ None None.
+  0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat 0%nat ∅ None 0%nat None.
 Definition init_ps : PState.t TState.t Ev.t 2 :=
   match PState.from_archState prom initial with
   | Ok st => st | Error _ => PState.Make [# fallback; fallback] imem [] end.
 Definition issue ev (st : PState.t TState.t Ev.t 2) :=
   match PState.promise prom ev st with Ok next => next | Error _ => st end.
-Definition p0 := issue event0 init_ps.
-Definition p1 := issue event1 init_ps.
-Definition p01 := issue event1 p0.
-Definition p011 := issue event1 p01.
-
-Inductive Stage := Initial | First0 | First1 | FirstBoth | Second1.
-Definition at_stage (stage : Stage) :=
-  match stage with
-  | Initial => init_ps | First0 => p0 | First1 => p1
-  | FirstBoth => p01 | Second1 => p011
-  end.
-Definition height (stage : Stage) : nat :=
-  match stage with Initial => 3 | First0 => 2 | FirstBoth => 1 | _ => 0 end.
-Definition allowed (stage : Stage) : list Ev.t :=
-  match stage with
-  | Initial => [event1; event0]
-  | First0 | FirstBoth => [event1]
-  | _ => []
-  end.
-Definition enumerate fuel tid (stage : Stage) :=
-  let st := at_stage stage in
-  CPState.enumerate_results isem prom term tid
-    (PState.initmem st) fuel (PState.tstate tid st) (PState.events st).
+Definition event0_next := Ev.Tlbi (TLBI.All 0) 0 1.
+Definition event1_next := Ev.Tlbi (TLBI.All 0) 1 1.
 
 Lemma initialization : PState.from_archState prom initial = Ok init_ps.
 Proof.
@@ -72,157 +45,10 @@ Proof.
   unfold init_ps. destruct (PState.from_archState prom initial); [reflexivity|discriminate].
 Qed.
 
-Lemma issue_succeeds ev st :
-  (match PState.promise prom ev st with Ok _ => true | Error _ => false end) = true →
-  PState.promise prom ev st = Ok (issue ev st).
-Proof. unfold issue. destruct (PState.promise prom ev st); [reflexivity|discriminate]. Qed.
-
-Lemma next_stage stage (ev : Ev.t) : ev ∈ allowed stage →
-  ∃ next, PState.promise prom ev (at_stage stage) = Ok (at_stage next) ∧
-    (height next < height stage)%nat.
-Proof.
-  destruct stage; cbn [allowed]; intro Hin.
-  - apply elem_of_cons in Hin as [->|Hin].
-    + exists First1. split; [apply issue_succeeds; vm_compute; reflexivity|cbn; lia].
-    + apply list_elem_of_singleton in Hin. subst ev.
-      exists First0. split; [apply issue_succeeds; vm_compute; reflexivity|cbn; lia].
-  - apply list_elem_of_singleton in Hin. subst ev.
-    exists FirstBoth. split; [apply issue_succeeds; vm_compute; reflexivity|cbn; lia].
-  - inversion Hin.
-  - apply list_elem_of_singleton in Hin. subst ev.
-    exists Second1. split; [apply issue_succeeds; vm_compute; reflexivity|cbn; lia].
-  - inversion Hin.
-Qed.
-
-(** The complete searches contain no final state for the active thread.
-    The two terminal prefix states contain no further candidate either. *)
-Lemma complete_search_shape stage :
-  (enumerate 3 0%fin stage).(CPState.promises prom) = allowed stage ∧
-  (enumerate 3 0%fin stage).(CPState.final_states prom) = [] ∧
-  (enumerate 3 0%fin stage).(CPState.errors prom) = [] ∧
-  (enumerate 3 0%fin stage).(CPState.out_of_fuel prom) = false.
-Proof. destruct stage; vm_compute; repeat split; reflexivity. Qed.
-
-(** Both recipients of the second instruction are found by certification.
-    The production filter removes recipient 0 because the preceding promise
-    went to recipient 1, despite that promise belonging to the first TLBI. *)
-Lemma second_tlbi_raw_candidates :
-  let search := CPState.run_to_termination isem prom term 0%fin
-    (PState.initmem p01) 3 (length (PState.events p01))
-    ([], PPState.Make (PState.tstate 0%fin p01) (PState.events p01) IIS.init) in
-  remove_dups (List.concat ((Exec.success_state_list search).*1 ++
-    (Exec.errors search).*1.*1)) = [event1; event0].
-Proof. vm_compute; reflexivity. Qed.
-
-Lemma recipient_filter_discards_second_zero :
-  filter_tlbi_promises 2 0 [event1; event0] [event1; event0] = [event1].
-Proof. vm_compute; reflexivity. Qed.
-
-Lemma searches_complete stage : CertificationCompleteAt prom false term 3%nat (at_stage stage).
-Proof.
-  intro tid. inv_fin tid.
-  - exact (proj2 (proj2 (proj2 (complete_search_shape stage)))).
-  - intro tid. inv_fin tid.
-    + destruct stage; vm_compute; reflexivity.
-    + intro tid. inv_fin tid.
-Qed.
-
-(** Short searches are checked separately: candidate lists extracted from a
-    truncated search need not be monotone in fuel in the general runner. *)
-Lemma short_search_shape fuel stage : (fuel ≤ 2)%nat →
-  bool_decide ((enumerate fuel 0%fin stage).(CPState.promises prom) ⊆ allowed stage) = true ∧
-  (enumerate fuel 0%fin stage).(CPState.final_states prom) = [].
-Proof.
-  destruct fuel as [|[|[|fuel]]]; intro Hfuel; [..|lia];
-    destruct stage; vm_compute; split; reflexivity.
-Qed.
-
-Lemma active_search_shape fuel stage :
-  (enumerate fuel 0%fin stage).(CPState.promises prom) ⊆ allowed stage ∧
-  (enumerate fuel 0%fin stage).(CPState.final_states prom) = [].
-Proof.
-  destruct (decide (fuel ≤ 2)%nat) as [Hsmall|Hlarge].
-  - destruct (short_search_shape fuel stage Hsmall) as [Hproms Hfinal].
-    split; [exact (bool_decide_eq_true_1 _ Hproms)|exact Hfinal].
-  - unfold enumerate.
-    rewrite <- (complete_enumeration_fuel_irrelevant prom isem term 0%fin
-      (PState.initmem (at_stage stage)) 3 fuel (PState.tstate 0%fin (at_stage stage))
-      (PState.events (at_stage stage)) ltac:(lia) (searches_complete stage 0%fin)).
-    change ((enumerate 3 0%fin stage).(CPState.promises prom) ⊆ allowed stage ∧
-      (enumerate 3 0%fin stage).(CPState.final_states prom) = []).
-    destruct (complete_search_shape stage) as [Hproms [Hfinal _]].
-    rewrite Hproms, Hfinal. split; [reflexivity|reflexivity].
-Qed.
-
-Lemma inactive_search_empty fuel stage :
-  (enumerate fuel 1%fin stage).(CPState.promises prom) = [].
-Proof. destruct fuel as [|fuel]; destruct stage; vm_compute; reflexivity. Qed.
-
-Local Lemma thread_cases (tid : fin 2) : tid = 0%fin ∨ tid = 1%fin.
-Proof.
-  inv_fin tid; [left; reflexivity|]. intro tid. inv_fin tid;
-    [right; reflexivity|intro tid; inv_fin tid].
-Qed.
-
-Local Opaque at_stage initial init_ps p0 p1 p01 p011 isem term prom.
-
-(** This invariant covers every successful promise-first transition, at every
-    fuel, including short and incomplete certification searches. *)
-Lemma transition_closed fuel stage next res :
-  Exec.elem_of_results (next, res)
-    (CPState.run_transition_promise_first isem prom term fuel (at_stage stage)) →
-  res = None ∧ ∃ next_stage, next = at_stage next_stage ∧
-    (height next_stage < height stage)%nat.
-Proof.
-  intro Hstep. destruct res as [fsig|].
-  - destruct (run_transition_promise_first_some_inv (prom := prom) isem term fuel
-      (at_stage stage) next fsig Hstep) as [states [final [pt [_ [Hstates _]]]]].
-    specialize (Hstates 0%fin). rewrite promise_first_execution_results_lookup in Hstates.
-    change (states !!! 0%fin ∈ (enumerate fuel 0%fin stage).(CPState.final_states prom)) in Hstates.
-    rewrite (proj2 (active_search_shape fuel stage)) in Hstates. inversion Hstates.
-  - split; [reflexivity|].
-    destruct (run_transition_promise_first_none_inv (prom := prom) isem term fuel
-      (at_stage stage) next Hstep) as [tid [ev [nst [Hcandidate [Hpromise Hnext]]]]].
-    rewrite promise_first_execution_results_lookup in Hcandidate.
-    change (ev ∈ (enumerate fuel tid stage).(CPState.promises prom)) in Hcandidate.
-    assert (Hallowed : ev ∈ allowed stage).
-    { destruct (thread_cases tid) as [Htid | Htid]; subst tid.
-      - exact (proj1 (active_search_shape fuel stage) ev Hcandidate).
-      - rewrite inactive_search_empty in Hcandidate. inversion Hcandidate. }
-    destruct (next_stage stage ev Hallowed) as [s [Hemit Hheight]].
-    rewrite Hemit in Hpromise. injection Hpromise as Heq. subst nst.
-    exists s. auto.
-Qed.
-
-Theorem no_promise_first_run fuel stage returned fsig :
-  ¬ Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom 2) fuel term initial (at_stage stage)).
-Proof.
-  revert stage. induction fuel as [|fuel IH]; intros stage Hrun.
-  - cbn [opModel.run] in Hrun. change ((returned, fsig) ∈ []) in Hrun. inversion Hrun.
-  - cbn [opModel.run] in Hrun.
-    apply Exec.elem_of_bind_elim in Hrun as [next [res [Hstep Htail]]].
-    destruct (transition_closed (S fuel) stage next res Hstep) as [-> [s [-> _]]].
-    exact (IH s Htail).
-Qed.
-
-(** With at least six runner steps, every search on every reachable prefix
-    is complete. There are at most three promise transitions, and each local
-    search is complete at fuel three. No terminating result exists even with
-    this unbounded family of complete searches. *)
-Theorem all_searches_complete fuel stage :
-  (3 + height stage ≤ fuel)%nat →
-  PromiseFirstSearchesComplete prom false term fuel (at_stage stage).
-Proof.
-  revert stage. induction fuel as [|fuel IH]; intros stage Hfuel; [lia|].
-  split.
-  - eapply certification_complete_more_fuel; [|apply searches_complete]. lia.
-  - intros next Hstep.
-    destruct (transition_closed (S fuel) stage next None Hstep) as [_ [s [-> Hheight]]].
-    apply IH. lia.
-Qed.
-
-Local Transparent at_stage initial init_ps p0 p1 p01 p011 isem term prom.
+Lemma epoch_filter_keeps_second_zero :
+  event0_next ∈ filter_commuting_promises 2 0 [event1; event0]
+    [event1_next; event0_next].
+Proof. vm_compute. right; left; reflexivity. Qed.
 
 Definition execute (st : PState.t TState.t Ev.t 2) :=
   match Exec.results (PState.run_tid isem prom 0%fin st) with
@@ -259,46 +85,38 @@ Qed.
 
 (** These are the certification budgets used by the direct runner along
     the three-instruction witness below. The final step only validates. *)
+Local Lemma thread_cases (tid : fin 2) : tid = 0%fin ∨ tid = 1%fin.
+Proof.
+  inv_fin tid; [left; reflexivity|]. intro tid. inv_fin tid;
+    [right; reflexivity|intro tid; inv_fin tid].
+Qed.
+
 Lemma direct_searches_complete :
   CertificationCompleteAt prom false term 4%nat init_ps ∧
   CertificationCompleteAt prom false term 3%nat after_first ∧
   CertificationCompleteAt prom false term 2%nat after_dsb.
 Proof.
-  repeat split; intro tid; destruct (thread_cases tid) as [Htid | Htid]; subst tid;
-    vm_compute; reflexivity.
+  repeat split; intro tid; destruct (thread_cases tid) as [Htid | Htid]; subst tid; vm_compute; reflexivity.
 Qed.
 
 Lemma direct_terminated : CPState.terminated prom term direct_final.
 Proof. vm_compute; exact I. Qed.
 Lemma direct_valid : Exec.elem_of_results (direct_final, ())
-  (CPState.validate_final prom direct_final direct_final).
+  (CPState.validate_final_state prom direct_final direct_final).
 Proof.
   assert (Hnone : CPState.nopromises prom direct_final) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end prom direct_final = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) direct_final Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
 Definition direct_result := CPState.to_final_archState
   (CPState.make_final prom term direct_final direct_terminated).
 
-(** The memory history contains only broadcast invalidations. In particular,
-    every code byte is unchanged, including the fetched instructions. *)
 Lemma direct_history :
-  PState.events direct_final = [event1; event0; event1; event0].
+  PState.events direct_final = [event1_next; event0_next; event1; event0].
 Proof. vm_compute; reflexivity. Qed.
-Lemma direct_history_preserves_all_code (code : code_region) :
-  no_self_modifying_history VMPromisingReadByte code (PState.events direct_final).
-Proof.
-  rewrite direct_history. intros ev Hin.
-  assert (Hev : ev = event0 ∨ ev = event1) by set_solver.
-  destruct Hev as [Hev | Hev]; subst ev; intros addr Hcode; reflexivity.
-Qed.
 
-Local Opaque init_ps after_first after_dsb direct_final isem term prom.
-
-(** The direct runner executes the three actual Sail instructions and
-    validates termination in four transitions, with complete searches. *)
 Lemma direct_run : Exec.elem_of_results (direct_final, direct_result)
   (opModel.run (@CPState.opmodel isem prom 2) 4 term initial init_ps).
 Proof.
@@ -316,54 +134,95 @@ Proof.
         -- apply Exec.elem_of_mret.
 Qed.
 
-Lemma direct_has_result : ∃ returned fsig,
-  Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel isem prom 2) 4 term initial init_ps).
-Proof. exists direct_final, direct_result. exact direct_run. Qed.
+Definition cached_initial := CPState.PFMake prom init_ps (vreplicate 2 None).
 
-Theorem direct_without_promise_first : ∃ returned fsig,
-  Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel isem prom 2) 4 term initial init_ps) ∧
-  ∀ fuel pf_returned,
-    ¬ Exec.elem_of_results (pf_returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom 2) fuel term initial init_ps).
+Definition cached_results fuel (pst : CPState.pf_t prom (n := 2)) :=
+  let st := CPState.pstate prom pst in
+  vimap (λ tid ts, if CPState.enum_cache prom pst !!! tid is Some res then res
+    else CPState.enumerate_results isem prom term tid (PState.initmem st)
+      fuel ts (PState.events st)) (PState.tstates st).
+Definition cached_issue fuel ev (pst : CPState.pf_t prom (n := 2)) :=
+  CPState.PFMake prom (issue ev (CPState.pstate prom pst))
+    (vimap (λ tid res, if Ev.affects ev tid then None else Some res)
+      (cached_results fuel pst)).
+Definition c0 := cached_issue 7 event0 cached_initial.
+Definition c01 := cached_issue 6 event1 c0.
+Definition c010 := cached_issue 5 event0_next c01.
+Definition c0101 := cached_issue 4 event1_next c010.
+
+Lemma cached_promise_step fuel ev pst :
+  ev ∈ filter_commuting_promises 2 0 (PState.events (CPState.pstate prom pst))
+    (CPState.promises prom (cached_results fuel pst !!! 0%fin)) →
+  PState.promise prom ev (CPState.pstate prom pst) = Ok (issue ev (CPState.pstate prom pst)) →
+  Exec.elem_of_results (cached_issue fuel ev pst, None)
+    (CPState.run_transition_promise_first isem prom term fuel pst).
 Proof.
-  destruct direct_has_result as [returned [fsig Hrun]].
-  exists returned, fsig. split; [exact Hrun|].
-  intros fuel pf_returned. exact (no_promise_first_run fuel Initial pf_returned fsig).
+  intros Hcandidate Hpromise. unfold CPState.run_transition_promise_first.
+  eapply Exec.elem_of_bind_intro; [apply Exec.elem_of_mGet|].
+  eapply Exec.elem_of_bind_intro with (a := 0%nat);
+    [apply Exec.elem_of_mchoosel; cbn; set_solver|].
+  eapply Exec.elem_of_bind_intro with (a := 0%fin).
+  { unfold mchoosef. apply Exec.elem_of_mchoosel. apply Exec.elem_of_fin_enum. }
+  eapply Exec.elem_of_bind_intro with (a := ev).
+  { apply Exec.elem_of_lift_res. unfold CPState.choose_promise.
+    apply Exec.elem_of_res_mchoosel. exact Hcandidate. }
+  eapply Exec.elem_of_bind_intro with (a := issue ev (CPState.pstate prom pst)).
+  { apply (proj2 (PromiseFirstCurrent.lift_result_success _ _ _ _)). auto. }
+  eapply Exec.elem_of_bind_intro; [apply Exec.elem_of_mSetv|apply Exec.elem_of_mret].
 Qed.
 
-Local Opaque initial.
+Local Ltac compute_candidate :=
+  match goal with |- ?P => apply (bool_decide_eq_true_1 P) end; vm_compute; reflexivity.
+Local Ltac compute_issue :=
+  unfold issue; match goal with |- ?p = _ =>
+    let H := fresh in assert (H : (match p with Ok _ => true | Error _ => false end) = true)
+      by (vm_compute; reflexivity);
+    destruct p; [reflexivity|discriminate]
+  end.
 
-(** The contradiction is at the architectural model boundary, so it is
-    observable even though TLB and promise metadata are erased there. *)
-Theorem architectural_counterexample :
-  ∃ fs (pt : archState.is_terminated term fs),
-    archModel.Res.FinalState fs pt ∈ Promising_to_Modelc prom isem 4 2%nat term initial ∧
-    ∀ fuel, archModel.Res.FinalState fs pt ∉ Promising_to_Modelc_pf prom isem fuel 2%nat term initial.
+Lemma cached_prefix :
+  Exec.elem_of_results (c0, None)
+    (CPState.run_transition_promise_first isem prom term 7 cached_initial) ∧
+  Exec.elem_of_results (c01, None)
+    (CPState.run_transition_promise_first isem prom term 6 c0) ∧
+  Exec.elem_of_results (c010, None)
+    (CPState.run_transition_promise_first isem prom term 5 c01) ∧
+  Exec.elem_of_results (c0101, None)
+    (CPState.run_transition_promise_first isem prom term 4 c010).
 Proof.
-  destruct direct_has_result as [returned [[fs pt] Hrun]].
-  exists fs, pt. split.
-  - exact (direct_final_state_intro (prom := prom) isem term initial 4
-      init_ps initialization returned fs pt Hrun).
-  - intros fuel Hpf.
-    destruct (promise_first_final_state_inv (prom := prom) isem term initial fuel fs pt Hpf)
-      as [start [Hinit [pf_returned [fsig [Hpf_run _]]]]].
-    rewrite initialization in Hinit. apply ok_injective in Hinit. subst start.
-    exact (no_promise_first_run fuel Initial pf_returned fsig Hpf_run).
+  split.
+  - apply (cached_promise_step 7 event0 cached_initial); [compute_candidate|compute_issue].
+  - split.
+    + apply (cached_promise_step 6 event1 c0); [compute_candidate|compute_issue].
+    + split.
+      * apply (cached_promise_step 5 event0_next c01); [compute_candidate|compute_issue].
+      * apply (cached_promise_step 4 event1_next c010); [compute_candidate|compute_issue].
 Qed.
 
-Corollary complete_searches_do_not_restore_inclusion :
-  (∀ fuel, (6 ≤ fuel)%nat →
-    PromiseFirstSearchesComplete prom false term fuel init_ps) ∧
-  ∃ returned fsig,
-    Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel isem prom 2) 4 term initial init_ps) ∧
-    ∀ fuel pf_returned, ¬ Exec.elem_of_results (pf_returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom 2) fuel term initial init_ps).
+Lemma cached_final_step : ∃ next fsig, Exec.elem_of_results (next, Some fsig)
+    (CPState.run_transition_promise_first isem prom term 3 c0101).
 Proof.
-  split; [|exact direct_without_promise_first].
-  intros fuel Hfuel. exact (all_searches_complete fuel Initial Hfuel).
+  assert (H : List.existsb (λ p, if p.2 is Some _ then true else false)
+    (Exec.results (CPState.run_transition_promise_first isem prom term 3 c0101)) = true)
+    by (vm_compute; reflexivity).
+  apply List.existsb_exists in H as [[next [fsig|]] [Hin H]]; [|discriminate].
+  exists next, fsig. apply list_elem_of_In. exact Hin.
+Qed.
+
+(** Each local search is evaluated separately; the runner proof follows the
+    four selected promises and the final batch without enumerating all paths. *)
+Theorem cached_runner_has_final : ∃ returned fsig,
+  Exec.elem_of_results (returned, fsig)
+    (opModel.run (@CPState.opmodel_pf isem prom 2) 7 term initial cached_initial).
+Proof.
+  destruct cached_prefix as [H0 [H1 [H2 H3]]].
+  destruct cached_final_step as [next [fsig Hfinal]].
+  exists next, fsig. cbn [opModel.run].
+  eapply Exec.elem_of_bind_intro; [exact H0|].
+  eapply Exec.elem_of_bind_intro; [exact H1|].
+  eapply Exec.elem_of_bind_intro; [exact H2|].
+  eapply Exec.elem_of_bind_intro; [exact H3|].
+  eapply Exec.elem_of_bind_intro; [exact Hfinal|apply Exec.elem_of_mret].
 Qed.
 
 End VMSailTLBIOrder.

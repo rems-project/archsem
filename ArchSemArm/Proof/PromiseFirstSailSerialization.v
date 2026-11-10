@@ -152,7 +152,7 @@ Qed.
 
 Lemma instruction_trace_run initMs st final
     (pt : CPState.terminated prom term final) :
-  Exec.elem_of_results (final, ()) (CPState.validate_final prom final final) →
+  Exec.elem_of_results (final, ()) (CPState.validate_final_state prom final final) →
   rtc InstructionTransition st final →
   ∃ cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results
@@ -196,10 +196,10 @@ Qed.
 
 Lemma validate_final_preserves_state (prom : Promising.Model) {n}
     (final ambient returned : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n) :
-  Exec.elem_of_results (returned, ()) (CPState.validate_final prom final ambient) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state prom final ambient) →
   returned = ambient.
 Proof.
-  unfold CPState.validate_final. intro Hrun.
+  unfold CPState.validate_final_state. intro Hrun.
   apply Exec.elem_of_bind_elim in Hrun as [mid [pt [Hguard Htail]]].
   apply Exec.elem_of_guard_discard_inv in Hguard as ->.
   destruct (CPState.check_valid_end prom final) as [|err errs].
@@ -211,10 +211,10 @@ Qed.
 
 Lemma validate_final_transport (prom : Promising.Model) {n}
     (final ambient ambient' returned : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n) :
-  Exec.elem_of_results (returned, ()) (CPState.validate_final prom final ambient) →
-  Exec.elem_of_results (ambient', ()) (CPState.validate_final prom final ambient').
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state prom final ambient) →
+  Exec.elem_of_results (ambient', ()) (CPState.validate_final_state prom final ambient').
 Proof.
-  unfold CPState.validate_final. intro Hrun.
+  unfold CPState.validate_final_state. intro Hrun.
   apply Exec.elem_of_bind_elim in Hrun as [mid [pt [Hguard Htail]]].
   apply Exec.elem_of_guard_discard_inv in Hguard as ->.
   destruct (CPState.check_valid_end prom final) as [|err errs].
@@ -231,7 +231,7 @@ Lemma sail_final_batch_to_direct_run prom nondet {n}
     (fsig : {s & archState.is_terminated term s}) :
   OutcomeMemoryGrowth prom →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet) prom
+    (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet) prom
       term cert_fuel before) →
   ∃ final cost,
     rtc (InstructionTransition prom nondet term) before final ∧
@@ -253,7 +253,7 @@ Proof.
       rewrite Hfinal. cbn [PState.tstate].
       apply enumerated_final_thread_execution with (fuel := cert_fuel); assumption. }
   assert (Hvalid' : Exec.elem_of_results (final, ())
-    (CPState.validate_final prom final final)).
+    (CPState.validate_final_state prom final final)).
   { eapply validate_final_transport. exact Hvalid. }
   destruct (instruction_trace_run prom nondet term initMs before final pt Hvalid' Htrace)
     as [cost Hrun].
@@ -264,7 +264,7 @@ Qed.
 Lemma UMSail_final_batch_to_direct_run nondet {n}
     (term : terminationCondition n) initMs cert_fuel before returned fsig :
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet) UMPromising
+    (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet) UMPromising
       term cert_fuel before) →
   ∃ final cost,
     rtc (InstructionTransition UMPromising nondet term) before final ∧
@@ -280,7 +280,7 @@ Qed.
 Lemma VMSail_final_batch_to_direct_run bbm nondet {n}
     (term : terminationCondition n) initMs cert_fuel before returned fsig :
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet)
+    (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet)
       (VMPromising.VMPromising bbm) term cert_fuel before) →
   ∃ final cost,
     rtc (InstructionTransition (VMPromising.VMPromising bbm) nondet term) before final ∧

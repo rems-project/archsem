@@ -97,14 +97,14 @@ Lemma materialize_tlbi_growth tid init pre tlbi recipient ppst ppst' time create
   Exec.elem_of_results (ppst', (time, created))
     (materialize_tlbi_for_recipient tid init pre tlbi recipient ppst) →
   if created then
-    PPState.mem ppst' = Ev.Tlbi tlbi recipient :: PPState.mem ppst ∧
+    ∃ epoch, PPState.mem ppst' = Ev.Tlbi tlbi recipient epoch :: PPState.mem ppst ∧
     pre ≤ length (PPState.mem ppst)
   else PPState.mem ppst' = PPState.mem ppst.
 Proof.
   destruct ppst as [ts mem iis].
   intro H. unfold materialize_tlbi_for_recipient in H.
   invert_execution; cbn in *; subst;
-    first [reflexivity | split; [reflexivity|lia]].
+    first [reflexivity | eexists; split; [reflexivity|lia]].
 Qed.
 
 Definition tlbi_recipient_step tid init pre tlbi :
@@ -140,14 +140,14 @@ Proof.
     inversion Heq; subst vself_mid vother_mid created_mid.
     apply materialize_tlbi_growth in Hmat.
     destruct is_new.
-    + cbn in Hmat. destruct Hmat as [Hmem Hpre].
+    + cbn in Hmat. destruct Hmat as [epoch [Hmem Hpre]].
       rewrite Bool.orb_true_r in Htail.
       destruct (IH _ _ _ _ _ _ _ _ Htail)
         as [[Hmem' Hcreated]|[extra [Hnonempty [Hmem' [Hcreated _]]]]].
-      * right. exists [Ev.Tlbi tlbi recipient].
+      * right. exists [Ev.Tlbi tlbi recipient epoch].
         repeat split; try discriminate; try assumption.
         cbn. congruence.
-      * right. exists (extra ++ [Ev.Tlbi tlbi recipient])%list.
+      * right. exists (extra ++ [Ev.Tlbi tlbi recipient epoch])%list.
         split; [intro Hnil; apply app_eq_nil in Hnil as [_ Hnil]; discriminate|].
         split; [rewrite Hmem', Hmem, <- app_assoc; reflexivity|]. auto.
     + cbn in Hmat. rewrite Bool.orb_false_r in Htail.

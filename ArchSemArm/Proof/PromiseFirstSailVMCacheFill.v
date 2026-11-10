@@ -122,10 +122,10 @@ Proof.
   apply preserves_guard_unit.
 Qed.
 
-Lemma preserves_fill_full bound imem mem time roots :
-  bound < time → preserves bound (TLB.fill_full imem mem time roots).
+Lemma preserves_fill_from_roots bound imem mem time roots :
+  bound < time → preserves bound (TLB.fill_from_roots imem mem time roots).
 Proof.
-  intro Htime. unfold TLB.fill_full.
+  intro Htime. unfold TLB.fill_from_roots.
   apply preserves_bind; [apply preserves_fill_root, Htime|].
   intro entries. apply preserves_fill_from_entries, Htime.
 Qed.
@@ -142,18 +142,20 @@ Lemma preserves_relevant_entries bound asids page :
 Proof. unfold TLB.get_relevant_entries. solve_preserves. Qed.
 
 Lemma preserves_tlbi_marker bound time issuer fe :
-  bound < time → preserves bound (mset TLB.vatlb (alter ((TLB.Entry.Tlbi issuer, time)::.) fe)).
+  bound < time → preserves bound (mset TLB.vatlb (alter (λ events, if events is [] then [] else (TLB.Entry.Tlbi issuer, time)::events) fe)).
 Proof.
   intro Htime. apply preserves_vatlb. intro cache.
   unfold alter, alter_default. apply update_entry_extends.
-  intros events Hlookup. exists [(TLB.Entry.Tlbi issuer, time)].
+  intros events Hlookup. destruct events as [|event events].
+  - exists []. split; [constructor|reflexivity].
+  - exists [(TLB.Entry.Tlbi issuer, time)].
   split; [constructor; [exact Htime|constructor]|reflexivity].
 Qed.
 
 Lemma preserves_invalidate_all bound time tlbi :
   bound < time → preserves bound (mset TLB.vatlb (TLB.VATLB.map_fe
     (λ fe events, if decide (TLB.affects tlbi fe)
-      then (TLB.Entry.Tlbi (TLBI.tid tlbi), time) :: events else events))).
+      then (if events is [] then [] else (TLB.Entry.Tlbi (TLBI.tid tlbi), time) :: events) else events))).
 Proof. intro Htime. apply preserves_vatlb. intro cache. apply invalidate_all_extends, Htime. Qed.
 
 Ltac solve_fill_preserves :=
@@ -161,7 +163,7 @@ Ltac solve_fill_preserves :=
     [ apply preserves_fill_root; assumption
     | apply preserves_fill_from_entry; assumption
     | apply preserves_fill_from_entries; assumption
-    | apply preserves_fill_full; assumption
+    | apply preserves_fill_from_roots; assumption
     | apply preserves_tlbi_marker; assumption
     | apply preserves_invalidate_all; assumption
     | apply preserves_relevant_entries
@@ -185,7 +187,7 @@ Theorem fill_event_extends bound tid imem mem time roots ev old new :
   extends bound (TLB.vatlb old) (TLB.vatlb new).
 Proof.
   intro Htime. assert (Hpres : preserves bound (TLB.fill_event tid imem mem time roots ev)); [|intro Hrun; exact (Hpres old new () Hrun)].
-  unfold TLB.fill_event. destruct ev as [msg|tlbi recipient].
+  unfold TLB.fill_event. destruct ev as [msg|tlbi recipient epoch].
   - apply preserves_fill_write, Htime.
   - destruct (decide (tid = recipient)); [apply preserves_fill_tlbi, Htime|apply preserves_ret].
 Qed.

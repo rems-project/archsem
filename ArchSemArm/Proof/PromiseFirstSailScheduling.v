@@ -26,9 +26,9 @@ Definition StableCertifiedPromiseStep (st st' : state) : Prop :=
 Lemma final_batch_more_fuel fuel fuel' st returned fsig :
   fuel ≤ fuel' →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first isem prom term fuel st) →
+    (CPState.run_transition_promise_first_uncached isem prom term fuel st) →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first isem prom term fuel' st).
+    (CPState.run_transition_promise_first_uncached isem prom term fuel' st).
 Proof.
   intros Hfuel Hstep.
   destruct (run_transition_promise_first_some_inv isem term fuel st returned fsig Hstep)
@@ -45,7 +45,7 @@ Lemma stable_promise_first_step_fuel st next :
   StableCertifiedPromiseStep st next →
   ∃ threshold, ∀ fuel, threshold ≤ fuel →
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem prom term fuel st).
+      (CPState.run_transition_promise_first_uncached isem prom term fuel st).
 Proof.
   intros [tid [ev [[threshold Hcandidate] Hpromise]]].
   exists threshold. intros fuel Hfuel.
@@ -60,10 +60,10 @@ Qed.
 Lemma stable_prefix_promise_first_run initMs st before returned cert_fuel fsig :
   rtc StableCertifiedPromiseStep st before →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first isem prom term cert_fuel before) →
+    (CPState.run_transition_promise_first_uncached isem prom term cert_fuel before) →
   ∃ cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs st).
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs st).
 Proof.
   intros Hprefix Hfinal. induction Hprefix as [st|st mid before Hstep Htail IH].
   - exists cert_fuel. intros [|fuel] Hfuel; [lia|]. cbn [opModel.run].
@@ -127,7 +127,7 @@ Lemma stable_prefix_final_batch initMs start before returned cert_fuel
     ev ∈ prom.(Promising.filter_promises) n tid mem candidates → ev ∈ candidates) →
   rtc StableCertifiedPromiseStep start before →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first isem prom term cert_fuel before) →
+    (CPState.run_transition_promise_first_uncached isem prom term cert_fuel before) →
   ∃ final cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results (final, fsig)
       (opModel.run (@CPState.opmodel isem prom n) fuel term initMs start).
@@ -148,12 +148,12 @@ Lemma stable_prefix_common_fuel initMs start before returned cert_fuel fsig :
     ev ∈ prom.(Promising.filter_promises) n tid mem candidates → ev ∈ candidates) →
   rtc StableCertifiedPromiseStep start before →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first isem prom term cert_fuel before) →
+    (CPState.run_transition_promise_first_uncached isem prom term cert_fuel before) →
   ∃ final cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results (final, fsig)
       (opModel.run (@CPState.opmodel isem prom n) fuel term initMs start) ∧
     Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs start).
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs start).
 Proof.
   intros Hgrowth Hfilter Hprefix Hfinal.
   destruct (stable_prefix_final_batch initMs start before returned cert_fuel fsig
@@ -175,7 +175,7 @@ Lemma sail_success_direct_suffix initMs fuel initPs returned
     ev ∈ prom.(Promising.filter_promises) n tid mem candidates → ev ∈ candidates) →
   PState.from_archState prom initMs = Ok initPs →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs initPs) →
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs initPs) →
   ∃ before final cost,
     PromiseFirstReachable prom isem term initMs false before ∧
     ∀ direct_fuel, cost < direct_fuel →
@@ -198,14 +198,14 @@ Corollary VMSail_stable_prefix_common_fuel bbm nondet {n}
     (term : terminationCondition n) initMs start before returned cert_fuel fsig :
   rtc (StableCertifiedPromiseStep (VMPromising.VMPromising bbm) nondet term) start before →
   Exec.elem_of_results (returned, Some fsig)
-    (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet)
+    (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet)
       (VMPromising.VMPromising bbm) term cert_fuel before) →
   ∃ final cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results (final, fsig)
       (opModel.run (@CPState.opmodel (sail_tiny_arm_sem nondet)
         (VMPromising.VMPromising bbm) n) fuel term initMs start) ∧
     Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet)
+      (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet)
         (VMPromising.VMPromising bbm) n) fuel term initMs start).
 Proof.
   apply stable_prefix_common_fuel.
@@ -217,7 +217,7 @@ Lemma UMSail_success_direct_suffix nondet {n} (term : terminationCondition n)
     initMs fuel initPs returned fsig :
   PState.from_archState UMPromising initMs = Ok initPs →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet) UMPromising n)
+    (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet) UMPromising n)
       fuel term initMs initPs) →
   ∃ before final cost,
     PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet) term initMs false before ∧
@@ -234,7 +234,7 @@ Lemma VMSail_success_direct_suffix bbm nondet {n} (term : terminationCondition n
     initMs fuel initPs returned fsig :
   PState.from_archState (VMPromising.VMPromising bbm) initMs = Ok initPs →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet)
+    (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet)
       (VMPromising.VMPromising bbm) n) fuel term initMs initPs) →
   ∃ before final cost,
     PromiseFirstReachable (VMPromising.VMPromising bbm) (sail_tiny_arm_sem nondet)
@@ -263,7 +263,7 @@ Definition UnstablePromiseOnSuccessfulRun (returned : state)
     (fsig : {s & archState.is_terminated term s}) : Prop :=
   ∃ before next fuel tid ev proms ppst,
     PromiseFirstReachable prom isem term initMs true before ∧
-    ev ∈ (CPState.enumerate_results isem prom term tid (PState.initmem before)
+    ev ∈ (CPState.enumerate_results_filtered isem prom term tid (PState.initmem before)
       (S fuel) (PState.tstate tid before) (PState.events before)).(CPState.promises prom) ∧
     PState.promise prom ev before = Ok next ∧
     ¬ StablePromiseCandidate prom nondet term tid (PState.initmem before)
@@ -275,7 +275,7 @@ Definition UnstablePromiseOnSuccessfulRun (returned : state)
         ([], PPState.Make (PState.tstate tid before) (PState.events before)
           prom.(Promising.iis_init))) ∧
     Exec.elem_of_results (returned, fsig)
-      (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs next).
+      (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs next).
 
 Lemma sail_promise_first_direct_or_unstable fuel (start returned : state)
     (fsig : {s & archState.is_terminated term s}) :
@@ -285,7 +285,7 @@ Lemma sail_promise_first_direct_or_unstable fuel (start returned : state)
   FilterRetainsMembership prom →
   PromiseFirstReachable prom isem term initMs true start →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs start) →
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs start) →
   (∃ final cost, ∀ direct_fuel, cost < direct_fuel →
     Exec.elem_of_results (final, fsig)
       (opModel.run (@CPState.opmodel isem prom n) direct_fuel term initMs start)) ∨
@@ -329,7 +329,7 @@ Lemma UMSail_promise_first_direct_or_unstable nondet {n} (term : terminationCond
     initMs fuel initPs returned fsig :
   PState.from_archState UMPromising initMs = Ok initPs →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet) UMPromising n)
+    (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet) UMPromising n)
       fuel term initMs initPs) →
   (∃ final cost, ∀ direct_fuel, cost < direct_fuel →
     Exec.elem_of_results (final, fsig)
@@ -349,7 +349,7 @@ Lemma VMSail_promise_first_direct_or_unstable bbm nondet {n} (term : termination
     initMs fuel initPs returned fsig :
   PState.from_archState (VMPromising.VMPromising bbm) initMs = Ok initPs →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet)
+    (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet)
       (VMPromising.VMPromising bbm) n) fuel term initMs initPs) →
   (∃ final cost, ∀ direct_fuel, cost < direct_fuel →
     Exec.elem_of_results (final, fsig)

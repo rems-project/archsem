@@ -2419,6 +2419,8 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
         (asid = bv_extract 48 16 ttbr0);;
       let tlb_results := TState.tlb_lookup tid imem mem ts ifetch upper vpn
         asid ttbr0 vpre_t vpre_inv vmax_t in
+      let tlb_results := Exec.make
+        (TLB.Result.merge tlb_results.(Exec.results)) tlb_results.(Exec.errors) in
       (* Lookup can have neither results nor errors when the only translation
          would fault, but the promising context excludes faults at this time.
          Otherwise report missing page-table setup. Path-specific errors are

@@ -22,7 +22,7 @@ Inductive PromiseFirstReachable
 | PromiseFirstReachable_step fuel st st' :
     PromiseFirstReachable prom isem term initMs use_pf st →
     Exec.elem_of_results (st', None)
-      ((if use_pf then CPState.run_transition_promise_first isem prom term fuel
+      ((if use_pf then CPState.run_transition_promise_first_uncached isem prom term fuel
         else CPState.run_transition isem prom term fuel) st) →
     PromiseFirstReachable prom isem term initMs use_pf st'.
 
@@ -48,11 +48,11 @@ Lemma promise_first_run_final_prefix
     (fsig : {s & archState.is_terminated term s}) :
   PromiseFirstReachable prom isem term initMs true st →
   Exec.elem_of_results (st_fin, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs st) →
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs st) →
   ∃ final_fuel before,
     PromiseFirstReachable prom isem term initMs true before ∧
     Exec.elem_of_results (st_fin, Some fsig)
-      (CPState.run_transition_promise_first isem prom term final_fuel before).
+      (CPState.run_transition_promise_first_uncached isem prom term final_fuel before).
 Proof.
   revert st st_fin fsig.
   induction fuel as [|fuel IH]; intros st st_fin fsig Hreach Hrun.
@@ -82,7 +82,7 @@ Lemma promise_first_run_decompose
     ev ∈ prom.(Promising.filter_promises) n tid mem candidates → ev ∈ candidates) →
   PState.from_archState prom initMs = Ok initPs →
   Exec.elem_of_results (st_fin, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs initPs) →
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs initPs) →
   ∃ before final_fuel finalPs (pt : CPState.terminated prom term finalPs),
     PromiseFirstReachable prom isem term initMs false before ∧
     PState.initmem finalPs = PState.initmem before ∧
@@ -94,7 +94,7 @@ Lemma promise_first_run_decompose
           final_fuel (length (PState.events before))
           ([], PPState.Make (PState.tstate tid before) (PState.events before)
             prom.(Promising.iis_init)))) ∧
-    Exec.elem_of_results (st_fin, ()) (CPState.validate_final prom finalPs before) ∧
+    Exec.elem_of_results (st_fin, ()) (CPState.validate_final_state prom finalPs before) ∧
     fsig = CPState.to_final_archState (CPState.make_final prom term finalPs pt).
 Proof.
   intros Hfilter Hinit Hrun.
@@ -182,7 +182,7 @@ Lemma no_self_modifying_enumerated_promise
     event ∈ candidates) →
   PromiseFirstNoSelfModifying prom isem term initMs read_byte code →
   PromiseFirstReachable prom isem term initMs use_pf st →
-  ev ∈ (CPState.enumerate_results isem prom term tid (PState.initmem st)
+  ev ∈ (CPState.enumerate_results_filtered isem prom term tid (PState.initmem st)
     fuel (PState.tstate tid st) (PState.events st)).(CPState.promises prom) →
   event_misses_code read_byte code ev.
 Proof.
@@ -211,7 +211,7 @@ Definition PromiseFirstFinalStateEquiv
     (∃ fuel pt, archModel.Res.FinalState fs pt ∈
       Promising_to_Modelc prom isem fuel n term initMs) ↔
     (∃ fuel pt, archModel.Res.FinalState fs pt ∈
-      Promising_to_Modelc_pf prom isem fuel n term initMs).
+      Promising_to_Modelc_pf_uncached prom isem fuel n term initMs).
 
 (** These are execution obligations, not instances for UM or VM.
     [PromiseFirstCounterexampleCurrent] proves that code immutability alone
@@ -229,14 +229,14 @@ Record PromiseFirstExecutionTransforms
         (opModel.run (@CPState.opmodel isem prom n) fuel term initMs initPs) →
       ∃ fuel_pf st_pf fsig_pf,
         Exec.elem_of_results (st_pf, fsig_pf)
-          (opModel.run (@CPState.opmodel_pf isem prom n)
+          (opModel.run (@CPState.opmodel_pf_uncached isem prom n)
             fuel_pf term initMs initPs) ∧
         projT1 fsig_pf = projT1 fsig;
   promise_first_run_to_direct :
     ∀ initPs fuel_pf st_pf (fsig_pf : {s & archState.is_terminated term s}),
       PState.from_archState prom initMs = Ok initPs →
       Exec.elem_of_results (st_pf, fsig_pf)
-        (opModel.run (@CPState.opmodel_pf isem prom n)
+        (opModel.run (@CPState.opmodel_pf_uncached isem prom n)
           fuel_pf term initMs initPs) →
       ∃ fuel st fsig,
         Exec.elem_of_results (st, fsig)

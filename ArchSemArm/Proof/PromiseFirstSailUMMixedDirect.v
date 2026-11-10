@@ -1,6 +1,7 @@
 (******************************************************************************)
 (* Normalizing complete mixed UM traces, including fresh instruction writes  *)
 (******************************************************************************)
+From ArchSemArm.Proof Require Import PromiseFirstCache.
 From ASCommon Require Import Options Common Exec FMon StateT.
 From ArchSemArm Require Import ArmInst UMPromising.
 From ArchSemArm.Proof Require Import PromiseFirstCurrent PromiseFirstConcreteCurrent
@@ -41,7 +42,7 @@ Proof.
     tid fuel msg Hprefix Hcandidate) as [count Hearly].
   destruct (UMPromising_promise_exists msg st) as [next Hemit].
   assert (Hearly_step : Exec.elem_of_results (next, None)
-    (CPState.run_transition_promise_first isem UMPromising term (count + fuel) st)).
+    (CPState.run_transition_promise_first_uncached isem UMPromising term (count + fuel) st)).
   { eapply (run_transition_promise_first_none_intro (prom := UMPromising))
       with (tid := tid) (ev := msg) (nst := next).
     - rewrite promise_first_execution_results_lookup. exact Hearly.
@@ -203,7 +204,7 @@ Lemma direct_run_mixed_trace initMs fuel st returned fsig :
     (opModel.run (@CPState.opmodel isem UMPromising n) fuel term initMs st) →
   ∃ final (pt : CPState.terminated UMPromising term final),
     rtc UMMixedStep st final ∧
-    Exec.elem_of_results (returned, ()) (CPState.validate_final UMPromising final final) ∧
+    Exec.elem_of_results (returned, ()) (CPState.validate_final_state UMPromising final final) ∧
     fsig = CPState.to_final_archState (CPState.make_final UMPromising term final pt).
 Proof.
   revert st. induction fuel as [|fuel IH]; intros st Hrun.
@@ -230,13 +231,13 @@ Qed.
 Definition UMTruncatedNormalizationCandidate initMs (final : state) : Prop :=
   ∃ before next fuel tid msg,
     PromiseFirstReachable UMPromising isem term initMs true before ∧
-    msg ∈ (CPState.enumerate_results isem UMPromising term tid (PState.initmem before)
+    msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem before)
       fuel (PState.tstate tid before) (PState.events before)).(CPState.promises UMPromising) ∧
     PState.promise UMPromising msg before = Ok next ∧
     rtc UMMixedStep next final ∧
     ¬ StablePromiseCandidate UMPromising nondet term tid (PState.initmem before)
       (PState.tstate tid before) (PState.events before) msg ∧
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem before)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem before)
       fuel (PState.tstate tid before) (PState.events before)).(CPState.out_of_fuel UMPromising) = true.
 
 Lemma normalized_prefix_stable_or_truncated initMs final st before :
@@ -286,7 +287,7 @@ Theorem UMSail_direct_to_promise_first_or_truncated initMs code fuel st returned
   UMFinalViewBound returned →
   (∃ before cost, ∀ pf_fuel, cost < pf_fuel →
     Exec.elem_of_results (before, fsig)
-      (opModel.run (@CPState.opmodel_pf isem UMPromising n) pf_fuel term initMs st)) ∨
+      (opModel.run (@CPState.opmodel_pf_uncached isem UMPromising n) pf_fuel term initMs st)) ∨
   UMTruncatedNormalizationCandidate initMs returned.
 Proof.
   intros Hsafe Hreach Hrun Hbound.
@@ -314,11 +315,11 @@ Qed.
 Definition UMNormalizationSearchesComplete initMs (final : state) : Prop :=
   ∀ before next fuel tid msg,
     PromiseFirstReachable UMPromising isem term initMs true before →
-    msg ∈ (CPState.enumerate_results isem UMPromising term tid (PState.initmem before)
+    msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem before)
       fuel (PState.tstate tid before) (PState.events before)).(CPState.promises UMPromising) →
     PState.promise UMPromising msg before = Ok next →
     rtc UMMixedStep next final →
-    (CPState.enumerate_results isem UMPromising term tid (PState.initmem before)
+    (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem before)
       fuel (PState.tstate tid before) (PState.events before)).(CPState.out_of_fuel UMPromising) = false.
 
 Theorem UMSail_full_mixed_direct_to_promise_first initMs code fuel st returned fsig :
@@ -329,7 +330,7 @@ Theorem UMSail_full_mixed_direct_to_promise_first initMs code fuel st returned f
   UMFinalViewBound returned → UMNormalizationSearchesComplete initMs returned →
   ∃ before cost, ∀ pf_fuel, cost < pf_fuel →
     Exec.elem_of_results (before, fsig)
-      (opModel.run (@CPState.opmodel_pf isem UMPromising n) pf_fuel term initMs st).
+      (opModel.run (@CPState.opmodel_pf_uncached isem UMPromising n) pf_fuel term initMs st).
 Proof.
   intros Hsafe Hreach Hrun Hbound Hcomplete.
   destruct (UMSail_direct_to_promise_first_or_truncated initMs code fuel st returned fsig
@@ -348,7 +349,7 @@ Corollary UMSail_full_mixed_final_inclusion initMs code fuel initPs returned
   UMFinalViewBound returned → UMNormalizationSearchesComplete initMs returned →
   ∃ cost, ∀ pf_fuel, cost < pf_fuel →
     archModel.Res.FinalState fs pt ∈
-      Promising_to_Modelc_pf UMPromising isem pf_fuel n term initMs.
+      Promising_to_Modelc_pf_uncached UMPromising isem pf_fuel n term initMs.
 Proof.
   intros Hsafe Hinit Hrun Hbound Hcomplete.
   destruct (UMSail_full_mixed_direct_to_promise_first initMs code fuel initPs returned
@@ -357,5 +358,23 @@ Proof.
   exists cost. intros pf_fuel Hfuel.
   eapply (promise_first_final_state_intro (prom := UMPromising));
     [exact Hinit|apply Hpf, Hfuel].
+Qed.
+(** Transfer the normalized result to the production runner with its cache. *)
+Corollary UMSail_full_mixed_cached_final_inclusion initMs code fuel initPs returned
+    fs (pt : archState.is_terminated term fs) :
+  UMSailNoSelfModifying nondet term initMs code →
+  PState.from_archState UMPromising initMs = Ok initPs →
+  Exec.elem_of_results (returned, existT fs pt)
+    (opModel.run (@CPState.opmodel isem UMPromising n) fuel term initMs initPs) →
+  UMFinalViewBound returned → UMNormalizationSearchesComplete initMs returned →
+  ∃ cost, ∀ pf_fuel, cost < pf_fuel →
+    archModel.Res.FinalState fs pt ∈
+      Promising_to_Modelc_pf UMPromising isem pf_fuel n term initMs.
+Proof.
+  intros Hsafe Hinit Hrun Hbound Hcomplete.
+  destruct (UMSail_full_mixed_final_inclusion initMs code fuel initPs returned fs pt
+    Hsafe Hinit Hrun Hbound Hcomplete) as [cost Hpf].
+  exists cost. intros pf_fuel Hfuel. apply UM_uncached_final_state_to_cached.
+  exact (Hpf pf_fuel Hfuel).
 Qed.
 End MixedDirect.

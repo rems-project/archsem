@@ -195,10 +195,10 @@ Definition enumerate (isem : iMon ()) (term : terminationCondition n)
 Lemma final_candidates_equivalent isem term fuel ts mem
     (ts' : prom.(Promising.tState)) :
   ts' ∈ (enumerate isem term fuel ts mem).(CPState.final_states prom) ↔
-  ts' ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.final_states prom).
 Proof.
-  unfold enumerate, CPState.enumerate_results.
+  unfold enumerate, CPState.enumerate_results_filtered.
   cbn [CPState.final_states].
   split; intro H; apply list_elem_of_omap in H;
     destruct H as [[[proms ppst] ending] [Hrun Hstate]];
@@ -234,7 +234,7 @@ Definition step (term : terminationCondition n) (fuel : nat) :
       states ← mchoosel $ cprodn (vmap (CPState.final_states prom) execution_results);
       let final := PState.Make states st.(PState.initmem) st.(PState.events) in
       pt ← guard_discard $ CPState.terminated prom term final;
-      CPState.validate_final prom final;;
+      CPState.validate_final_state prom final;;
       mret (Some (CPState.to_final_archState (CPState.make_final prom term final pt)))
   | 2 =>
       err ← mchoosel $ List.concat (vmap (CPState.errors prom) execution_results);

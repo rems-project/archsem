@@ -151,11 +151,13 @@ Lemma invalidate_all_extends bound time tlbi cache :
   bound < time →
   extends bound cache (TLB.VATLB.map_fe
     (λ fe events, if decide (TLB.affects tlbi fe)
-      then (TLB.Entry.Tlbi (TLBI.tid tlbi), time) :: events else events) cache).
+      then (if events is [] then [] else (TLB.Entry.Tlbi (TLBI.tid tlbi), time) :: events) else events) cache).
 Proof.
   intro Htime. apply map_fe_extends. intros fe events.
   destruct (decide (TLB.affects tlbi fe)).
-  - exists [(TLB.Entry.Tlbi (TLBI.tid tlbi), time)]. split; [|reflexivity].
+  - destruct events as [|event events].
+    + exists []. split; [constructor|reflexivity].
+    + exists [(TLB.Entry.Tlbi (TLBI.tid tlbi), time)]. split; [|reflexivity].
     constructor; [exact Htime|constructor].
   - exists []. split; [constructor|reflexivity].
 Qed.

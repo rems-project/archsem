@@ -85,7 +85,7 @@ Definition VM_write_times tid : list Ev.t → list nat :=
   pending_event_times (λ ev, if ev is Ev.Msg msg then bool_decide (Msg.tid msg = tid)
     else false).
 Definition VM_tlbi_times tid : list Ev.t → list nat :=
-  pending_event_times (λ ev, if ev is Ev.Tlbi tlbi recipient then bool_decide (Ev.tid ev = tid)
+  pending_event_times (λ ev, if ev is Ev.Tlbi tlbi recipient epoch then bool_decide (Ev.tid ev = tid)
     else false).
 
 Local Lemma result_bind_ok_inv {E A B} (e : result E A) (k : A → result E B) b :
@@ -129,7 +129,7 @@ Lemma VM_emit_promise_fields bbm tid imem mem ev ts ts' :
       else VMPromising.TState.prom_wr ts
     else VMPromising.TState.prom_wr ts) ∧
   VMPromising.TState.prom_tlbi ts' =
-    (if ev is Ev.Tlbi tlbi recipient then
+    (if ev is Ev.Tlbi tlbi recipient epoch then
       if bool_decide (Ev.tid ev = tid) then S (length mem) :: VMPromising.TState.prom_tlbi ts
       else VMPromising.TState.prom_tlbi ts
     else VMPromising.TState.prom_tlbi ts) ∧

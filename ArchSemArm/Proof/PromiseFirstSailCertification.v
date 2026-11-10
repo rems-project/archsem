@@ -50,9 +50,9 @@ Qed.
 
 Lemma final_candidate_more_fuel fuel fuel' ts mem ts' :
   fuel ≤ fuel' →
-  ts' ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.final_states prom) →
-  ts' ∈ (CPState.enumerate_results isem prom term tid initmem fuel' ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel' ts mem)
     .(CPState.final_states prom).
 Proof.
   intros Hfuel Hcandidate.
@@ -114,7 +114,7 @@ End Certification.
 Definition StablePromiseCandidate (prom : Promising.Model) (nondet : bool)
     {n} (term : terminationCondition n) (tid : fin n) initmem ts mem ev : Prop :=
   ∃ threshold, ∀ fuel, threshold ≤ fuel →
-    ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid
+    ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid
       initmem fuel ts mem).(CPState.promises prom).
 
 Definition FilterRetainsMembership (prom : Promising.Model) : Prop :=
@@ -129,9 +129,8 @@ Lemma VM_filter_retains_membership bbm :
 Proof.
   intros n tid mem xs ys ev Haccept Hin.
   cbn [Promising.filter_promises VMPromising.VMPromising] in *.
-  unfold VMPromising.filter_tlbi_promises in *.
+  unfold VMPromising.filter_commuting_promises in *.
   destruct mem as [|prev mem]; [exact Hin|].
-  destruct (Ev.get_tlbi_recipient prev); [|exact Hin].
   apply list_elem_of_filter in Haccept as [Hpred _].
   apply list_elem_of_filter. split; assumption.
 Qed.
@@ -162,7 +161,7 @@ Qed.
 Lemma completed_candidate_is_stable prom nondet {n}
     (term : terminationCondition n) (tid : fin n) initmem fuel ts mem ev proms ppst ending :
   FilterRetainsMembership prom →
-  ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.promises prom) →
   ev ∈ proms → ending ≠ CPState.OutOfFuel →
   Exec.elem_of_results ((proms, ppst), ending)
@@ -172,7 +171,7 @@ Lemma completed_candidate_is_stable prom nondet {n}
 Proof.
   intros Hfilter Haccept Hev Hend Hrun.
   exists fuel. intros fuel' Hfuel.
-  unfold CPState.enumerate_results in Haccept |- *. cbn in Haccept |- *.
+  unfold CPState.enumerate_results_filtered in Haccept |- *. cbn in Haccept |- *.
   eapply Hfilter; [exact Haccept|].
   eapply collected_promise_in_raw_candidates; [exact Hev|].
   eapply completed_certification_more_fuel; eassumption.
@@ -256,7 +255,7 @@ Qed.
 Lemma failed_candidate_is_stable prom nondet {n}
     (term : terminationCondition n) (tid : fin n) initmem fuel ts mem ev proms ppst err :
   FilterRetainsMembership prom →
-  ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.promises prom) →
   ev ∈ proms →
   ((proms, ppst), err) ∈ Exec.errors
@@ -265,7 +264,7 @@ Lemma failed_candidate_is_stable prom nondet {n}
   StablePromiseCandidate prom nondet term tid initmem ts mem ev.
 Proof.
   intros Hfilter Haccept Hev Hrun. exists fuel. intros fuel' Hfuel.
-  unfold CPState.enumerate_results in Haccept |- *. cbn in Haccept |- *.
+  unfold CPState.enumerate_results_filtered in Haccept |- *. cbn in Haccept |- *.
   eapply Hfilter; [exact Haccept|].
   apply elem_of_remove_dups, list_elem_of_In, List.in_concat. exists proms. split.
   - apply list_elem_of_In, elem_of_app. right.
@@ -281,7 +280,7 @@ Lemma candidate_stable_or_out_of_fuel prom nondet {n}
   (∀ candidates event,
     event ∈ prom.(Promising.filter_promises) n tid mem candidates → event ∈ candidates) →
   FilterRetainsMembership prom →
-  ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.promises prom) →
   StablePromiseCandidate prom nondet term tid initmem ts mem ev ∨
   ∃ proms ppst, ev ∈ proms ∧ Exec.elem_of_results ((proms, ppst), CPState.OutOfFuel)
@@ -306,10 +305,10 @@ Lemma out_of_fuel_certification_flag prom nondet {n}
   Exec.elem_of_results ((proms, ppst), CPState.OutOfFuel)
     (CPState.run_to_termination (sail_tiny_arm_sem nondet) prom term tid initmem
       fuel (length mem) ([], PPState.Make ts mem prom.(Promising.iis_init))) →
-  (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.out_of_fuel prom) = true.
 Proof.
-  intro Hrun. unfold CPState.enumerate_results. cbn.
+  intro Hrun. unfold CPState.enumerate_results_filtered. cbn.
   apply bool_decide_eq_true_2. exists CPState.OutOfFuel. split; [|exact I].
   apply list_elem_of_fmap. exists ((proms, ppst), CPState.OutOfFuel).
   split; [reflexivity|exact Hrun].
@@ -320,9 +319,9 @@ Lemma fully_explored_candidate_is_stable prom nondet {n}
   (∀ candidates event,
     event ∈ prom.(Promising.filter_promises) n tid mem candidates → event ∈ candidates) →
   FilterRetainsMembership prom →
-  (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.out_of_fuel prom) = false →
-  ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) prom term tid initmem
+  ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) prom term tid initmem
     fuel ts mem).(CPState.promises prom) →
   StablePromiseCandidate prom nondet term tid initmem ts mem ev.
 Proof.

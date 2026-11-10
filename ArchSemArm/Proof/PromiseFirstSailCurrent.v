@@ -127,13 +127,12 @@ Definition VMSailNoSelfModifying bbm nondet {n}
     term initMs VMPromisingReadByte code.
 
 (** The statements below record the broad equivalence target. They are not
-    established by the current proof stack. PromiseFirstSailVMTLBIOrder proves
-    that unrestricted VM direct-to-promise-first inclusion is false for the
-    current recipient-order filter: two broadcast TLBIs separated by DSB ISH
-    have a direct final result and no promise-first final result at any fuel.
-    Translation is enabled, BBM is disabled, the program performs no stores,
-    and the relevant searches are complete. The filter must be repaired before
-    a whole-program VM inclusion theorem can hold.
+    established by the current proof stack. The execution transformations use
+    the uncached reference runner. PromiseFirstCache transfers successful UM
+    reference runs to the production cached runner at the same fuel. A general
+    VM cache-validity theorem remains open. PromiseFirstSailVMTLBIOrder checks
+    that the epoch filter admits the DSB-separated broadcast-TLBI program that
+    was a counterexample before the epoch fix on main.
     PromiseFirstSailSerialization proves replay of the final batch;
     PromiseFirstSailScheduling identifies unstable OutOfFuel certificates
     in the promise-first-to-direct direction.
@@ -221,7 +220,7 @@ Lemma UMSail_candidate_preserves_fetch nondet {n}
   UMSailNoSelfModifying nondet term initMs code →
   PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet)
     term initMs use_pf st →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem st) fuel (PState.tstate tid st) (PState.events st))
     .(CPState.promises UMPromising) →
   SailThreadPrefix UMPromising nondet term initMs fetch_tid imem ppst
@@ -252,7 +251,7 @@ Lemma VMSail_candidate_preserves_fetch bbm nondet {n}
   VMSailNoSelfModifying bbm nondet term initMs code →
   PromiseFirstReachable (VMPromising.VMPromising bbm) (sail_tiny_arm_sem nondet)
     term initMs use_pf st →
-  ev ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet)
+  ev ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet)
     (VMPromising.VMPromising bbm) term tid (PState.initmem st) fuel
     (PState.tstate tid st) (PState.events st))
     .(CPState.promises (VMPromising.VMPromising bbm)) →
@@ -290,7 +289,7 @@ Lemma UMSail_mem_read_after_candidate nondet {n}
   UMSailNoSelfModifying nondet term initMs code →
   PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet)
     term initMs use_pf st →
-  msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet) UMPromising
+  msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet) UMPromising
     term tid (PState.initmem st) fuel (PState.tstate tid st) (PState.events st))
     .(CPState.promises UMPromising) →
   SailThreadPrefix UMPromising nondet term initMs tid imem ppst

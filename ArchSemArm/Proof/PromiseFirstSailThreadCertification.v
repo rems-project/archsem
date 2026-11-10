@@ -280,14 +280,14 @@ Qed.
 Theorem first_new_message_enumerated {n} (tid : fin n) imem
     (term : terminationCondition n) isem count ts mem fin msg :
   thread_steps tid imem (term !!! tid) isem count ts mem fin (msg :: mem) →
-  msg ∈ (CPState.enumerate_results isem UMPromising term tid imem count ts mem)
+  msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid imem count ts mem)
     .(CPState.promises UMPromising).
 Proof.
   intro Hsteps.
   destruct (first_new_message_certification_aux tid imem term isem
     _ _ _ _ _ Hsteps mem msg [] IIS.init eq_refl (or_introl eq_refl))
     as [proms [ppst [ending [Hin [_ Hcert]]]]].
-  unfold CPState.enumerate_results. cbn [CPState.promises Promising.filter_promises].
+  unfold CPState.enumerate_results_filtered. cbn [CPState.promises Promising.filter_promises].
   apply elem_of_remove_dups, list_elem_of_In, List.in_concat.
   exists proms. split; [|apply list_elem_of_In; exact Hin].
   apply list_elem_of_In, elem_of_app. left.
@@ -489,9 +489,9 @@ Proof.
     Hprefix suffix_count fin finmem Hsuffix Hterm mem msg []
     UMPromising.IIS.init eq_refl (or_introl eq_refl))
     as [proms [ppst [ending [Hin [Hend Hcert]]]]].
-  assert (Hcandidate : msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet)
+  assert (Hcandidate : msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet)
     UMPromising term tid imem (count + suffix_count) ts mem).(CPState.promises UMPromising)).
-  { unfold CPState.enumerate_results.
+  { unfold CPState.enumerate_results_filtered.
     cbn [CPState.promises Promising.filter_promises].
     eapply collected_promise_in_raw_candidates; [exact Hin|exact Hcert]. }
   eapply completed_candidate_is_stable.
@@ -524,9 +524,9 @@ Proof.
   pose proof (out_of_fuel_certification_continue UMPromising nondet term tid imem
     fuel count (length mem) [] (PPState.Make ts mem UMPromising.IIS.init)
     proms (PPState.Make mid midmem iis) proms' ppst' ending Hprefix Hsuffix) as Hcert.
-  assert (Hcandidate : msg ∈ (CPState.enumerate_results (sail_tiny_arm_sem nondet)
+  assert (Hcandidate : msg ∈ (CPState.enumerate_results_filtered (sail_tiny_arm_sem nondet)
     UMPromising term tid imem (fuel + count) ts mem).(CPState.promises UMPromising)).
-  { unfold CPState.enumerate_results.
+  { unfold CPState.enumerate_results_filtered.
     cbn [CPState.promises Promising.filter_promises].
     eapply collected_promise_in_raw_candidates; [apply Hkeep, Hin|exact Hcert]. }
   eapply completed_candidate_is_stable.
@@ -578,7 +578,7 @@ Theorem UMSail_first_new_message_promise_transition nondet {n}
     PState.promise UMPromising msg st = Ok st' ∧
     (∀ fuel, threshold ≤ fuel →
       Exec.elem_of_results (st', None)
-        (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet)
+        (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet)
           UMPromising term fuel st)) ∧
     PromiseFirstReachable UMPromising (sail_tiny_arm_sem nondet) term initMs true st' ∧
     UMThreadReplay.thread_steps tid (PState.initmem st') (term !!! tid)
@@ -595,7 +595,7 @@ Proof.
   destruct (UMPromising_promise_exists msg st) as [st' Hpromise].
   assert (Hstep : ∀ fuel, threshold ≤ fuel →
     Exec.elem_of_results (st', None)
-      (CPState.run_transition_promise_first (sail_tiny_arm_sem nondet)
+      (CPState.run_transition_promise_first_uncached (sail_tiny_arm_sem nondet)
         UMPromising term fuel st)).
   { intros fuel Hfuel.
     eapply run_transition_promise_first_none_intro with (tid := tid) (ev := msg) (nst := st').

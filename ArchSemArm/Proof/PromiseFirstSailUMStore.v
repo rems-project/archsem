@@ -50,17 +50,17 @@ Proof.
 Qed.
 
 Lemma initial_candidate : event ∈
-  (CPState.enumerate_results isem UMPromising term 0%fin imem 1
+  (CPState.enumerate_results_filtered isem UMPromising term 0%fin imem 1
     (PState.tstate 0%fin init_ps) []).(CPState.promises UMPromising).
 Proof.
-  assert (Hlist : (CPState.enumerate_results isem UMPromising term 0%fin imem 1
+  assert (Hlist : (CPState.enumerate_results_filtered isem UMPromising term 0%fin imem 1
     (PState.tstate 0%fin init_ps) []).(CPState.promises UMPromising) = [event]).
   { vm_compute. repeat first [reflexivity | apply bv_eq; reflexivity | progress f_equal]. }
   rewrite Hlist. left; reflexivity.
 Qed.
 
 Lemma initial_promise_step : Exec.elem_of_results (promised, None)
-  (CPState.run_transition_promise_first isem UMPromising term 1 init_ps).
+  (CPState.run_transition_promise_first_uncached isem UMPromising term 1 init_ps).
 Proof.
   eapply (run_transition_promise_first_none_intro (prom := UMPromising))
     with (tid := 0%fin) (ev := event) (nst := promised).
@@ -95,11 +95,11 @@ Lemma final_terminated : CPState.terminated UMPromising term final.
 Proof. vm_compute. exact I. Qed.
 
 Lemma final_valid : Exec.elem_of_results (final, ())
-  (CPState.validate_final UMPromising final final).
+  (CPState.validate_final_state UMPromising final final).
 Proof.
   assert (Hnone : CPState.nopromises UMPromising final) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end UMPromising final = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) final Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
@@ -126,7 +126,7 @@ Theorem common_final_result : ∃ direct_returned cost, ∀ fuel, (cost < fuel)%
   Exec.elem_of_results (direct_returned, result)
     (opModel.run (@CPState.opmodel isem UMPromising 1) fuel term initial init_ps) ∧
   Exec.elem_of_results (promised, result)
-    (opModel.run (@CPState.opmodel_pf isem UMPromising 1) fuel term initial init_ps).
+    (opModel.run (@CPState.opmodel_pf_uncached isem UMPromising 1) fuel term initial init_ps).
 Proof.
   destruct (UMSail_fixed_history_final_batch false term promised final final final_terminated
     (rtc_once _ _ instruction_fulfills) final_view_bound final_valid) as [cert_fuel Hbatch].

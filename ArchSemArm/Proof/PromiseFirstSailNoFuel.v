@@ -67,12 +67,12 @@ Qed.
 
 Lemma complete_enumeration_fuel_irrelevant fuel fuel' ts mem :
   fuel ≤ fuel' →
-  (CPState.enumerate_results isem prom term tid imem fuel ts mem)
+  (CPState.enumerate_results_filtered isem prom term tid imem fuel ts mem)
     .(CPState.out_of_fuel prom) = false →
-  CPState.enumerate_results isem prom term tid imem fuel ts mem =
-  CPState.enumerate_results isem prom term tid imem fuel' ts mem.
+  CPState.enumerate_results_filtered isem prom term tid imem fuel ts mem =
+  CPState.enumerate_results_filtered isem prom term tid imem fuel' ts mem.
 Proof.
-  intros Hfuel Hcomplete. unfold CPState.enumerate_results in *.
+  intros Hfuel Hcomplete. unfold CPState.enumerate_results_filtered in *.
   rewrite (completed_search_fuel_irrelevant fuel fuel' (length mem)
     ([], PPState.Make ts mem prom.(Promising.iis_init)) Hfuel); [reflexivity|].
   intros next Hout. cbn in Hcomplete.
@@ -93,7 +93,7 @@ Local Notation final := ({s & archState.is_terminated term s}).
 (** Completeness is checked at the budget actually used by the runner. It is
     not required at every natural-number budget, in particular at fuel zero. *)
 Definition CertificationCompleteAt (fuel : nat) (st : state) : Prop :=
-  ∀ tid, (CPState.enumerate_results isem prom term tid (PState.initmem st)
+  ∀ tid, (CPState.enumerate_results_filtered isem prom term tid (PState.initmem st)
     fuel (PState.tstate tid st) (PState.events st)).(CPState.out_of_fuel prom) = false.
 
 Lemma certification_complete_more_fuel fuel fuel' st :
@@ -108,10 +108,10 @@ Qed.
 
 Lemma complete_transition_fuel_irrelevant fuel fuel' st :
   fuel ≤ fuel' → CertificationCompleteAt fuel st →
-  CPState.run_transition_promise_first isem prom term fuel st =
-  CPState.run_transition_promise_first isem prom term fuel' st.
+  CPState.run_transition_promise_first_uncached isem prom term fuel st =
+  CPState.run_transition_promise_first_uncached isem prom term fuel' st.
 Proof.
-  intros Hfuel Hcomplete. unfold CPState.run_transition_promise_first.
+  intros Hfuel Hcomplete. unfold CPState.run_transition_promise_first_uncached.
   apply execution_bind_ext. intros mid st0 Hget.
   apply Exec.elem_of_mGet_inv in Hget as [-> ->].
   assert (Henum : promise_first_execution_results isem term fuel st =
@@ -130,12 +130,12 @@ Inductive CompletePromiseFirstExecution : nat → state → state → final → 
 | complete_execution_final fuel st returned fsig :
     CertificationCompleteAt (S fuel) st →
     Exec.elem_of_results (returned, Some fsig)
-      (CPState.run_transition_promise_first isem prom term (S fuel) st) →
+      (CPState.run_transition_promise_first_uncached isem prom term (S fuel) st) →
     CompletePromiseFirstExecution (S fuel) st returned fsig
 | complete_execution_promise fuel st next returned fsig :
     CertificationCompleteAt (S fuel) st →
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem prom term (S fuel) st) →
+      (CPState.run_transition_promise_first_uncached isem prom term (S fuel) st) →
     CompletePromiseFirstExecution fuel next returned fsig →
     CompletePromiseFirstExecution (S fuel) st returned fsig.
 
@@ -146,14 +146,14 @@ Fixpoint PromiseFirstSearchesComplete (fuel : nat) (st : state) : Prop :=
   | 0 => True
   | S fuel => CertificationCompleteAt (S fuel) st ∧
       ∀ next, Exec.elem_of_results (next, None)
-        (CPState.run_transition_promise_first isem prom term (S fuel) st) →
+        (CPState.run_transition_promise_first_uncached isem prom term (S fuel) st) →
         PromiseFirstSearchesComplete fuel next
   end.
 
 Lemma successful_run_complete initMs fuel st returned fsig :
   PromiseFirstSearchesComplete fuel st →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs st) →
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs st) →
   CompletePromiseFirstExecution fuel st returned fsig.
 Proof.
   revert st. induction fuel as [|fuel IH]; intros st Hcomplete Hrun.
@@ -172,7 +172,7 @@ Qed.
 Lemma complete_execution_is_run initMs fuel st returned fsig :
   CompletePromiseFirstExecution fuel st returned fsig →
   Exec.elem_of_results (returned, fsig)
-    (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs st).
+    (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs st).
 Proof.
   intro Hrun. induction Hrun; cbn [opModel.run].
   - eapply Exec.elem_of_bind_intro; [eassumption|apply Exec.elem_of_mret].
@@ -185,7 +185,7 @@ Lemma complete_promise_step_stable fuel st next :
   FilterRetainsMembership prom →
   CertificationCompleteAt fuel st →
   Exec.elem_of_results (next, None)
-    (CPState.run_transition_promise_first isem prom term fuel st) →
+    (CPState.run_transition_promise_first_uncached isem prom term fuel st) →
   StableCertifiedPromiseStep prom nondet term st next.
 Proof.
   intros Hsubset Hfilter Hcomplete Hstep.
@@ -244,7 +244,7 @@ Theorem complete_promise_first_final_sound prom nondet {n}
   FilterRetainsMembership prom →
   PromiseFirstSearchesCompleteFromInitial prom nondet term initMs fuel →
   archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc_pf prom (sail_tiny_arm_sem nondet) fuel n term initMs →
+    Promising_to_Modelc_pf_uncached prom (sail_tiny_arm_sem nondet) fuel n term initMs →
   ∃ cost, ∀ direct_fuel, cost < direct_fuel →
     ∃ pt', archModel.Res.FinalState fs pt' ∈
       Promising_to_Modelc prom (sail_tiny_arm_sem nondet) direct_fuel n term initMs.
@@ -266,7 +266,7 @@ Corollary UMSail_complete_promise_first_final_sound nondet {n}
     (term : terminationCondition n) initMs fuel fs (pt : archState.is_terminated term fs) :
   PromiseFirstSearchesCompleteFromInitial UMPromising nondet term initMs fuel →
   archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc_pf UMPromising (sail_tiny_arm_sem nondet) fuel n term initMs →
+    Promising_to_Modelc_pf_uncached UMPromising (sail_tiny_arm_sem nondet) fuel n term initMs →
   ∃ cost, ∀ direct_fuel, cost < direct_fuel →
     ∃ pt', archModel.Res.FinalState fs pt' ∈
       Promising_to_Modelc UMPromising (sail_tiny_arm_sem nondet) direct_fuel n term initMs.
@@ -282,7 +282,7 @@ Corollary VMSail_complete_promise_first_final_sound bbm nondet {n}
   PromiseFirstSearchesCompleteFromInitial (VMPromising.VMPromising bbm) nondet
     term initMs fuel →
   archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc_pf (VMPromising.VMPromising bbm)
+    Promising_to_Modelc_pf_uncached (VMPromising.VMPromising bbm)
       (sail_tiny_arm_sem nondet) fuel n term initMs →
   ∃ cost, ∀ direct_fuel, cost < direct_fuel →
     ∃ pt', archModel.Res.FinalState fs pt' ∈

@@ -39,7 +39,7 @@ Inductive CompleteFulfillmentDirectExecution : nat → state → state → final
 | fulfillment_execution_promise fuel st next returned fsig :
     CertificationCompleteAt UMPromising nondet term (S fuel) st →
     Exec.elem_of_results (next, None)
-      (CPState.run_transition_promise_first isem UMPromising term (S fuel) st) →
+      (CPState.run_transition_promise_first_uncached isem UMPromising term (S fuel) st) →
     CompleteFulfillmentDirectExecution fuel next returned fsig →
     CompleteFulfillmentDirectExecution (S fuel) st returned fsig.
 
@@ -64,7 +64,7 @@ Lemma fulfillment_execution_trace fuel st returned fsig :
   ∃ final (pt : CPState.terminated UMPromising term final),
     rtc (MixedFulfillmentStep nondet term) st final ∧
     UMFinalViewBound final ∧
-    Exec.elem_of_results (returned, ()) (CPState.validate_final UMPromising final final) ∧
+    Exec.elem_of_results (returned, ()) (CPState.validate_final_state UMPromising final final) ∧
     fsig = CPState.to_final_archState (CPState.make_final UMPromising term final pt).
 Proof.
   intro Hrun. induction Hrun as
@@ -92,7 +92,7 @@ Theorem UMSail_complete_fulfillment_direct_to_promise_first initMs code fuel st 
   CompleteFulfillmentDirectExecution fuel st returned fsig →
   ∃ before cost, ∀ pf_fuel, cost < pf_fuel →
     Exec.elem_of_results (before, fsig)
-      (opModel.run (@CPState.opmodel_pf isem UMPromising n) pf_fuel term initMs st).
+      (opModel.run (@CPState.opmodel_pf_uncached isem UMPromising n) pf_fuel term initMs st).
 Proof.
   intros Hsafe Hreach Hrun.
   destruct (fulfillment_execution_trace fuel st returned fsig Hrun)
@@ -116,7 +116,7 @@ Corollary UMSail_complete_fulfillment_final_inclusion initMs code fuel initPs re
     Promising_to_Modelc UMPromising isem fuel n term initMs ∧
   ∃ cost, ∀ pf_fuel, cost < pf_fuel →
     archModel.Res.FinalState fs pt ∈
-      Promising_to_Modelc_pf UMPromising isem pf_fuel n term initMs.
+      Promising_to_Modelc_pf_uncached UMPromising isem pf_fuel n term initMs.
 Proof.
   intros Hsafe Hinit Hrun. split.
   - eapply (direct_final_state_intro (prom := UMPromising)); [exact Hinit|].
@@ -142,7 +142,7 @@ Theorem UMSail_single_thread_common_final_result nondet (term : terminationCondi
     (sail_tiny_arm_sem nondet) count (PState.tstate 0%fin st) (PState.events st)
     (PState.tstate 0%fin final) (PState.events final) →
   UMFinalViewBound final →
-  Exec.elem_of_results (returned, ()) (CPState.validate_final UMPromising final final) →
+  Exec.elem_of_results (returned, ()) (CPState.validate_final_state UMPromising final final) →
   ∃ direct_returned before cost, ∀ fuel, cost < fuel →
     Exec.elem_of_results
       (direct_returned, CPState.to_final_archState (CPState.make_final UMPromising term final pt))
@@ -150,7 +150,7 @@ Theorem UMSail_single_thread_common_final_result nondet (term : terminationCondi
         fuel term initMs st) ∧
     Exec.elem_of_results
       (before, CPState.to_final_archState (CPState.make_final UMPromising term final pt))
-      (opModel.run (@CPState.opmodel_pf (sail_tiny_arm_sem nondet) UMPromising 1)
+      (opModel.run (@CPState.opmodel_pf_uncached (sail_tiny_arm_sem nondet) UMPromising 1)
         fuel term initMs st).
 Proof.
   intros Hsafe Hreach Himem Hthread Hbound Hvalid.

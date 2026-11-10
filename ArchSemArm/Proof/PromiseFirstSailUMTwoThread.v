@@ -79,11 +79,11 @@ Lemma second_search_complete : CertificationCompleteAt UMPromising false term 1%
 Proof. complete_two_threads. Qed.
 
 Local Lemma promise_step tid ev st :
-  (CPState.enumerate_results isem UMPromising term tid (PState.initmem st) 1
+  (CPState.enumerate_results_filtered isem UMPromising term tid (PState.initmem st) 1
     (PState.tstate tid st) (PState.events st)).(CPState.promises UMPromising) = [ev] →
   PState.promise UMPromising ev st = Ok (issue ev st) →
   Exec.elem_of_results (issue ev st, None)
-    (CPState.run_transition_promise_first isem UMPromising term 1 st).
+    (CPState.run_transition_promise_first_uncached isem UMPromising term 1 st).
 Proof.
   intros Hlist Hemit. eapply (run_transition_promise_first_none_intro (prom := UMPromising))
     with (tid := tid) (ev := ev) (nst := issue ev st).
@@ -92,13 +92,13 @@ Proof.
   - reflexivity.
 Qed.
 Lemma mixed_promise_step : Exec.elem_of_results (mixed1, None)
-  (CPState.run_transition_promise_first isem UMPromising term 1 fresh0).
+  (CPState.run_transition_promise_first_uncached isem UMPromising term 1 fresh0).
 Proof. apply (promise_step 1%fin event1 fresh0); [compute_equal|apply issue_success; vm_compute; reflexivity]. Qed.
 Lemma first_promise_step : Exec.elem_of_results (promised0, None)
-  (CPState.run_transition_promise_first isem UMPromising term 1 init_ps).
+  (CPState.run_transition_promise_first_uncached isem UMPromising term 1 init_ps).
 Proof. apply (promise_step 0%fin event0 init_ps); [compute_equal|apply issue_success; vm_compute; reflexivity]. Qed.
 Lemma second_promise_step : Exec.elem_of_results (promised1, None)
-  (CPState.run_transition_promise_first isem UMPromising term 1 promised0).
+  (CPState.run_transition_promise_first_uncached isem UMPromising term 1 promised0).
 Proof. apply (promise_step 1%fin event1 promised0); [compute_equal|apply issue_success; vm_compute; reflexivity]. Qed.
 
 Local Lemma execute_initial_memory tid st : PState.initmem (execute tid st) = PState.initmem st.
@@ -142,11 +142,11 @@ Proof.
   intro tid. inv_fin tid; [vm_compute; lia|].
   intro tid. inv_fin tid; [vm_compute; lia|intro tid; inv_fin tid].
 Qed.
-Lemma final_valid : Exec.elem_of_results (final, ()) (CPState.validate_final UMPromising final final).
+Lemma final_valid : Exec.elem_of_results (final, ()) (CPState.validate_final_state UMPromising final final).
 Proof.
   assert (Hnone : CPState.nopromises UMPromising final) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end UMPromising final = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) final Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
@@ -161,11 +161,11 @@ Proof.
   intro tid. inv_fin tid; [vm_compute; lia|intro tid; inv_fin tid].
 Qed.
 Lemma fulfilled_valid : Exec.elem_of_results (fulfilled1, ())
-  (CPState.validate_final UMPromising fulfilled1 fulfilled1).
+  (CPState.validate_final_state UMPromising fulfilled1 fulfilled1).
 Proof.
   assert (Hnone : CPState.nopromises UMPromising fulfilled1) by (vm_compute; exact I).
   assert (Hvalid : CPState.check_valid_end UMPromising fulfilled1 = []) by (vm_compute; reflexivity).
-  unfold CPState.validate_final. rewrite Hvalid.
+  unfold CPState.validate_final_state. rewrite Hvalid.
   destruct (Exec.elem_of_guard_discard (E := string) fulfilled1 Hnone) as [pt Hguard].
   eapply Exec.elem_of_bind_intro; [exact Hguard|apply Exec.elem_of_mret].
 Qed.
@@ -223,7 +223,7 @@ Theorem mixed_direct_to_promise_first :
     (opModel.run (@CPState.opmodel isem UMPromising 2) 4 term initial init_ps) ∧
   ∃ cost, ∀ fuel, (cost < fuel)%nat →
     Exec.elem_of_results (promised1, result)
-      (opModel.run (@CPState.opmodel_pf isem UMPromising 2) fuel term initial init_ps).
+      (opModel.run (@CPState.opmodel_pf_uncached isem UMPromising 2) fuel term initial init_ps).
 Proof.
   split; [exact mixed_direct_run|].
   destruct (UMSail_fixed_history_final_batch false term promised1 fulfilled1 fulfilled1 fulfilled_terminated

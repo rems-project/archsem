@@ -191,7 +191,7 @@ Qed.
 
 Theorem enumerated_promise_owner {n} (tid : fin n) imem isem
     (term : terminationCondition n) fuel ts mem msg :
-  msg ∈ (CPState.enumerate_results isem UMPromising term tid imem fuel ts mem)
+  msg ∈ (CPState.enumerate_results_filtered isem UMPromising term tid imem fuel ts mem)
     .(CPState.promises UMPromising) →
   Msg.tid msg = (tid : nat).
 Proof.

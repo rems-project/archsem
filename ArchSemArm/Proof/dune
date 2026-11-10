@@ -2,6 +2,7 @@
  (name ArchSemArm.Proof)
  (modules
   PromiseFirstCurrent
+  PromiseFirstCache
   PromiseFirstMemoryCurrent
   PromiseFirstExecutionCurrent
   PromiseFirstVMExecutionCurrent
@@ -65,6 +66,7 @@
  (name proof)
  (deps
   PromiseFirstCurrent.vo
+  PromiseFirstCache.vo
   PromiseFirstMemoryCurrent.vo
   PromiseFirstExecutionCurrent.vo
   PromiseFirstVMExecutionCurrent.vo
@@ -112,6 +114,7 @@
  (name proof-current)
  (deps
   PromiseFirstCurrent.vo
+  PromiseFirstCache.vo
   PromiseFirstMemoryCurrent.vo
   PromiseFirstExecutionCurrent.vo
   PromiseFirstVMExecutionCurrent.vo

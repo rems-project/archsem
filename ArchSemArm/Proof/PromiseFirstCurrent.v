@@ -154,7 +154,7 @@ Definition promise_first_execution_results
     (st : PState.t prom.(Promising.tState) prom.(Promising.mEvent) n) :
     vec (CPState.EnumerationResult prom) n :=
   vmap (λ '(tid, ts),
-      CPState.enumerate_results isem prom term tid
+      CPState.enumerate_results_filtered isem prom term tid
         (CPState.initmem st) fuel ts (CPState.events st))
     (venumerate (CPState.tstates st)).
 
@@ -164,7 +164,7 @@ Lemma promise_first_execution_results_lookup
     (st : PState.t prom.(Promising.tState)
       prom.(Promising.mEvent) n) (tid : fin n) :
   promise_first_execution_results isem term fuel st !!! tid =
-  CPState.enumerate_results isem prom term tid
+  CPState.enumerate_results_filtered isem prom term tid
     (CPState.initmem st) fuel (PState.tstate tid st)
     (CPState.events st).
 Proof.
@@ -222,10 +222,10 @@ Lemma enumerate_results_terminated_final_state
     (mem : PromMemory.t prom.(Promising.mEvent)) :
   (prom.(Promising.tState_min_new_prom_view) ts <= length mem)%nat →
   CPState.terminated_ts prom (term !!! tid) ts = true →
-  ts ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem).(CPState.final_states prom).
+  ts ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem).(CPState.final_states prom).
 Proof.
   intros Hbase Hterm.
-  unfold CPState.enumerate_results.
+  unfold CPState.enumerate_results_filtered.
   set (ppst := PPState.Make ts mem prom.(Promising.iis_init)).
   set (res := (@CPState.run_to_termination isem prom n term tid initmem
     fuel (length mem)) ([], ppst)).
@@ -251,7 +251,7 @@ Lemma enumerate_results_final_state_witness
     {prom : Promising.Model} (isem : iMon ())
     {n : nat} (term : terminationCondition n) (tid : fin n)
     (initmem : memoryMap) fuel ts mem ts' :
-  ts' ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  ts' ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.final_states prom) ↔
   ∃ ppst,
     PPState.state ppst = ts' ∧
@@ -259,7 +259,7 @@ Lemma enumerate_results_final_state_witness
       (CPState.run_to_termination isem prom term tid initmem fuel (length mem)
         ([], PPState.Make ts mem prom.(Promising.iis_init))).
 Proof.
-  unfold CPState.enumerate_results. cbn.
+  unfold CPState.enumerate_results_filtered. cbn.
   split.
   - intro Hin. apply list_elem_of_omap in Hin.
     destruct Hin as [[[new_proms ppst] ending] [Hrun Hstate]].
@@ -282,7 +282,7 @@ Lemma enumerate_results_promise_witness
   (∀ candidates event,
     event ∈ prom.(Promising.filter_promises) n tid mem candidates →
     event ∈ candidates) →
-  ev ∈ (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  ev ∈ (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.promises prom) →
   ∃ new_proms ppst,
     ev ∈ new_proms ∧
@@ -294,7 +294,7 @@ Lemma enumerate_results_promise_witness
         ([], PPState.Make ts mem prom.(Promising.iis_init))))).
 Proof.
   intros Hfilter Hin.
-  unfold CPState.enumerate_results in Hin.
+  unfold CPState.enumerate_results_filtered in Hin.
   cbn in Hin.
   apply Hfilter in Hin.
   apply elem_of_remove_dups in Hin.
@@ -323,12 +323,12 @@ Lemma enumerate_results_terminated_promises
     {n : nat} (term : terminationCondition n) (tid : fin n)
     (initmem : memoryMap) fuel ts mem :
   CPState.terminated_ts prom (term !!! tid) ts = true →
-  (CPState.enumerate_results isem prom term tid initmem fuel ts mem)
+  (CPState.enumerate_results_filtered isem prom term tid initmem fuel ts mem)
     .(CPState.promises prom) =
   prom.(Promising.filter_promises) n tid mem [].
 Proof.
   intro Hterm.
-  unfold CPState.enumerate_results.
+  unfold CPState.enumerate_results_filtered.
   destruct fuel; cbn [CPState.run_to_termination];
     unfold mget, mGet, mcall, mbind, fmap,
       Exec.mbind_inst, Exec.fmap_inst, Exec.st_call_MState,
@@ -495,20 +495,20 @@ Lemma promise_first_final_state_inv {prom : Promising.Model} (isem : iMon ())
     {n : nat} (term : terminationCondition n) (initMs : archState n)
     (fuel : nat) (fs : archState n) (pt : archState.is_terminated term fs) :
   archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc_pf prom isem fuel n term initMs →
+    Promising_to_Modelc_pf_uncached prom isem fuel n term initMs →
   ∃ initPs, PState.from_archState prom initMs = Ok initPs ∧
     ∃ st' fsig,
       Exec.elem_of_results (st', fsig)
-        ((opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs) initPs) ∧
+        ((opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs) initPs) ∧
       projT1 fsig = fs.
 Proof.
-  unfold Promising_to_Modelc_pf, opModel.to_archModel.
+  unfold Promising_to_Modelc_pf_uncached, opModel.to_archModel.
   cbn.
   destruct (PState.from_archState prom initMs) as [initPs|err] eqn:Hinit.
   - intro Hfinal.
     destruct
       (final_state_from_exec_inv
-         (opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs)
+         (opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs)
          initPs fs pt Hfinal) as [st' [fsig [Hrun Hfs]]].
     exists initPs. split; [reflexivity|].
     exists st', fsig. split; [exact Hrun|exact Hfs].
@@ -526,11 +526,11 @@ Lemma promise_first_final_state_intro {prom : Promising.Model} (isem : iMon ())
     (fs : archState n) (pt : archState.is_terminated term fs) :
   Exec.elem_of_results
       (st', existT (P := archState.is_terminated term) fs pt)
-      ((opModel.run (@CPState.opmodel_pf isem prom n) fuel term initMs) initPs) →
+      ((opModel.run (@CPState.opmodel_pf_uncached isem prom n) fuel term initMs) initPs) →
   archModel.Res.FinalState fs pt ∈
-    Promising_to_Modelc_pf prom isem fuel n term initMs.
+    Promising_to_Modelc_pf_uncached prom isem fuel n term initMs.
 Proof.
-  unfold Promising_to_Modelc_pf, opModel.to_archModel.
+  unfold Promising_to_Modelc_pf_uncached, opModel.to_archModel.
   cbn.
   rewrite Hinit.
   apply final_state_from_exec_intro.
@@ -549,7 +549,7 @@ Lemma run_transition_some_inv {prom : Promising.Model} (isem : iMon ())
     ((@CPState.run_transition isem prom n term fuel) st) →
   ∃ (pt : CPState.terminated prom term st),
     Exec.elem_of_results (st', ())
-      ((CPState.validate_final prom st) st) ∧
+      ((CPState.validate_final_state prom st) st) ∧
     fsig = CPState.to_final_archState
       (CPState.make_final prom term st pt).
 Proof.
@@ -576,7 +576,7 @@ Lemma run_transition_some_intro {prom : Promising.Model} (isem : iMon ())
         prom.(Promising.mEvent) n)
     (pt : CPState.terminated prom term st)
     (Hvalidate : Exec.elem_of_results (st', ())
-      ((CPState.validate_final prom st) st)) :
+      ((CPState.validate_final_state prom st) st)) :
   Exec.elem_of_results
     (st', Some (CPState.to_final_archState
       (CPState.make_final prom term st pt)))
@@ -655,12 +655,12 @@ Lemma promise_select_tid_inv {prom : Promising.Model} (isem : iMon ())
       prom.(Promising.mEvent) n) (tid : fin n) ev :
   Exec.elem_of_results ev
     (@CPState.promise_select_tid isem prom n term fuel st tid) →
-  ev ∈ (CPState.enumerate_results isem prom term tid
+  ev ∈ (CPState.enumerate_results_filtered isem prom term tid
           (CPState.initmem st) fuel (PState.tstate tid st)
           (PState.events st)).(CPState.promises prom).
 Proof.
   unfold CPState.promise_select_tid.
-  destruct (CPState.enumerate_results isem prom term tid
+  destruct (CPState.enumerate_results_filtered isem prom term tid
       (CPState.initmem st) fuel (PState.tstate tid st)
       (PState.events st))
     as [promises final_states errors out_of_fuel] eqn:Henum.
@@ -682,14 +682,14 @@ Lemma promise_select_tid_intro {prom : Promising.Model} (isem : iMon ())
     {n : nat} (term : terminationCondition n) (fuel : nat)
     (st : PState.t prom.(Promising.tState)
       prom.(Promising.mEvent) n) (tid : fin n) ev :
-  ev ∈ (CPState.enumerate_results isem prom term tid
+  ev ∈ (CPState.enumerate_results_filtered isem prom term tid
           (CPState.initmem st) fuel (PState.tstate tid st)
           (PState.events st)).(CPState.promises prom) →
   Exec.elem_of_results ev
     (@CPState.promise_select_tid isem prom n term fuel st tid).
 Proof.
   unfold CPState.promise_select_tid.
-  destruct (CPState.enumerate_results isem prom term tid
+  destruct (CPState.enumerate_results_filtered isem prom term tid
       (CPState.initmem st) fuel (PState.tstate tid st)
       (PState.events st))
     as [promises final_states errors out_of_fuel] eqn:Henum.
@@ -783,14 +783,14 @@ Lemma run_transition_promise_first_none_inv
     (st st' : PState.t prom.(Promising.tState)
         prom.(Promising.mEvent) n) :
   Exec.elem_of_results (st', None)
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st) →
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st) →
   ∃ tid ev nst,
     ev ∈ (CPState.promises prom
       (promise_first_execution_results isem term fuel st !!! tid)) ∧
     PState.promise prom ev st = Ok nst ∧
     st' = nst.
 Proof.
-  unfold CPState.run_transition_promise_first.
+  unfold CPState.run_transition_promise_first_uncached.
   intro Hrun.
   apply Exec.elem_of_bind_elim in Hrun as [st0 [opt [Hget Hchoice]]].
   apply Exec.elem_of_mGet_inv in Hget as [-> ->].
@@ -834,7 +834,7 @@ Proof.
   - destruct (bool_decide
       (∃ x ∈ map (CPState.out_of_fuel prom)
         (vmap (λ '(tid, ts),
-          CPState.enumerate_results isem prom term tid
+          CPState.enumerate_results_filtered isem prom term tid
             (CPState.initmem st) fuel ts (CPState.events st))
           (venumerate (CPState.tstates st))), (x : bool))) eqn:Hfuel.
     + unfold mthrow, Exec.throw_inst in Hbranch.
@@ -860,9 +860,9 @@ Lemma run_transition_promise_first_none_intro
     (Hpromise : PState.promise prom ev st = Ok nst)
     (Hstate : st' = nst) :
   Exec.elem_of_results (st', None)
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st).
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st).
 Proof.
-  unfold CPState.run_transition_promise_first.
+  unfold CPState.run_transition_promise_first_uncached.
   eapply Exec.elem_of_bind_intro with (st' := st) (a := st).
   - apply Exec.elem_of_mGet.
   - eapply Exec.elem_of_bind_intro with (st' := st) (a := 0%nat).
@@ -943,7 +943,7 @@ Lemma promise_first_none_to_direct_none
     ev ∈ prom.(Promising.filter_promises) n tid (PState.events st) candidates →
     ev ∈ candidates) →
   Exec.elem_of_results (st', None)
-    (CPState.run_transition_promise_first isem prom term fuel st) →
+    (CPState.run_transition_promise_first_uncached isem prom term fuel st) →
   Exec.elem_of_results (st', None)
     (CPState.run_transition isem prom term fuel st).
 Proof.
@@ -996,7 +996,7 @@ Lemma direct_promise_step_to_promise_first_none
   PState.promise prom ev st = Ok nst →
   st' = nst →
   Exec.elem_of_results (st', None)
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st).
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st).
 Proof.
   intros Hterm Hev Hpromise Hstate.
   eapply run_transition_promise_first_none_intro.
@@ -1015,7 +1015,7 @@ Lemma direct_none_to_promise_first_none_or_run_tid
   Exec.elem_of_results (st', None)
     ((@CPState.run_transition isem prom n term fuel) st) →
   Exec.elem_of_results (st', None)
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st) ∨
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st) ∨
   ∃ tid,
     CPState.terminated_tid prom term st tid = false ∧
     Exec.elem_of_results (st', ())
@@ -1047,7 +1047,7 @@ Lemma run_transition_promise_first_some_inv
         prom.(Promising.mEvent) n)
     (fsig : {s & archState.is_terminated term s}) :
   Exec.elem_of_results (st', Some fsig)
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st) →
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st) →
   ∃ (tstates : vec prom.(Promising.tState) n)
     (st0 : PState.t prom.(Promising.tState)
       prom.(Promising.mEvent) n)
@@ -1059,11 +1059,11 @@ Lemma run_transition_promise_first_some_inv
       (promise_first_execution_results isem term fuel st !!! tid)
         .(CPState.final_states prom)) ∧
     Exec.elem_of_results (st', ())
-      ((CPState.validate_final prom st0) st) ∧
+      ((CPState.validate_final_state prom st0) st) ∧
     fsig = CPState.to_final_archState
       (CPState.make_final prom term st0 pt).
 Proof.
-  unfold CPState.run_transition_promise_first.
+  unfold CPState.run_transition_promise_first_uncached.
   intro Hrun.
   apply Exec.elem_of_bind_elim in Hrun as [st0 [opt [Hget Hchoice]]].
   apply Exec.elem_of_mGet_inv in Hget as [-> ->].
@@ -1104,7 +1104,7 @@ Proof.
   - destruct (bool_decide
       (∃ x ∈ map (CPState.out_of_fuel prom)
         (vmap (λ '(tid, ts),
-          CPState.enumerate_results isem prom term tid
+          CPState.enumerate_results_filtered isem prom term tid
             (CPState.initmem st) fuel ts (CPState.events st))
           (venumerate (CPState.tstates st))), (x : bool))) eqn:Hfuel.
     + unfold mthrow, Exec.throw_inst in Hbranch.
@@ -1133,7 +1133,7 @@ Lemma run_transition_promise_first_some_intro
           (promise_first_execution_results isem term fuel st))) :
         Exec.t _ string (vec (Promising.tState prom) n)) st))
     (Hvalidate : Exec.elem_of_results (st', ())
-      ((CPState.validate_final prom
+      ((CPState.validate_final_state prom
         {| CPState.tstates := tstates;
            CPState.initmem := CPState.initmem st;
            CPState.events := CPState.events st |}) st)) :
@@ -1143,9 +1143,9 @@ Lemma run_transition_promise_first_some_intro
         {| CPState.tstates := tstates;
            CPState.initmem := CPState.initmem st;
            CPState.events := CPState.events st |} pt)))
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st).
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st).
 Proof.
-  unfold CPState.run_transition_promise_first.
+  unfold CPState.run_transition_promise_first_uncached.
   eapply Exec.elem_of_bind_intro with (st' := st) (a := st).
   - apply Exec.elem_of_mGet.
   - eapply Exec.elem_of_bind_intro with (st' := st) (a := 1%nat).
@@ -1190,11 +1190,11 @@ Lemma promise_first_final_step_initial
     (Hterminated : ∀ tid : fin n,
       CPState.terminated_tid prom term st tid = true)
     (Hvalidate : Exec.elem_of_results (st', ())
-      ((CPState.validate_final prom st) st)) :
+      ((CPState.validate_final_state prom st) st)) :
   Exec.elem_of_results
     (st', Some (CPState.to_final_archState
       (CPState.make_final prom term st Hterm)))
-    ((@CPState.run_transition_promise_first isem prom n term fuel) st).
+    ((@CPState.run_transition_promise_first_uncached isem prom n term fuel) st).
 Proof.
   destruct st as [tstates initmem events].
   assert (Hstates : Exec.elem_of_results
