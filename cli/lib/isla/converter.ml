@@ -67,7 +67,7 @@ let pc_reg arch =
     by [profile.p.registers.defaults] for the profile selected for the test *)
 let register_defaults =
   Config.make_getter_selected_profile ~default:[]
-    (Toml.get_table_values Litmus.Parser.toml_to_gen)
+    (Toml.get_table_values Ir.parse_register_value)
     (fun base overrides ->
        List.filter (fun (reg, _) -> not (List.mem_assoc reg overrides)) base
        @ overrides
@@ -85,6 +85,7 @@ let default_memory_size =
 type eval_context =
   | Location_init of string
   | Register_init of int * string
+  | Register_default of string
   | Breakpoints of int
   | Final_assertion
   | Page_table_setup
@@ -94,6 +95,7 @@ exception Eval_error of string list * string
 let eval_context_path = function
   | Location_init sym -> ["locations"; sym]
   | Register_init (tid, reg) -> ["thread"; string_of_int tid; "init"; reg]
+  | Register_default reg -> ["registers"; "defaults"; reg]
   | Breakpoints tid -> ["thread"; string_of_int tid; "breakpoints"]
   | Final_assertion -> ["final"; "assertion"]
   | Page_table_setup -> ["page_table_setup"]
@@ -105,7 +107,8 @@ let eval_context_path = function
 let eval_error_at path fmt =
   Printf.ksprintf (fun msg -> raise (Eval_error (path, msg))) fmt
 
-let eval_error context fmt = eval_error_at (eval_context_path context) fmt
+let eval_error ?(sub = []) context fmt =
+  eval_error_at (eval_context_path context @ sub) fmt
 
 let check_symbol_name path name =
   if not (Lexer.is_ident name) then
@@ -114,7 +117,8 @@ let check_symbol_name path name =
        letters, digits and '_', and not be a keyword"
        name
 
-let eval_term ~context ~state term =
+(** [sub] locates a nested value below the context's TOML path. *)
+let eval_term ?(sub = []) ~context ~state term =
   try
     let value = Term.eval ~state term in
     match context with
@@ -126,7 +130,7 @@ let eval_term ~context ~state term =
         eval_error context "Breakpoint values must be non-negative: %s"
           (Z.format "%#x" value)
     | _ -> value
-  with Failure msg -> eval_error context "%s" msg
+  with Failure msg -> eval_error ~sub context "%s" msg
 
 let normalize_register_gen ~arch ~context reg_name gen =
   try
@@ -136,6 +140,25 @@ let normalize_register_gen ~arch ~context reg_name gen =
     | Litmus.Arch_id.X86 ->
         Archsem.X86.RegVal.(to_gen (of_string_gen reg_name gen))
   with Failure msg -> eval_error context "%s" msg
+
+let eval_register_value ~context ~state value =
+  let rec eval path = function
+    | Ir.Expr term -> RegValGen.Number (eval_term ~sub:path ~context ~state term)
+    | Ir.String value -> RegValGen.String value
+    | Ir.Array values ->
+        RegValGen.Array
+          (List.mapi
+             (fun i value -> eval (path @ [Printf.sprintf "[%d]" i]) value)
+             values
+          )
+    | Ir.Struct fields ->
+        RegValGen.Struct
+          (List.map
+             (fun (name, value) -> (name, eval (path @ [name]) value))
+             fields
+          )
+  in
+  eval [] value
 
 (** {2 Address layout} *)
 
@@ -338,7 +361,7 @@ let build_registers
     List.map
       (fun (reg, value) ->
          let context = Register_init (thread.tid, reg) in
-         let gen = RegValGen.Number (eval_term ~context ~state value) in
+         let gen = eval_register_value ~context ~state value in
          (reg, normalize_register_gen ~arch ~context reg gen)
        )
       thread.regs
@@ -353,8 +376,16 @@ let build_registers
   in
   let default_regs =
     List.filter_map
-      (fun (reg, value) -> if has base_regs reg then None else Some (reg, value))
-      (register_defaults ~page_table_setup)
+      (fun (reg, value) ->
+         if has base_regs reg then None
+         else
+           let context = Register_default reg in
+           let gen = eval_register_value ~context ~state value in
+           Some (reg, normalize_register_gen ~arch ~context reg gen)
+       )
+      (List.concat_map Normalize.normalize_register
+         (register_defaults ~page_table_setup)
+      )
   in
   base_regs @ default_regs
 
