@@ -1103,7 +1103,8 @@ Module TLB.
         match tlbi with
         | TLBI.All tid => True
         | TLBI.Va tid asid upper vpn last =>
-          affects_asid asid fe ∧ affects_va upper vpn last fe
+          (FE.asid fe = None ∨ affects_asid asid fe)
+          ∧ affects_va upper vpn last fe
         | TLBI.Asid tid asid => affects_asid asid fe
         | TLBI.Vaa tid upper vpn last => affects_va upper vpn last fe
         end.
