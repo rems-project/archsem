@@ -1,0 +1,29 @@
+arch = "AArch64"
+name = "Offsets+VM"
+symbolic = ["x_base", "x"]
+
+page_table_setup = """
+physical pa_base pa_x;
+x_base |-> pa_base;
+*pa_base = pa_x;
+*pa_x = 7;
+"""
+
+# x and pa_x are 0x20 bytes into the pages of x_base and pa_base, so the
+# mapping of x_base also maps x to pa_x.
+[offsets]
+x.base = "x_base"
+x.offset = 0x20
+pa_x.base = "pa_base"
+pa_x.offset = 0x20
+
+[thread.0]
+init = { CurrentEL = 1 }
+code = """
+ADRP X2, x
+ADD X2, X2, :lo12:x
+LDR X1, [X2]
+"""
+
+[final]
+assertion = "0:X1 = 7 & *pa_x = 7 & *pa_base = pa_x"
