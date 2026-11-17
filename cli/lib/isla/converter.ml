@@ -40,12 +40,13 @@
 
 (** Convert Isla IR to Testrepr.t.
 
-    Pipeline: IR -> Assembler.assembly_input -> Assembler.assemble -> Testrepr.t.
-    The converter fixes the VA layout for code/data symbols before calling the
-    assembler. The assembler only emits code bytes and applies relocations for
-    those preassigned addresses. The converter then evaluates terms and builds
-    registers, memory, termination, and outcomes using one mutable evaluation
-    state for each test. *)
+    Pipeline:
+    - Reserve the pages of explicitly placed sections and table roots.
+    - Allocate every data symbol and register it in the test's mutable
+      evaluation state.
+    - Allocate the code sections and assemble them against those symbols. The
+      assembler only emits code bytes and applies relocations.
+    - Build page tables, memory, registers, termination, and outcomes. *)
 
 open Litmus
 module RegValGen = Archsem.RegValGen
@@ -137,14 +138,7 @@ let normalize_register_gen ~arch ~context reg_name gen =
         Archsem.X86.RegVal.(to_gen (of_string_gen reg_name gen))
   with Failure msg -> eval_error context "%s" msg
 
-(** {2 Address layout} *)
-
-(* Explicit section addresses are already consumed before allocation starts.
-   This assumes each assembled named section fits in one allocator page. *)
-let reserved_section_addrs sections =
-  List.filter_map (fun (sec : Ir.section) -> sec.address) sections
-
-let thread_section_name tid = Printf.sprintf "__thread%d" tid
+(** {2 Symbol alignments} *)
 
 let symbolic_names ir =
   let add path names name =
@@ -227,9 +221,39 @@ let symbolic_va_alignments ir =
      )
     virtual_names
 
-let make_arena ?(reserved = []) base =
-  assert (base land 0x1FFFFF == 0);
-  Allocator.make ~base ~limit:(base + Allocator.big_size) ~reserved ()
+(* Physical names in the order the page-table setup first uses them, with the
+   largest alignment their levelled mappings require. *)
+let symbolic_pa_alignments ir =
+  (* Add a new name at the end; a known name keeps its place and takes the
+     larger alignment. *)
+  let request alignment pas name =
+    if List.mem_assoc name pas then
+      List.map (fun (n, a) -> (n, if n = name then max a alignment else a)) pas
+    else pas @ [(name, alignment)]
+  in
+  let rec collect pas = function
+    | Page_table_ast.Physical names ->
+        List.fold_left
+          (fun pas name ->
+             if List.mem_assoc name pas then
+               eval_error Page_table_setup "Symbol %s is already defined" name;
+             request Allocator.page_size pas name
+           )
+          pas names
+    | Page_table_ast.Mapping {target = Page_table_ast.PaName name; level; _} ->
+        let alignment =
+          Option.fold ~none:Allocator.page_size ~some:checked_mapping_alignment
+            level
+        in
+        request alignment pas name
+    | Page_table_ast.DataInit {pa_name; _} ->
+        request Allocator.page_size pas pa_name
+    | Page_table_ast.TableBlock {body; _} -> List.fold_left collect pas body
+    | _ -> pas
+  in
+  List.fold_left collect [] ir.Ir.page_table_setup
+
+(** {2 Reserved pages} *)
 
 (* Layout:
    - Code: 0-2 MiB
@@ -239,27 +263,44 @@ let table_base = Allocator.big_size
 
 let data_base = table_base + Allocator.big_size
 
-(* Reserve explicitly assigned root pages before allocating automatic roots,
-   the default root, and child tables. The builder validates root addresses. *)
-let rec table_root_pages = function
+let rec explicit_table_roots = function
   | [] -> []
-  | Page_table_ast.TableBlock {base; body; _} :: stmts -> (
-      let nested = table_root_pages body @ table_root_pages stmts in
-      match base with Some base -> Z.to_int base :: nested | None -> nested
+  | Page_table_ast.TableBlock {name; base; body; _} :: stmts -> (
+      let nested = explicit_table_roots body @ explicit_table_roots stmts in
+      match base with
+      | Some base -> (name, Z.to_int base) :: nested
+      | None -> nested
     )
-  | _ :: stmts -> table_root_pages stmts
+  | _ :: stmts -> explicit_table_roots stmts
 
-(* Build assembly input after assigning concrete addresses to every section and
-   symbolic location. *)
-let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
-  Assembler.assembly_input
-  =
+(* Page 0, explicit section addresses, and explicit table roots are reserved
+   before allocation starts. This assumes each assembled named section fits in
+   one allocator page. The builder validates root addresses. *)
+let reserved_pages (ir : Ir.t) =
+  (0 :: List.filter_map (fun (sec : Ir.section) -> sec.address) ir.sections)
+  @ List.map snd (explicit_table_roots ir.page_table_setup)
+
+let in_block base pages =
+  List.filter (fun addr -> base <= addr && addr < base + Allocator.big_size) pages
+
+let make_arena ~reserved base =
+  assert (base land 0x1FFFFF == 0);
+  Allocator.make ~base ~limit:(base + Allocator.big_size)
+    ~reserved:(in_block base reserved) ()
+
+(** {2 Address allocation} *)
+
+let thread_section_name tid = Printf.sprintf "__thread%d" tid
+
+(* Place each thread and named section on its own page, except named sections
+   with an explicit address. *)
+let allocate_code_sections allocator (ir : Ir.t) : Assembler.section list =
   let code_sections =
     List.mapi
       (fun i (thread : Ir.thread) ->
          { Assembler.name = thread_section_name i;
            code = thread.code;
-           addr = Allocator.alloc_page code_allocator
+           addr = Allocator.alloc_page allocator
          }
        )
       ir.threads
@@ -271,35 +312,86 @@ let to_assembly_input ~code_allocator ~symbol_allocator (ir : Ir.t) :
          let addr =
            match sec.address with
            | Some addr -> addr
-           | None -> Allocator.alloc_page code_allocator
+           | None -> Allocator.alloc_page allocator
          in
          {Assembler.name = sec.sec_name; code = sec.code; addr}
        )
       ir.sections
   in
-  let symbols =
-    List.map
-      (fun (name, alignment) ->
-         let addr =
-           Allocator.alloc_aligned symbol_allocator ~size:alignment ~alignment
-         in
-         {Assembler.name; addr}
-       )
-      (symbolic_va_alignments ir)
-  in
-  {Assembler.sections = code_sections @ named_sections; symbols}
+  code_sections @ named_sections
 
-let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
-  let input = to_assembly_input ~code_allocator ~symbol_allocator ir in
+let alloc_aligned allocator alignment =
+  Allocator.alloc_aligned allocator ~size:alignment ~alignment
+
+(* Without page tables, data symbols and code sections share one allocator
+   from address 0. Returns that allocator for the code sections. *)
+let allocate_flat_symbols ~state ~reserved (ir : Ir.t) =
+  let allocator = Allocator.make ~base:0 ~reserved () in
+  List.iter
+    (fun (name, alignment) ->
+       Eval_state.add_symbol state name (alloc_aligned allocator alignment)
+     )
+    (symbolic_va_alignments ir);
+  allocator
+
+(* With page tables, table roots with an explicit base are registered, then
+   virtual and physical symbols are allocated in the data region. Returns the
+   physical addresses of the physical symbols. *)
+let allocate_page_table_symbols ~state ~reserved (ir : Ir.t) =
+  let add name addr =
+    try Eval_state.add_symbol state name addr
+    with Failure msg -> eval_error Page_table_setup "%s" msg
+  in
+  let data_allocator = Allocator.make ~base:data_base ~reserved () in
+  List.iter
+    (fun (name, base) -> add name base)
+    (explicit_table_roots ir.page_table_setup);
+  let physicals = symbolic_pa_alignments ir in
+  List.iter
+    (fun (name, alignment) -> add name (alloc_aligned data_allocator alignment))
+    (symbolic_va_alignments ir);
+  let data_symbols_pa = Hashtbl.create 32 in
+  List.iter
+    (fun (name, alignment) ->
+       let addr = alloc_aligned data_allocator alignment in
+       Hashtbl.add data_symbols_pa name addr;
+       add name addr
+     )
+    physicals;
+  data_symbols_pa
+
+(* Allocate every data symbol and register it in [state]. Returns the allocator
+   for the code sections and, with page tables, the physical symbol addresses. *)
+let allocate_symbols ~state ~reserved (ir : Ir.t) =
+  if ir.page_table_setup = [] then
+    (allocate_flat_symbols ~state ~reserved ir, None)
+  else
+    ( make_arena ~reserved 0,
+      Some (allocate_page_table_symbols ~state ~reserved ir)
+    )
+
+(** {2 Assembly} *)
+
+(* Allocate the code sections and assemble them with a data symbol for every
+   symbol in [state]. Assembler-defined symbols are added to [state]. *)
+let assemble ~filename ~state ~code_allocator (ir : Ir.t) =
+  let sections = allocate_code_sections code_allocator ir in
+  let symbols =
+    Hashtbl.fold
+      (fun name addr symbols -> {Assembler.name; addr} :: symbols)
+      state.Eval_state.symbols []
+    |> List.sort compare
+  in
   let result =
-    try
-      let result = Assembler.assemble ~filename input in
-      List.iter
-        (fun (name, addr) -> Eval_state.add_symbol state name addr)
-        result.symbols;
-      result
+    try Assembler.assemble ~filename {sections; symbols}
     with Failure msg -> eval_error_at ["code"] "%s" msg
   in
+  List.iter
+    (fun (name, addr) ->
+       if not (Hashtbl.mem state.Eval_state.symbols name) then
+         Eval_state.add_symbol state name addr
+     )
+    result.symbols;
   (* Assembly preserves input order: threads followed by named sections. *)
   List.iteri
     (fun i (sec : Assembler.linked_section) ->
@@ -314,7 +406,7 @@ let assemble ~filename ~state ~code_allocator ~symbol_allocator ir =
            Allocator.page_size
      )
     result.sections;
-  (input, result)
+  result
 
 (** {2 Thread register construction} *)
 
@@ -385,20 +477,15 @@ let build_threads
 
 (** {2 Page table setup construction} *)
 
-(* Build the page-table layout from concrete section/symbol VAs. *)
-let build_page_table_setup
-      ir
-      ~symbol_allocator
-      ~table_allocator
-      ~table_block
-      ~state
-  =
+(* Build the page-table layout from concrete symbol addresses. *)
+let build_page_table_setup ir ~reserved ~data_symbols_pa ~state =
   if ir.Ir.locations <> [] then
     eval_error Page_table_setup
       "page_table: [locations] is not supported with page_table_setup";
   try
-    Page_table_builder.build ~arch:ir.arch ~symbol_allocator ~table_allocator
-      ~table_block ~state ir.page_table_setup
+    Page_table_builder.build ~arch:ir.arch ~data_symbols_pa
+      ~table_allocator:(make_arena ~reserved table_base)
+      ~table_block:table_base ~state ir.page_table_setup
   with Page_table_builder.Error msg | Failure msg ->
     eval_error Page_table_setup "%s" msg
 
@@ -445,23 +532,23 @@ let data_memory_block ~step ?(kind = Testrepr.Data) ?symbol addr value :
 let build_locations_memory
       ~default_mem_size
       ~symbol_sizes
-      ~symbols
+      ~symbolic
       ~state
       ~locations
   =
   List.map
-    (fun (sym : Assembler.data_symbol) ->
-       let mem_size =
-         symbol_size ~default:default_mem_size symbol_sizes sym.name
-       in
+    (fun sym ->
+       let mem_size = symbol_size ~default:default_mem_size symbol_sizes sym in
        let value =
-         List.assoc_opt sym.name locations
-         |> Option.map (eval_term ~context:(Location_init sym.name) ~state)
+         List.assoc_opt sym locations
+         |> Option.map (eval_term ~context:(Location_init sym) ~state)
          |> Option.value ~default:Z.zero
        in
-       data_memory_block ~step:mem_size ~symbol:sym.name sym.addr value
+       data_memory_block ~step:mem_size ~symbol:sym
+         (Eval_state.lookup_addr state sym)
+         value
      )
-    symbols
+    symbolic
 
 let build_page_table_memory ~default_mem_size ~symbol_sizes ~entries page_table =
   let table_memory =
@@ -494,7 +581,7 @@ let build_page_table_memory ~default_mem_size ~symbol_sizes ~entries page_table 
 let build_memory
       ~default_mem_size
       ~symbol_sizes
-      ~data_symbols
+      ~symbolic
       ~state
       ~locations
       asm_result
@@ -506,8 +593,8 @@ let build_memory
   let data_memory =
     match page_table with
     | None ->
-        build_locations_memory ~default_mem_size ~symbol_sizes
-          ~symbols:data_symbols ~state ~locations
+        build_locations_memory ~default_mem_size ~symbol_sizes ~symbolic ~state
+          ~locations
     | Some page_table ->
         let entries = Option.get state.Eval_state.page_table in
         build_page_table_memory ~default_mem_size ~symbol_sizes ~entries
@@ -520,33 +607,15 @@ let build_memory
 let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
   let state = Eval_state.create () in
   let default_mem_size = default_memory_size () in
-  let (asm_input, asm_result, page_table) =
-    if ir.page_table_setup = [] then
-      let allocator =
-        Allocator.make ~base:0
-          ~reserved:(0 :: reserved_section_addrs ir.sections)
-          ()
-      in
-      let (asm_input, asm_result) =
-        assemble ~filename ~state ~code_allocator:allocator
-          ~symbol_allocator:allocator ir
-      in
-      (asm_input, asm_result, None)
-    else
-      let reserved_code_pages = reserved_section_addrs ir.sections in
-      let code_allocator = make_arena ~reserved:(0 :: reserved_code_pages) 0 in
-      let symbol_allocator = Allocator.make ~base:data_base () in
-      let table_allocator =
-        make_arena ~reserved:(table_root_pages ir.page_table_setup) table_base
-      in
-      let (asm_input, asm_result) =
-        assemble ~filename ~state ~code_allocator ~symbol_allocator ir
-      in
-      let page_table =
-        build_page_table_setup ir ~symbol_allocator ~table_allocator
-          ~table_block:table_base ~state
-      in
-      (asm_input, asm_result, Some page_table)
+  let reserved = reserved_pages ir in
+  let (code_allocator, data_symbols_pa) = allocate_symbols ~state ~reserved ir in
+  let asm_result = assemble ~filename ~state ~code_allocator ir in
+  let page_table =
+    Option.map
+      (fun data_symbols_pa ->
+         build_page_table_setup ir ~reserved ~data_symbols_pa ~state
+       )
+      data_symbols_pa
   in
   let page_table_root =
     Option.bind page_table (fun layout -> layout.Page_table_builder.default_root)
@@ -556,9 +625,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
       ?page_table_root ~state asm_result ir.threads
   in
   let memory =
-    build_memory ~default_mem_size ~symbol_sizes:ir.sizes
-      ~data_symbols:asm_input.symbols ~state ~locations:ir.locations asm_result
-      page_table
+    build_memory ~default_mem_size ~symbol_sizes:ir.sizes ~symbolic:ir.symbolic
+      ~state ~locations:ir.locations asm_result page_table
   in
   { arch = Litmus.Arch_id.to_string ir.arch;
     name = ir.name;
