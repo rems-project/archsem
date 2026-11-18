@@ -201,16 +201,15 @@ Module Ev.
       swapped order is the one that is explored.
 
       Writes are never swapped. Two TLBIs can be swapped if they have different
-      recipients and either their affected threads (emitter and recipient) are
-      disjoint, or they have the same emitter and the same epoch (no DSB between
-      them). Swappable TLBIs are explored by increasing recipient *)
+      recipients and disjoint affected threads (emitter and recipient).
+      A common emitter can observe the order through CSEs and BBM, even within
+      one DSB epoch. Swappable TLBIs are explored by increasing recipient *)
   Definition out_of_order (ev1 ev2 : t) : bool :=
     match ev1, ev2 with
-    | Tlbi tlbi1 r1 k1, Tlbi tlbi2 r2 k2 =>
+    | Tlbi tlbi1 r1 _, Tlbi tlbi2 r2 _ =>
         let e1 := TLBI.tid tlbi1 in
         let e2 := TLBI.tid tlbi2 in
-        bool_decide (r2 < r1 ∧
-          (e1 ≠ e2 ∧ e1 ≠ r2 ∧ r1 ≠ e2 ∨ e1 = e2 ∧ k1 = k2))
+        bool_decide (r2 < r1 ∧ e1 ≠ e2 ∧ e1 ≠ r2 ∧ r1 ≠ e2)
     | _, _ => false
     end.
 
@@ -1138,6 +1137,9 @@ Module TLB.
           let asids := asid_roots.*1.*1 |> remove_dups in
           vatlb' ← mget vatlb;
           entries ← mget (VATLB.collect_fe (affects tlbi) ∘ vatlb);
+          (* Entries without events are not in the TLB, so their parents must
+             not be refilled. *)
+          let entries := filter (λ entry, default [] (vatlb' !! entry) ≠ []) entries in
           parent_entries ← for entry in entries do
             let page := FE.cur_table entry in
             mset vatlb (alter invalidate entry);;
@@ -1291,7 +1293,7 @@ Module TLB.
 
     (** Merge results with the same leaf PTE, the same non-address bits in
         every table PTE, and the same [tend] and [inv_time]. The merged result
-        keeps the first root and path and the earliest [tstart].
+        keeps the smallest root and path and the earliest [tstart].
 
         Hides candidate executions that differ only in walk addresses or a
         later [tstart]. *)
@@ -1310,14 +1312,31 @@ Module TLB.
     #[export] Instance Decision_mergeable r' r : Decision (mergeable r' r).
     Proof. unfold_decide. Defined.
 
+    (** The root followed by the PTEs read by the walk *)
+    Definition walk (r : t) : list (bv 64) := r.(ttbr) :: r.(path).
+
+    (** Strict lexicographic order on walks, comparing unsigned values *)
+    Fixpoint walk_lt (w w' : list (bv 64)) : bool :=
+      match w, w' with
+      | [], [] => false
+      | [], _ :: _ => true
+      | _ :: _, [] => false
+      | x :: w, x' :: w' =>
+          (bv_unsigned x <? bv_unsigned x')%Z
+          || ((bv_unsigned x =? bv_unsigned x')%Z && walk_lt w w')
+      end.
+
     (** Merge [r] into the first mergeable result of [rs], or add it at the end
-        if there is none *)
+        if there is none. The merged result keeps the smaller walk, so a merge
+        class yields the same result whatever the order of its members. *)
     Fixpoint merge_into (r : t) (rs : list t) : list t :=
       match rs with
       | [] => [r]
       | r' :: rs' =>
           if decide (mergeable r' r)
-          then setv tstart (min r'.(tstart) r.(tstart)) r' :: rs'
+          then
+            let smaller := if walk_lt (walk r) (walk r') then r else r' in
+            setv tstart (min r'.(tstart) r.(tstart)) smaller :: rs'
           else r' :: merge_into r rs'
       end.
 
@@ -1368,8 +1387,11 @@ Module TLB.
               in
               if tl is (Entry.Tlbi tidt, ttlbi) :: tl' then
                 if decide (tload = ttlbi ∧ (ifetch ∨ tidt = tid)) then
-                  (* Merge the current range and the next *)
-                  get_results_from_events ttbr path tl' tmin tmax inv_time
+                  (* Merge only with an older valid range. If the entry was
+                     already invalid, keep the interval created by the reload. *)
+                  if tl' is (Entry.Load, _) :: _ then
+                    get_results_from_events ttbr path tl' tmin tmax inv_time
+                  else normal ()
                 else normal ()
               else normal ()
       | (Entry.Tlbi tidt, ttlbi) :: tl =>
@@ -1430,6 +1452,8 @@ Module TLB.
         let presults :=
           get_results_from_events (FE.ttbr fe) (FE.ptes fe) events tmin tmax None
         in
+        (* A cached table outside the lookup interval cannot supply a result.
+           Its child table need not be mapped in the initial memory. *)
         if presults is [] then mret [] else
         let next_table := FE.next_table fe in
         let index := vpn_level_index lvl vpn in
@@ -1450,13 +1474,15 @@ Module TLB.
         mret $ get_result_from_leaf_FE fe events tmin_ok tmax.
 
     (** Lookup all entries reachable from TLB or walk-caches that are either
-        global or tagged with [asid]. Does not return level-0 invalid PTEs as
-        they are not reachable from the TLB *)
+        global or tagged with [asid]. Each entry is an alternative lookup path;
+        errors on one path are retained alongside results from other paths.
+        Does not return level-0 invalid PTEs as they are not reachable from the
+        TLB *)
     Definition lookup (tmin_ok tmin_unc tmax : nat) (asid : bv 16) :
-        result string (list Result.t) :=
-      for (fe, events) in get_fes (get_global_Ctxts ++ get_asid_Ctxts asid) do
-        get_result_from_FE fe events tmin_ok tmin_unc tmax
-      end |$> List.concat.
+        Exec.res string Result.t :=
+      '(fe, events) ← mchoosel (get_fes (get_global_Ctxts ++ get_asid_Ctxts asid));
+      results ← mlift $ get_result_from_FE fe events tmin_ok tmin_unc tmax;
+      mchoosel results.
 
   End TLBLookup.
 
@@ -1555,9 +1581,8 @@ Module TState.
         xclb : option XclItem.t;
 
         (* The number of DSB SY-type barriers executed so far (in any domain).
-           This is an optimisation-only field: it tags the TLBIs, so that the
-           promise filter can recognise commuting TLBIs. It has no effect on
-           the semantics, outside the filter *)
+           A TLBI promise must be fulfilled in the epoch in which it was
+           emitted. *)
         dsb_epoch : nat;
 
         (* The TLB structure. This is for caching purposes. The TLB can be
@@ -1855,31 +1880,32 @@ Module TState.
   Definition tlb_lookup (tid : nat) (imem : memoryMap) (mem : Memory.t) (ts : t)
       (ifetch upper : bool) (vpn : pn) (asid : bv 16) (ttbr0 : bv 64)
       (tmin_ok tmin_unc tmax : nat) :
-    result string (list TLB.Result.t) :=
-    tlb ← othrow "TLB lookup, but translation disabled by SCTLR_EL1" $ ts.(tlb);
-    from_tlb ← TLB.lookup tid imem mem tlb ifetch upper vpn tmin_ok tmin_unc tmax asid;
+    Exec.res string TLB.Result.t :=
+    if ts.(tlb) is Some tlb then
+    let from_tlb := TLB.lookup tid imem mem tlb ifetch upper vpn
+      tmin_ok tmin_unc tmax asid in
     (* Still missing invalid lookups from root, those do not go through the TLB *)
-    from_lvl0_inv ←
+    let from_lvl0_inv : Exec.res string TLB.Result.t :=
     ( if decide (tmin_unc ≤ tmax) then
-        ttbrs ←
+        ttbrs ← mlift
           (if upper then
             othrow "Can't read TTBR1_EL1, but using negative addresses" $
               read_sreg_indirect ts TTBR1_EL1 : result string (list (bv 64 * view))
           else mret [(ttbr0, 0)]);
         let lvl0_index := vpn_level_index 0%fin vpn in
-        for (ttbr, vttbr) in ttbrs do
-          let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
-          let tmin := tmin_unc ⊔ vttbr in
-          ptes ← Memory.read_all_pte pte_addr imem mem tmin tmax;
-          ptes
-          |> filter (λ '(pte, _), ¬ is_tlb_fillable 0%fin pte)
-          (* TODO figure out if top-level invalid entries are concerned by *)
-          (*      invalidation times *)
-          |> map (λ '(pte, vpte), TLB.Result.make ttbr [pte] (tmin ⊔ vpte) tmax None)
-          |> mret
-        end |$> List.concat
-      else mret []);
-    mret (TLB.Result.merge (from_tlb ++ from_lvl0_inv)).
+        '(ttbr, vttbr) ← mchoosel ttbrs;
+        let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
+        let tmin := tmin_unc ⊔ vttbr in
+        ptes ← mlift $ Memory.read_all_pte pte_addr imem mem tmin tmax;
+        ptes
+        |> filter (λ '(pte, _), ¬ is_tlb_fillable 0%fin pte)
+        (* TODO figure out if top-level invalid entries are concerned by *)
+        (*      invalidation times *)
+        |> map (λ '(pte, vpte), TLB.Result.make ttbr [pte] (tmin ⊔ vpte) tmax None)
+        |> mchoosel
+      else mdiscard) in
+    Exec.merge from_tlb from_lvl0_inv
+    else mthrow "TLB lookup, but translation disabled by SCTLR_EL1".
 
   Definition ets2 (ts : t) : bool :=
     if ts.(tlb) is Some tlb then bool_decide (2 ≤ tlb.(TLB.ets))%N else false.
@@ -2320,6 +2346,7 @@ Definition materialize_tlbi_for_recipient
     | Some t => mret (t, false)
     | None =>
       time ← Exec.liftSt PPState.mem $ Memory.promise ev;
+      mem ← mget PPState.mem;
       nts ← mlift $ TState.process_event tid imem mem ev ts;
       msetv PPState.state nts;;
       mret (time, true)
@@ -2413,15 +2440,18 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
           : Exec.t _ _ (bv 64 * view));
       guard_or "Translation ASID does not match the TTBR0_EL1 value read"
         (asid = bv_extract 48 16 ttbr0);;
-      tlb_results ← mlift $ TState.tlb_lookup tid imem mem ts ifetch upper vpn
-        asid ttbr0 vpre_t vpre_inv vmax_t;
-      (* The only valid reason for tlb_result to be empty, is if the only
-         possibility was to fault but a fault is impossible with the current
-         promising context, otherwise this means the page tables are not set up
-         properly *)
+      let tlb_results := TState.tlb_lookup tid imem mem ts ifetch upper vpn
+        asid ttbr0 vpre_t vpre_inv vmax_t in
+      let tlb_results := Exec.make
+        (TLB.Result.merge tlb_results.(Exec.results)) tlb_results.(Exec.errors) in
+      (* Lookup can have neither results nor errors when the only translation
+         would fault, but the promising context excludes faults at this time.
+         Otherwise report missing page-table setup. Path-specific errors are
+         propagated with their original messages below. *)
       guard_or ("Can't translate address " ++ pretty va)%string
-        (tlb_results = [] → vmax_t < vpre_inv);;
-      tlb_result ← mchoosel tlb_results;
+        (tlb_results.(Exec.results) = [] → tlb_results.(Exec.errors) = [] →
+          vmax_t < vpre_inv);;
+      tlb_result ← mlift tlb_results;
       val_ttbr ← othrow
         "Unexpected TTBR value type"
           (val_to_regval reg_ttbr tlb_result.(TLB.Result.ttbr));

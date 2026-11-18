@@ -13,3 +13,18 @@
   ArchSemRiscV/tests/_RocqProject
   ArchSemX86/_RocqProject
   ArchSemX86/tests/_RocqProject))
+
+(alias
+ (name proof)
+ (deps
+  (alias ArchSemArm/Proof/proof)))
+
+(alias
+ (name proof-current)
+ (deps
+  (alias ArchSemArm/Proof/proof-current)))
+
+(alias
+ (name proof-sail)
+ (deps
+  (alias ArchSemArm/Proof/proof-sail)))

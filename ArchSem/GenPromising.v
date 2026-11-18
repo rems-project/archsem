@@ -144,6 +144,134 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     Definition cut_after_with_timestamps (v : nat) (mem : t) : list (ev * nat) :=
       take (length mem - v) (attach_timestamps mem).
 
+  Lemma attach_timestamps_time_le (event : ev) (mem : t) ts :
+    (event, ts) ∈ attach_timestamps mem →
+    (ts ≤ length mem)%nat.
+  Proof.
+    induction mem as [|event0 mem IH]; cbn.
+    - set_solver.
+    - intro Hin.
+      apply elem_of_cons in Hin as [Heq|Hin].
+      + inversion Heq.
+        lia.
+      + specialize (IH Hin).
+        lia.
+  Qed.
+
+  Lemma cut_after_with_timestamps_time_le (event : ev) (mem : t) v ts :
+    (event, ts) ∈ cut_after_with_timestamps v mem →
+    (ts ≤ length mem)%nat.
+  Proof.
+    unfold cut_after_with_timestamps.
+    intro Hin.
+    apply elem_of_take in Hin as [i [Hlookup _]].
+    eapply attach_timestamps_time_le.
+    eapply list_elem_of_lookup_2.
+    exact Hlookup.
+  Qed.
+
+  Lemma lookup_latest (event : ev) (mem : t) :
+    ((event :: mem : t) !! length (event :: mem)) = Some event.
+  Proof.
+    unfold lookup, lookup_inst.
+    cbn [length].
+    destruct (S (length mem) =? 0)%nat eqn:Hzero.
+    - apply Nat.eqb_eq in Hzero.
+      lia.
+    - clear Hzero.
+      replace (S (length mem) <=? length (event :: mem))%nat with true
+        by (symmetry; apply Nat.leb_le; cbn; lia).
+      replace (length (event :: mem) - S (length mem))%nat with 0%nat
+        by (cbn; lia).
+      reflexivity.
+  Qed.
+
+  Lemma lookup_cons_inv_same (event : ev) (mem : t) ts :
+    ((event :: mem : t) !! ts) = Some event →
+    mem !! ts = Some event ∨ ts = length (event :: mem).
+  Proof.
+    destruct ts as [|ts].
+    - unfold lookup, lookup_inst.
+      cbn.
+      discriminate.
+    - unfold lookup, lookup_inst.
+      cbn [length].
+      replace (S ts =? 0)%nat with false by reflexivity.
+      destruct (S ts <=? S (length mem))%nat eqn:Hnew.
+      + apply Nat.leb_le in Hnew.
+        destruct (S ts <=? length mem)%nat eqn:Hold.
+        * intro H.
+          left.
+          apply Nat.leb_le in Hold.
+          replace (S (length mem) - S ts)%nat with
+            (S (length mem - S ts))%nat in H by lia.
+          rewrite nth_error_cons_succ in H.
+          replace (S ts =? 0)%nat with false by reflexivity.
+          replace (S ts <=? length mem)%nat with true
+            by (symmetry; apply Nat.leb_le; lia).
+          exact H.
+        * intro H.
+          right.
+          apply Nat.leb_gt in Hold.
+          cbn.
+          lia.
+      + discriminate.
+  Qed.
+
+  Lemma lookup_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    ((event :: mem : t) !! ts) = mem !! ts.
+  Proof.
+    intro Hle.
+    destruct ts as [|ts].
+    - reflexivity.
+    - unfold lookup, lookup_inst.
+      cbn [length].
+      replace (S ts =? 0)%nat with false by reflexivity.
+      destruct (S ts <=? length mem)%nat eqn:Hold.
+      + replace (S ts <=? S (length mem))%nat with true.
+        * replace (S (length mem) - S ts)%nat with
+            (S (length mem - S ts))%nat by lia.
+          rewrite nth_error_cons_succ.
+          reflexivity.
+        * symmetry.
+          apply Nat.leb_le.
+          lia.
+      + apply Nat.leb_gt in Hold.
+        replace (S ts <=? S (length mem))%nat with false.
+        * reflexivity.
+        * symmetry.
+          apply Nat.leb_gt.
+          lia.
+  Qed.
+
+  Lemma cut_before_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    cut_before ts (event :: mem) = cut_before ts mem.
+  Proof.
+    intro Hle.
+    unfold cut_before.
+    cbn [length].
+    replace (S (length mem) - ts)%nat with
+      (S (length mem - ts))%nat by lia.
+    cbn.
+    reflexivity.
+  Qed.
+
+  Lemma cut_after_with_timestamps_cons_old (event : ev) (mem : t) ts :
+    (ts ≤ length mem)%nat →
+    cut_after_with_timestamps ts (event :: mem) =
+      (event, length (event :: mem)) :: cut_after_with_timestamps ts mem.
+  Proof.
+    intro Hle.
+    unfold cut_after_with_timestamps.
+    cbn [attach_timestamps length].
+    replace (S (length mem) - ts)%nat with
+      (S (length mem - ts))%nat by lia.
+    reflexivity.
+  Qed.
+
+
     (** Promises an event and adds it at the end of memory *)
     Definition promise (e : ev) : Exec.t t string nat :=
       mSet (cons e);;
@@ -487,12 +615,32 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           |> setv (tstate tid) ppst.(PPState.state)
           |> setv events ppst.(PPState.mem).
 
-      (** Run on instruction in specific thread by tid, allowing new promises *)
+      (** Deliver fresh instruction events to the other threads, oldest first.
+          The executing thread has already processed them in its outcome
+          handlers. Each hook receives the history ending at that event. *)
+      Fixpoint broadcast_fresh (owner : fin n) (imem : memoryMap)
+          (base extra : list mEvent) (states : vec tState n) :
+          result string (vec tState n) :=
+        match extra with
+        | [] => mret states
+        | event :: older =>
+            states ← broadcast_fresh owner imem base older states;
+            vimapM (λ tid ts,
+              if decide (tid = owner) then mret ts
+              else prom.(emit_promise) tid imem (event :: older ++ base)%list event ts)
+              states
+        end.
+
+      (** Run one instruction and publish any fresh events to other threads. *)
       Definition run_tid (tid : fin n) : Exec.t t string () :=
         st ← mGet;
         let handler out :=
           prom.(handle_outcome) n tid (st.(initmem)) out |$> fst in
-        Exec.liftSt (PState_PPState tid) (cinterp handler isem).
+        Exec.liftSt (PState_PPState tid) (cinterp handler isem);;
+        next ← mGet;
+        let extra := take (length next.(events) - length st.(events)) next.(events) in
+        states ← mlift $ broadcast_fresh tid st.(initmem) st.(events) extra next.(tstates);
+        msetv tstates states.
 
       (** Emit a promise, updating every thread state. The thread that made
           the promise is [prom.(mEvent_tid) event] *)
@@ -633,6 +781,15 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         err ← mchoosel errs;
         mthrow err.
 
+    Definition validate_final_state (st : t) : Exec.t t string unit :=
+      guard_discard $ nopromises prom st;;
+      let errs := check_valid_end prom st in
+      if errs is [] then
+        mret ()
+      else
+        err ← mchoosel errs;
+        mthrow err.
+
     (** Convert a final promising state to a generic final state *)
     Definition to_final_archState (f : final) :
         {s & archState.is_terminated term s} :=
@@ -732,6 +889,37 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           final_states:=tstates;
           errors:=errors;
           out_of_fuel:=out_of_fuel|}.
+      Definition enumerate_results_filtered (fuel : nat) (ts : tState)
+          (mem : PromMemory.t mEvent) : EnumerationResult :=
+        let base := List.length mem in
+        let res :=
+          run_to_termination fuel base
+            ([], PPState.Make ts mem prom.(iis_init))
+        in
+        let success_states := Exec.success_state_list res in
+        let out_of_fuel :=
+          bool_decide (∃ r ∈ (Exec.results res).*2,
+                        if r is OutOfFuel then True else False) in
+        let promises :=
+          List.concat ((success_states.*1) ++ (Exec.errors res).*1.*1)
+            |> remove_dups in
+        let promises := prom.(filter_promises) n tid mem promises in
+        let tstates :=
+          Exec.results res
+          |> omap (λ '((new_proms, st), r),
+                 if r is Terminated then
+                   if is_emptyb new_proms then Some (PPState.state st)
+                   else None
+                 else None) in
+        let errors :=
+          res |> Exec.errors |>
+            omap (λ '((new_proms, _), err_msg),
+                if is_emptyb new_proms then Some err_msg
+                else None) in
+        {|promises:=promises;
+          final_states:=tstates;
+          errors:=errors;
+          out_of_fuel:=out_of_fuel|}.
     End EnumerateResult.
 
     (** Choose one of the promises of an enumeration result, filtered against
@@ -743,13 +931,13 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
     (** Get a list of possible promises for a thread by tid *)
     Definition promise_select_tid (fuel : nat) (st : t)
         (tid : fin n) : Exec.res string mEvent :=
-      let res :=
-        enumerate_results tid (initmem st) fuel (tstate tid st) (events st)
+      let (promises, _, _, out_of_fuel) :=
+        enumerate_results_filtered tid (initmem st) fuel (tstate tid st) (events st)
       in
-      if out_of_fuel res then
+      if out_of_fuel then
         b ← mchoosef bool;
-        if (b : bool) then mthrow "out of fuel" else choose_promise st tid res
-      else choose_promise st tid res.
+        if (b : bool) then mthrow "out of fuel" else mchoosel promises
+      else mchoosel promises.
 
     (** The state of the promise-first model: a regular [PState.t], along with
         a cache of previous enumerations that are still valid *)
@@ -789,7 +977,7 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         Exec.t t string (option {s & archState.is_terminated term s}) :=
       st ← mGet;
       if decide $ terminated prom term st is left pt then
-        mlift $ validate_final st;;
+        validate_final_state st;;
         mret (Some (to_final_archState (make_final st pt)))
       else
         run_step fuel;;
@@ -850,6 +1038,41 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
           mthrow "Promise first: out of fuel in enumeration"
         else mdiscard
       end.
+    (** Reference transition that recomputes each thread enumeration. *)
+    Definition run_transition_promise_first_uncached (fuel : nat) :
+        Exec.t t string (option {s & archState.is_terminated term s}) :=
+      st ← mGet;
+      (* Find out next possible promises or terminating states for each thread *)
+      let execution_results :=
+        vmap (λ '(tid, ts),
+            enumerate_results_filtered tid (initmem st) fuel ts (events st)
+          ) (venumerate (tstates st)) in
+      opt ← mchoosel (seq 0 4);
+      match opt : nat with
+      | 0 =>
+        tid ← mchoosef (fin n);
+        next_ev ← mchoosel (execution_results !!! tid).(promises);
+        nst ← mlift (promise prom next_ev st);
+        mSetv nst;;
+        mret None
+      | 1 =>
+        (* Compute cartesian products of the possible thread states *)
+        tstates ← mchoosel $ cprodn (vmap final_states execution_results);
+        (* Lift them into full promising state *)
+        let st := Make tstates st.(initmem) st.(events) in
+        (* Discard the non-terminated ones *)
+        term_proof ← guard_discard $ terminated prom term st;
+        validate_final_state st;;
+        mret (Some (to_final_archState (make_final st term_proof)))
+      | 2 =>
+        let errs := List.concat (vmap errors execution_results) in
+        err ← mchoosel errs;
+        mthrow err
+      | _ =>
+        if bool_decide (∃ x ∈ map out_of_fuel execution_results, (x : bool)) then
+          mthrow "Promise first: out of fuel in enumeration"
+        else mdiscard
+      end.
     End Steps.
 
     (** The promising model as an operational model. Each transition is either a
@@ -876,6 +1099,11 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       let step term _ fuel := run_transition_promise_first term fuel in
       opModel.Make n pf_t init step.
 
+    Definition opmodel_pf_uncached : opModel n :=
+      let init _ initSt := from_archState prom initSt in
+      let step term _ fuel := run_transition_promise_first_uncached term fuel in
+      opModel.Make n t init step.
+
     End CPS.
     Arguments to_final_archState {_ _ _}.
   End CPState.
@@ -890,6 +1118,10 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
 
   (** Create a computational model from an ISA model and promising model, using
       the promise-first optimisation *)
+  Definition Promising_to_Modelc_pf_uncached (prom : Promising.Model) (isem : iMon ())
+      (fuel : nat) : archModel.c ∅ :=
+    opModel.to_archModel (@CPState.opmodel_pf_uncached isem prom) fuel.
+
   Definition Promising_to_Modelc_pf (prom : Promising.Model) (isem : iMon ())
       (fuel : nat) : archModel.c ∅ :=
     opModel.to_archModel (@CPState.opmodel_pf isem prom) fuel.
