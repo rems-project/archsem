@@ -1531,8 +1531,8 @@ Module TState.
 
         (* Per-byte coherence views *)
         coh : gmap address view;
-        (* Per-ASID/page-offset translation coherence views. *)
-        tcoh : gmap (bv 16 * bv 12)%type view;
+        (* Per-ASID/VA translation coherence views. *)
+        tcoh : gmap (bv 16 * bv 64)%type view;
 
         vrd : view; (* The maximum output view of a read  *)
         vwr : view; (* The maximum output view of a write  *)
@@ -1737,28 +1737,28 @@ Module TState.
   Definition max_cohs (addrs : list address) (ts : t) : view :=
     foldr max 0%nat (map (λ a, ts.(coh) !!! a) addrs).
 
-  Definition va_page_offsets (va : bv 64) (size : N) : list (bv 12) :=
-    map (λ n, bv_extract 0 12 (va `+Z` (Z.of_N n))%bv) (seqN 0 size).
+  Definition va_byte_addrs (va : bv 64) (size : N) : list (bv 64) :=
+    map (λ n, (va `+Z` (Z.of_N n))%bv) (seqN 0 size).
 
-  Definition get_tcoh (asid : bv 16) (page_offset : bv 12) (ts : t) : view :=
-    ts.(tcoh) !!! (asid, page_offset).
+  Definition get_tcoh (asid : bv 16) (va : bv 64) (ts : t) : view :=
+    ts.(tcoh) !!! (asid, va).
 
-  Definition update_tcoh (asid : bv 16) (page_offset : bv 12) (v : view) (ts : t) : t :=
+  Definition update_tcoh (asid : bv 16) (va : bv 64) (v : view) (ts : t) : t :=
     set tcoh
       (partial_alter (λ ov, Some (max v (default 0 ov)))
-        (asid, page_offset)) ts.
+        (asid, va)) ts.
 
-  Definition update_tcohs (asid : bv 16) (page_offsets : list (bv 12)) (v : view) (ts : t) : t :=
-    foldr (λ page_offset, update_tcoh asid page_offset v) ts page_offsets.
+  Definition update_tcohs (asid : bv 16) (vas : list (bv 64)) (v : view) (ts : t) : t :=
+    foldr (λ va, update_tcoh asid va v) ts vas.
 
-  Definition tcohs_before_inv_time (asid : bv 16) (page_offsets : list (bv 12))
+  Definition tcohs_before_inv_time (asid : bv 16) (vas : list (bv 64))
       (inv_time : option nat) (ts : t) : Prop :=
     match inv_time with
-    | Some inv_t => ∀ page_offset ∈ page_offsets, (get_tcoh asid page_offset ts < inv_t)%nat
+    | Some inv_t => ∀ va ∈ vas, (get_tcoh asid va ts < inv_t)%nat
     | None => True
     end.
-  #[global] Instance Decision_tcohs_before_inv_time asid page_offsets inv_time ts :
-    Decision (tcohs_before_inv_time asid page_offsets inv_time ts).
+  #[global] Instance Decision_tcohs_before_inv_time asid vas inv_time ts :
+    Decision (tcohs_before_inv_time asid vas inv_time ts).
   Proof. unfold_decide. Defined.
 
   (** Updates the forwarding bank for an address. *)
@@ -2436,10 +2436,12 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
     else
       mret $ (IIS.TransRes.make vpre_t vmax_t None [], None);
   let '(tres, inv_time) := trans_res in
-  let page_offsets := TState.va_page_offsets va size in
-  guard_discard (TState.tcohs_before_inv_time asid page_offsets inv_time ts);;
-  mset PPState.state $
-    TState.update_tcohs asid page_offsets tres.(IIS.TransRes.trans_start);;
+  (if negb ifetch then
+    let vas := TState.va_byte_addrs va size in
+    guard_discard (TState.tcohs_before_inv_time asid vas inv_time ts);;
+    mset PPState.state $
+      TState.update_tcohs asid vas tres.(IIS.TransRes.trans_start)
+  else mret ());;
   mset PPState.iis $ IIS.set_trs tres;;
   mset PPState.iis $ IIS.set_inv_time inv_time.
 
