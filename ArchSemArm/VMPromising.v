@@ -2320,6 +2320,7 @@ Definition materialize_tlbi_for_recipient
     | Some t => mret (t, false)
     | None =>
       time ← Exec.liftSt PPState.mem $ Memory.promise ev;
+      mem ← mget PPState.mem;
       nts ← mlift $ TState.process_event tid imem mem ev ts;
       msetv PPState.state nts;;
       mret (time, true)
