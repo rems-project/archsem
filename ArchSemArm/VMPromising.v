@@ -2768,13 +2768,14 @@ Section BBM.
         is_Some asid ∧
         ∃ '(ge, gevs) ∈ gdesc_get (ctxt_parent ctxt lvl None) gdesc,
           time_overlaps tmax evs gevs = true in
-      (* The parent and global checks are only needed for final entries *)
-      let final_conflict :=
+      (* For both table and final entries, check for a global entry at the same
+         level or any ancestor level. Run the other two checks only for final entries. *)
+      let cross_ctxt_conflict :=
         bool_decide (∃ '(e, evs) ∈ entries,
-            is_final lvl (Entry.pte e) ∧
-            (parent_block evs ∨ global_conflict evs ∨
-             global_child_conflict evs)) in
-      mret (negb no_pair_violation || final_conflict)
+            global_conflict evs ∨
+            (is_final lvl (Entry.pte e) ∧
+             (parent_block evs ∨ global_child_conflict evs))) in
+      mret (negb no_pair_violation || cross_ctxt_conflict)
     end |$> List.existsb id.
 
 End BBM.
