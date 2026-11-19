@@ -1848,36 +1848,45 @@ Module TState.
         TLB.fill_cse tid imem mem v ttbr0.1 ttbr1) ts;
     mret ts.
 
+  (** Compute [TLB.Result.t] entries for uncacheable level-0 invalid PTEs from
+      the most-recent-first list returned by [Memory.read_all_pte]. Each entry
+      is only valid up to [Nat.pred next_tpte], not [tmax]. *)
+  Fixpoint lvl0_inv_results (ttbr : bv 64) (ptes : list (bv 64 * nat))
+      (tmin tmax : nat) : list TLB.Result.t :=
+    match ptes with
+    | [] => []
+    | (pte, tpte) :: nptes =>
+      if decide (tmax < tmin) then []
+      else
+        let rest :=
+          if decide (tpte = 0%nat) then []
+          else lvl0_inv_results ttbr nptes tmin (Nat.pred tpte)
+        in
+        if decide (is_tlb_fillable 0%fin pte) then rest
+        else
+          let real_min := max tpte tmin in
+          if decide (real_min ≤ tmax) then
+            TLB.Result.make ttbr [pte] real_min tmax None :: rest
+          else rest
+    end.
+
   (** Lookup the TLB for [vpn]. Only global entries and non-global entries
-      tagged with [asid] are considered. [ttbr0] is the TTBR0_EL1 value already
-      read by the instruction, its view is assumed to be included in [tmin_ok]
-      and [tmin_unc] *)
+      tagged with [asid] are considered. [ttbr] and [vttbr] are the root TTBR
+      value and view already chosen for the instruction. *)
   Definition tlb_lookup (tid : nat) (imem : memoryMap) (mem : Memory.t) (ts : t)
-      (ifetch upper : bool) (vpn : pn) (asid : bv 16) (ttbr0 : bv 64)
-      (tmin_ok tmin_unc tmax : nat) :
+      (ifetch upper : bool) (vpn : pn) (asid : bv 16) (ttbr : bv 64)
+      (vttbr tmin_ok tmin_unc tmax : nat) :
     result string (list TLB.Result.t) :=
     tlb ← othrow "TLB lookup, but translation disabled by SCTLR_EL1" $ ts.(tlb);
     from_tlb ← TLB.lookup tid imem mem tlb ifetch upper vpn tmin_ok tmin_unc tmax asid;
     (* Still missing invalid lookups from root, those do not go through the TLB *)
     from_lvl0_inv ←
-    ( if decide (tmin_unc ≤ tmax) then
-        ttbrs ←
-          (if upper then
-            othrow "Can't read TTBR1_EL1, but using negative addresses" $
-              read_sreg_indirect ts TTBR1_EL1 : result string (list (bv 64 * view))
-          else mret [(ttbr0, 0)]);
+    ( let tmin := tmin_unc ⊔ vttbr in
+      if decide (tmin ≤ tmax) then
         let lvl0_index := vpn_level_index 0%fin vpn in
-        for (ttbr, vttbr) in ttbrs do
-          let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
-          let tmin := tmin_unc ⊔ vttbr in
-          ptes ← Memory.read_all_pte pte_addr imem mem tmin tmax;
-          ptes
-          |> filter (λ '(pte, _), ¬ is_tlb_fillable 0%fin pte)
-          (* TODO figure out if top-level invalid entries are concerned by *)
-          (*      invalidation times *)
-          |> map (λ '(pte, vpte), TLB.Result.make ttbr [pte] (tmin ⊔ vpte) tmax None)
-          |> mret
-        end |$> List.concat
+        let pte_addr := index_table (ttbr_root_table ttbr) lvl0_index in
+        ptes ← Memory.read_all_pte pte_addr imem mem tmin tmax;
+        mret $ lvl0_inv_results ttbr ptes tmin tmax
       else mret []);
     mret (TLB.Result.merge (from_tlb ++ from_lvl0_inv)).
 
@@ -2413,14 +2422,20 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
           : Exec.t _ _ (bv 64 * view));
       guard_or "Translation ASID does not match the TTBR0_EL1 value read"
         (asid = bv_extract 48 16 ttbr0);;
+      '(ttbr, vttbr) ←
+        if upper then
+          Exec.liftSt (PPState.state ×× PPState.iis) $
+            (read_sreg_indirect TTBR1_EL1 None
+              : Exec.t _ _ (bv 64 * view))
+        else mret (ttbr0, 0%nat);
       tlb_results ← mlift $ TState.tlb_lookup tid imem mem ts ifetch upper vpn
-        asid ttbr0 vpre_t vpre_inv vmax_t;
+        asid ttbr vttbr vpre_t vpre_inv vmax_t;
       (* The only valid reason for tlb_result to be empty, is if the only
          possibility was to fault but a fault is impossible with the current
          promising context, otherwise this means the page tables are not set up
          properly *)
       guard_or ("Can't translate address " ++ pretty va)%string
-        (tlb_results = [] → vmax_t < vpre_inv);;
+        (tlb_results = [] → vmax_t < vpre_inv ⊔ vttbr);;
       tlb_result ← mchoosel tlb_results;
       val_ttbr ← othrow
         "Unexpected TTBR value type"
