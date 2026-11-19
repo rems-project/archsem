@@ -2491,7 +2491,8 @@ Definition run_trans_end (trans_end : trans_end) :
 Definition run_take_exception (fault : exn) (vmax_t : view) : prom_mon () :=
   inv_time ← mget (IIS.inv_time ∘ PPState.iis);
   match inv_time with
-  | Some inv_time => run_cse inv_time
+  | Some 0%nat => mdiscard
+  | Some (S inv_pred) => run_cse (min vmax_t inv_pred)
   | None => run_cse vmax_t
   end.
 
