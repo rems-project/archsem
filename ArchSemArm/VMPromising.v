@@ -2546,6 +2546,7 @@ Definition run_take_exception (fault : exn) (vmax_t : view) : prom_mon () :=
   | ReturnException =>
       mem ← mget PPState.mem;
       run_cse (length mem);;
+      mset PPState.state TState.clear_xclb;;
       mret ((), None)
   | TranslationStart trans_start =>
       run_trans_start trans_start;;
