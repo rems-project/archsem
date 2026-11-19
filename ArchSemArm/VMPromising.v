@@ -2391,7 +2391,7 @@ Definition run_trans_start (trans_start : TranslationStartInfo) : prom_mon () :=
   let vpre_t := ts.(TState.vcse) ⊔ IIS.strict iis ⊔
                  (view_if (ets2 && (negb ifetch)) ts.(TState.vdsb)) in
   let vpre_inv :=
-      vpre_t ⊔ view_if ets2 (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
+      vpre_t ⊔ view_if (ets2 && (negb ifetch)) (ts.(TState.vwr) ⊔ ts.(TState.vrd)) in
   let vmax_t := pred (TState.min_promise (length mem) ts) in
   let asid := trans_start.(TranslationStartInfo_asid) in
   let va : bv 64 := trans_start.(TranslationStartInfo_va) in
