@@ -1412,11 +1412,13 @@ Module TLB.
                else
                  let rng_min := max result.(Result.tstart) tpte in
                  let real_min := max rng_min tmin in
-                 let nresult :=
-                   result |> set Result.path (.++[pte])
-                   |> setv Result.tstart real_min
-                   |> setv Result.tend rng_max
-                        in nresult :: rest
+                 if decide (real_min ≤ rng_max) then
+                   let nresult :=
+                     result |> set Result.path (.++[pte])
+                     |> setv Result.tstart real_min
+                     |> setv Result.tend rng_max
+                   in nresult :: rest
+                 else rest
         else []) ptes tmax
       else [].
 
