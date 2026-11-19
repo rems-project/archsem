@@ -1145,13 +1145,24 @@ Module TLB.
           end |$> List.concat;
           fill_from_entries parent_entries
         else
+          global_entries ←
+            if tlbi is TLBI.Va _ _ _ _ _ then
+              mget (VATLB.collect_fe (λ fe, FE.asid fe = None ∧ affects tlbi fe) ∘ vatlb)
+            else mret [];
           let inv_if_affected fe evs :=
             if decide (affects tlbi fe) then
               invalidate evs
             else evs
           in
           mset vatlb (VATLB.map_fe inv_if_affected);;
-          fill_from_roots asid_roots.
+          fill_from_roots asid_roots;;
+          if global_entries is [] then mret ()
+          else
+            let asids := asid_roots.*1.*1 |> remove_dups in
+            parent_entries ← for entry in global_entries do
+              get_relevant_entries asids (FE.cur_table entry)
+            end |$> List.concat;
+            fill_from_entries parent_entries.
 
       (** Updates the TLB for the event that is present at [time] based on the
           provided context roots (asid, root, upper). This assumes that [ev] is
