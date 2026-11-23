@@ -652,14 +652,15 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
       Definition run_outcome_with_promise (base : nat) (out : outcome) :
           Exec.t (list mEvent * PPState.t tState mEvent iis) string
                  (eff_ret out) :=
+        prev_len ← mget (length ∘ PPState.mem ∘ snd);
         '(res, vpre_opt) ←
           Exec.liftSt snd $ prom.(handle_outcome) n tid initmem out;
         if vpre_opt is Some vpre then
           if decide (vpre ≤ base)%nat then
             mem ← mget (PPState.mem ∘ snd);
-            (* Take all promises after base (made by that outcome) and add them
-               to the list of possible new promises *)
-            mset fst (take (length mem - base) mem ++.);;
+            (* Take only the events added by this outcome and add them to the
+               list of possible new promises *)
+            mset fst (take (length mem - prev_len) mem ++.);;
             mret res
           else mret res
         else
