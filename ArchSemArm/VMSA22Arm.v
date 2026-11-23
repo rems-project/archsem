@@ -91,7 +91,7 @@ Section VMSAArm.
   Notation R := (explicit_reads pe).
   Notation M := (mem_explicit pe).
   Notation Wx := (exclusive_writes pe).
-  Notation Rx := (exclusive_writes pe).
+  Notation Rx := (exclusive_reads pe).
   Notation L := (rel_acq_rcsc_writes pe).
   Notation A := (rel_acq_rcsc_reads pe).
   Notation Q := (rel_acq_rcpc_reads pe).
@@ -235,11 +235,11 @@ Section VMSAArm.
   (* armv9-interface/tlbi.cat#L82 *)
   Definition TLBI_ASID :=
     collect_all (λ _ event, has_tlbi_op event TLBIOp_ASID
-                            ∨ has_tlbi_op event TLBIOp_VA
-                            ∨ has_tlbi_op event TLBIOp_VAA) cd.
+                            ∨ has_tlbi_op event TLBIOp_VA) cd.
   (* armv9-interface/tlbi.cat#L89 *)
   Definition TLBI_S1 :=
     collect_all (λ _ event, has_tlbi_op event TLBIOp_VA
+                            ∨ has_tlbi_op event TLBIOp_VAA
                             ∨ has_tlbi_op event TLBIOp_VMALLS12
                             ∨ has_tlbi_op event TLBIOp_VMALL
                             ∨ has_tlbi_op event TLBIOp_ALL
@@ -248,9 +248,7 @@ Section VMSAArm.
   Definition TLBI_S2 :=
     collect_all (λ _ event, has_tlbi_op event TLBIOp_IPAS2
                             ∨ has_tlbi_op event TLBIOp_VMALLS12
-                            ∨ has_tlbi_op event TLBIOp_VMALL
-                            ∨ has_tlbi_op event TLBIOp_ALL
-                            ∨ has_tlbi_op event TLBIOp_ASID) cd.
+                            ∨ has_tlbi_op event TLBIOp_ALL) cd.
   (* armv9-interface/tlbi.cat#L108 *)
   Definition TLBI_VMID :=
     collect_all (λ _ event, has_tlbi_op event TLBIOp_VA
@@ -261,7 +259,8 @@ Section VMSAArm.
                             ∨ has_tlbi_op event TLBIOp_ASID) cd.
   (* armv9-interface/tlbi.cat#L118 *)
   Definition TLBI_VA :=
-    collect_all (λ _ event, has_tlbi_op event TLBIOp_VA) cd.
+    collect_all (λ _ event, has_tlbi_op event TLBIOp_VA
+                            ∨ has_tlbi_op event TLBIOp_VAA) cd.
   (* armv9-interface/tlbi.cat#L121 *)
   Definition TLBI_IPA :=
     collect_all (λ _ event, has_tlbi_op event TLBIOp_IPAS2) cd.
@@ -308,10 +307,10 @@ Section VMSAArm.
 
   Definition get_vmid (eid : EID.t) (event : iEvent) :=
     if event is TlbOp tlbop &→ _
-    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_asid)
+    then Some tlbop.(TLBIInfo_rec).(TLBIRecord_vmid)
     else
       ts ← get_translation_start eid;
-      Some ts.(TranslationStartInfo_asid).
+      Some ts.(TranslationStartInfo_vmid).
 
   (* symmetry relation for [T] and [TLBI] with same vmid *)
   Definition same_vmid := same_key get_vmid cd.
@@ -498,6 +497,8 @@ Section VMSAArm.
           ∩ tlbi_translate_same_vmid)⨾⦗T ∩ Stage1⦘)
       ∪ (⦗TLBI_S1 ∩ ~~TLBI_S2 ∩ TLBI_VA  ∩ TLBI_ASID ∩ ~~TLBI_VMID⦘
             ⨾(tlbi_translate_same_va_page ∩ tlbi_translate_same_asid)⨾⦗T ∩ Stage1⦘)
+      ∪ (⦗TLBI_S1 ∩ ~~TLBI_S2 ∩ TLBI_VA ∩ ~~TLBI_ASID ∩ TLBI_VMID⦘
+            ⨾(tlbi_translate_same_va_page ∩ tlbi_translate_same_vmid)⨾⦗T ∩ Stage1⦘)
       ∪ (⦗TLBI_S1 ∩ ~~TLBI_S2 ∩ ~~TLBI_VA ∩ TLBI_ASID ∩ TLBI_VMID⦘
             ⨾(tlbi_translate_same_asid ∩ tlbi_translate_same_vmid)⨾⦗T ∩ Stage1⦘)
       ∪ (⦗TLBI_S1 ∩ ~~TLBI_S2 ∩ ~~TLBI_VA ∩ ~~TLBI_ASID ∩ TLBI_VMID⦘
