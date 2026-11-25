@@ -73,6 +73,8 @@ type linked_section =
 (** Output of the assembler pipeline *)
 type assembly_result =
   { sections : linked_section list;
+    (* Symbols defined by the code. Input data symbols never appear here: the
+       code cannot redefine them. *)
     symbols : (string * int) list
   }
 

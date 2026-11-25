@@ -61,15 +61,18 @@ let resolve_symbol (result : assembly_result) name =
   | Some addr -> addr
   | None -> Printf.ksprintf failwith "assembler: symbol %S not found" name
 
+(* Read the 64-bit little-endian word at byte offset [off] of [sec]. *)
+let word_at (sec : linked_section) off =
+  Bytes.get_int64_le sec.data off |> Int64.to_int
+
 let test_assemble_single_thread _ =
   let input =
-    make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\tADR X1, x\n"]
+    make_input ~symbols:[sym "x" 0x2000] [section "thread0" "\t.xword x\n"]
   in
   let result = assemble_test input in
-  let x_addr = resolve_symbol result "x" in
-  assert_equal ~printer:string_of_int 0x2000 x_addr;
   let thread0 = find_section "thread0" result in
-  assert_equal ~printer:string_of_int 4 (Bytes.length thread0.data)
+  assert_equal ~printer:string_of_int 8 (Bytes.length thread0.data);
+  assert_equal ~printer:(Printf.sprintf "0x%x") 0x2000 (word_at thread0 0)
 
 let test_assemble_multiple_threads _ =
   let input =
@@ -89,12 +92,12 @@ let test_assemble_multiple_symbols _ =
   let input =
     make_input
       ~symbols:[sym "x" 0x2000; sym "y" 0x3000]
-      [section "thread0" "\tADR X1, x\n\tADR X2, y\n"]
+      [section "thread0" "\t.xword x\n\t.xword y\n"]
   in
   let result = assemble_test input in
-  let x_addr = resolve_symbol result "x" in
-  let y_addr = resolve_symbol result "y" in
-  assert_bool "different addresses" (x_addr <> y_addr)
+  let thread0 = find_section "thread0" result in
+  assert_equal ~printer:(Printf.sprintf "0x%x") ~msg:"x" 0x2000 (word_at thread0 0);
+  assert_equal ~printer:(Printf.sprintf "0x%x") ~msg:"y" 0x3000 (word_at thread0 8)
 
 let test_assemble_no_symbols _ =
   let input = make_input [section "thread0" "\tNOP\n"] in

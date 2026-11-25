@@ -192,6 +192,14 @@ Bit slice with the high index below the low index
   bit slice '[0..3]': high index is below low index
   [1]
 
+A code label cannot redefine a data symbol
+  $ archsem seq data-symbol-label-clash.litmus.toml
+  archsem: fatal error: assembler: command failed (code 1): clang --target=aarch64-unknown-linux-elf -march=armv8-a+lse+rcpc -fuse-ld=lld -nostdlib -Wl,-e,0 -Wl,-T,'data-symbol-label-clash.litmus.toml.ld' -o 'data-symbol-label-clash.litmus.toml.elf' 'data-symbol-label-clash.litmus.toml.s'
+  data-symbol-label-clash.litmus.toml.s:6:1: error: symbol 'x' is already defined
+  x:
+  ^
+  [1]
+
 Page table DSL on unsupported architecture
   $ archsem seq x86-page-table.litmus.toml
   archsem: eval error:
