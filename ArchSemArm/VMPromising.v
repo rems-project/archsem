@@ -1356,22 +1356,24 @@ Module TLB.
       match events with
       | [] => []
       | (Entry.Load, tload) :: tl =>
-          if decide (tmax < tload) then
-            get_results_from_events ttbr path tl tmin tmax inv_time
-          else
-            if decide (tload < tmin) then
-              [Result.make ttbr path tmin tmax inv_time]
+          let normal '() :=
+            if decide (tmax < tload) then
+              get_results_from_events ttbr path tl tmin tmax inv_time
             else
-              let normal '() :=
-                  Result.make ttbr path tload tmax inv_time ::
-                    get_results_from_events ttbr path tl tmin tmax inv_time
-              in
-              if tl is (Entry.Tlbi tidt, ttlbi) :: tl' then
-                if decide (tload = ttlbi ∧ (ifetch ∨ tidt = tid)) then
-                  (* Merge the current range and the next *)
-                  get_results_from_events ttbr path tl' tmin tmax inv_time
-                else normal ()
-              else normal ()
+              if decide (tload < tmin) then
+                [Result.make ttbr path tmin tmax inv_time]
+              else
+                Result.make ttbr path tload tmax inv_time ::
+                  get_results_from_events ttbr path tl tmin tmax inv_time
+          in
+          if tl is (Entry.Tlbi _, ttlbi) :: tl' then
+            if decide (tload = ttlbi) then
+              (* The same entry is immediately refilled, so its translation
+                 information remains usable across the TLBI (Arm ARM D8.17.8).
+                 Merge before clipping: tmax may precede the refill. *)
+              get_results_from_events ttbr path tl' tmin tmax inv_time
+            else normal ()
+          else normal ()
       | (Entry.Tlbi tidt, ttlbi) :: tl =>
           let inv_time :=
             if decide (ifetch ∨ tidt = tid) then inv_time else Some ttlbi
