@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "non-pow2-page-table-alignment"
+
+page_table_setup = """
+virtual x;
+aligned 12288 virtual x;
+"""
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"
