@@ -1,0 +1,15 @@
+arch = "AArch64"
+name = "data-symbol-label-clash"
+symbolic = ["x"]
+
+[thread.0]
+init = { X1 = "x" }
+code = """
+ADR X2, x
+x:
+LDR X0, [X1]
+"""
+
+[final]
+expect = "sat"
+assertion = "true"

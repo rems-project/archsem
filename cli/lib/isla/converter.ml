@@ -425,7 +425,8 @@ let allocate_symbols ~state ~reserved (ir : Ir.t) =
 (** {2 Assembly} *)
 
 (* Allocate the code sections and assemble them with a data symbol for every
-   symbol in [state]. Assembler-defined symbols are added to [state]. *)
+   symbol in [state]. The assembler rejects code that redefines a data symbol.
+   Code-defined symbols are added to [state]. *)
 let assemble ~filename ~state ~code_allocator (ir : Ir.t) =
   let sections = allocate_code_sections code_allocator ir in
   let symbols =
@@ -435,15 +436,14 @@ let assemble ~filename ~state ~code_allocator (ir : Ir.t) =
     |> List.sort compare
   in
   let result =
-    try Assembler.assemble ~filename {sections; symbols}
+    try
+      let result = Assembler.assemble ~filename {sections; symbols} in
+      List.iter
+        (fun (name, addr) -> Eval_state.add_symbol state name addr)
+        result.symbols;
+      result
     with Failure msg -> eval_error_at ["code"] "%s" msg
   in
-  List.iter
-    (fun (name, addr) ->
-       if not (Hashtbl.mem state.Eval_state.symbols name) then
-         Eval_state.add_symbol state name addr
-     )
-    result.symbols;
   (* Assembly preserves input order: threads followed by named sections. *)
   List.iteri
     (fun i (sec : Assembler.linked_section) ->

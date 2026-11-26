@@ -79,25 +79,44 @@ type assembly_result =
 
 (* {1 Utilities} *)
 
-let run_cmd fmt =
+exception
+  Command_failed of
+    { code : int;
+      cmd : string;
+      stderr : string
+    }
+
+(* Run [cmd] in directory [cwd], which receives its stderr. [cmd] is reported
+   without [cwd], so with paths relative to [cwd] the failure does not depend on
+   where the temporary directory is. *)
+let run_cmd ~cwd fmt =
   let run cmd =
-    let err_path = Filename.temp_file "archsem" ".err" in
-    let full_cmd = Printf.sprintf "%s 2>%s" cmd (Filename.quote err_path) in
+    let err_path = Filename.concat cwd "stderr" in
+    let full_cmd =
+      Printf.sprintf "(cd %s && %s) 2>%s" (Filename.quote cwd) cmd
+        (Filename.quote err_path)
+    in
     let rc = Sys.command full_cmd in
-    if rc <> 0 then begin
+    if rc <> 0 then
       let err_msg =
-        Fun.protect
-          ~finally:(fun () -> try Sys.remove err_path with _ -> ())
-          (fun () -> In_channel.with_open_text err_path In_channel.input_all)
+        try String.trim (In_channel.with_open_text err_path In_channel.input_all)
+        with Sys_error _ -> ""
       in
-      Error.fatal "assembler: command failed (code %d): %s\n%s" rc cmd err_msg
-    end;
-    try Sys.remove err_path with _ -> ()
+      raise (Command_failed {code = rc; cmd; stderr = err_msg})
   in
   Printf.ksprintf run fmt
 
 let write_file path content =
   Out_channel.with_open_text path (fun oc -> output_string oc content)
+
+(* Remove [dir] and the files directly inside it. *)
+let remove_dir dir =
+  Array.iter
+    (fun file ->
+       try Sys.remove (Filename.concat dir file) with Sys_error _ -> ()
+     )
+    (try Sys.readdir dir with Sys_error _ -> [||]);
+  try Sys.rmdir dir with Sys_error _ -> ()
 
 (* {1 Dump support}
 
@@ -139,27 +158,36 @@ let emit_code_section buf (sec : section) =
   if sec.code <> "" && sec.code.[String.length sec.code - 1] <> '\n' then
     Buffer.add_char buf '\n'
 
-(** Combine all sections into a single assembly string. Data symbols are left
-    undefined; the linker script defines them. *)
-let generate_asm (sections : section list) : string =
+(* Name of the linker-script symbol that holds the address of data symbol
+   [name]. The "." keeps it out of the archsem identifiers read from the ELF. *)
+let linker_name name = "__archsem." ^ name
+
+(* [.equiv] aliases the data symbol to its undefined linker symbol, so code
+   references stay relocations instead of being folded into constants (as with
+   [.set name, addr]), and the assembler rejects any label of the same name. *)
+let emit_data_symbol buf (sym : data_symbol) =
+  Printf.bprintf buf "\t.equiv %s, %s\n" sym.name (linker_name sym.name)
+
+(** Combine all sections into a single assembly string. Each data symbol is an
+    alias of a symbol defined by the linker script. *)
+let generate_asm (symbols : data_symbol list) (sections : section list) : string =
   let buf = Buffer.create 256 in
+  List.iter (emit_data_symbol buf) symbols;
   List.iter (emit_code_section buf) sections;
   Buffer.contents buf
 
 (* {1 Stage 1b: linker script generation} *)
 
-(* PROVIDE leaves a label of the same name in the code in place, so the caller
-   can report the conflict. *)
 let emit_ld_symbol buf (sym : data_symbol) =
-  Printf.bprintf buf "PROVIDE(%s = 0x%x);\n" sym.name sym.addr
+  Printf.bprintf buf "%s = 0x%x;\n" (linker_name sym.name) sym.addr
 
 let emit_ld_section buf (sec : section) =
   Printf.bprintf buf "  .%s 0x%x : { *(.%s) }\n" sec.name sec.addr sec.name
 
-(** Generate a linker script that defines each data symbol as an absolute
-    symbol and pins each code section [.<name>] to its preassigned address.
-    Absolute symbols occupy no section, so distant data addresses do not
-    produce large ELF segments. *)
+(** Generate a linker script that defines the linker symbol of each data symbol
+    as an absolute symbol and pins each code section [.<name>] to its
+    preassigned address. Absolute symbols occupy no section, so distant data
+    addresses do not produce large ELF segments. *)
 let generate_linker_script (symbols : data_symbol list) (sections : section list)
   : string
   =
@@ -175,39 +203,44 @@ let generate_linker_script (symbols : data_symbol list) (sections : section list
 
 let get_command = Config.make_getter Toml.get_string ["assembler"; "command"]
 
-(** Run clang to assemble and link in one step, writing an ELF file at
-    [elf_path].  The caller owns [elf_path] (creates and cleans it up). *)
+(* Name of the artifact [basename ^ ext], relative to the working directory.
+   The "./" prefix stops a leading "-" from being read as an option. *)
+let artifact_name basename ext =
+  let name = basename ^ ext in
+  if String.starts_with ~prefix:"-" name then "./" ^ name else name
+
+(** Run clang in [dir] to assemble and link in one step, writing
+    [artifact_name basename ".elf"] there. Relative paths keep clang's
+    diagnostics independent of [dir]. The caller owns [dir]. *)
 let run_pipeline
+      ~dir
       ~basename
-      ~(elf_path : string)
       (symbols : data_symbol list)
       (sections : section list) : unit
   =
   let command = get_command () in
-  let asm_path = Filename.temp_file basename ".s" in
-  let ld_path = Filename.temp_file basename ".ld" in
-  Fun.protect
-    ~finally:(fun () ->
-      List.iter (fun p -> try Sys.remove p with _ -> ()) [asm_path; ld_path]
-    )
-    (fun () ->
-       write_file asm_path (generate_asm sections);
-       write_file ld_path (generate_linker_script symbols sections);
-       (* -nostdlib: don't link any standard library or startup files.
-          -Wl,-e,0: pass -e 0 to the linker — disables the default entry
-          symbol by setting the entry address to 0 (we don't have main).
-          -Wl,-T,<path>: pass the linker script we generated. *)
-       run_cmd "%s -nostdlib -Wl,-e,0 -Wl,-T,%s -o %s %s" command
-         (Filename.quote ld_path) (Filename.quote elf_path)
-         (Filename.quote asm_path);
-       (* Dump intermediate artifacts if configured *)
-       match dump_dir () with
-       | None -> ()
-       | Some dir ->
-           dump_artifact dir basename asm_path ~ext:".s";
-           dump_artifact dir basename ld_path ~ext:".ld";
-           dump_artifact dir basename elf_path ~ext:".elf"
-     )
+  let asm_name = artifact_name basename ".s" in
+  let ld_name = artifact_name basename ".ld" in
+  let elf_name = artifact_name basename ".elf" in
+  write_file (Filename.concat dir asm_name) (generate_asm symbols sections);
+  write_file
+    (Filename.concat dir ld_name)
+    (generate_linker_script symbols sections);
+  (* -nostdlib: don't link any standard library or startup files.
+     -Wl,-e,0: pass -e 0 to the linker — disables the default entry
+     symbol by setting the entry address to 0 (we don't have main).
+     -Wl,-T,<path>: pass the linker script we generated. *)
+  run_cmd ~cwd:dir "%s -nostdlib -Wl,-e,0 -Wl,-T,%s -o %s %s" command
+    (Filename.quote ld_name) (Filename.quote elf_name) (Filename.quote asm_name);
+  (* Dump intermediate artifacts if configured *)
+  match dump_dir () with
+  | None -> ()
+  | Some dump ->
+      List.iter
+        (fun (name, ext) ->
+           dump_artifact dump basename (Filename.concat dir name) ~ext
+         )
+        [(asm_name, ".s"); (ld_name, ".ld"); (elf_name, ".elf")]
 
 (* {1 Stage 3: linksem ELF parsing} *)
 
@@ -272,10 +305,14 @@ let parse_elf (elf_path : string) (input : assembly_input) : assembly_result =
 (** Assemble, link, and parse ELF. Uses config for toolchain commands. *)
 let assemble ~filename (input : assembly_input) : assembly_result =
   let basename = Filename.basename filename in
-  let elf_path = Filename.temp_file basename ".elf" in
-  Fun.protect
-    ~finally:(fun () -> try Sys.remove elf_path with _ -> ())
-    (fun () ->
-       run_pipeline ~basename ~elf_path input.symbols input.sections;
-       parse_elf elf_path input
-     )
+  let dir = Filename.temp_dir "archsem" ".asm" in
+  (* Report a failed command only after [dir] is removed: [Error.fatal] exits. *)
+  try
+    Fun.protect
+      ~finally:(fun () -> remove_dir dir)
+      (fun () ->
+         run_pipeline ~dir ~basename input.symbols input.sections;
+         parse_elf (Filename.concat dir (artifact_name basename ".elf")) input
+       )
+  with Command_failed {code; cmd; stderr} ->
+    Error.fatal "assembler: command failed (code %d): %s\n%s" code cmd stderr
