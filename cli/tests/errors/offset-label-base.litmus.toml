@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "offset-label-base"
+symbolic = ["y"]
+
+[offsets]
+y.base = "start"
+y.offset = 4
+
+[thread.0]
+code = """
+start:
+nop
+nop
+"""

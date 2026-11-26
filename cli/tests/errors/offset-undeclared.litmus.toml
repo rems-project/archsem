@@ -1,0 +1,10 @@
+arch = "AArch64"
+name = "offset-undeclared"
+symbolic = ["x"]
+
+[offsets]
+y.base = "x"
+y.offset = 32
+
+[thread.0]
+code = "nop"
