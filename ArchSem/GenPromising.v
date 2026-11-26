@@ -834,14 +834,44 @@ Module GenPromising (Arch : Arch) (Inter : InterfaceT Arch)
         mSetv (PFMake nst cache);;
         mret None
       | 1 =>
-        (* Compute cartesian products of the possible thread states *)
-        tstates ← mchoosel $ cprodn (vmap final_states execution_results);
-        (* Lift them into full promising state *)
-        let st := Make tstates st.(initmem) st.(events) in
-        (* Discard the non-terminated ones *)
-        term_proof ← guard_discard $ terminated prom term st;
-        mlift $ validate_final st;;
-        mret (Some (to_final_archState (make_final st term_proof)))
+        (* Everything below is per-thread, so each thread's final states are
+           checked and projected to their registers before taking the cartesian
+           product, which would otherwise blow up *)
+        (* Final states of each thread without outstanding promises *)
+        let finals :=
+          vmap (λ res,
+              filter (λ ts, prom.(tState_nopromises) ts = true)
+                (final_states res)) execution_results in
+        (* If a thread has no possible final state, there is no final state *)
+        guard_discard' (∀ tid, finals !!! tid ≠ []);;
+        (* Run the end-of-execution check once per thread state *)
+        let checked :=
+          vimap (λ tid tss,
+              map (λ ts,
+                  (ts, prom.(Promising.check_valid_end) tid st.(initmem) ts
+                         st.(events))) tss) finals in
+        let errs := List.concat (List.concat (vmap (map snd) checked)) in
+        (* Register maps of the valid states, without duplicates *)
+        let regs :=
+          vmap (λ tss,
+              tss
+              |> omap (λ '(ts, errs),
+                  if errs is [] then Some (prom.(tState_regs) ts) else None)
+              |> remove_dups) checked in
+        is_error ← mchoosef bool;
+        if (is_error : bool) then
+          err ← mchoosel errs;
+          mthrow err
+        else
+          rs ← mchoosel $ cprodn regs;
+          let archSt :=
+            {|archState.regs := rs;
+              archState.memory :=
+                prom.(memory_snapshot) st.(initmem) st.(events);
+              archState.address_space := prom.(address_space) |} in
+          (* Should always hold as [final_states] are terminated *)
+          term_proof ← guard_discard $ archState.is_terminated term archSt;
+          mret (Some (existT archSt term_proof))
       | 2 =>
         let errs := List.concat (vmap errors execution_results) in
         err ← mchoosel errs;

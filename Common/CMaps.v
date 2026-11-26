@@ -487,6 +487,14 @@ Section DMap.
     apply proof_irrelevance.
   Qed.
 
+  #[export] Instance dmap_eq_dec `{!EqDepDecision F} : EqDecision dmap.
+  Proof.
+    intros m m'.
+    destruct decide (dmap_car m = dmap_car m').
+    - left. by apply dmap_eq_car.
+    - right. by intros ->.
+  Defined.
+
   Lemma dmap_eq m m': (∀ k : K, m !d! k = m' !d! k) → m = m'.
   Proof using ctrans_F_simpl.
     intro H.

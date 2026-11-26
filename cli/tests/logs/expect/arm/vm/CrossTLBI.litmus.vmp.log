@@ -6,6 +6,6 @@ States 4
 0:X4=1; 0:X6=3; 
 Ok
 Witnesses
-Positive: 3 Negative: 258
+Positive: 3 Negative: 137
 Condition CrossTLBI exists (0:X4=1 /\ 0:X6=3)
-Observation CrossTLBI Sometimes 3 258
+Observation CrossTLBI Sometimes 3 137

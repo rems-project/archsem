@@ -66,6 +66,8 @@ let fin_case f0 fS n = if Z.sign n > 0 then fS (Z.pred n) else f0 ()
 
 let fin0_magic _ = raise (Failure "Got a value of type fin 0")
 
+let fin_enum n = List.init (Z.to_int n) Z.of_int
+
 let vec_eqdep_dec eq_dec _ _ v1 v2 = List.equal eq_dec v1 v2
 
 let lengthZ l = Z.of_int (List.length l)
