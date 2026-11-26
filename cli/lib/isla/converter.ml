@@ -42,8 +42,10 @@
 
     Pipeline:
     - Reserve the pages of explicitly placed sections and table roots.
-    - Allocate every data symbol, then define the offset symbols from their
-      bases, and register the symbols in the test's mutable evaluation state.
+    - Collect the data symbols (symbolic, then page-table [virtual]/[physical]
+      declarations) and their alignment constraints, allocate non-offset symbol,
+      compute offset symbols, and finally register the symbols in the test's
+      mutable evaluation state.
     - Allocate the code sections and assemble them against those symbols. The
       assembler only emits code bytes and applies relocations.
     - Build page tables, memory, registers, termination, and outcomes. *)
@@ -138,120 +140,99 @@ let normalize_register_gen ~arch ~context reg_name gen =
         Archsem.X86.RegVal.(to_gen (of_string_gen reg_name gen))
   with Failure msg -> eval_error context "%s" msg
 
-(** {2 Symbol alignments} *)
+(** {2 Data symbols} *)
 
-let symbolic_names ir =
-  let add path names name =
+type symbol_kind =
+  | Physical
+  | Virtual
+
+(* Data symbols declared by [symbolic] and by the [virtual] and [physical]
+   page-table statements: symbolic first, then in page-table setup order.
+   Symbolic symbols are physical without page tables, and virtual with them.
+   Fails if a symbol name is invalid or declared twice. *)
+let get_data_symbols (ir : Ir.t) =
+  let add path kind name symbols =
     check_symbol_name path name;
-    if List.mem name names then
+    if List.exists (fun (_, n) -> n = name) symbols then
       eval_error_at path "Symbol %s is already defined" name;
-    names @ [name]
+    (kind, name) :: symbols
   in
-  let rec collect names = function
-    | [] -> names
-    | Page_table_ast.Virtual stmt_names :: stmts ->
-        collect (List.fold_left (add ["page_table_setup"]) names stmt_names) stmts
-    | Page_table_ast.TableBlock {body; _} :: stmts ->
-        collect (collect names body) stmts
-    | _ :: stmts -> collect names stmts
+  let add_all path kind names symbols =
+    List.fold_left (fun symbols name -> add path kind name symbols) symbols names
   in
-  collect
-    (List.fold_left (add ["symbolic"]) [] ir.Ir.symbolic)
-    ir.Ir.page_table_setup
+  let rec collect symbols = function
+    | Page_table_ast.Virtual names ->
+        add_all ["page_table_setup"] Virtual names symbols
+    | Page_table_ast.Physical names ->
+        add_all ["page_table_setup"] Physical names symbols
+    | Page_table_ast.TableBlock {body; _} -> List.fold_left collect symbols body
+    | _ -> symbols
+  in
+  let symbolic_kind = if ir.page_table_setup = [] then Physical else Virtual in
+  let symbols = add_all ["symbolic"] symbolic_kind ir.symbolic [] in
+  List.rev (List.fold_left collect symbols ir.page_table_setup)
 
-let checked_virtual_alignment alignment =
-  let alignment =
-    try Z.to_int alignment
-    with Z.Overflow ->
-      eval_error Page_table_setup "page_table: virtual alignment is out of range"
-  in
-  (* Alignment requests are combined with [max], which preserves all requests
-     when each alignment is a power of two. *)
-  if alignment < Allocator.page_size || alignment land (alignment - 1) <> 0 then
-    eval_error Page_table_setup
-      "page_table: virtual alignment must be a power of two of at least %d \
-       bytes: %d"
-       Allocator.page_size alignment;
-  alignment
+(* Data symbols backed by memory blocks: [symbolic] without page tables, the
+   [physical] declarations with them. *)
+let get_physical_data_symbols ir =
+  List.filter_map
+    (function (Physical, name) -> Some name | (Virtual, _) -> None)
+    (get_data_symbols ir)
+
+let get_all_data_symbols ir = List.map snd (get_data_symbols ir)
+
+(** {2 Alignment constraints} *)
+
+let checked_explicit_alignment alignment =
+  if not (Z.fits_int alignment) then
+    eval_error Page_table_setup "page_table: alignment is out of range: %s"
+      (Z.to_string alignment);
+  if Z.sign alignment <= 0 || Z.popcount alignment <> 1 then
+    eval_error Page_table_setup "page_table: alignment must be a power of two: %s"
+      (Z.to_string alignment);
+  Z.to_int alignment
 
 let checked_mapping_alignment level =
   try Page_table_desc.level_size level
   with Invalid_argument _ ->
     eval_error Page_table_setup "page_table: invalid mapping level: %d" level
 
-let symbolic_va_alignments ir =
-  let virtual_names = symbolic_names ir in
+(* Collect the alignment constraints of the page-table setup, on both virtual
+   and physical symbols. Requests are combined with [max], which satisfies all
+   of them as alignments are powers of two. Explicit [aligned] constraints must
+   be on [declared] data symbols. *)
+let get_alignment_constraints ~declared (ir : Ir.t) =
   let alignments = Hashtbl.create 32 in
   let request name alignment =
-    let previous =
-      Hashtbl.find_opt alignments name
-      |> Option.value ~default:Allocator.page_size
-    in
-    Hashtbl.replace alignments name (max previous alignment)
+    match Hashtbl.find_opt alignments name with
+    | Some previous -> Hashtbl.replace alignments name (max previous alignment)
+    | None -> Hashtbl.add alignments name alignment
   in
-  let rec collect stmts =
-    List.iter
-      (function
-        | Page_table_ast.AlignedVirtual {alignment; names} ->
-            let alignment = checked_virtual_alignment alignment in
-            List.iter
-              (fun name ->
-                 if not (List.mem name virtual_names) then
-                   eval_error Page_table_setup "page_table: undeclared VA: %s"
-                     name;
-                 request name alignment
-               )
-              names
-        (* Table mappings do not require larger VA allocations. *)
-        | Page_table_ast.Mapping {target = Page_table_ast.Table _; _} -> ()
-        | Page_table_ast.Mapping {va = Term.Sym va_name; level = Some level; _} ->
-            request va_name (checked_mapping_alignment level)
-        | Page_table_ast.TableBlock {body; _} -> collect body
-        | _ -> ()
-        )
-      stmts
-  in
-  collect ir.Ir.page_table_setup;
-  List.map
-    (fun name ->
-       ( name,
-         Hashtbl.find_opt alignments name
-         |> Option.value ~default:Allocator.page_size
-       )
-     )
-    virtual_names
-
-(* Returns a list of pairs of physical address symbols and their aligment
-   requirements. They are in order of declaration *)
-let symbolic_pa_alignments ir =
-  (* Request an alignment in [pas]. If new pa, it is added at the end, otherwise
-     the alignment constraint is updated *)
-  let request pas name alignment =
-    if List.mem_assoc name pas then
-      List.map (fun (n, a) -> (n, if n = name then max a alignment else a)) pas
-    else pas @ [(name, alignment)]
-  in
-  let rec collect pas = function
-    | Page_table_ast.Physical names ->
-        List.fold_left
-          (fun pas name ->
-             if List.mem_assoc name pas then
-               eval_error Page_table_setup "Symbol %s is already defined" name;
-             request pas name Allocator.page_size
+  let rec collect = function
+    | Page_table_ast.AlignedVirtual {alignment; names} ->
+        let alignment = checked_explicit_alignment alignment in
+        List.iter
+          (fun name ->
+             if not (List.mem name declared) then
+               eval_error Page_table_setup "page_table: undeclared symbol: %s"
+                 name;
+             request name alignment
            )
-          pas names
-    | Page_table_ast.Mapping {target = Page_table_ast.PaName name; level; _} ->
-        let alignment =
-          Option.fold ~none:Allocator.page_size ~some:checked_mapping_alignment
-            level
-        in
-        request pas name alignment
-    | Page_table_ast.DataInit {pa_name; _} ->
-        request pas pa_name Allocator.page_size
-    | Page_table_ast.TableBlock {body; _} -> List.fold_left collect pas body
-    | _ -> pas
+          names
+    (* Table mappings do not require larger allocations. *)
+    | Page_table_ast.Mapping {target = Page_table_ast.Table _; _} -> ()
+    | Page_table_ast.Mapping {va; target; level = Some level; _} -> (
+        let alignment = checked_mapping_alignment level in
+        (match va with Term.Sym name -> request name alignment | _ -> ());
+        match target with
+        | Page_table_ast.PaName name -> request name alignment
+        | _ -> ()
+      )
+    | Page_table_ast.TableBlock {body; _} -> List.iter collect body
+    | _ -> ()
   in
-  List.fold_left collect [] ir.Ir.page_table_setup
+  List.iter collect ir.page_table_setup;
+  alignments
 
 (** {2 Reserved pages} *)
 
@@ -326,26 +307,18 @@ let allocate_code_sections allocator (ir : Ir.t) : Assembler.section list =
 let alloc_aligned allocator alignment =
   Allocator.alloc_aligned allocator ~size:alignment ~alignment
 
-let rec declared_physical_names = function
-  | [] -> []
-  | Page_table_ast.Physical names :: stmts ->
-      names @ declared_physical_names stmts
-  | Page_table_ast.TableBlock {body; _} :: stmts ->
-      declared_physical_names body @ declared_physical_names stmts
-  | _ :: stmts -> declared_physical_names stmts
-
-let not_offset (ir : Ir.t) (name, _) = not (List.mem_assoc name ir.offsets)
+let is_offset (ir : Ir.t) name = List.mem_assoc name ir.offsets
 
 (* Register each offset symbol at its base address plus its offset. Offset
    symbols are declared like other data symbols, and their bases are symbols
    allocated before assembly that are not offset symbols themselves. *)
 let allocate_offsets ~state ~declared (ir : Ir.t) =
-  List.map
+  List.iter
     (fun (name, (base, offset)) ->
        let path = ["offsets"; name] in
        if not (List.mem name declared) then
          eval_error_at path "Offset symbol %s is not declared" name;
-       if List.mem_assoc base ir.offsets then
+       if is_offset ir base then
          eval_error_at path "Offset base %s is an offset symbol" base;
        let addr =
          match Hashtbl.find_opt state.Eval_state.symbols base with
@@ -353,74 +326,57 @@ let allocate_offsets ~state ~declared (ir : Ir.t) =
          | Some _ -> eval_error_at path "Offset address is out of range"
          | None -> eval_error_at path "Offset base %s is not allocated" base
        in
-       ( try Eval_state.add_symbol state name addr
-         with Failure msg -> eval_error_at path "%s" msg
-       );
-       (name, addr)
+       try Eval_state.add_symbol state name addr
+       with Failure msg -> eval_error_at path "%s" msg
      )
     ir.offsets
 
-(* Without page tables, data symbols and code sections share one allocator
-   from address 0. Returns that allocator for the code sections. *)
-let allocate_flat_symbols ~state ~reserved (ir : Ir.t) =
-  let allocator = Allocator.make ~base:0 ~reserved () in
-  let virtuals = symbolic_va_alignments ir in
+(* Allocate every data symbol from [base], aligned to its constraint and to at
+   least a page, and register it in [state]. Offset symbols are registered after
+   the other data symbols. Returns the allocator. *)
+let allocate_data_symbols ~state ~reserved ~base (ir : Ir.t) =
+  let allocator = Allocator.make ~base ~reserved () in
+  let declared = get_all_data_symbols ir in
+  let alignments = get_alignment_constraints ~declared ir in
   List.iter
-    (fun (name, alignment) ->
-       Eval_state.add_symbol state name (alloc_aligned allocator alignment)
+    (fun name ->
+       if not (is_offset ir name) then
+         let alignment =
+           Hashtbl.find_opt alignments name
+           |> Option.fold ~none:Allocator.page_size ~some:(max Allocator.page_size)
+         in
+         let addr = alloc_aligned allocator alignment in
+         try Eval_state.add_symbol state name addr
+         with Failure msg -> eval_error Page_table_setup "%s" msg
      )
-    (List.filter (not_offset ir) virtuals);
-  ignore (allocate_offsets ~state ~declared:(List.map fst virtuals) ir);
+    declared;
+  allocate_offsets ~state ~declared ir;
   allocator
 
-(* With page tables, table roots with an explicit base are registered, then
-   virtual and physical symbols are allocated in the data region. Returns the
-   physical addresses of the physical symbols, including physical offset
-   symbols. *)
-let allocate_page_table_symbols ~state ~reserved (ir : Ir.t) =
-  let add name addr =
-    try Eval_state.add_symbol state name addr
-    with Failure msg -> eval_error Page_table_setup "%s" msg
-  in
-  let data_allocator = Allocator.make ~base:data_base ~reserved () in
-  List.iter
-    (fun (name, base) -> add name base)
-    (explicit_table_roots ir.page_table_setup);
-  let virtuals = symbolic_va_alignments ir in
-  let physicals = symbolic_pa_alignments ir in
-  List.iter
-    (fun (name, alignment) -> add name (alloc_aligned data_allocator alignment))
-    (List.filter (not_offset ir) virtuals);
-  let data_symbols_pa = Hashtbl.create 32 in
-  List.iter
-    (fun (name, alignment) ->
-       let addr = alloc_aligned data_allocator alignment in
-       Hashtbl.add data_symbols_pa name addr;
-       add name addr
-     )
-    (List.filter (not_offset ir) physicals);
-  let declared_physicals = declared_physical_names ir.page_table_setup in
-  List.iter
-    (fun (name, addr) ->
-       if List.mem name declared_physicals then
-         Hashtbl.add data_symbols_pa name addr
-     )
-    (allocate_offsets ~state
-       ~declared:(List.map fst virtuals @ declared_physicals)
-       ir
-    );
-  data_symbols_pa
-
-(* Allocate every data symbol and register it in [state]. Offset symbols are
-   registered after the other data symbols. Returns the allocator for the code
-   sections and, with page tables, the physical symbol addresses. *)
+(* Allocate every data symbol and register it in [state]. Without page tables,
+   data symbols and code sections share one allocator from address 0. With page
+   tables, table roots with an explicit base are registered first, then data
+   symbols are allocated in the data region. Returns the allocator for the code
+   sections and, with page tables, the addresses of the physical symbols. *)
 let allocate_symbols ~state ~reserved (ir : Ir.t) =
   if ir.page_table_setup = [] then
-    (allocate_flat_symbols ~state ~reserved ir, None)
-  else
-    ( make_arena ~reserved 0,
-      Some (allocate_page_table_symbols ~state ~reserved ir)
-    )
+    (allocate_data_symbols ~state ~reserved ~base:0 ir, None)
+  else (
+    List.iter
+      (fun (name, base) ->
+         try Eval_state.add_symbol state name base
+         with Failure msg -> eval_error Page_table_setup "%s" msg
+       )
+      (explicit_table_roots ir.page_table_setup);
+    ignore (allocate_data_symbols ~state ~reserved ~base:data_base ir);
+    let data_symbols_pa = Hashtbl.create 32 in
+    List.iter
+      (fun name ->
+         Hashtbl.add data_symbols_pa name (Eval_state.lookup_addr state name)
+       )
+      (get_physical_data_symbols ir);
+    (make_arena ~reserved 0, Some data_symbols_pa)
+  )
 
 (** {2 Assembly} *)
 
@@ -580,11 +536,11 @@ let data_memory_block ~step ?(kind = Testrepr.Data) ?symbol addr value :
     kind
   }
 
-(* Build backing data blocks for declared symbolic locations. *)
+(* Build backing data blocks for physical data symbols. *)
 let build_locations_memory
       ~default_mem_size
       ~symbol_sizes
-      ~symbolic
+      ~physical
       ~state
       ~locations
   =
@@ -600,7 +556,7 @@ let build_locations_memory
          (Eval_state.lookup_addr state sym)
          value
      )
-    symbolic
+    physical
 
 let build_page_table_memory ~default_mem_size ~symbol_sizes ~entries page_table =
   let table_memory =
@@ -633,7 +589,7 @@ let build_page_table_memory ~default_mem_size ~symbol_sizes ~entries page_table 
 let build_memory
       ~default_mem_size
       ~symbol_sizes
-      ~symbolic
+      ~physical
       ~state
       ~locations
       asm_result
@@ -645,7 +601,7 @@ let build_memory
   let data_memory =
     match page_table with
     | None ->
-        build_locations_memory ~default_mem_size ~symbol_sizes ~symbolic ~state
+        build_locations_memory ~default_mem_size ~symbol_sizes ~physical ~state
           ~locations
     | Some page_table ->
         let entries = Option.get state.Eval_state.page_table in
@@ -677,7 +633,8 @@ let to_testrepr ~filename (ir : Ir.t) : Testrepr.t =
       ?page_table_root ~state asm_result ir.threads
   in
   let memory =
-    build_memory ~default_mem_size ~symbol_sizes:ir.sizes ~symbolic:ir.symbolic
+    build_memory ~default_mem_size ~symbol_sizes:ir.sizes
+      ~physical:(get_physical_data_symbols ir)
       ~state ~locations:ir.locations asm_result page_table
   in
   { arch = Litmus.Arch_id.to_string ir.arch;

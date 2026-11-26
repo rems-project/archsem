@@ -1,0 +1,14 @@
+arch = "AArch64"
+name = "undeclared-page-table-physical"
+
+page_table_setup = """
+virtual x;
+x |-> pa_x;
+"""
+
+[thread.0]
+code = "nop"
+
+[final]
+expect = "sat"
+assertion = "true"

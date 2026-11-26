@@ -41,9 +41,9 @@
 (** Page-table setup AST.
 
     Virtual-address names may be declared with [virtual] or the TOML [symbolic]
-    list. [aligned ... virtual ...] statements constrain those names. Names for
-    physical addresses may be declared with [physical], or allocated on first
-    use by mapping/data-init statements. *)
+    list. Names for physical addresses must be declared with [physical].
+    [aligned ... virtual ...] statements constrain the alignment of any of
+    those names. *)
 type attr =
   | Code
   | Data
@@ -78,7 +78,7 @@ type stmt =
   | Virtual of string list
   (* [physical pa_x pa_y;] allocates and registers physical-address names. *)
   | Physical of string list
-  (* [aligned 2097152 virtual x y;] constrains virtual-address names. *)
+  (* [aligned 2097152 virtual x y;] constrains the alignment of data names. *)
   | AlignedVirtual of
       { alignment : Z.t;
         names : string list
@@ -98,7 +98,7 @@ type stmt =
         attrs : descriptor_expr_field list;
         level : int option
       }
-  (* [*pa_name = value;] allocates the PA on first use and evaluates the value. *)
+  (* [*pa_name = value;] initialises the memory of a declared physical name. *)
   | DataInit of
       { pa_name : string;
         value : Term_ast.t

@@ -228,6 +228,20 @@ Page table DSL rejects repeated virtual declarations
   Symbol x is already defined
   [1]
 
+Page table DSL rejects explicit alignments that are not powers of two
+  $ archsem seq non-pow2-page-table-alignment.litmus.toml
+  archsem: eval error:
+  File "non-pow2-page-table-alignment.litmus.toml", path "page_table_setup":
+  page_table: alignment must be a power of two: 12288
+  [1]
+
+Page table DSL rejects mappings to undeclared physical names
+  $ archsem seq undeclared-page-table-physical.litmus.toml
+  archsem: eval error:
+  File "undeclared-page-table-physical.litmus.toml", path "page_table_setup":
+  page_table: unallocated PA symbol: pa_x
+  [1]
+
 Page table DSL rejects a symbol that shadows the default table root
   $ archsem seq duplicate-page-table-root.litmus.toml
   archsem: eval error:
