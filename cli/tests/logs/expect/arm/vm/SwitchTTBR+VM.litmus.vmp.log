@@ -4,6 +4,6 @@ States 2
 0:TTBR0_EL1=0x2000000300000; 0:X1=1; 0:X3=0x2000000300000; 
 Ok
 Witnesses
-Positive: 4 Negative: 4
+Positive: 1 Negative: 1
 Condition SwitchTTBR+VM exists (0:X1=1 /\ 0:X3=0x2000000300000 /\ 0:TTBR0_EL1=0:X3)
-Observation SwitchTTBR+VM Sometimes 4 4
+Observation SwitchTTBR+VM Sometimes 1 1

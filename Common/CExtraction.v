@@ -378,6 +378,8 @@ Extract Inlined Constant fin_to_nat => "Fun.id".
 
 Extract Inlined Constant fin0_magic => "Support.fin0_magic".
 
+Extract Constant fin_enum => "Support.fin_enum".
+
 (** * Vector
 
 Extracted as lists for now *)
