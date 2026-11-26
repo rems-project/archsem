@@ -15,6 +15,9 @@ jobs:
     permissions:
       contents: read
 
+    # A cold OPAM cache takes ~40 min; The actual build is less than 5 min, the apt install should take 2min
+    timeout-minutes: 90
+
     # Changing the base branch of a PR fires a `synchronize` event without
     # changing the head commit: skip the build in that case.
     if: >-
@@ -33,6 +36,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install system dependencies (ubuntu)
+      timeout-minutes: 5
       run: |
         sudo apt update
         sudo apt install -y build-essential z3 cmake pkg-config clang-18 lld-18
@@ -76,6 +80,7 @@ jobs:
 
     - name: Install OPAM dependencies
       if: ${{ steps.cache-opam-restore.outputs.cache-hit != 'true' }}
+      timeout-minutes: 60
       run: |
         opam install . --deps-only --locked --with-test --with-dev-setup --with-doc --confirm-level=unsafe-yes
 
